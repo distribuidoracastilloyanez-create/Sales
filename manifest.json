@@ -1,0 +1,78 @@
+{
+    "name": "Sistema de Ventas y Gestión",
+    "short_name": "Ventas",
+    "description": "Aplicación de Gestión de Ventas, Clientes e Inventario con funcionalidad offline.",
+    "start_url": ".",
+    "display": "standalone",
+    "orientation": "portrait",
+    "background_color": "#f3f4f6",
+    "theme_color": "#3b82f6",
+    "scope": "./",
+    "icons": [
+        {
+            "src": "images/icons/icon-72x72.png",
+            "sizes": "72x72",
+            "type": "image/png"
+        },
+        {
+            "src": "images/icons/icon-96x96.png",
+            "sizes": "96x96",
+            "type": "image/png"
+        },
+        {
+            "src": "images/icons/icon-128x128.png",
+            "sizes": "128x128",
+            "type": "image/png"
+        },
+        {
+            "src": "images/icons/icon-144x144.png",
+            "sizes": "144x144",
+            "type": "image/png"
+        },
+        {
+            "src": "images/icons/icon-152x152.png",
+            "sizes": "152x152",
+            "type": "image/png"
+        },
+        {
+            "src": "images/icons/icon-192x192.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "any maskable"
+        },
+        {
+            "src": "images/icons/icon-384x384.png",
+            "sizes": "384x384",
+            "type": "image/png"
+        },
+        {
+            "src": "images/icons/icon-512x512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "any maskable"
+        }
+    ],
+    "shortcuts": [
+        {
+            "name": "Nueva Venta",
+            "short_name": "Venta",
+            "description": "Iniciar una nueva venta de productos",
+            "url": "index.html#nueva-venta",
+            "icons": [{ "src": "images/icons/shortcut-venta.png", "sizes": "96x96" }]
+        },
+        {
+            "name": "Ver Inventario",
+            "short_name": "Inventario",
+            "description": "Consultar el stock de productos",
+            "url": "index.html#inventario",
+            "icons": [{ "src": "images/icons/shortcut-inventario.png", "sizes": "96x96" }]
+        },
+        {
+            "name": "Ver Clientes",
+            "short_name": "Clientes",
+            "description": "Acceder a la lista de clientes",
+            "url": "index.html#clientes",
+            "icons": [{ "src": "images/icons/shortcut-clientes.png", "sizes": "96x96" }]
+        }
+    ]
+}
