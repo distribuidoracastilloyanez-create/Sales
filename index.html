@@ -20,762 +20,421 @@
         body {
             font-family: 'Inter', sans-serif;
         }
-        body::before {
-            content: "";
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100vw;
-            height: 100vh;
-            z-index: -1;
-            background-image: url('images/fondo.png');
-            background-size: cover;
-            background-position: center;
-            filter: blur(3px) brightness(0.6);
-            transition: background-image 0.5s ease-in-out;
+        .animate-fade-in-up {
+            animation: fadeInUp 0.3s ease-out;
         }
-        body.catalogo-active::before {
-            background-image: var(--catalogo-bg-image, url('images/fondo.png'));
+        @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
         }
-        .hidden {
+        /* Ocultar barra de scroll en móviles pero permitir scroll */
+        .no-scrollbar::-webkit-scrollbar {
             display: none;
         }
-        .animate-fade-in {
-            animation: fadeIn 0.5s ease-in-out;
-        }
-        @keyframes fadeIn {
-            from { opacity: 0; }
-            to { opacity: 1; }
-        }
-        .autocomplete-list {
-            position: absolute;
-            background-color: white;
-            border: 1px solid #e2e8f0;
-            border-top: none;
-            max-height: 200px;
-            overflow-y: auto;
-            z-index: 10;
-            width: 100%;
-            border-radius: 0 0 0.5rem 0.5rem;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); 
-        }
-        .autocomplete-item {
-            padding: 0.5rem 1rem;
-            cursor: pointer;
-            transition: background-color 0.2s;
-            font-size: 0.875rem; 
-        }
-        .autocomplete-item:hover, .autocomplete-item.selected { 
-            background-color: #f1f5f9;
-        }
-        .uppercase-ticket {
-            text-transform: uppercase;
-        }
-        .price-toggle:hover {
-            cursor: pointer;
-            background-color: #f0f0f0; 
-            border-radius: 4px; 
-        }
-         .drag-over {
-             border-top: 3px dashed #3b82f6; 
-             background-color: #eff6ff; 
-        }
-        .segmento-placeholder, .marca-placeholder {
-            list-style-type: none;
-            border-radius: 0.375rem;
-        }
-        .segmento-placeholder {
-            height: 60px;
-            background: #dbeafe; 
-            border: 2px dashed #3b82f6; 
-            margin: 1rem 0;
-        }
-        .marca-placeholder {
-            height: 30px;
-            background: #e0e7ff; 
-            border: 1px dashed #6366f1; 
-            margin: 0.25rem 0;
-        }
-        input[type="checkbox"]#offline-toggle {
-            height: 0;
-            width: 0;
-            visibility: hidden;
-        }
-        label[for="offline-toggle"] {
-            cursor: pointer;
-            text-indent: -9999px;
-            width: 50px; 
-            height: 25px; 
-            background: grey;
-            display: block;
-            border-radius: 100px;
-            position: relative;
-        }
-        label[for="offline-toggle"]:after {
-            content: '';
-            position: absolute;
-            top: 2px;
-            left: 2px;
-            width: 21px; 
-            height: 21px;
-            background: #fff;
-            border-radius: 90px;
-            transition: 0.3s;
-        }
-        input:checked + label[for="offline-toggle"] {
-            background: #dc2626; 
-        }
-        input:checked + label[for="offline-toggle"]:after {
-            left: calc(100% - 2px);
-            transform: translateX(-100%);
-        }
-        label[for="offline-toggle"]:active:after {
-            width: 26px; 
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
         }
     </style>
 </head>
-<body class="min-h-screen flex flex-col bg-gray-100"> 
-    <div id="app" class="flex flex-col min-h-screen">
-        <main id="mainContent" class="flex-grow hidden">
-        </main>
+<body class="bg-gray-100 text-gray-800 h-screen overflow-hidden flex flex-col">
 
-        <main id="loginContent" class="flex-grow flex items-center justify-center p-4">
-            <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl text-center max-w-sm w-full">
-                <h1 class="text-3xl font-bold text-gray-800 mb-6">Iniciar Sesión</h1>
-                <form id="loginForm" class="space-y-4">
-                    <input type="email" id="emailInput" placeholder="Email" required
-                           class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    <input type="password" id="passwordInput" placeholder="Contraseña" required
-                           class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    <button type="submit" class="w-full px-6 py-3 bg-blue-500 text-white font-semibold rounded-lg shadow-md hover:bg-blue-600 transition duration-300 transform hover:scale-105">
-                        Ingresar
-                    </button>
-                    <p id="authMessage" class="text-sm text-red-500 mt-2 h-4"></p> 
-                </form>
-                 <p class="mt-6 text-sm text-gray-800">
-                    ¿No tienes una cuenta?
-                    <button id="goToRegisterBtn" class="font-semibold text-blue-600 hover:underline">Regístrate aquí</button>
-                </p>
-            </div>
-        </main>
-
-        <main id="registerContent" class="flex-grow flex items-center justify-center p-4 hidden">
-            <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl text-center max-w-sm w-full">
-                <h1 class="text-3xl font-bold text-gray-800 mb-6">Crear Cuenta</h1>
-                <form id="registerForm" class="space-y-4">
-                    <input type="email" id="registerEmailInput" placeholder="Email" required
-                           class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    <input type="password" id="registerPasswordInput" placeholder="Contraseña (mín. 6 caracteres)" required minlength="6"
-                           class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    <input type="password" id="confirmPasswordInput" placeholder="Confirmar Contraseña" required minlength="6"
-                           class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    <button type="submit" class="w-full px-6 py-3 bg-green-500 text-white font-semibold rounded-lg shadow-md hover:bg-green-600 transition duration-300 transform hover:scale-105">
-                        Registrar
-                    </button>
-                    <p id="registerMessage" class="text-sm text-red-500 mt-2 h-4"></p> 
-                </form>
-                <p class="mt-6 text-sm text-gray-800">
-                    ¿Ya tienes una cuenta?
-                    <button id="goToLoginBtn" class="font-semibold text-blue-600 hover:underline">Inicia sesión</button>
-                </p>
-            </div>
-        </main>
-
-        <div id="modalContainer" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-60 hidden animate-fade-in p-4">
-            <div id="modalContent" class="bg-white p-6 md:p-8 rounded-lg shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
-            </div>
+    <!-- Container for Login/Register -->
+    <div id="authContainer" class="flex-grow flex items-center justify-center p-4">
+        <!-- Login Form -->
+        <div id="loginView" class="bg-white p-8 rounded-lg shadow-lg w-full max-w-md">
+            <h2 class="text-2xl font-bold mb-6 text-center text-blue-600">Iniciar Sesión</h2>
+            <form id="loginForm" class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Email</label>
+                    <input type="email" id="loginEmail" required class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-blue-500 focus:border-blue-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Contraseña</label>
+                    <input type="password" id="loginPassword" required class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-blue-500 focus:border-blue-500">
+                </div>
+                <button type="submit" class="w-full bg-blue-600 text-white p-2 rounded-md hover:bg-blue-700 transition duration-200">Entrar</button>
+            </form>
+            <p class="mt-4 text-center text-sm">
+                ¿No tienes cuenta? <button id="goToRegisterBtn" class="text-blue-600 font-medium hover:underline">Regístrate</button>
+            </p>
         </div>
 
-        <div id="floating-controls" class="fixed bottom-4 right-4 space-y-2 z-40 hidden">
-             <span id="connectionStatus" class="block text-xs font-bold px-3 py-2 rounded-full shadow-lg transition-colors duration-300"></span>
-            <button id="logoutBtn" class="w-12 h-12 bg-red-500 text-white font-semibold rounded-full shadow-lg hover:bg-red-600 transition duration-300 flex items-center justify-center transform hover:scale-110" title="Cerrar Sesión">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                </svg>
-            </button>
+        <!-- Register Form -->
+        <div id="registerView" class="hidden bg-white p-8 rounded-lg shadow-lg w-full max-w-md">
+            <h2 class="text-2xl font-bold mb-6 text-center text-green-600">Registrarse</h2>
+            <form id="registerForm" class="space-y-4">
+                 <div>
+                    <label class="block text-sm font-medium text-gray-700">Email</label>
+                    <input type="email" id="registerEmail" required class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-green-500 focus:border-green-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Contraseña</label>
+                    <input type="password" id="registerPassword" required class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-green-500 focus:border-green-500">
+                </div>
+                <button type="submit" class="w-full bg-green-600 text-white p-2 rounded-md hover:bg-green-700 transition duration-200">Crear Cuenta</button>
+            </form>
+             <p class="mt-4 text-center text-sm">
+                ¿Ya tienes cuenta? <button id="goToLoginBtn" class="text-blue-600 font-medium hover:underline">Inicia Sesión</button>
+            </p>
         </div>
     </div>
 
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <!-- Main App Layout (Hidden by default) -->
+    <div id="appContainer" class="hidden flex-grow flex flex-col h-full relative">
+        <!-- Header -->
+        <header class="bg-blue-600 text-white p-4 shadow-md flex justify-between items-center z-20 shrink-0">
+            <h1 class="text-xl font-bold truncate">Ventas & Gestión</h1>
+            <div class="flex items-center space-x-2">
+                <span id="userEmailDisplay" class="text-sm hidden md:inline opacity-90"></span>
+                <button id="logoutBtn" class="bg-blue-700 p-2 rounded hover:bg-blue-800 text-sm transition">Salir</button>
+            </div>
+        </header>
 
-    <script src="data.js" defer></script>
-    <script src="admin.js" defer></script>
-    <script src="inventario.js" defer></script>
-    <script src="catalogo.js" defer></script>
-    <script src="clientes.js" defer></script>
-    <script src="ventas.js" defer></script>
-    <script src="obsequios.js" defer></script>
+        <!-- Main Content Area -->
+        <main id="mainContent" class="flex-grow overflow-y-auto bg-gray-50 p-4 relative no-scrollbar">
+            <!-- Dynamic Content Loaded Here -->
+        </main>
 
-    <!--
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-    -->
-    
-    <!-- PASO 1: Reemplazar la librería de Excel por una que SÍ soporta estilos -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.3.0/exceljs.min.js"></script>
-    
-    <script type="module" defer> 
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, createUserWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, getDoc, addDoc, setDoc, deleteDoc, onSnapshot, collection, setLogLevel, writeBatch, runTransaction, getDocs, enableIndexedDbPersistence, query, where, orderBy, limit, startAfter, enableNetwork, disableNetwork } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        <!-- Floating Controls (Menu Button) -->
+        <div id="floatingControls" class="absolute bottom-6 right-6 z-30 flex flex-col space-y-3 items-end pointer-events-none">
+            <!-- Buttons injected by modules -->
+             <button id="mainMenuBtn" class="pointer-events-auto bg-blue-600 text-white p-4 rounded-full shadow-lg hover:bg-blue-700 focus:outline-none transition transform hover:scale-105 active:scale-95">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16m-7 6h7" />
+                </svg>
+            </button>
+        </div>
 
-        const firebaseConfig = {
-            apiKey: "AIzaSyAiitXEEekD-7FD7kDxDIcRbxlClsF5gHU",
-            authDomain: "ventas-9a210.firebaseapp.com",
-            projectId: "ventas-9a210",
-            storageBucket: "ventas-9a210.appspot.com",
-            messagingSenderId: "815890981146",
-            appId: "1:815890981146:web:938fe5e09babe511e98ca3",
-            measurementId: "G-N0QXG70WM1"
-        };
-         const appId = typeof __app_id !== 'undefined' ? __app_id : firebaseConfig.appId;
-
-        let db;
-        let auth;
-        let userId;
-        window.userRole = 'user'; 
-        let activeListeners = [];
-        window.isLoggingOut = false; 
-        window.TIPOS_VACIO_GLOBAL = ["1/4 - 1/3", "ret 350 ml", "ret 1.25 Lts"];
-
-        const mainContent = document.getElementById('mainContent');
-        const modalContainer = document.getElementById('modalContainer');
-        const modalContent = document.getElementById('modalContent');
-        const loginForm = document.getElementById('loginForm');
-        const authMessage = document.getElementById('authMessage');
-        const loginContent = document.getElementById('loginContent');
-        const registerContent = document.getElementById('registerContent');
-        const registerForm = document.getElementById('registerForm');
-        const registerMessage = document.getElementById('registerMessage');
-        const floatingControls = document.getElementById('floating-controls');
-        const connectionStatusEl = document.getElementById('connectionStatus');
-
-         window.showModal = function(title, message, onConfirm = null, confirmText = 'Confirmar', onCancel = null, triggerConfirmLogic = false) {
-             modalContent.innerHTML = `
-                 <div class="text-center">
-                     <h3 class="text-xl font-bold text-gray-800 mb-4">${title}</h3>
-                     <div class="text-gray-600 mb-6 text-sm md:text-base">${message}</div>
-                     <div class="flex flex-col sm:flex-row justify-center gap-3 mt-6">
-                         <button id="closeModalBtn" class="w-full sm:w-auto px-5 py-2.5 bg-gray-300 text-gray-800 rounded-lg hover:bg-gray-400 transition duration-200">Cerrar</button>
-                         ${onConfirm ? `<button id="confirmBtn" class="w-full sm:w-auto px-5 py-2.5 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition duration-200">${confirmText}</button>` : ''}
-                     </div>
-                 </div>
-             `;
-
-             const closeModal = () => {
-                 modalContainer.classList.add('hidden');
-                 if (onCancel) {
-                     try { onCancel(); } catch (e) { console.error("Error in modal onCancel:", e); }
-                 }
-                 modalContainer.removeEventListener('click', handleOutsideClick);
-             };
-
-             const handleOutsideClick = (event) => {
-                 if (event.target === modalContainer) {
-                     closeModal();
-                 }
-             };
-
-             const closeBtn = document.getElementById('closeModalBtn');
-             if(closeBtn) closeBtn.addEventListener('click', closeModal);
-
-             if (onConfirm) {
-                 const confirmBtn = document.getElementById('confirmBtn');
-                 if(confirmBtn) confirmBtn.addEventListener('click', async () => {
-                      if (triggerConfirmLogic) {
-                          confirmBtn.disabled = true;
-                          confirmBtn.textContent = 'Procesando...';
-                           const closeButton = document.getElementById('closeModalBtn');
-                           if(closeButton) closeButton.disabled = true;
-                          try {
-                               const shouldClose = await onConfirm();
-                               if (shouldClose !== false) {
-                                   closeModal();
-                               }
-                          } catch(e) {
-                              console.error("Error in modal onConfirm (triggerConfirmLogic):", e);
-                               window.showModal("Error", `Ocurrió un error: ${e.message}`);
-                          } finally {
-                              if (modalContainer && !modalContainer.classList.contains('hidden')) {
-                                   if(confirmBtn) {
-                                       confirmBtn.disabled = false;
-                                       confirmBtn.textContent = confirmText;
-                                   }
-                                    const closeButton = document.getElementById('closeModalBtn');
-                                    if(closeButton) closeButton.disabled = false;
-                              }
-                          }
-                      } else {
-                          if(onConfirm() !== false) {
-                            closeModal();
-                          }
-                      }
-                 });
-             }
-             modalContainer.addEventListener('click', handleOutsideClick);
-             modalContainer.classList.remove('hidden');
-         }
-
-        async function showAddItemModal(collectionName, itemName) {
-            modalContent.innerHTML = `
-                <div class="text-center">
-                    <h3 class="text-xl font-bold text-gray-800 mb-4">Agregar Nuevo ${itemName}</h3>
-                    <form id="addItemForm" class="space-y-4">
-                        <input type="text" id="newItemInput" placeholder="Nombre del ${itemName}" class="w-full px-4 py-2 border rounded-lg" required>
-                        <button type="submit" class="w-full px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600">Agregar</button>
-                    </form>
-                    <p id="addItemMessage" class="text-sm mt-2 h-4"></p>
-                    <div class="mt-4">
-                         <button id="closeItemBtn" class="px-4 py-2 bg-gray-400 text-white rounded-lg hover:bg-gray-500">Cerrar</button>
-                    </div>
+        <!-- Main Menu Overlay -->
+        <div id="mainMenuOverlay" class="hidden absolute inset-0 bg-black bg-opacity-50 z-40 flex items-end sm:items-center justify-center p-4 backdrop-blur-sm">
+             <div class="bg-white w-full max-w-sm rounded-t-xl sm:rounded-xl shadow-2xl p-6 animate-fade-in-up">
+                <h3 class="text-lg font-bold mb-4 text-gray-800 border-b pb-2">Menú Principal</h3>
+                <div class="grid grid-cols-2 gap-4">
+                    <button data-action="nueva-venta" class="menu-item bg-blue-50 text-blue-700 p-4 rounded-lg hover:bg-blue-100 flex flex-col items-center justify-center transition">
+                        <svg class="w-8 h-8 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
+                        <span class="font-semibold text-sm">Nueva Venta</span>
+                    </button>
+                     <button data-action="inventario" class="menu-item bg-green-50 text-green-700 p-4 rounded-lg hover:bg-green-100 flex flex-col items-center justify-center transition">
+                        <svg class="w-8 h-8 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"></path></svg>
+                        <span class="font-semibold text-sm">Inventario</span>
+                    </button>
+                    <button data-action="clientes" class="menu-item bg-purple-50 text-purple-700 p-4 rounded-lg hover:bg-purple-100 flex flex-col items-center justify-center transition">
+                        <svg class="w-8 h-8 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
+                        <span class="font-semibold text-sm">Clientes</span>
+                    </button>
+                     <button data-action="obsequios" class="menu-item bg-yellow-50 text-yellow-700 p-4 rounded-lg hover:bg-yellow-100 flex flex-col items-center justify-center transition">
+                        <svg class="w-8 h-8 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v13m0-13V6a2 2 0 112 2h-2zm0 0V5.5A2.5 2.5 0 109.5 8H12zm-7 4h14M5 12a2 2 0 110-4h14a2 2 0 110 4M5 12v7a2 2 0 002 2h10a2 2 0 002-2v-7"></path></svg>
+                        <span class="font-semibold text-sm">Obsequios</span>
+                    </button>
+                    <button data-action="catalogo" class="menu-item bg-pink-50 text-pink-700 p-4 rounded-lg hover:bg-pink-100 flex flex-col items-center justify-center transition">
+                        <svg class="w-8 h-8 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                        <span class="font-semibold text-sm">Catálogo</span>
+                    </button>
+                     <button data-action="admin" class="menu-item bg-gray-100 text-gray-700 p-4 rounded-lg hover:bg-gray-200 flex flex-col items-center justify-center transition">
+                        <svg class="w-8 h-8 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>
+                        <span class="font-semibold text-sm">Reportes / Admin</span>
+                    </button>
                 </div>
-            `;
-            modalContainer.classList.remove('hidden');
-            setTimeout(() => document.getElementById('newItemInput')?.focus(), 50);
+                <button id="closeMenuBtn" class="mt-6 w-full bg-gray-200 text-gray-800 p-3 rounded-lg hover:bg-gray-300 transition font-medium">Cerrar</button>
+             </div>
+        </div>
 
-            document.getElementById('closeItemBtn').addEventListener('click', () => modalContainer.classList.add('hidden'));
+        <!-- Generic Modal -->
+        <div id="modalContainer" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 backdrop-blur-sm p-4">
+            <div class="bg-white rounded-lg shadow-xl w-full max-w-lg overflow-hidden transform transition-all scale-100 animate-fade-in-up">
+                <div class="p-5 border-b bg-gray-50">
+                    <h3 id="modalTitle" class="text-xl font-bold text-gray-900"></h3>
+                </div>
+                <div id="modalContent" class="p-6 overflow-y-auto max-h-[70vh]">
+                    <!-- Dynamic Content -->
+                </div>
+                <div class="p-4 border-t bg-gray-50 flex justify-end space-x-3">
+                    <button id="modalCancelBtn" class="hidden px-4 py-2 bg-gray-300 text-gray-800 rounded hover:bg-gray-400 font-medium transition">Cancelar</button>
+                    <button id="modalConfirmBtn" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 font-medium transition shadow-sm">Aceptar</button>
+                </div>
+            </div>
+        </div>
+    </div>
 
-            document.getElementById('addItemForm').addEventListener('submit', async (e) => {
-                e.preventDefault();
-                const newItemInput = document.getElementById('newItemInput');
-                const newItemName = newItemInput.value.trim();
-                const addItemMessage = document.getElementById('addItemMessage');
-                const submitButton = e.target.querySelector('button[type="submit"]');
+    <!-- Scripts: Modules -->
+    <script src="admin.js"></script>
+    <script src="data.js"></script>
+    <script src="inventario.js"></script>
+    <script src="catalogo.js"></script>
+    <script src="clientes.js"></script>
+    <script src="ventas.js"></script>
+    <script src="obsequios.js"></script>
 
-                if (!newItemName) {
-                    addItemMessage.textContent = 'El nombre no puede estar vacío.';
-                    addItemMessage.className = 'text-sm text-red-600 mt-2 h-4';
-                    return;
-                }
-                const newItemNameUpper = newItemName.toUpperCase();
+    <!-- Main Logic -->
+    <script type="module">
+        // Importaciones actualizadas a v12.7.0 para consistencia
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-app.js";
+        import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-analytics.js";
+        import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-auth.js";
+        import { getFirestore, collection, doc, addDoc, setDoc, getDoc, getDocs, updateDoc, deleteDoc, query, where, onSnapshot, writeBatch, runTransaction, limit, orderBy, startAfter } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-firestore.js";
 
-                addItemMessage.textContent = '';
-                submitButton.disabled = true;
-                submitButton.textContent = 'Verificando...';
+        // NUEVA CONFIGURACIÓN DE FIREBASE
+        const firebaseConfig = {
+            apiKey: "AIzaSyApyjf3NIjnGJp2sWyJccsR40-Q8UnU364",
+            authDomain: "dist-castillo-sales.firebaseapp.com",
+            projectId: "dist-castillo-sales",
+            storageBucket: "dist-castillo-sales.firebasestorage.app",
+            messagingSenderId: "719110919658",
+            appId: "1:719110919658:web:7830a013c8c685a2c08e93",
+            measurementId: "G-VJWMMH9FQC"
+        };
 
-                try {
-                    const collectionRef = collection(db, `artifacts/${appId}/users/${userId}/${collectionName}`);
-                    const q = query(collectionRef, where("name", "==", newItemNameUpper), limit(1));
-                    const snapshot = await getDocs(q);
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const analytics = getAnalytics(app);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
 
-                    if (!snapshot.empty) {
-                        addItemMessage.textContent = `"${newItemName}" ya existe.`;
-                        addItemMessage.className = 'text-sm text-red-600 mt-2 h-4';
-                        newItemInput.select();
-                     } else {
-                        const newItemData = { name: newItemNameUpper };
-                        const newDocRef = await addDoc(collectionRef, newItemData);
+        // EXTRAEMOS EL ID DEL PROYECTO PARA PASARLO A LOS MÓDULOS
+        const appId = firebaseConfig.projectId;
 
-                        addItemMessage.textContent = `¡"${newItemNameUpper}" agregado!`;
-                        addItemMessage.className = 'text-sm text-green-600 mt-2 h-4';
+        // UI Elements
+        const loginView = document.getElementById('loginView');
+        const registerView = document.getElementById('registerView');
+        const authContainer = document.getElementById('authContainer');
+        const appContainer = document.getElementById('appContainer');
+        const mainContent = document.getElementById('mainContent');
+        const loginForm = document.getElementById('loginForm');
+        const registerForm = document.getElementById('registerForm');
+        const userEmailDisplay = document.getElementById('userEmailDisplay');
+        const floatingControls = document.getElementById('floatingControls');
+        const mainMenuBtn = document.getElementById('mainMenuBtn');
+        const mainMenuOverlay = document.getElementById('mainMenuOverlay');
+        const closeMenuBtn = document.getElementById('closeMenuBtn');
+        const modalContainer = document.getElementById('modalContainer');
+        const modalTitle = document.getElementById('modalTitle');
+        const modalContent = document.getElementById('modalContent');
+        const modalConfirmBtn = document.getElementById('modalConfirmBtn');
+        const modalCancelBtn = document.getElementById('modalCancelBtn');
 
-                        if (window.userRole === 'admin' && window.adminModule?.propagateCategoryChange) {
-                            addItemMessage.textContent = 'Agregado. Propagando...';
-                            try {
-                                const newDocSnap = await getDoc(newDocRef);
-                                if (newDocSnap.exists()) {
-                                    await window.adminModule.propagateCategoryChange(collectionName, newDocRef.id, newDocSnap.data());
-                                    addItemMessage.textContent = `¡Agregado y propagado!`;
-                                } else {
-                                    throw new Error("No se pudo leer el nuevo documento para propagar.");
-                                }
-                            } catch (propError) {
-                                console.error("Error al propagar:", propError);
-                                addItemMessage.textContent = `Agregado, pero ¡Error al propagar!`;
-                                addItemMessage.className = 'text-sm text-red-600 mt-2 h-4';
-                            }
-                        }
-
-                        newItemInput.value = '';
-                        newItemInput.focus();
-                        const relatedDropdownId = collectionName.slice(0,-1); 
-                        const dropdown = document.getElementById(relatedDropdownId);
-                        if(dropdown){
-                            const option = document.createElement('option');
-                            option.value = newItemNameUpper; option.textContent = newItemNameUpper;
-                            dropdown.appendChild(option);
-                            Array.from(dropdown.options).sort((a, b) => a.text.localeCompare(b.text)).forEach(opt => dropdown.add(opt));
-                            dropdown.value = newItemNameUpper; 
-                        }
-                        setTimeout(() => { addItemMessage.textContent = ''; }, 2000);
-                    }
-                } catch (err) {
-                    console.error(`Error al agregar ${itemName}:`, err);
-                    addItemMessage.textContent = `Error al guardar. Intenta de nuevo.`;
-                    addItemMessage.className = 'text-sm text-red-600 mt-2 h-4';
-                 } finally {
-                    submitButton.disabled = false;
-                    submitButton.textContent = 'Agregar';
-                }
-            });
-        }
-
-
-        function populateDropdown(collectionPath, elementId, itemName, selectedValue = null) {
-            const selectElement = document.getElementById(elementId);
-            if (!selectElement) { console.warn(`Dropdown element not found: ${elementId}`); return Promise.reject(new Error(`Element ${elementId} not found`)); } 
-
-            const placeholderText = `Seleccione un ${itemName}`;
-            let placeholder = selectElement.querySelector('option[value=""]');
-            if (!placeholder) { placeholder = document.createElement('option'); placeholder.value = ""; selectElement.prepend(placeholder); }
-            placeholder.textContent = placeholderText;
-            Array.from(selectElement.options).forEach(option => { if (option.value !== "") selectElement.removeChild(option); });
-            selectElement.disabled = true;
-
-            const collectionRef = collection(db, collectionPath);
-            return getDocs(collectionRef).then(snapshot => { 
-                const currentSelection = selectedValue || selectElement.value; 
-                 Array.from(selectElement.options).forEach(option => { if (option.value !== "") selectElement.removeChild(option); });
-
-                const items = snapshot.docs
-                    .map(doc => ({ id: doc.id, name: doc.data().name }))
-                    .filter(item => item.name) 
-                    .sort((a, b) => a.name.localeCompare(b.name)); 
-
-                let foundSelected = false;
-                items.forEach(item => {
-                     const option = document.createElement('option');
-                     option.value = item.name;
-                     option.textContent = item.name;
-                     if (selectedValue && item.name === selectedValue) {
-                         option.selected = true;
-                         foundSelected = true;
-                     } else if (!selectedValue && item.name === currentSelection) {
-                         option.selected = true;
-                         foundSelected = true;
-                     }
-                     selectElement.appendChild(option);
-                });
-                if (!foundSelected) {
-                     selectElement.value = "";
-                }
-                 selectElement.disabled = false; 
-            }).catch(error => {
-                 console.error(`Error populating dropdown ${elementId} from ${collectionPath}:`, error);
-                 selectElement.innerHTML = `<option value="">Error al cargar ${itemName}s</option>`;
-                 selectElement.disabled = true;
-                 throw error; 
-            });
-        }
-
-        async function handleRegister(e) {
-             e.preventDefault();
-             console.log("Attempting registration...");
-             const email = document.getElementById('registerEmailInput').value;
-             const password = document.getElementById('registerPasswordInput').value;
-             const confirmPassword = document.getElementById('confirmPasswordInput').value;
-             registerMessage.textContent = '';
-             if (password !== confirmPassword) { registerMessage.textContent = 'Las contraseñas no coinciden.'; return; }
-             if (password.length < 6) { registerMessage.textContent = 'La contraseña debe tener al menos 6 caracteres.'; return; }
-             const registerButton = e.target.querySelector('button[type="submit"]'); registerButton.disabled = true; registerButton.textContent = 'Registrando...';
-             try {
-                 const userCredential = await createUserWithEmailAndPassword(auth, email, password); const user = userCredential.user;
-                 const userDocRef = doc(db, "users", user.uid);
-                 await setDoc(userDocRef, { email: user.email, role: 'user', createdAt: new Date() });
-             } catch (error) {
-                 console.error("Registration error:", error.code, error.message);
-                 if (error.code === 'auth/email-already-in-use') registerMessage.textContent = 'El correo ya está registrado.';
-                 else if (error.code === 'auth/weak-password') registerMessage.textContent = 'Contraseña débil.';
-                 else registerMessage.textContent = `Error: ${error.message}`;
-                  registerButton.disabled = false; registerButton.textContent = 'Registrar';
-             }
-        }
-
-        async function handleLogin(e) {
-            e.preventDefault(); console.log("Attempting login...");
-            const email = document.getElementById('emailInput').value; const password = document.getElementById('passwordInput').value; authMessage.textContent = '';
-            const loginButton = e.target.querySelector('button[type="submit"]'); loginButton.disabled = true; loginButton.textContent = 'Ingresando...';
+        // --- Auth Functions ---
+        const handleLogin = async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('loginEmail').value;
+            const password = document.getElementById('loginPassword').value;
             try {
+                // Feedback visual simple
+                const btn = e.target.querySelector('button');
+                const originalText = btn.textContent;
+                btn.textContent = 'Entrando...';
+                btn.disabled = true;
+                
                 await signInWithEmailAndPassword(auth, email, password);
+                // El onAuthStateChanged manejará la redirección
             } catch (error) {
-                console.error("Login error:", error.code, error.message);
-                 if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') authMessage.textContent = 'Correo o contraseña incorrectos.';
-                 else if (error.code === 'auth/invalid-email') authMessage.textContent = 'Formato de correo inválido.';
-                 else authMessage.textContent = `Error: ${error.message}`;
-                 loginButton.disabled = false; loginButton.textContent = 'Ingresar';
+                showModal('Error de Inicio de Sesión', `Error: ${error.message}`);
+                const btn = e.target.querySelector('button');
+                btn.textContent = 'Entrar';
+                btn.disabled = false;
             }
-        }
+        };
 
-        async function handleLogout() {
-             console.log("Attempting logout...");
-             window.isLoggingOut = true; 
-             try {
-                 await signOut(auth);
-                 console.log("User signed out successfully.");
-             } catch (error) {
-                 console.error("Logout error:", error);
-                 window.isLoggingOut = false; 
-                 window.showModal("Error", "No se pudo cerrar la sesión. Intenta de nuevo.");
-             }
-        }
-
-        function cleanupListeners() {
-            console.log(`Cleaning up ${activeListeners.length} active listener(s)...`);
-            activeListeners.forEach(unsubscribe => {
-                if (typeof unsubscribe === 'function') {
-                    try { unsubscribe(); } catch (e) { console.warn("Error unsubscribing listener:", e); }
-                } else { console.warn("Attempted to unsubscribe non-function:", unsubscribe); }
-            });
-            activeListeners = []; 
-            console.log("Listeners cleaned up.");
-        }
-
-        function showLoginView() {
-            console.log("Showing Login View"); window.isLoggingOut = false; 
-            if (floatingControls) floatingControls.classList.add('hidden');
-            mainContent.classList.add('hidden'); registerContent.classList.add('hidden'); loginContent.classList.remove('hidden');
-            loginForm?.reset(); if(authMessage) authMessage.textContent = '';
-            const loginButton = loginForm?.querySelector('button[type="submit"]'); if(loginButton){ loginButton.disabled = false; loginButton.textContent = 'Ingresar'; }
-            document.body.classList.remove('catalogo-active'); document.body.style.removeProperty('--catalogo-bg-image');
-        }
-
-        function showRegisterView() {
-            console.log("Showing Register View"); if (floatingControls) floatingControls.classList.add('hidden');
-            mainContent.classList.add('hidden'); loginContent.classList.add('hidden'); registerContent.classList.remove('hidden');
-            registerForm?.reset(); if(registerMessage) registerMessage.textContent = '';
-            const registerButton = registerForm?.querySelector('button[type="submit"]'); if(registerButton){ registerButton.disabled = false; registerButton.textContent = 'Registrar'; }
-        }
-
-        async function preloadAllData() {
-              const startTime = performance.now();
-              const collectionsToPreload = [
-                  { path: `artifacts/${appId}/users/${userId}/inventario`, name: 'Inventario' },
-                  { path: `artifacts/${appId}/users/${userId}/rubros`, name: 'Rubros' },
-                  { path: `artifacts/${appId}/users/${userId}/segmentos`, name: 'Segmentos' },
-                  { path: `artifacts/${appId}/users/${userId}/marcas`, name: 'Marcas' },
-                  { path: `artifacts/${'ventas-9a210'}/public/data/clientes`, name: 'Clientes (Público)' },
-                  { path: `artifacts/${'ventas-9a210'}/public/data/sectores`, name: 'Sectores (Público)' },
-                  { path: `artifacts/${'ventas-9a210'}/public/data/config/obsequio`, name: 'Config Obsequio (Público)' } 
-              ];
-              console.log("Preloading data for offline use...");
-              const results = await Promise.allSettled(
-                  collectionsToPreload.map(col => {
-                      if (col.path.includes('/config/obsequio')) { 
-                           const docRef = doc(db, col.path);
-                           return getDoc(docRef).catch(err => ({ failed: true, reason: err }));
-                      } else { 
-                          return getDocs(collection(db, col.path)).catch(err => ({ failed: true, reason: err }));
-                      }
-                  })
-              );
-              results.forEach((result, index) => {
-                  const colInfo = collectionsToPreload[index];
-                  if (result.status !== 'fulfilled' || (result.value && result.value.failed)) {
-                      console.warn(` - ${colInfo.name}: Preload failed.`);
-                  }
-              });
-              const endTime = performance.now(); console.log(`Preloading finished in ${(endTime - startTime).toFixed(0)} ms.`);
-        }
-
-        async function showMainView(currentUser) {
-            userId = currentUser.uid; console.log("Showing Main View for user:", userId);
-            const userDocRef = doc(db, "users", userId); console.log("Fetching user role...");
+        const handleRegister = async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('registerEmail').value;
+            const password = document.getElementById('registerPassword').value;
             try {
-                const userDoc = await getDoc(userDocRef);
-                if (userDoc.exists()) { window.userRole = userDoc.data().role || 'user'; } 
-                else { console.warn(`User doc ${userId} not found. Creating default.`); await setDoc(userDocRef, { email: currentUser.email, role: 'user', createdAt: new Date() }, { merge: true }); window.userRole = 'user'; } 
-            } catch (error) { console.error("CRITICAL: Error fetching/setting user role:", error); window.showModal("Error Crítico", "No se pudo verificar tu rol."); window.userRole = 'user'; } 
-            console.log("User role:", window.userRole);
-
-            loginContent.classList.add('hidden'); registerContent.classList.add('hidden');
-            mainContent.innerHTML = `<div class="p-4 flex items-center justify-center min-h-full"><div class="bg-white/90 p-8 rounded-lg shadow-xl text-center"><h2 class="text-2xl font-bold animate-pulse">Sincronizando...</h2></div></div>`;
-            mainContent.classList.remove('hidden'); if (floatingControls) floatingControls.classList.add('hidden');
-
-             console.log("Starting data preload..."); try { await preloadAllData(); } catch (preloadError) { console.error("Error preloadAllData:", preloadError); } console.log("Preload attempted. Initializing modules...");
-
-            const dependencies = { db, userId, appId, mainContent, floatingControls, activeListeners, userRole: window.userRole, showMainMenu, showModal: window.showModal, showAddItemModal, populateDropdown, collection, onSnapshot, doc, getDoc, addDoc, setDoc, deleteDoc, getDocs, writeBatch, runTransaction, query, where, orderBy, limit, startAfter, firebaseConfig };
-            let initSuccess = true;
-             const modules = [
-                { name: 'Data', init: window.initData },
-                { name: 'Admin', init: window.initAdmin },
-                { name: 'Inventario', init: window.initInventario }, 
-                { name: 'Catalogo', init: window.initCatalogo },
-                { name: 'Clientes', init: window.initClientes },
-                { name: 'Ventas', init: window.initVentas },
-                { name: 'Obsequios', init: window.initObsequios }
-             ];
-             modules.forEach(m => {
-                 if (typeof m.init === 'function') { 
-                     try {
-                         m.init(dependencies);
-                         console.log(`${m.name} initialized.`);
-                     } catch (e) {
-                         console.error(`Error initializing ${m.name}:`, e);
-                         initSuccess = false;
-                     }
-                 } else {
-                     console.error(`CRITICAL: ${m.name} init function not found.`); 
-                     initSuccess = false;
-                 }
-             });
-
-
-            if (!initSuccess) { window.showModal("Error Crítico", "Algunos componentes no pudieron inicializarse. Revisa la consola."); console.error("App initialization failed."); }
-            else { console.log("Modules initialized successfully. Showing main menu."); showMainMenu(); }
-        }
-
-         async function handleOfflineToggle() {
-            const toggle = document.getElementById('offline-toggle');
-            const toggleText = document.getElementById('offline-toggle-text');
-            const isManualOffline = toggle.checked;
-
-            if (isManualOffline) {
-                try {
-                    await disableNetwork(db);
-                    localStorage.setItem('manualOfflineMode', 'true');
-                    toggleText.textContent = 'Offline (Manual)';
-                    toggleText.classList.remove('text-green-700');
-                    toggleText.classList.add('text-red-700');
-                    if (connectionStatusEl) {
-                         connectionStatusEl.textContent = "OFFLINE (Manual)";
-                         connectionStatusEl.className = 'block text-xs font-bold px-3 py-2 rounded-full shadow-lg bg-red-400 text-red-900';
-                    }
-                    _showModal('Modo Offline Activado', 'La aplicación ahora trabajará sin conexión. Cualquier dato o actualización no se cargarán hasta que te vuelvas a conectar manualmente.', null, 'Entendido');
-                    console.log("Firestore network disabled manually.");
-                } catch (err) {
-                    console.error("Error disabling Firestore network:", err);
-                    _showModal('Error', 'No se pudo desactivar la conexión.');
-                    toggle.checked = false; 
-                }
-            } else {
-                try {
-                    await enableNetwork(db);
-                    localStorage.removeItem('manualOfflineMode');
-                    toggleText.textContent = 'Online (Manual)';
-                    toggleText.classList.remove('text-red-700');
-                    toggleText.classList.add('text-green-700');
-                    console.log("Firestore network enabled manually.");
-                    _showModal('Modo Online Activado', 'La aplicación intentará conectarse y sincronizar datos.', null, 'Entendido');
-                } catch (err) {
-                    console.error("Error enabling Firestore network:", err);
-                    _showModal('Error', 'No se pudo reactivar la conexión.');
-                    toggle.checked = true; 
-                }
+                await createUserWithEmailAndPassword(auth, email, password);
+            } catch (error) {
+                showModal('Error de Registro', error.message);
             }
-        }
+        };
 
-        window.showMainMenu = function() {
-            console.log("Showing Main Menu"); cleanupListeners(); 
-
-            const connectionCheckRef = collection(db, `artifacts/${appId}/users/${userId}/inventario`);
-            const unsubscribeStatus = onSnapshot(connectionCheckRef, { includeMetadataChanges: true }, (snapshot) => {
-                if (!connectionStatusEl) return;
-                const isManualOffline = localStorage.getItem('manualOfflineMode') === 'true';
-                if (isManualOffline) {
-                     connectionStatusEl.textContent = "OFFLINE (Manual)";
-                     connectionStatusEl.className = 'block text-xs font-bold px-3 py-2 rounded-full shadow-lg bg-red-400 text-red-900';
-                } else {
-                    const isOffline = snapshot.metadata.fromCache;
-                    connectionStatusEl.textContent = isOffline ? "SIN CONEXIÓN" : "EN LÍNEA";
-                    connectionStatusEl.className = `block text-xs font-bold px-3 py-2 rounded-full shadow-lg transition-colors duration-300 ${isOffline ? 'bg-yellow-400 text-yellow-900 animate-pulse' : 'bg-green-400 text-green-900'}`;
-                }
-            }, (error) => {
-                console.warn("Connection status listener error:", error.code);
-                const isManualOffline = localStorage.getItem('manualOfflineMode') === 'true';
-                if (!isManualOffline && connectionStatusEl && (!window.isLoggingOut || error.code !== 'permission-denied')) {
-                     connectionStatusEl.textContent = "Error Conexión";
-                     connectionStatusEl.className = 'block text-xs font-bold px-3 py-2 rounded-full shadow-lg bg-red-400 text-red-900';
-                } else if (!isManualOffline) {
-                     connectionStatusEl.textContent = "DESCONECTADO";
-                     connectionStatusEl.className = 'block text-xs font-bold px-3 py-2 rounded-full shadow-lg bg-gray-400 text-gray-900';
-                }
-            });
-            activeListeners.push(unsubscribeStatus);
-
-            if (floatingControls) floatingControls.classList.remove('hidden'); else console.error("floatingControls not found in showMainMenu.");
-            mainContent.classList.remove('hidden');
-
-            const isAdmin = window.userRole === 'admin';
-            mainContent.innerHTML = `
-                <div class="p-4 pt-8"> <div class="container mx-auto max-w-lg"> <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl text-center">
-                    <h1 class="text-3xl font-bold text-gray-800 mb-6">Menú Principal</h1>
-                    <div id="main-menu-buttons" class="space-y-4">
-                        <button id="inventarioBtn" class="w-full px-6 py-3 bg-blue-500 text-white rounded-lg shadow-md hover:bg-blue-600">Inventario</button>
-                        <button id="clientesBtn" class="w-full px-6 py-3 bg-indigo-500 text-white rounded-lg shadow-md hover:bg-indigo-600">Clientes</button>
-                        <button id="ventasBtn" class="w-full px-6 py-3 bg-green-500 text-white rounded-lg shadow-md hover:bg-green-600">Ventas</button>
-                        ${!isAdmin ? `<button id="obsequiosBtn" class="w-full px-6 py-3 bg-cyan-500 text-white rounded-lg shadow-md hover:bg-cyan-600">Obsequios</button>` : ''}
-                        <button id="catalogoBtn" class="w-full px-6 py-3 bg-purple-500 text-white rounded-lg shadow-md hover:bg-purple-600">Catálogo</button>
-                        <button id="profileAdminBtn" class="w-full px-6 py-3 bg-gray-700 text-white rounded-lg shadow-md hover:bg-gray-800">${isAdmin ? 'Admin Panel' : 'Mi Perfil'}</button>
-                        ${isAdmin ? `<button id="dataBtn" class="w-full px-6 py-3 bg-red-700 text-white rounded-lg shadow-md hover:bg-red-800">Data</button>` : ''}
-                    </div>
-                    <div class="mt-8 pt-4 border-t flex items-center justify-center space-x-3">
-                         <span id="offline-toggle-text" class="text-sm font-medium text-gray-700">Online (Manual)</span>
-                         <input type="checkbox" id="offline-toggle"/>
-                         <label for="offline-toggle" id="offline-toggle-label">Toggle</label>
-                    </div>
-                </div> </div> </div>
-            `;
-
-            const offlineToggle = document.getElementById('offline-toggle');
-            const offlineToggleText = document.getElementById('offline-toggle-text');
-            if (offlineToggle && offlineToggleText) {
-                const isManualOffline = localStorage.getItem('manualOfflineMode') === 'true';
-                offlineToggle.checked = isManualOffline;
-                if (isManualOffline) {
-                    offlineToggleText.textContent = 'Offline (Manual)';
-                    offlineToggleText.classList.remove('text-green-700');
-                    offlineToggleText.classList.add('text-red-700');
-                } else {
-                    offlineToggleText.textContent = 'Online (Manual)';
-                    offlineToggleText.classList.remove('text-red-700');
-                    offlineToggleText.classList.add('text-green-700');
-                }
-                offlineToggle.addEventListener('change', handleOfflineToggle);
+        const handleLogout = async () => {
+             try {
+                await signOut(auth);
+                window.location.reload(); // Recargar para limpiar estado
+            } catch (error) {
+                console.error("Logout error", error);
+                showModal('Error', 'No se pudo cerrar sesión');
             }
+        };
 
-            const navigateTo = (viewFunction) => {
-                const fName = Object.keys(window).find(key => window[key] === viewFunction); console.log(`Navigating to: ${fName || 'Unknown'}`);
-                if (typeof viewFunction === 'function') { if (floatingControls) floatingControls.classList.add('hidden'); try { viewFunction(); } catch (navError) { console.error(`Error navigating:`, navError); window.showModal("Error Navegación", `Error: ${navError.message}`); showMainMenu(); } }
-                else { console.error("Target is not function:", viewFunction); window.showModal("Error Interno", `Acción no disponible.`); showMainMenu(); }
+        // --- View Switching ---
+        const showLoginView = () => {
+            authContainer.classList.remove('hidden');
+            appContainer.classList.add('hidden');
+            loginView.classList.remove('hidden');
+            registerView.classList.add('hidden');
+        };
+
+        const showRegisterView = () => {
+            loginView.classList.add('hidden');
+            registerView.classList.remove('hidden');
+        };
+
+        const showMainView = async (user) => {
+            authContainer.classList.add('hidden');
+            appContainer.classList.remove('hidden');
+            userEmailDisplay.textContent = user.email;
+
+            // Rol básico (expandible en el futuro)
+            const userRole = 'admin'; 
+
+            // Initialize Modules - PASANDO EL NUEVO APP ID
+            const dependencies = {
+                db, 
+                auth, 
+                userId: user.uid, 
+                userRole, 
+                appId, // <--- Este es el ID nuevo 'dist-castillo-sales'
+                mainContent, 
+                floatingControls,
+                showMainMenu: toggleMainMenu,
+                showModal,
+                showAddItemModal: (title, fields, onSave) => { console.log("Placeholder AddItem"); }, // Placeholder si algún módulo lo requiere antes de ser cargado
+                // Firestore helpers
+                collection, doc, addDoc, setDoc, getDoc, getDocs, updateDoc, deleteDoc,
+                query, where, onSnapshot, writeBatch, runTransaction, limit, orderBy, startAfter,
+                populateDropdown
             };
 
-            if (window.showInventarioSubMenu) document.getElementById('inventarioBtn')?.addEventListener('click', () => navigateTo(window.showInventarioSubMenu)); else console.error("showInventarioSubMenu not found");
-            if (window.showClientesSubMenu) document.getElementById('clientesBtn')?.addEventListener('click', () => navigateTo(window.showClientesSubMenu)); else console.error("showClientesSubMenu not found");
-            if (window.showVentasView) document.getElementById('ventasBtn')?.addEventListener('click', () => navigateTo(window.showVentasView)); else console.error("showVentasView not found");
-            if (window.showGestionObsequiosView) document.getElementById('obsequiosBtn')?.addEventListener('click', () => navigateTo(window.showGestionObsequiosView)); 
-            if (window.showCatalogoSubMenu) document.getElementById('catalogoBtn')?.addEventListener('click', () => navigateTo(window.showCatalogoSubMenu)); else console.error("showCatalogoSubMenu not found");
-            if (window.showAdminOrProfileView) document.getElementById('profileAdminBtn')?.addEventListener('click', () => navigateTo(window.showAdminOrProfileView)); else console.error("showAdminOrProfileView not found");
-            if (window.showDataView) document.getElementById('dataBtn')?.addEventListener('click', () => navigateTo(window.showDataView)); 
-        }
+            // Iniciar módulos
+            // Nota: data.js usualmente corre solo pero si tiene init lo llamamos
+            if (window.initInventario) window.initInventario(dependencies);
+            if (window.initClientes) window.initClientes(dependencies);
+            if (window.initVentas) window.initVentas(dependencies);
+            if (window.initObsequios) window.initObsequios(dependencies);
+            if (window.initCatalogo) window.initCatalogo(dependencies);
+            if (window.initAdmin) window.initAdmin(dependencies);
 
-        async function initializeAppAndListeners() {
-            console.log("Initializing Firebase app...");
-            try {
-                const app = initializeApp(firebaseConfig);
-                db = getFirestore(app); auth = getAuth(app); setLogLevel('warn');
-                console.log("Firebase App, Firestore, Auth initialized.");
+            // Cargar vista por defecto
+            loadModule('nueva-venta');
+        };
 
-                const isManualOffline = localStorage.getItem('manualOfflineMode') === 'true';
-                if (isManualOffline) {
-                    await disableNetwork(db);
-                    console.log("Starting in manual offline mode.");
-                } else {
-                    await enableNetwork(db); 
-                    console.log("Starting in online mode.");
+        // --- Menu Logic ---
+        const toggleMainMenu = () => {
+            mainMenuOverlay.classList.toggle('hidden');
+        };
+
+        mainMenuBtn.addEventListener('click', toggleMainMenu);
+        closeMenuBtn.addEventListener('click', toggleMainMenu);
+
+        document.querySelectorAll('.menu-item').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const action = btn.dataset.action;
+                loadModule(action);
+                toggleMainMenu();
+            });
+        });
+
+        const loadModule = (moduleName) => {
+            // Limpiar contenido principal
+            mainContent.innerHTML = '';
+            // Limpiar botones flotantes extra (mantener el menú)
+            const extraBtns = floatingControls.querySelectorAll('.module-btn');
+            extraBtns.forEach(b => b.remove());
+
+            switch(moduleName) {
+                case 'nueva-venta':
+                    if (window.ventasModule) window.ventasModule.renderNuevaVenta();
+                    else mainContent.innerHTML = '<p class="p-4 text-center text-gray-500">Cargando módulo Ventas...</p>';
+                    break;
+                case 'inventario':
+                     if (window.inventarioModule) window.inventarioModule.renderInventario();
+                    break;
+                case 'clientes':
+                    if (window.clientesModule) window.clientesModule.renderClientes();
+                    break;
+                case 'obsequios':
+                    if (window.obsequiosModule) window.obsequiosModule.renderObsequios();
+                    break;
+                case 'catalogo':
+                    if (window.catalogoModule) window.catalogoModule.renderCatalogo();
+                    break;
+                case 'admin':
+                    if (window.adminModule) window.adminModule.renderAdmin();
+                    break;
+                default:
+                    mainContent.innerHTML = '<p class="p-4 text-center text-red-500">Módulo no encontrado.</p>';
+            }
+        };
+
+        // --- Modal System ---
+        window.showModal = (title, content, onConfirm = null, confirmText = 'Aceptar', showCancel = false) => {
+            modalTitle.textContent = title;
+            modalContent.innerHTML = '';
+            
+            if (typeof content === 'string') {
+                modalContent.innerHTML = `<p class="text-gray-700 leading-relaxed">${content}</p>`;
+            } else {
+                modalContent.appendChild(content);
+            }
+
+            modalConfirmBtn.textContent = confirmText;
+            modalConfirmBtn.onclick = null; // Limpiar listeners anteriores de manera simple
+
+            // Cloning para asegurar limpieza de eventos
+            const newConfirm = modalConfirmBtn.cloneNode(true);
+            modalConfirmBtn.parentNode.replaceChild(newConfirm, modalConfirmBtn);
+            
+            newConfirm.addEventListener('click', () => {
+                if (onConfirm) onConfirm();
+                modalContainer.classList.add('hidden');
+            });
+
+            if (showCancel) {
+                modalCancelBtn.classList.remove('hidden');
+                const newCancel = modalCancelBtn.cloneNode(true);
+                modalCancelBtn.parentNode.replaceChild(newCancel, modalCancelBtn);
+                newCancel.addEventListener('click', () => {
+                     modalContainer.classList.add('hidden');
+                });
+            } else {
+                modalCancelBtn.classList.add('hidden');
+            }
+
+            modalContainer.classList.remove('hidden');
+        };
+
+        // Helper for Dropdowns (Dependencia común)
+        const populateDropdown = (selectId, options, valueKey = 'id', textKey = 'name', defaultText = 'Seleccionar...') => {
+            const select = document.getElementById(selectId);
+            if (!select) return;
+            select.innerHTML = `<option value="">${defaultText}</option>`;
+            options.forEach(opt => {
+                const opEl = document.createElement('option');
+                opEl.value = opt[valueKey];
+                opEl.textContent = opt[textKey];
+                select.appendChild(opEl);
+            });
+        };
+
+        // --- Initialization ---
+        const initializeAppAndListeners = async () => {
+             onAuthStateChanged(auth, (user) => {
+                if (user) { 
+                    showMainView(user).catch(err => {
+                        console.error("CRITICAL: Error showMainView:", err);
+                        window.showModal("Error Crítico", "Error al cargar app. Recarga la página.");
+                    });
                 }
-
-            } catch (initError) { console.error("CRITICAL: Firebase init failed:", initError); alert("Error Crítico: No se pudo conectar. Recarga."); return; }
-
-            try { await enableIndexedDbPersistence(db); console.log("Offline persistence enabled."); }
-            catch (err) { if(err.code=='failed-precondition')console.warn("Persistence failed: Multiple tabs open?"); else if(err.code=='unimplemented')console.warn("Persistence failed: Browser not supported?"); else console.error("Persistence error:", err); }
-
-             console.log("Attaching Auth state listener...");
-            onAuthStateChanged(auth, (user) => {
-                console.log("Auth state changed. User:", user ? user.uid : 'null');
-                cleanupListeners(); 
-                if (user) { showMainView(user).catch(err => { console.error("CRITICAL: Error showMainView:", err); window.showModal("Error Crítico", "Error al cargar app. Recarga."); }); }
                 else { showLoginView(); }
             });
             console.log("Auth listener attached.");
         }
 
         document.addEventListener('DOMContentLoaded', async () => {
-            console.log("DOM fully loaded and parsed. Initializing app...");
+            console.log("DOM fully loaded. Initializing app...");
             await initializeAppAndListeners(); 
+            
             loginForm?.addEventListener('submit', handleLogin);
             registerForm?.addEventListener('submit', handleRegister);
-            document.getElementById('logoutBtn')?.addEventListener('click', () => { window.showModal('Confirmar Cierre de Sesión', '¿Estás seguro?', handleLogout, 'Sí, Cerrar Sesión'); });
+            
+            document.getElementById('logoutBtn')?.addEventListener('click', () => {
+                window.showModal('Confirmar Cierre de Sesión', '¿Estás seguro que deseas salir?', handleLogout, 'Sí, Cerrar Sesión', true);
+            });
+            
             document.getElementById('goToRegisterBtn')?.addEventListener('click', showRegisterView);
             document.getElementById('goToLoginBtn')?.addEventListener('click', showLoginView);
+
+            // Service Worker Registration
             if ('serviceWorker' in navigator) {
                 try {
                     const reg = await navigator.serviceWorker.register('./service-worker.js');
