@@ -8,7 +8,6 @@
     let _inventarioListenerUnsubscribe = null;
     let _marcasCache = null;
 
-    // Cache para ordenamiento y filtros
     let _segmentoOrderCache = null;
     let _marcaOrderCacheBySegment = {};
 
@@ -37,7 +36,7 @@
         _writeBatch = dependencies.writeBatch;
         _getDoc = dependencies.getDoc;
 
-        // Limpieza de listeners previos para evitar duplicados en memoria
+        // Limpieza de listeners previos
         if (_activeListeners && _activeListeners.inventario) {
             _activeListeners.inventario();
             _activeListeners.inventario = null;
@@ -47,29 +46,44 @@
         setupInventarioListener();
     };
 
-    // --- FUNCIÓN RECUPERADA PARA COMPATIBILIDAD CON EL MENÚ ---
+    // --- CORRECCIÓN CLAVE: FUNCIÓN DE RE-ENTRADA ---
     window.showInventarioSubMenu = function() {
         console.log("Accediendo a SubMenú de Inventario...");
-        // Verificamos si la vista se puede renderizar
-        if (typeof renderInventarioView === 'function') {
-            // Si el módulo ya se inicializó (tenemos _db), renderizamos
-            if (_db) {
-                renderInventarioView();
+        
+        if (typeof renderInventarioView === 'function' && _db) {
+            // 1. Renderizamos la estructura visual
+            renderInventarioView();
+
+            // 2. Verificamos si el listener de datos está vivo
+            // Si vienes de otro módulo (ej: Ventas), el listener se borró. Hay que revivirlo.
+            if (!_activeListeners || !_activeListeners.inventario) {
+                console.log("⚠️ Listener inactivo. Reiniciando conexión a DB...");
+                setupInventarioListener();
             } else {
-                console.warn("Intento de abrir inventario sin inicializar. Esperando inicialización...");
+                // 3. Si ya estaba vivo, forzamos que pinte los datos que ya tiene en memoria
+                // para quitar el spinner de "Cargando..." inmediatamente
+                console.log("✅ Listener activo. Renderizando caché.");
+                renderInventarioList();
             }
+        } else {
+            console.warn("Intento de abrir inventario sin inicializar (Falta _db).");
+            // Si falla mucho, podrías intentar llamar a un reload o alertar al usuario
+            if(window.location.hash !== '#inventario') window.location.hash = '#inventario';
         }
     };
 
     function setupInventarioListener() {
-        // Escucha en tiempo real la colección de inventario del usuario/admin actual
         const invPath = `artifacts/${_appId}/users/${_userId}/inventario`;
         const q = _query(_collection(_db, invPath));
+
+        // Si ya existía una suscripción, asegúrate de limpiarla antes de crear otra
+        if (_inventarioListenerUnsubscribe) {
+            _inventarioListenerUnsubscribe();
+        }
 
         _inventarioListenerUnsubscribe = _onSnapshot(q, (snapshot) => {
             _inventarioCache = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             
-            // Extraer marcas únicas para el filtro dinámico
             const marcas = new Set();
             _inventarioCache.forEach(p => {
                 if (p.marca) marcas.add(p.marca);
@@ -79,20 +93,18 @@
             renderInventarioList();
         }, (error) => {
             console.error("Error escuchando inventario:", error);
-            _mainContent.innerHTML = `<div class="p-4 text-red-500">Error cargando inventario: ${error.message}</div>`;
+            if(_mainContent) _mainContent.innerHTML = `<div class="p-4 text-red-500">Error cargando inventario: ${error.message}</div>`;
         });
 
+        // Registrar en el gestor global de listeners
         if (_activeListeners) {
             _activeListeners.inventario = _inventarioListenerUnsubscribe;
         }
     }
 
     function renderInventarioView() {
-        // Renderiza el esqueleto principal de la vista (Buscador, Filtros, Botones)
-        
         let actionButtons = '';
         if (_userRole === 'admin') {
-            // Botones exclusivos de ADMIN
             actionButtons = `
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-2">
                     <button onclick="window.inventarioModule.showAddCategoryModal()" class="bg-purple-600 hover:bg-purple-700 text-white p-2 rounded shadow transition">➕ Categoría</button>
@@ -101,7 +113,6 @@
                 </div>
             `;
         } else {
-            // Botones exclusivos de USUARIO (Vendedor)
             actionButtons = `
                 <button onclick="window.inventarioModule.showCargaProductosModal()" class="bg-green-600 hover:bg-green-700 text-white w-full p-3 rounded-lg shadow-lg font-bold flex justify-center items-center gap-2 transition transform active:scale-95">
                     📦 CARGA DE PRODUCTOS
@@ -117,13 +128,11 @@
                 </div>
 
                 <div class="mb-6 bg-white p-5 rounded-xl shadow-sm border border-gray-100">
-                    <!-- Buscador -->
                     <div class="relative mb-4">
                         <span class="absolute left-3 top-3 text-gray-400">🔍</span>
-                        <input type="text" id="invSearch" placeholder="Buscar por nombre o marca..." class="w-full pl-10 p-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition">
+                        <input type="text" id="invSearch" placeholder="Buscar por nombre o marca..." class="w-full pl-10 p-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition" value="${_lastFilters.searchTerm || ''}">
                     </div>
                     
-                    <!-- Filtros -->
                     <div class="grid grid-cols-2 gap-3 mb-3">
                         <select id="filterRubro" class="p-2 border border-gray-200 rounded-lg bg-gray-50 text-sm focus:border-blue-500 outline-none">
                             <option value="">Todos los Rubros</option>
@@ -136,13 +145,11 @@
                         <option value="">Todas las Marcas</option>
                     </select>
 
-                    <!-- Área de Acciones -->
                     <div class="pt-4 border-t border-gray-100">
                         ${actionButtons}
                     </div>
                 </div>
 
-                <!-- Lista de Productos -->
                 <div id="inventarioList" class="space-y-3">
                     <div class="flex flex-col items-center justify-center py-12 text-gray-400">
                         <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mb-2"></div>
@@ -152,7 +159,6 @@
             </div>
         `;
 
-        // Listeners para filtros (vinculados al objeto _lastFilters para persistencia)
         const invSearch = document.getElementById('invSearch');
         if(invSearch) invSearch.addEventListener('input', (e) => { _lastFilters.searchTerm = e.target.value; renderInventarioList(); });
         
@@ -165,24 +171,22 @@
         const filterMarca = document.getElementById('filterMarca');
         if(filterMarca) filterMarca.addEventListener('change', (e) => { _lastFilters.marca = e.target.value; renderInventarioList(); });
 
-        _showMainMenu();
+        if(_showMainMenu) _showMainMenu();
     }
 
     function renderInventarioList() {
         const container = document.getElementById('inventarioList');
         if (!container) return;
 
-        // Referencias a los selects para poblarlos si están vacíos
         const rubroSelect = document.getElementById('filterRubro');
         const segmentoSelect = document.getElementById('filterSegmento');
         const marcaSelect = document.getElementById('filterMarca');
 
-        const term = _lastFilters.searchTerm.toLowerCase();
+        const term = (_lastFilters.searchTerm || '').toLowerCase();
         const fRubro = _lastFilters.rubro;
         const fSeg = _lastFilters.segmento;
         const fMarca = _lastFilters.marca;
 
-        // Filtrado en memoria
         let filtered = _inventarioCache.filter(p => {
             const matchText = (p.name || '').toLowerCase().includes(term) || 
                               (p.marca || '').toLowerCase().includes(term);
@@ -192,14 +196,11 @@
             return matchText && matchRubro && matchSeg && matchMarca;
         });
         
-        // Ordenamiento por nombre
         filtered.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 
         const countEl = document.getElementById('totalItemsCount');
         if(countEl) countEl.textContent = filtered.length;
 
-        // Poblar Selects de Filtros (Solo si no tienen opciones cargadas para evitar parpadeo)
-        // Verificamos si los elementos existen en el DOM antes de manipularlos
         if (rubroSelect && rubroSelect.options.length <= 1) {
             const rubros = [...new Set(_inventarioCache.map(i => i.rubro).filter(Boolean))].sort();
             rubros.forEach(r => { rubroSelect.innerHTML += `<option value="${r}">${r}</option>`; });
@@ -219,19 +220,17 @@
             container.innerHTML = `
                 <div class="flex flex-col items-center justify-center py-10 text-gray-500 bg-gray-50 rounded-lg border border-dashed border-gray-300">
                     <span class="text-2xl mb-2">📦</span>
-                    <span>No se encontraron productos con estos filtros.</span>
+                    <span>No se encontraron productos.</span>
                 </div>`;
             return;
         }
 
-        // Renderizado de tarjetas de producto
         container.innerHTML = filtered.map(p => {
             const stock = p.cantidadUnidades || 0;
             const cajas = Math.floor(stock / (p.unidadesPorCaja || 1));
             const paq = Math.floor((stock % (p.unidadesPorCaja || 1)) / (p.unidadesPorPaquete || 1));
             const und = (stock % (p.unidadesPorCaja || 1)) % (p.unidadesPorPaquete || 1);
             
-            // Formateo del stock visual
             let stockStr = '';
             if (p.unidadesPorCaja > 1) stockStr += `<span class="font-bold text-blue-700">${cajas} CJ</span> `;
             if (p.unidadesPorPaquete > 1) stockStr += `<span class="font-bold text-green-700">${paq} Pq</span> `;
@@ -271,9 +270,7 @@
         }).join('');
     }
 
-    // ====================================================================================
-    //  NUEVA FUNCIONALIDAD: CARGA DE PRODUCTOS (Reemplaza al Ajuste Masivo)
-    // ====================================================================================
+    // --- CARGA DE PRODUCTOS ---
     
     window.inventarioModule = window.inventarioModule || {};
     
@@ -283,7 +280,6 @@
             return;
         }
 
-        // Ordenamos alfabéticamente para que sea fácil encontrar los productos en el listado de carga
         const productosOrdenados = [..._inventarioCache].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 
         const content = `
@@ -296,7 +292,6 @@
                             <ul class="list-disc pl-4 mt-1 space-y-1 text-green-700">
                                 <li>Ingrese <b>SOLO la cantidad que llegó</b> (la que va a sumar).</li>
                                 <li>Deje en <b>0</b> o vacío los productos que no recibieron carga.</li>
-                                <li>Se creará un registro en el historial con fecha y usuario.</li>
                             </ul>
                         </div>
                     </div>
@@ -340,7 +335,6 @@
     async function procesarCargaProductos(productosOriginales) {
         try {
             const batch = _writeBatch(_db);
-            // Referencia a la colección de historial
             const historialRef = _collection(_db, `artifacts/${_appId}/historial_cargas`);
             
             const itemsCargados = []; 
@@ -350,30 +344,26 @@
                 const input = document.getElementById(`carga_input_${p.id}`);
                 if (!input) continue;
 
-                // Parseamos el input. Si está vacío o es inválido, es 0.
                 const cantidadCargada = parseInt(input.value) || 0;
 
-                // Solo procesamos si hay una carga positiva real
                 if (cantidadCargada > 0) {
                     const cantidadAnterior = p.cantidadUnidades || 0;
-                    const nuevaCantidadTotal = cantidadAnterior + cantidadCargada; // SUMA SIMPLE
+                    const nuevaCantidadTotal = cantidadAnterior + cantidadCargada;
 
                     const prodRef = _doc(_db, `artifacts/${_appId}/users/${_userId}/inventario`, p.id);
                     
-                    // Actualizamos el inventario
                     batch.update(prodRef, { 
                         cantidadUnidades: nuevaCantidadTotal,
-                        fechaUltimaCarga: new Date() // Opcional: marca de tiempo en el producto
+                        fechaUltimaCarga: new Date()
                     });
                     
                     hayCambios = true;
 
-                    // Preparamos el detalle para el historial
                     itemsCargados.push({
                         productoId: p.id,
                         nombre: p.name,
                         cantidadAnterior: cantidadAnterior,
-                        cantidadCargada: cantidadCargada, // Dato clave
+                        cantidadCargada: cantidadCargada,
                         cantidadNueva: nuevaCantidadTotal,
                         unidadesPorCaja: p.unidadesPorCaja || 1
                     });
@@ -381,86 +371,67 @@
             }
 
             if (!hayCambios) {
-                // Feedback si no escribió nada
                 setTimeout(() => _showModal('Sin Cambios', 'No ingresaste ninguna cantidad para cargar.'), 300);
                 return;
             }
 
-            // Crear el documento de Historial
             await _addDoc(historialRef, {
                 fecha: new Date(),
-                userId: _userId, // Quién hizo la carga
+                userId: _userId,
                 userRole: _userRole,
                 totalItemsCargados: itemsCargados.length,
                 detalles: itemsCargados,
                 tipo: 'Carga Manual (Entrada)'
             });
 
-            // Ejecutar todas las actualizaciones en base de datos
             await batch.commit();
             
-            // Feedback de éxito detallado
             setTimeout(() => {
                 let msg = `<div class="text-center space-y-2">
                     <div class="text-green-600 text-5xl mb-2">✅</div>
                     <p class="font-bold text-gray-800">Carga registrada correctamente</p>
                     <p class="text-sm text-gray-600">Se han actualizado las existencias de <b>${itemsCargados.length}</b> productos.</p>
-                    <p class="text-xs text-gray-400 mt-2">La información se guardó en el historial.</p>
                 </div>`;
                 _showModal('Operación Exitosa', msg);
             }, 300);
 
         } catch (error) {
             console.error("Error en carga de productos:", error);
-            _showModal('Error Crítico', 'Hubo un problema al guardar la carga. Por favor verifica tu conexión. Error: ' + error.message);
+            _showModal('Error Crítico', 'Hubo un problema al guardar la carga. Error: ' + error.message);
         }
     }
 
-
-    // ====================================================================================
-    //  FUNCIONES DE ADMINISTRACIÓN Y LEGADO (Mantenidas del original)
-    // ====================================================================================
-
+    // Funciones Admin
     window.inventarioModule.editProducto = function(id) {
         const p = _inventarioCache.find(x => x.id === id);
         if(!p) return;
-        if(window.showAddItemModal) {
-            window.showAddItemModal(p); // Abre modal de edición (reutiliza el de crear)
-        } else {
-            console.error("Función showAddItemModal no encontrada");
-        }
+        if(window.showAddItemModal) window.showAddItemModal(p);
     };
 
     window.inventarioModule.deleteProducto = async function(id) {
         if(_userRole !== 'admin') return;
-        _showModal('Eliminar Producto', '¿Estás seguro de eliminar este producto del inventario permanentemente?', async () => {
+        _showModal('Eliminar Producto', '¿Estás seguro?', async () => {
             try {
                 await _deleteDoc(_doc(_db, `artifacts/${_appId}/users/${_userId}/inventario`, id));
-                // El listener actualizará la UI automáticamente
             } catch (e) {
-                _showModal('Error', 'No se pudo eliminar: ' + e.message);
+                _showModal('Error', e.message);
             }
         });
     };
 
-    // Función Admin: Crear nueva categoría
     window.inventarioModule.showAddCategoryModal = function() {
         if (_userRole !== 'admin') return;
         const content = `
             <div class="space-y-4 text-left">
                 <div>
-                    <label class="block text-sm font-bold text-gray-700 mb-1">Tipo de Maestro</label>
-                    <select id="newCatType" class="w-full p-2 border rounded bg-gray-50 focus:ring-2 focus:ring-blue-500">
-                        <option value="rubros">Rubro (Categoría Principal)</option>
-                        <option value="segmentos">Segmento (Sub-categoría)</option>
-                    </select>
+                    <label class="block text-sm font-bold text-gray-700 mb-1">Tipo</label>
+                    <select id="newCatType" class="w-full p-2 border rounded bg-gray-50"><option value="rubros">Rubro</option><option value="segmentos">Segmento</option></select>
                 </div>
                 <div>
                     <label class="block text-sm font-bold text-gray-700 mb-1">Nombre</label>
-                    <input type="text" id="newCatName" class="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500" placeholder="EJ: GASEOSAS / RETORNABLES">
+                    <input type="text" id="newCatName" class="w-full p-2 border rounded" placeholder="NOMBRE">
                 </div>
-            </div>
-        `;
+            </div>`;
         _showModal('Nuevo Maestro', content, async () => {
             const type = document.getElementById('newCatType').value;
             const name = document.getElementById('newCatName').value.toUpperCase().trim();
@@ -468,94 +439,43 @@
             try {
                 const colRef = _collection(_db, `artifacts/${_appId}/users/${_userId}/${type}`);
                 await _addDoc(colRef, { name: name, createdAt: new Date() });
-                _showModal('Éxito', 'Categoría creada correctamente.');
-            } catch(e) {
-                _showModal('Error', e.message);
-            }
+                _showModal('Éxito', 'Creado correctamente.');
+            } catch(e) { _showModal('Error', e.message); }
         }, 'Crear');
     };
 
-    // Función Admin: Limpieza profunda de datos no usados (Feature compleja del original)
     window.inventarioModule.handleDeleteDataItem = async function() {
-         _showModal('Mantenimiento', '¿Deseas buscar y eliminar Rubros, Segmentos o Marcas que NO se están usando en ningún producto activo?', async () => {
+         _showModal('Mantenimiento', '¿Eliminar maestros sin uso?', async () => {
             try {
-                const modal = document.getElementById('modalContainer'); // Referencia visual
-                
-                // 1. Obtener todo el inventario
                 const invSnap = await _getDocs(_collection(_db, `artifacts/${_appId}/users/${_userId}/inventario`));
-                const usedRubros = new Set();
-                const usedSegmentos = new Set();
-                const usedMarcas = new Set();
-
-                // 2. Mapear qué se está usando realmente
-                invSnap.docs.forEach(d => {
-                    const data = d.data();
-                    if(data.rubro) usedRubros.add(data.rubro);
-                    if(data.segmento) usedSegmentos.add(data.segmento);
-                    if(data.marca) usedMarcas.add(data.marca);
-                });
-
-                // 3. Consultar las colecciones de maestros
+                const usedRubros = new Set(); const usedSegmentos = new Set(); const usedMarcas = new Set();
+                invSnap.docs.forEach(d => { const da = d.data(); if(da.rubro) usedRubros.add(da.rubro); if(da.segmento) usedSegmentos.add(da.segmento); if(da.marca) usedMarcas.add(da.marca); });
                 const rRef = _collection(_db, `artifacts/${_appId}/users/${_userId}/rubros`);
                 const sRef = _collection(_db, `artifacts/${_appId}/users/${_userId}/segmentos`);
                 const mRef = _collection(_db, `artifacts/${_appId}/users/${_userId}/marcas`);
-
                 const [rSnap, sSnap, mSnap] = await Promise.all([_getDocs(rRef), _getDocs(sRef), _getDocs(mRef)]);
-                
-                // 4. Identificar candidatos a eliminar
                 const toDelete = [];
-                rSnap.docs.forEach(d => { if(!usedRubros.has(d.data().name)) toDelete.push({ref: d.ref, col: 'rubros', id: d.id}); });
-                sSnap.docs.forEach(d => { if(!usedSegmentos.has(d.data().name)) toDelete.push({ref: d.ref, col: 'segmentos', id: d.id}); });
-                mSnap.docs.forEach(d => { if(!usedMarcas.has(d.data().name)) toDelete.push({ref: d.ref, col: 'marcas', id: d.id}); });
+                rSnap.docs.forEach(d => { if(!usedRubros.has(d.data().name)) toDelete.push(d.ref); });
+                sSnap.docs.forEach(d => { if(!usedSegmentos.has(d.data().name)) toDelete.push(d.ref); });
+                mSnap.docs.forEach(d => { if(!usedMarcas.has(d.data().name)) toDelete.push(d.ref); });
 
-                if(toDelete.length === 0) {
-                    _showModal('Todo limpio', 'Todos los maestros están en uso. No hay nada que borrar.');
-                    return;
-                }
+                if(toDelete.length === 0) { _showModal('Info', 'Nada que borrar.'); return; }
 
-                // 5. Confirmación final con conteo
-                _showModal('Confirmar Limpieza', `Se encontraron <b>${toDelete.length}</b> elementos sin uso (Viejos o huérfanos). ¿Eliminarlos definitivamente?`, async () => {
-                    try {
-                        const batch = _writeBatch(_db);
-                        toDelete.forEach(item => batch.delete(item.ref));
-                        await batch.commit();
-
-                        // Intento de propagación si adminModule está disponible (para sincronizar ordenamientos, etc)
-                        if (window.adminModule && window.adminModule.propagateCategoryChange) {
-                            for (const item of toDelete) {
-                                try {
-                                    await window.adminModule.propagateCategoryChange(item.col, item.id, null);
-                                } catch (e) { console.warn(e); }
-                            }
-                        }
-                        
-                        // Invalidar caché local
-                        if(window.inventarioModule.invalidateSegmentOrderCache) {
-                             window.inventarioModule.invalidateSegmentOrderCache();
-                        }
-                        
-                        _showModal('Mantenimiento Exitoso', `Se eliminaron ${toDelete.length} registros obsoletos.`);
-
-                    } catch (deleteError) {
-                         console.error("Error limpieza:", deleteError);
-                         _showModal('Error', `Falló la eliminación: ${deleteError.message}`);
-                    }
-                }, 'Sí, Eliminar', null, true);
-
-            } catch (error) {
-                console.error("Error análisis:", error);
-                _showModal('Error', `Ocurrió un error al analizar los datos: ${error.message}`);
-            }
-        }, 'Iniciar Análisis', null, true);
+                _showModal('Confirmar', `Eliminar ${toDelete.length} items?`, async () => {
+                    const batch = _writeBatch(_db);
+                    toDelete.forEach(ref => batch.delete(ref));
+                    await batch.commit();
+                    _showModal('Éxito', 'Limpieza completada.');
+                });
+            } catch (e) { _showModal('Error', e.message); }
+        }, 'Analizar');
     };
     
-    // Función utilitaria expuesta
     window.inventarioModule.invalidateSegmentOrderCache = function() {
         _segmentoOrderCache = null;
         _marcaOrderCacheBySegment = {};
     };
 
-    // Exportar API pública del módulo
     window.inventarioModule = Object.assign(window.inventarioModule || {}, {
         editProducto: window.inventarioModule.editProducto,
         deleteProducto: window.inventarioModule.deleteProducto,
