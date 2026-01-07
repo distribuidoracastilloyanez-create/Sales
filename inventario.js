@@ -47,6 +47,16 @@
         setupInventarioListener();
     };
 
+    // --- FUNCIÓN RECUPERADA PARA COMPATIBILIDAD ---
+    // Esta función es llamada por botones del menú principal o flotante
+    window.showInventarioSubMenu = function() {
+        // En la versión simplificada, esto redirige a la vista principal o refresca los controles
+        console.log("Accediendo a SubMenú de Inventario...");
+        if (typeof renderInventarioView === 'function' && _db) {
+            renderInventarioView();
+        }
+    };
+
     function setupInventarioListener() {
         // Escucha en tiempo real la colección de inventario del usuario/admin actual
         const invPath = `artifacts/${_appId}/users/${_userId}/inventario`;
@@ -139,10 +149,17 @@
         `;
 
         // Listeners para filtros (vinculados al objeto _lastFilters para persistencia)
-        document.getElementById('invSearch').addEventListener('input', (e) => { _lastFilters.searchTerm = e.target.value; renderInventarioList(); });
-        document.getElementById('filterRubro').addEventListener('change', (e) => { _lastFilters.rubro = e.target.value; renderInventarioList(); });
-        document.getElementById('filterSegmento').addEventListener('change', (e) => { _lastFilters.segmento = e.target.value; renderInventarioList(); });
-        document.getElementById('filterMarca').addEventListener('change', (e) => { _lastFilters.marca = e.target.value; renderInventarioList(); });
+        const invSearch = document.getElementById('invSearch');
+        if(invSearch) invSearch.addEventListener('input', (e) => { _lastFilters.searchTerm = e.target.value; renderInventarioList(); });
+        
+        const filterRubro = document.getElementById('filterRubro');
+        if(filterRubro) filterRubro.addEventListener('change', (e) => { _lastFilters.rubro = e.target.value; renderInventarioList(); });
+        
+        const filterSegmento = document.getElementById('filterSegmento');
+        if(filterSegmento) filterSegmento.addEventListener('change', (e) => { _lastFilters.segmento = e.target.value; renderInventarioList(); });
+        
+        const filterMarca = document.getElementById('filterMarca');
+        if(filterMarca) filterMarca.addEventListener('change', (e) => { _lastFilters.marca = e.target.value; renderInventarioList(); });
 
         _showMainMenu();
     }
@@ -178,17 +195,18 @@
         if(countEl) countEl.textContent = filtered.length;
 
         // Poblar Selects de Filtros (Solo si no tienen opciones cargadas para evitar parpadeo)
-        if (rubroSelect.options.length <= 1) {
+        // Verificamos si los elementos existen en el DOM antes de manipularlos
+        if (rubroSelect && rubroSelect.options.length <= 1) {
             const rubros = [...new Set(_inventarioCache.map(i => i.rubro).filter(Boolean))].sort();
             rubros.forEach(r => { rubroSelect.innerHTML += `<option value="${r}">${r}</option>`; });
             if(_lastFilters.rubro) rubroSelect.value = _lastFilters.rubro;
         }
-         if (segmentoSelect.options.length <= 1) {
+         if (segmentoSelect && segmentoSelect.options.length <= 1) {
             const segs = [...new Set(_inventarioCache.map(i => i.segmento).filter(Boolean))].sort();
             segs.forEach(s => { segmentoSelect.innerHTML += `<option value="${s}">${s}</option>`; });
             if(_lastFilters.segmento) segmentoSelect.value = _lastFilters.segmento;
         }
-         if (marcaSelect.options.length <= 1 && _marcasCache) {
+         if (marcaSelect && marcaSelect.options.length <= 1 && _marcasCache) {
             _marcasCache.forEach(m => { marcaSelect.innerHTML += `<option value="${m}">${m}</option>`; });
             if(_lastFilters.marca) marcaSelect.value = _lastFilters.marca;
         }
