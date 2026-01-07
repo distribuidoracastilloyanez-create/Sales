@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v8'; 
+const CACHE_NAME = 'ventas-app-cache-v9'; // Actualizado a v9 para forzar recarga
 
 const urlsToCache = [
     './',
@@ -9,7 +9,7 @@ const urlsToCache = [
     './catalogo.js',
     './clientes.js',
     './ventas.js',
-    './obsequios.js', // Añadido para caché
+    './obsequios.js',
     './manifest.json',
     './images/icons/icon-192x192.png',
     './images/icons/icon-512x512.png',
@@ -21,7 +21,7 @@ const urlsToCache = [
 ];
 
 self.addEventListener('install', event => {
-    console.log('[Service Worker] Instalando...');
+    console.log('[Service Worker] Instalando versión v9...');
     self.skipWaiting(); 
     
     event.waitUntil(
@@ -37,7 +37,7 @@ self.addEventListener('install', event => {
 });
 
 self.addEventListener('activate', event => {
-    console.log('[Service Worker] Activando...');
+    console.log('[Service Worker] Activando v9 y limpiando cachés antiguas...');
     const cacheWhitelist = [CACHE_NAME];
     
     event.waitUntil(
@@ -68,17 +68,31 @@ self.addEventListener('fetch', event => {
         return;
     }
 
-    // Estrategia: Red primero, luego caché (SOLO para archivos locales)
+    // Estrategia: Red primero, luego caché (SOLO para archivos locales críticos)
+    // Esto ayuda a que los cambios en JS se vean más rápido en desarrollo
+    if (event.request.url.includes('.js')) {
+        event.respondWith(
+            fetch(event.request)
+                .then(networkResponse => {
+                    return caches.open(CACHE_NAME).then(cache => {
+                        cache.put(event.request, networkResponse.clone());
+                        return networkResponse;
+                    });
+                })
+                .catch(() => caches.match(event.request))
+        );
+        return;
+    }
+
+    // Estrategia Cache First para lo demás (imágenes, css, html estático)
     event.respondWith(
         caches.open(CACHE_NAME).then(cache => {
             return fetch(event.request)
                 .then(networkResponse => {
-                    console.log(`[Service Worker] Guardando en caché: ${event.request.url}`);
                     cache.put(event.request, networkResponse.clone());
                     return networkResponse;
                 })
                 .catch(() => {
-                    // Si la red falla, servir desde la caché
                     return cache.match(event.request);
                 });
         })
