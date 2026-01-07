@@ -47,13 +47,17 @@
         setupInventarioListener();
     };
 
-    // --- FUNCIÓN RECUPERADA PARA COMPATIBILIDAD ---
-    // Esta función es llamada por botones del menú principal o flotante
+    // --- FUNCIÓN RECUPERADA PARA COMPATIBILIDAD CON EL MENÚ ---
     window.showInventarioSubMenu = function() {
-        // En la versión simplificada, esto redirige a la vista principal o refresca los controles
         console.log("Accediendo a SubMenú de Inventario...");
-        if (typeof renderInventarioView === 'function' && _db) {
-            renderInventarioView();
+        // Verificamos si la vista se puede renderizar
+        if (typeof renderInventarioView === 'function') {
+            // Si el módulo ya se inicializó (tenemos _db), renderizamos
+            if (_db) {
+                renderInventarioView();
+            } else {
+                console.warn("Intento de abrir inventario sin inicializar. Esperando inicialización...");
+            }
         }
     };
 
