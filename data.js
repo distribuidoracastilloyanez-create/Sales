@@ -12,10 +12,11 @@
     let _rubroOrderMapCache = null;
     let _segmentoOrderMapCache = null;
     
-    // Rutas relativas y dinámicas
+    // Rutas relativas y dinámicas para configuración
     const SORT_CONFIG_PATH = 'config/productSortOrder'; 
     let REPORTE_DESIGN_CONFIG_PATH;
     
+    // Configuración de estilos y diseño del reporte original (Preservado íntegramente)
     const DEFAULT_REPORTE_SETTINGS = {
         showCargaInicial: true,
         showCargaRestante: true,
@@ -51,7 +52,7 @@
         REPORTE_DESIGN_CONFIG_PATH = `artifacts/${_appId}/users/${_userId}/config/reporteDesign`;
     };
 
-    // --- INTERFAZ DE USUARIO ---
+    // --- INTERFAZ DE USUARIO PRINCIPAL (CORRECCIÓN DE ERROR window.showDataView) ---
 
     window.showDataView = function() {
         if (_floatingControls) _floatingControls.classList.add('hidden');
@@ -83,7 +84,8 @@
         document.getElementById('backToMenuBtn').addEventListener('click', _showMainMenu);
     };
 
-    // --- NUEVA FUNCIÓN: AUDITORÍA DE RECARGAS ---
+    // --- FUNCIONALIDAD DE AUDITORÍA DE RECARGAS (NUEVA) ---
+
     async function showRecargasReportView() {
         if (_userRole !== 'admin') return;
 
@@ -91,17 +93,17 @@
             <div class="p-4 pt-8">
                 <div class="container mx-auto max-w-4xl">
                     <div class="bg-white p-6 rounded-lg shadow-xl">
-                        <h2 class="text-2xl font-bold text-gray-800 mb-6 text-center">Auditoría de Recargas</h2>
+                        <h2 class="text-2xl font-bold text-gray-800 mb-6 text-center">Auditoría de Recargas de Productos</h2>
                         
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6 p-4 bg-gray-50 rounded-lg">
                             <div>
                                 <label class="block text-sm font-medium text-gray-700 mb-1">Seleccionar Vendedor:</label>
                                 <select id="userSelector" class="w-full p-2 border rounded-lg bg-white">
-                                    <option value="">Cargando lista...</option>
+                                    <option value="">Cargando lista de usuarios...</option>
                                 </select>
                             </div>
                             <div class="flex items-end">
-                                <button id="loadRecargasBtn" class="w-full bg-indigo-600 text-white p-2 rounded-lg font-bold hover:bg-indigo-700">Ver Actividad</button>
+                                <button id="loadRecargasBtn" class="w-full bg-indigo-600 text-white p-2 rounded-lg font-bold hover:bg-indigo-700">Consultar Actividad</button>
                             </div>
                         </div>
 
@@ -211,14 +213,14 @@
             });
             const ws = XLSX.utils.aoa_to_sheet(rows);
             const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, ws, "Recargas");
-            XLSX.writeFile(wb, `Recargas_${userName.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.xlsx`);
+            XLSX.utils.book_append_sheet(wb, ws, "Auditoria Recargas");
+            XLSX.writeFile(wb, `Auditoria_Recargas_${userName.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.xlsx`);
         } catch (e) {
             _showModal('Error', 'No se pudo generar el archivo Excel.');
         }
     }
 
-    // --- FUNCIONES ORIGINALES (PRESERVADAS AL 100%) ---
+    // --- FUNCIONES ORIGINALES (PRESERVADAS EN SU TOTALIDAD) ---
 
     async function handleExportExcel() {
         if (!_appId || !_userId) {
@@ -248,7 +250,7 @@
             generateFullExcel(inventario, pedidos, obsequios, settings);
 
         } catch (error) {
-            console.error(\"Error exportando excel:\", error);
+            console.error("Error exportando excel:", error);
             _showModal('Error', 'Ocurrió un error al generar el Excel: ' + error.message);
         }
     }
@@ -261,7 +263,7 @@
                 return { ...DEFAULT_REPORTE_SETTINGS, ...docSnap.data() };
             }
         } catch (e) {
-            console.warn(\"No se pudo cargar la configuración de diseño del reporte, usando valores por defecto.\", e);
+            console.warn("No se pudo cargar la configuración de diseño del reporte, usando valores por defecto.", e);
         }
         return DEFAULT_REPORTE_SETTINGS;
     }
@@ -271,7 +273,7 @@
         
         // --- HOJA 1: CARGA ---
         const cargaRows = [];
-        const headerInfo = [\"RUBRO\", \"SEGMENTO\", \"MARCA\", \"PRODUCTO\", \"CARGA INICIAL\", \"VENTA TOTAL\", \"OBSEQUIOS\", \"CARGA RESTANTE\"];
+        const headerInfo = ["RUBRO", "SEGMENTO", "MARCA", "PRODUCTO", "CARGA INICIAL", "VENTA TOTAL", "OBSEQUIOS", "CARGA RESTANTE"];
         cargaRows.push(headerInfo);
 
         inventario.forEach(p => {
@@ -311,31 +313,33 @@
         });
 
         const wsCarga = XLSX.utils.aoa_to_sheet(cargaRows);
-        XLSX.utils.book_append_sheet(wb, wsCarga, \"CARGA\");
+        XLSX.utils.book_append_sheet(wb, wsCarga, "CARGA");
 
         // --- HOJA 2: DETALLE VENTAS ---
-        const ventasRows = [[\"CLIENTE\", \"FECHA\", \"MONEDA\", \"PRODUCTO\", \"CANTIDAD\", \"PRECIO UNIT.\", \"SUBTOTAL\"]];
+        const ventasRows = [["CLIENTE", "FECHA", "MONEDA", "PRODUCTO", "CANTIDAD", "PRECIO UNIT.", "SUBTOTAL"]];
         pedidos.forEach(p => {
             const fecha = new Date(p.fecha).toLocaleDateString();
             p.items?.forEach(it => {
                 ventasRows.push([p.clienteNombre, fecha, p.moneda, it.presentacion, it.cantidadVisual, it.precioUnitario, it.subtotal]);
             });
         });
-        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(ventasRows), \"DETALLE VENTAS\");
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(ventasRows), "DETALLE VENTAS");
 
         XLSX.writeFile(wb, `Reporte_General_${new Date().toISOString().split('T')[0]}.xlsx`);
         _showModal('Éxito', 'El reporte se ha generado correctamente.');
     }
 
+    // --- MAPAS Y VISUALIZACIÓN ---
+
     async function showMaps() {
         if (_floatingControls) _floatingControls.classList.add('hidden');
         _mainContent.innerHTML = `
             <div class="p-4 h-full flex flex-col">
-                <div class=\"bg-white p-4 rounded-t-lg shadow-md flex justify-between items-center\">
-                    <h2 class=\"text-xl font-bold\">Ubicación de Clientes</h2>
-                    <button id=\"backFromMaps\" class=\"px-4 py-2 bg-gray-500 text-white rounded\">Volver</button>
+                <div class="bg-white p-4 rounded-t-lg shadow-md flex justify-between items-center">
+                    <h2 class="text-xl font-bold">Ubicación de Clientes</h2>
+                    <button id="backFromMaps" class="px-4 py-2 bg-gray-500 text-white rounded">Volver</button>
                 </div>
-                <div id=\"map\" class=\"flex-grow rounded-b-lg shadow-inner\" style=\"min-height: 500px; z-index: 1;\"></div>
+                <div id="map" class="flex-grow rounded-b-lg shadow-inner" style="min-height: 500px; z-index: 1;"></div>
             </div>
         `;
 
@@ -367,21 +371,21 @@
                     L.marker([c.lat, c.lng]).addTo(mapInstance).bindPopup(`<b>${c.nombre}</b>`);
                 }
             });
-        } catch (e) { console.error(\"Error cargando mapa:\", e); }
+        } catch (e) { console.error("Error cargando mapa:", e); }
     }
 
     async function showConfigReporteView() {
         const settings = await getReporteDesignSettings();
         _mainContent.innerHTML = `
-            <div class=\"p-8 bg-white rounded-lg shadow-xl max-w-lg mx-auto\">
-                <h2 class=\"text-2xl font-bold mb-6\">Ajustes del Reporte</h2>
-                <div class=\"space-y-4\">
-                    <label class=\"flex items-center\">
-                        <input type=\"checkbox\" id=\"checkI\" ${settings.showCargaInicial?'checked':''}> 
-                        <span class=\"ml-2\">Mostrar Carga Inicial</span>
+            <div class="p-8 bg-white rounded-lg shadow-xl max-w-lg mx-auto">
+                <h2 class="text-2xl font-bold mb-6">Ajustes del Reporte</h2>
+                <div class="space-y-4">
+                    <label class="flex items-center">
+                        <input type="checkbox" id="checkI" ${settings.showCargaInicial?'checked':''}> 
+                        <span class="ml-2">Mostrar Carga Inicial</span>
                     </label>
-                    <button id=\"saveSetBtn\" class=\"w-full py-3 bg-green-500 text-white rounded font-bold\">Guardar Cambios</button>
-                    <button onclick=\"window.showDataView()\" class=\"w-full py-2 bg-gray-400 text-white rounded\">Cancelar</button>
+                    <button id="saveSetBtn" class="w-full py-3 bg-green-500 text-white rounded font-bold">Guardar Cambios</button>
+                    <button onclick="window.showDataView()" class="w-full py-2 bg-gray-400 text-white rounded">Cancelar</button>
                 </div>
             </div>
         `;
@@ -392,7 +396,7 @@
         };
     }
 
-    // --- LÓGICA DE ORDENAMIENTO (PRESERVADA) ---
+    // --- LÓGICA DE ORDENAMIENTO COMPLEJA ---
 
     window.getGlobalProductSortFunction = async function() {
         if (!_sortPreferenceCache) {
@@ -405,7 +409,7 @@
                     _sortPreferenceCache = ['rubro', 'segmento', 'marca', 'presentacion'];
                 }
             } catch (e) {
-                console.warn(\"No se pudo cargar preferencia de ordenamiento, usando default.\", e);
+                console.warn("No se pudo cargar preferencia de ordenamiento, usando default.", e);
                 _sortPreferenceCache = ['rubro', 'segmento', 'marca', 'presentacion'];
             }
         }
@@ -419,7 +423,7 @@
                     const data = d.data();
                     _rubroOrderMapCache[data.name] = data.orden ?? 9999;
                 });
-            } catch (e) { console.warn(\"No se pudo obtener orden rubros.\", e); }
+            } catch (e) { console.warn("No se pudo obtener orden rubros.", e); }
         }
 
         if (!_segmentoOrderMapCache) {
@@ -431,7 +435,7 @@
                     const data = d.data();
                     _segmentoOrderMapCache[data.name] = data.orden ?? 9999;
                 });
-            } catch (e) { console.warn(\"No se pudo obtener orden segmentos.\", e); }
+            } catch (e) { console.warn("No se pudo obtener orden segmentos.", e); }
         }
 
         return (a, b) => {
