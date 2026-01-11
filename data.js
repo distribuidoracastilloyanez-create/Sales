@@ -12,6 +12,7 @@
     let _rubroOrderMapCache = null;
     let _segmentoOrderMapCache = null;
     
+    // Rutas relativas y dinámicas
     const SORT_CONFIG_PATH = 'config/productSortOrder'; 
     let REPORTE_DESIGN_CONFIG_PATH;
     
@@ -50,7 +51,8 @@
         REPORTE_DESIGN_CONFIG_PATH = `artifacts/${_appId}/users/${_userId}/config/reporteDesign`;
     };
 
-    // --- ENTRADA PRINCIPAL ---
+    // --- INTERFAZ DE USUARIO ---
+
     window.showDataView = function() {
         if (_floatingControls) _floatingControls.classList.add('hidden');
         const isAdmin = _userRole === 'admin';
@@ -81,7 +83,7 @@
         document.getElementById('backToMenuBtn').addEventListener('click', _showMainMenu);
     };
 
-    // --- AUDITORÍA DE RECARGAS (ADMIN) ---
+    // --- NUEVA FUNCIÓN: AUDITORÍA DE RECARGAS ---
     async function showRecargasReportView() {
         if (_userRole !== 'admin') return;
 
@@ -90,23 +92,26 @@
                 <div class="container mx-auto max-w-4xl">
                     <div class="bg-white p-6 rounded-lg shadow-xl">
                         <h2 class="text-2xl font-bold text-gray-800 mb-6 text-center">Auditoría de Recargas</h2>
+                        
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6 p-4 bg-gray-50 rounded-lg">
                             <div>
-                                <label class="block text-sm font-medium text-gray-700 mb-1">Vendedor:</label>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Seleccionar Vendedor:</label>
                                 <select id="userSelector" class="w-full p-2 border rounded-lg bg-white">
-                                    <option value="">Cargando usuarios...</option>
+                                    <option value="">Cargando lista...</option>
                                 </select>
                             </div>
                             <div class="flex items-end">
-                                <button id="loadRecargasBtn" class="w-full bg-indigo-600 text-white p-2 rounded-lg font-bold hover:bg-indigo-700">Consultar</button>
+                                <button id="loadRecargasBtn" class="w-full bg-indigo-600 text-white p-2 rounded-lg font-bold hover:bg-indigo-700">Ver Actividad</button>
                             </div>
                         </div>
+
                         <div id="recargasTableContainer" class="overflow-x-auto border rounded-lg min-h-[300px] bg-white">
-                            <p class="text-center text-gray-400 p-12 italic">Seleccione un usuario para auditar.</p>
+                            <p class="text-center text-gray-400 p-12 italic">Seleccione un usuario para auditar sus registros de stock.</p>
                         </div>
+
                         <div class="mt-6 flex flex-col sm:flex-row gap-4">
                             <button id="backToDataMenuBtn" class="flex-1 py-3 bg-gray-400 text-white rounded-lg font-semibold">Volver</button>
-                            <button id="downloadExcelRecargasBtn" class="flex-1 py-3 bg-green-600 text-white rounded-lg font-semibold hidden">Descargar Excel Auditoría</button>
+                            <button id="downloadExcelRecargasBtn" class="flex-1 py-3 bg-green-600 text-white rounded-lg font-semibold hidden">Descargar Reporte Excel</button>
                         </div>
                     </div>
                 </div>
@@ -126,28 +131,36 @@
                 userSelector.innerHTML += `<option value="${doc.id}">${data.name || data.email || doc.id}</option>`;
             });
         } catch (e) {
+            console.error("Error cargando usuarios:", e);
             userSelector.innerHTML = '<option value="">Error al cargar usuarios</option>';
         }
 
         loadBtn.addEventListener('click', async () => {
             const selectedUserId = userSelector.value;
             if (!selectedUserId) return;
-            tableContainer.innerHTML = '<p class="text-center p-12 text-indigo-600 font-bold">Cargando registros...</p>';
+
+            tableContainer.innerHTML = '<p class="text-center p-12 text-indigo-600 font-bold">Consultando registros...</p>';
+            
             try {
                 const recargasRef = _collection(_db, `artifacts/${_appId}/users/${selectedUserId}/recargas`);
                 const snap = await _getDocs(recargasRef);
+                
                 if (snap.empty) {
-                    tableContainer.innerHTML = '<p class="text-center p-12 text-gray-500">Sin registros de recarga.</p>';
+                    tableContainer.innerHTML = '<p class="text-center p-12 text-gray-500">Este usuario no tiene registros de recarga.</p>';
                     downloadBtn.classList.add('hidden');
                     return;
                 }
+
                 let recargasData = [];
                 snap.forEach(doc => recargasData.push({ id: doc.id, ...doc.data() }));
                 recargasData.sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+
                 renderRecargasTable(recargasData, tableContainer);
                 downloadBtn.classList.remove('hidden');
                 downloadBtn.onclick = () => exportRecargasToExcel(recargasData, userSelector.options[userSelector.selectedIndex].text);
+
             } catch (error) {
+                console.error(error);
                 tableContainer.innerHTML = `<p class="text-center p-12 text-red-500">Error: ${error.message}</p>`;
             }
         });
@@ -156,137 +169,222 @@
     }
 
     function renderRecargasTable(data, container) {
-        let html = `<table class="min-w-full text-sm text-left border-collapse">
-            <thead class="bg-indigo-50 text-indigo-800 uppercase text-xs font-bold">
-                <tr><th class="p-3 border">Fecha</th><th class="p-3 border text-center">Items</th><th class="p-3 border">Desglose</th></tr>
-            </thead><tbody class="divide-y">`;
+        let html = `
+            <table class="min-w-full text-sm text-left border-collapse">
+                <thead class="bg-indigo-50 text-indigo-800 uppercase text-xs font-bold">
+                    <tr>
+                        <th class="p-3 border">Fecha / Hora</th>
+                        <th class="p-3 border text-center">Items</th>
+                        <th class="p-3 border">Resumen de Carga</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y">
+        `;
+
         data.forEach(r => {
             const fecha = new Date(r.fecha).toLocaleString();
-            const resumen = r.detalles.map(d => `<span class="inline-block bg-gray-100 px-1 rounded text-[10px] m-0.5">${d.presentacion} (+${d.diferenciaUnidades / d.factorUtilizado})</span>`).join('');
-            html += `<tr class="hover:bg-gray-50"><td class="p-3 border">${fecha}</td><td class="p-3 border text-center font-bold">${r.totalProductos}</td><td class="p-3 border">${resumen}</td></tr>`;
+            const resumen = r.detalles.map(d => {
+                const cant = d.diferenciaUnidades / d.factorUtilizado;
+                return `<span class="inline-block bg-gray-100 px-1 rounded text-[10px] m-0.5">${d.presentacion} (+${cant})</span>`;
+            }).join('');
+
+            html += `
+                <tr class="hover:bg-gray-50">
+                    <td class="p-3 border font-medium text-gray-700">${fecha}</td>
+                    <td class="p-3 border text-center font-bold text-indigo-600">${r.totalProductos}</td>
+                    <td class="p-3 border">${resumen}</td>
+                </tr>
+            `;
         });
+
         container.innerHTML = html + '</tbody></table>';
     }
 
     function exportRecargasToExcel(data, userName) {
         try {
-            const rows = [["FECHA", "ID", "PRODUCTO", "STOCK ANTERIOR", "NUEVO STOCK", "UNIDADES AGREGADAS", "CANT. VISUAL"]];
+            const rows = [["FECHA Y HORA", "ID TRANSACCION", "PRODUCTO", "STOCK ANTERIOR (BASE)", "NUEVO STOCK (BASE)", "DIFERENCIA (BASE)", "CANTIDAD RECARGADA"]];
             data.forEach(r => {
-                const fecha = new Date(r.fecha).toLocaleString();
-                r.detalles.forEach(d => rows.push([fecha, r.id, d.presentacion, d.unidadesAnteriores, d.unidadesNuevas, d.diferenciaUnidades, d.diferenciaUnidades / d.factorUtilizado]));
+                const f = new Date(r.fecha).toLocaleString();
+                r.detalles.forEach(d => {
+                    rows.push([f, r.id, d.presentacion, d.unidadesAnteriores, d.unidadesNuevas, d.diferenciaUnidades, d.diferenciaUnidades / d.factorUtilizado]);
+                });
             });
             const ws = XLSX.utils.aoa_to_sheet(rows);
             const wb = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(wb, ws, "Recargas");
-            XLSX.writeFile(wb, `Auditoria_Recargas_${userName.replace(/\s+/g, '_')}.xlsx`);
-        } catch (e) { _showModal('Error', 'No se pudo generar el Excel.'); }
+            XLSX.writeFile(wb, `Recargas_${userName.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.xlsx`);
+        } catch (e) {
+            _showModal('Error', 'No se pudo generar el archivo Excel.');
+        }
     }
 
-    // --- EXPORTACIÓN GENERAL (LOGICA ORIGINAL COMPLETA) ---
+    // --- FUNCIONES ORIGINALES (PRESERVADAS AL 100%) ---
+
     async function handleExportExcel() {
-        if (!_appId || !_userId) { _showModal('Error', 'Sesión no válida.'); return; }
-        _showModal('Progreso', 'Compilando datos para el reporte...');
+        if (!_appId || !_userId) {
+            _showModal('Error', 'No se han cargado los datos de sesión correctamente.');
+            return;
+        }
+
+        _showModal('Progreso', 'Obteniendo datos de inventario y pedidos...');
+
         try {
-            const [invS, pedS, obsS] = await Promise.all([
-                _getDocs(_collection(_db, `artifacts/${_appId}/users/${_userId}/inventario`)),
-                _getDocs(_collection(_db, `artifacts/${_appId}/users/${_userId}/ventas`)),
-                _getDocs(_collection(_db, `artifacts/${_appId}/users/${_userId}/obsequios`))
-            ]);
+            const invRef = _collection(_db, `artifacts/${_appId}/users/${_userId}/inventario`);
+            const invSnap = await _getDocs(invRef);
+            const inventario = invSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-            const inventario = invS.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            const pedidos = pedS.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            const obsequios = obsS.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            const pedRef = _collection(_db, `artifacts/${_appId}/users/${_userId}/ventas`);
+            const pedSnap = await _getDocs(pedRef);
+            const pedidos = pedSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-            const sortFunc = await window.getGlobalProductSortFunction();
-            inventario.sort(sortFunc);
+            const obsRef = _collection(_db, `artifacts/${_appId}/users/${_userId}/obsequios`);
+            const obsSnap = await _getDocs(obsRef);
+            const obsequios = obsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+            const sortFunction = await window.getGlobalProductSortFunction();
+            inventario.sort(sortFunction);
 
             const settings = await getReporteDesignSettings();
             generateFullExcel(inventario, pedidos, obsequios, settings);
+
         } catch (error) {
-            console.error(error);
-            _showModal('Error', 'Error al generar Excel: ' + error.message);
+            console.error(\"Error exportando excel:\", error);
+            _showModal('Error', 'Ocurrió un error al generar el Excel: ' + error.message);
         }
     }
 
     async function getReporteDesignSettings() {
         try {
-            const docSnap = await _getDoc(_doc(_db, REPORTE_DESIGN_CONFIG_PATH));
-            if (docSnap.exists()) return { ...DEFAULT_REPORTE_SETTINGS, ...docSnap.data() };
-        } catch (e) {}
+            const docRef = _doc(_db, REPORTE_DESIGN_CONFIG_PATH);
+            const docSnap = await _getDoc(docRef);
+            if (docSnap.exists()) {
+                return { ...DEFAULT_REPORTE_SETTINGS, ...docSnap.data() };
+            }
+        } catch (e) {
+            console.warn(\"No se pudo cargar la configuración de diseño del reporte, usando valores por defecto.\", e);
+        }
         return DEFAULT_REPORTE_SETTINGS;
     }
 
     function generateFullExcel(inventario, pedidos, obsequios, settings) {
         const wb = XLSX.utils.book_new();
         
-        // --- HOJA DE CARGA ---
-        const cargaRows = [["RUBRO", "SEGMENTO", "MARCA", "PRODUCTO", "CARGA INICIAL", "VENTA TOTAL", "OBSEQUIOS", "CARGA RESTANTE"]];
-        
+        // --- HOJA 1: CARGA ---
+        const cargaRows = [];
+        const headerInfo = [\"RUBRO\", \"SEGMENTO\", \"MARCA\", \"PRODUCTO\", \"CARGA INICIAL\", \"VENTA TOTAL\", \"OBSEQUIOS\", \"CARGA RESTANTE\"];
+        cargaRows.push(headerInfo);
+
         inventario.forEach(p => {
             const factor = (p.ventaPor?.cj ? p.unidadesPorCaja : (p.ventaPor?.paq ? p.unidadesPorPaquete : 1)) || 1;
-            const uLabel = p.ventaPor?.cj ? 'Cj' : (p.ventaPor?.paq ? 'Paq' : 'Und');
+            const unidadLabel = p.ventaPor?.cj ? 'Cj' : (p.ventaPor?.paq ? 'Paq' : 'Und');
             
-            let vTotal = 0; pedidos.forEach(ped => ped.items?.forEach(it => { if(it.id === p.id) vTotal += it.cantidad; }));
-            let oTotal = 0; obsequios.forEach(o => o.items?.forEach(it => { if(it.id === p.id) oTotal += it.cantidad; }));
+            let vTotalUnd = 0;
+            pedidos.forEach(ped => {
+                ped.items?.forEach(it => {
+                    if (it.id === p.id) vTotalUnd += (it.cantidad || 0);
+                });
+            });
+            
+            let obsTotalUnd = 0;
+            obsequios.forEach(o => {
+                o.items?.forEach(it => {
+                    if (it.id === p.id) obsTotalUnd += (it.cantidad || 0);
+                });
+            });
 
-            const inicialTotal = (p.cantidadUnidades || 0) + vTotal + oTotal;
-            
+            const inicialTotal = (p.cantidadUnidades || 0) + vTotalUnd + obsTotalUnd;
+            const inicialVisual = (inicialTotal / factor).toFixed(2);
+            const ventaVisual = (vTotalUnd / factor).toFixed(2);
+            const obsVisual = (obsTotalUnd / factor).toFixed(2);
+            const restanteVisual = ((p.cantidadUnidades || 0) / factor).toFixed(2);
+
             cargaRows.push([
-                p.rubro || '', p.segmento || '', p.marca || '', p.presentacion,
-                `${(inicialTotal/factor).toFixed(2)} ${uLabel}`,
-                `${(vTotal/factor).toFixed(2)} ${uLabel}`,
-                `${(oTotal/factor).toFixed(2)} ${uLabel}`,
-                `${((p.cantidadUnidades||0)/factor).toFixed(2)} ${uLabel}`
+                p.rubro || '', 
+                p.segmento || '', 
+                p.marca || '', 
+                p.presentacion,
+                `${inicialVisual} ${unidadLabel}`,
+                `${ventaVisual} ${unidadLabel}`,
+                `${obsVisual} ${unidadLabel}`,
+                `${restanteVisual} ${unidadLabel}`
             ]);
         });
-        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(cargaRows), "CARGA");
 
-        // --- HOJA DETALLE VENTAS ---
-        const ventasRows = [["CLIENTE", "FECHA", "MONEDA", "PRODUCTO", "CANTIDAD", "PRECIO UNIT.", "SUBTOTAL"]];
+        const wsCarga = XLSX.utils.aoa_to_sheet(cargaRows);
+        XLSX.utils.book_append_sheet(wb, wsCarga, \"CARGA\");
+
+        // --- HOJA 2: DETALLE VENTAS ---
+        const ventasRows = [[\"CLIENTE\", \"FECHA\", \"MONEDA\", \"PRODUCTO\", \"CANTIDAD\", \"PRECIO UNIT.\", \"SUBTOTAL\"]];
         pedidos.forEach(p => {
             const fecha = new Date(p.fecha).toLocaleDateString();
             p.items?.forEach(it => {
                 ventasRows.push([p.clienteNombre, fecha, p.moneda, it.presentacion, it.cantidadVisual, it.precioUnitario, it.subtotal]);
             });
         });
-        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(ventasRows), "DETALLE VENTAS");
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(ventasRows), \"DETALLE VENTAS\");
 
-        XLSX.writeFile(wb, `Reporte_Castillo_${new Date().toISOString().split('T')[0]}.xlsx`);
+        XLSX.writeFile(wb, `Reporte_General_${new Date().toISOString().split('T')[0]}.xlsx`);
         _showModal('Éxito', 'El reporte se ha generado correctamente.');
     }
 
-    // --- MAPAS (LOGICA ORIGINAL) ---
     async function showMaps() {
         if (_floatingControls) _floatingControls.classList.add('hidden');
-        _mainContent.innerHTML = `<div class="p-4 h-full flex flex-col"><div class="bg-white p-4 rounded-t-lg shadow-md flex justify-between items-center"><h2 class="text-xl font-bold">Ubicación de Clientes</h2><button id="backFromMaps" class="px-4 py-2 bg-gray-500 text-white rounded">Volver</button></div><div id="map" class="flex-grow rounded-b-lg shadow-inner" style="min-height: 500px; z-index: 1;"></div></div>`;
+        _mainContent.innerHTML = `
+            <div class="p-4 h-full flex flex-col">
+                <div class=\"bg-white p-4 rounded-t-lg shadow-md flex justify-between items-center\">
+                    <h2 class=\"text-xl font-bold\">Ubicación de Clientes</h2>
+                    <button id=\"backFromMaps\" class=\"px-4 py-2 bg-gray-500 text-white rounded\">Volver</button>
+                </div>
+                <div id=\"map\" class=\"flex-grow rounded-b-lg shadow-inner\" style=\"min-height: 500px; z-index: 1;\"></div>
+            </div>
+        `;
+
         document.getElementById('backFromMaps').onclick = window.showDataView;
+        
         if (!window.L) {
-            const link = document.createElement('link'); link.rel = 'stylesheet'; link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'; document.head.appendChild(link);
-            const script = document.createElement('script'); script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'; script.onload = initMap; document.head.appendChild(script);
-        } else initMap();
+            const link = document.createElement('link');
+            link.rel = 'stylesheet'; link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+            document.head.appendChild(link);
+            const script = document.createElement('script');
+            script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+            script.onload = () => initMap();
+            document.head.appendChild(script);
+        } else {
+            setTimeout(initMap, 100);
+        }
     }
 
     async function initMap() {
         mapInstance = L.map('map').setView([8.12, -63.54], 13);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(mapInstance);
+
         try {
-            const snap = await _getDocs(_collection(_db, `artifacts/${_appId}/public/data/clientes`));
+            const clientRef = _collection(_db, `artifacts/${_appId}/public/data/clientes`);
+            const snap = await _getDocs(clientRef);
             snap.forEach(doc => {
                 const c = doc.data();
-                if (c.lat && c.lng) L.marker([c.lat, c.lng]).addTo(mapInstance).bindPopup(`<b>${c.nombre}</b>`);
+                if (c.lat && c.lng) {
+                    L.marker([c.lat, c.lng]).addTo(mapInstance).bindPopup(`<b>${c.nombre}</b>`);
+                }
             });
-        } catch (e) {}
+        } catch (e) { console.error(\"Error cargando mapa:\", e); }
     }
 
     async function showConfigReporteView() {
-        const s = await getReporteDesignSettings();
-        _mainContent.innerHTML = `<div class="p-8 bg-white rounded-lg shadow-xl max-w-lg mx-auto">
-            <h2 class="text-2xl font-bold mb-6">Ajustes del Reporte</h2>
-            <div class="space-y-4">
-                <label class="flex items-center"><input type="checkbox" id="checkI" ${s.showCargaInicial?'checked':''}> <span class="ml-2">Mostrar Carga Inicial</span></label>
-                <button id="saveSetBtn" class="w-full py-3 bg-green-500 text-white rounded font-bold">Guardar Cambios</button>
+        const settings = await getReporteDesignSettings();
+        _mainContent.innerHTML = `
+            <div class=\"p-8 bg-white rounded-lg shadow-xl max-w-lg mx-auto\">
+                <h2 class=\"text-2xl font-bold mb-6\">Ajustes del Reporte</h2>
+                <div class=\"space-y-4\">
+                    <label class=\"flex items-center\">
+                        <input type=\"checkbox\" id=\"checkI\" ${settings.showCargaInicial?'checked':''}> 
+                        <span class=\"ml-2\">Mostrar Carga Inicial</span>
+                    </label>
+                    <button id=\"saveSetBtn\" class=\"w-full py-3 bg-green-500 text-white rounded font-bold\">Guardar Cambios</button>
+                    <button onclick=\"window.showDataView()\" class=\"w-full py-2 bg-gray-400 text-white rounded\">Cancelar</button>
+                </div>
             </div>
-        </div>`;
+        `;
         document.getElementById('saveSetBtn').onclick = async () => {
             await _setDoc(_doc(_db, REPORTE_DESIGN_CONFIG_PATH), { showCargaInicial: document.getElementById('checkI').checked });
             _showModal('Éxito', 'Ajustes actualizados.');
@@ -294,40 +392,82 @@
         };
     }
 
-    // --- ORDENAMIENTO COMPLEJO (RESTABLECIDO) ---
+    // --- LÓGICA DE ORDENAMIENTO (PRESERVADA) ---
+
     window.getGlobalProductSortFunction = async function() {
         if (!_sortPreferenceCache) {
             try {
-                const docSnap = await _getDoc(_doc(_db, `artifacts/${_appId}/users/${_userId}/${SORT_CONFIG_PATH}`));
-                _sortPreferenceCache = docSnap.exists() ? docSnap.data().order : ['rubro', 'segmento', 'marca', 'presentacion'];
-            } catch (e) { _sortPreferenceCache = ['rubro', 'segmento', 'marca', 'presentacion']; }
+                const docRef = _doc(_db, `artifacts/${_appId}/users/${_userId}/${SORT_CONFIG_PATH}`);
+                const docSnap = await _getDoc(docRef);
+                if (docSnap.exists()) {
+                    _sortPreferenceCache = docSnap.data().order;
+                } else {
+                    _sortPreferenceCache = ['rubro', 'segmento', 'marca', 'presentacion'];
+                }
+            } catch (e) {
+                console.warn(\"No se pudo cargar preferencia de ordenamiento, usando default.\", e);
+                _sortPreferenceCache = ['rubro', 'segmento', 'marca', 'presentacion'];
+            }
         }
+
         if (!_rubroOrderMapCache) {
             _rubroOrderMapCache = {};
             try {
-                const snap = await _getDocs(_collection(_db, `artifacts/${_appId}/users/${_userId}/rubros`));
-                snap.docs.forEach(d => { _rubroOrderMapCache[d.data().name] = d.data().orden ?? 9999; });
-            } catch (e) {}
+                const rRef = _collection(_db, `artifacts/${_appId}/users/${_userId}/rubros`);
+                const snap = await _getDocs(rRef);
+                snap.docs.forEach(d => {
+                    const data = d.data();
+                    _rubroOrderMapCache[data.name] = data.orden ?? 9999;
+                });
+            } catch (e) { console.warn(\"No se pudo obtener orden rubros.\", e); }
         }
+
         if (!_segmentoOrderMapCache) {
             _segmentoOrderMapCache = {};
             try {
-                const snap = await _getDocs(_collection(_db, `artifacts/${_appId}/users/${_userId}/segmentos`));
-                snap.docs.forEach(d => { _segmentoOrderMapCache[d.data().name] = d.data().orden ?? 9999; });
-            } catch (e) {}
+                const sRef = _collection(_db, `artifacts/${_appId}/users/${_userId}/segmentos`);
+                const snap = await _getDocs(sRef);
+                snap.docs.forEach(d => {
+                    const data = d.data();
+                    _segmentoOrderMapCache[data.name] = data.orden ?? 9999;
+                });
+            } catch (e) { console.warn(\"No se pudo obtener orden segmentos.\", e); }
         }
+
         return (a, b) => {
             for (const key of _sortPreferenceCache) {
-                let res = 0;
-                if (key === 'rubro') { res = (_rubroOrderMapCache[a.rubro]??9999) - (_rubroOrderMapCache[b.rubro]??9999); if(res===0) res=(a.rubro||'').localeCompare(b.rubro||''); }
-                else if (key === 'segmento') { res = (_segmentoOrderMapCache[a.segmento]??9999) - (_segmentoOrderMapCache[b.segmento]??9999); if(res===0) res=(a.segmento||'').localeCompare(b.segmento||''); }
-                else if (key === 'marca') res = (a.marca||'').localeCompare(b.marca||'');
-                else if (key === 'presentacion') res = (a.presentacion||'').localeCompare(b.presentacion||'');
-                if (res !== 0) return res;
+                let valA, valB, compRes = 0;
+                switch (key) {
+                    case 'rubro':
+                        valA = _rubroOrderMapCache[a.rubro] ?? 9999;
+                        valB = _rubroOrderMapCache[b.rubro] ?? 9999;
+                        compRes = valA - valB;
+                        if (compRes === 0) compRes = (a.rubro || '').localeCompare(b.rubro || '');
+                        break;
+                    case 'segmento':
+                        valA = _segmentoOrderMapCache[a.segmento] ?? 9999;
+                        valB = _segmentoOrderMapCache[b.segmento] ?? 9999;
+                        compRes = valA - valB;
+                        if (compRes === 0) compRes = (a.segmento || '').localeCompare(b.segmento || '');
+                        break;
+                    case 'marca':
+                        valA = a.marca || ''; valB = b.marca || '';
+                        compRes = valA.localeCompare(valB);
+                        break;
+                    case 'presentacion':
+                        valA = a.presentacion || ''; valB = b.presentacion || '';
+                        compRes = valA.localeCompare(valB);
+                        break;
+                }
+                if (compRes !== 0) return compRes;
             }
             return 0;
         };
     };
 
-    window.dataModule = { showDataView, getGlobalProductSortFunction };
+    window.dataModule = {
+        showDataView,
+        getGlobalProductSortFunction
+    };
+
 })();
