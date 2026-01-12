@@ -1,29 +1,20 @@
-// --- Lógica del módulo de Clientes ---
-
 (function() {
-    // Variables locales del módulo inicializadas desde la app principal
     let _db, _userId, _userRole, _appId, _mainContent, _floatingControls, _activeListeners;
     let _showMainMenu, _showModal, _showAddItemModal, _populateDropdown;
     let _collection, _onSnapshot, _doc, _addDoc, _setDoc, _deleteDoc, _getDoc, _getDocs, _query, _where, _writeBatch, _runTransaction, _limit;
 
-    let _clientesCache = []; // Caché local para búsquedas y ediciones rápidas
-    let _clientesParaImportar = []; // Caché para la data del Excel a importar
+    let _clientesCache = []; 
+    let _clientesParaImportar = []; 
 
-    // Rutas dinámicas para datos públicos
     const CLIENTES_COLLECTION_PATH = `artifacts/ventas-9a210/public/data/clientes`;
     const SECTORES_COLLECTION_PATH = `artifacts/ventas-9a210/public/data/sectores`;
-
-    // Tipos de Envases Retornables
     const TIPOS_VACIO = ["1/4 - 1/3", "ret 350 ml", "ret 1.25 Lts"];
 
-    /**
-     * Inicializa el módulo con las dependencias necesarias.
-     */
     window.initClientes = function(dependencies) {
         _db = dependencies.db;
         _userId = dependencies.userId;
         _userRole = dependencies.userRole;
-        _appId = dependencies.appId;
+        _appId = dependencies.appId; 
         _mainContent = dependencies.mainContent;
         _floatingControls = dependencies.floatingControls;
         _activeListeners = dependencies.activeListeners;
@@ -46,9 +37,6 @@
         _limit = dependencies.limit;
     };
 
-    /**
-     * Renderiza el menú de subopciones de clientes.
-     */
     window.showClientesSubMenu = function() {
         if (_floatingControls) _floatingControls.classList.add('hidden');
         _mainContent.innerHTML = `
@@ -57,13 +45,11 @@
                     <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl text-center">
                         <h1 class="text-3xl font-bold text-gray-800 mb-6">Gestión de Clientes</h1>
                         <div class="space-y-4">
-                            <button id="verClientesBtn" class="w-full px-6 py-3 bg-indigo-500 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-600 transition duration-300">Ver Clientes</button>
-                            <button id="agregarClienteBtn" class="w-full px-6 py-3 bg-indigo-500 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-600 transition duration-300">Agregar Cliente</button>
-                            <button id="saldosVaciosBtn" class="w-full px-6 py-3 bg-cyan-500 text-white font-semibold rounded-lg shadow-md hover:bg-cyan-600 transition duration-300">Consultar Saldos de Vacíos</button>
-                            ${_userRole === 'admin' ? `
-                            <button id="funcionesAvanzadasBtn" class="w-full px-6 py-3 bg-gray-700 text-white font-semibold rounded-lg shadow-md hover:bg-gray-800 transition duration-300">Funciones Avanzadas</button>
-                            ` : ''}
-                            <button id="backToMenuBtn" class="w-full px-6 py-3 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500 transition duration-300">Volver al Menú Principal</button>
+                            <button id="verClientesBtn" class="w-full px-6 py-3 bg-indigo-500 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-600 transition">Ver Clientes</button>
+                            <button id="agregarClienteBtn" class="w-full px-6 py-3 bg-indigo-500 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-600 transition">Agregar Cliente</button>
+                            <button id="saldosVaciosBtn" class="w-full px-6 py-3 bg-cyan-500 text-white font-semibold rounded-lg shadow-md hover:bg-cyan-600 transition">Consultar Saldos de Vacíos</button>
+                            ${_userRole === 'admin' ? `<button id="funcionesAvanzadasBtn" class="w-full px-6 py-3 bg-gray-700 text-white font-semibold rounded-lg shadow-md hover:bg-gray-800 transition">Funciones Avanzadas</button>` : ''}
+                            <button id="backToMenuBtn" class="w-full px-6 py-3 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500 transition">Volver al Menú Principal</button>
                         </div>
                     </div>
                 </div>
@@ -78,20 +64,17 @@
         document.getElementById('backToMenuBtn').addEventListener('click', _showMainMenu);
     };
 
-    /**
-     * Muestra la vista de funciones avanzadas.
-     */
     function showFuncionesAvanzadasView() {
         _mainContent.innerHTML = `
             <div class="p-4 pt-8">
                 <div class="container mx-auto">
                     <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl text-center">
-                        <h1 class="text-3xl font-bold text-gray-800 mb-6">Funciones Avanzadas de Clientes</h1>
+                        <h1 class="text-3xl font-bold text-gray-800 mb-6">Funciones Avanzadas</h1>
                         <div class="space-y-4">
-                            <button id="importarClientesBtn" class="w-full px-6 py-3 bg-teal-500 text-white font-semibold rounded-lg shadow-md hover:bg-teal-600 transition duration-300">Importar Clientes desde Excel</button>
-                            <button id="datosMaestrosSectoresBtn" class="w-full px-6 py-3 bg-yellow-500 text-gray-800 font-semibold rounded-lg shadow-md hover:bg-yellow-600 transition duration-300">Gestionar Sectores</button>
-                            <button id="deleteAllClientesBtn" class="w-full px-6 py-3 bg-red-600 text-white font-semibold rounded-lg shadow-md hover:bg-red-700 transition duration-300">Eliminar Todos los Clientes</button>
-                            <button id="backToClientesMenuBtn" class="w-full px-6 py-3 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500 transition duration-300">Volver a Clientes</button>
+                            <button id="importarClientesBtn" class="w-full px-6 py-3 bg-teal-500 text-white font-semibold rounded-lg shadow-md hover:bg-teal-600 transition">Importar Clientes desde Excel</button>
+                            <button id="datosMaestrosSectoresBtn" class="w-full px-6 py-3 bg-yellow-500 text-gray-800 font-semibold rounded-lg shadow-md hover:bg-yellow-600 transition">Gestionar Sectores</button>
+                            <button id="deleteAllClientesBtn" class="w-full px-6 py-3 bg-red-600 text-white font-semibold rounded-lg shadow-md hover:bg-red-700 transition">Eliminar Todos los Clientes</button>
+                            <button id="backToClientesMenuBtn" class="w-full px-6 py-3 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500 transition">Volver a Clientes</button>
                         </div>
                     </div>
                 </div>
@@ -100,26 +83,23 @@
         document.getElementById('importarClientesBtn').addEventListener('click', showImportarClientesView);
         document.getElementById('datosMaestrosSectoresBtn').addEventListener('click', showDatosMaestrosSectoresView);
         document.getElementById('deleteAllClientesBtn').addEventListener('click', handleDeleteAllClientes);
-        document.getElementById('backToClientesMenuBtn').addEventListener('click', window.showClientesSubMenu);
+        document.getElementById('backToClientesMenuBtn').addEventListener('click', showClientesSubMenu);
     }
 
-    /**
-     * Muestra la vista para importar clientes desde un archivo Excel (Migrado a ExcelJS).
-     */
     function showImportarClientesView() {
         _mainContent.innerHTML = `
             <div class="p-4 pt-8">
                 <div class="container mx-auto max-w-4xl">
                     <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl">
-                        <h2 class="text-2xl font-bold text-gray-800 mb-4 text-center">Importar Clientes desde Excel</h2>
-                        <p class="text-center text-gray-600 mb-6 text-sm">Selecciona un archivo .xlsx. Las columnas deben ser: Sector, Nombre Comercial, Nombre Personal, telefono, CEP.</p>
+                        <h2 class="text-2xl font-bold text-gray-800 mb-4 text-center">Importar Clientes</h2>
+                        <p class="text-center text-gray-600 mb-6 text-sm">Columnas requeridas: Sector, Nombre Comercial, Nombre Personal, Telefono, CEP, Coordenadas.</p>
                         <input type="file" id="excel-uploader" accept=".xlsx" class="w-full p-4 border-2 border-dashed rounded-lg mb-6">
                         <div id="preview-container" class="mt-6 overflow-auto max-h-96 border rounded-lg shadow-inner"></div>
                         <div id="import-actions" class="mt-6 flex flex-col sm:flex-row gap-4 hidden">
-                             <button id="confirmImportBtn" class="w-full px-6 py-3 bg-green-500 text-white font-bold rounded-lg shadow-md hover:bg-green-600 transition duration-300">Confirmar e Importar</button>
-                             <button id="cancelImportBtn" class="w-full px-6 py-3 bg-gray-400 text-white font-bold rounded-lg shadow-md hover:bg-gray-500 transition duration-300">Cancelar</button>
+                             <button id="confirmImportBtn" class="w-full px-6 py-3 bg-green-500 text-white font-bold rounded-lg shadow-md hover:bg-green-600 transition">Confirmar e Importar</button>
+                             <button id="cancelImportBtn" class="w-full px-6 py-3 bg-gray-400 text-white font-bold rounded-lg shadow-md hover:bg-gray-500 transition">Cancelar</button>
                         </div>
-                         <button id="backToAdvancedFunctionsBtn" class="mt-6 w-full px-6 py-3 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500 transition duration-300">Volver</button>
+                         <button id="backToAdvancedFunctionsBtn" class="mt-6 w-full px-6 py-3 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500 transition">Volver</button>
                     </div>
                 </div>
             </div>
@@ -128,248 +108,132 @@
         document.getElementById('backToAdvancedFunctionsBtn').addEventListener('click', showFuncionesAvanzadasView);
     }
 
-    /**
-     * Maneja la carga y parseo del archivo Excel usando ExcelJS.
-     */
     function handleFileUpload(event) {
         const file = event.target.files[0];
         if (!file) return;
         _clientesParaImportar = [];
-
         const reader = new FileReader();
         reader.onload = async function(e) {
             try {
-                if (typeof ExcelJS === 'undefined') throw new Error("Librería ExcelJS no cargada.");
-                
+                if (typeof ExcelJS === 'undefined') throw new Error("ExcelJS no cargado.");
                 const workbook = new ExcelJS.Workbook();
                 await workbook.xlsx.load(e.target.result);
                 const worksheet = workbook.getWorksheet(1);
                 const jsonData = [];
-
                 worksheet.eachRow({ includeEmpty: false }, (row) => {
-                    // ExcelJS usa índices base 1, convertimos a array simple base 0
-                    const rowValues = row.values.slice(1).map(v => v === null || v === undefined ? '' : v);
-                    jsonData.push(rowValues);
+                    jsonData.push(row.values.slice(1).map(v => v === null || v === undefined ? '' : v));
                 });
 
-                if (jsonData.length < 2) {
-                    _showModal('Error', 'El archivo no tiene datos suficientes.');
-                    return;
-                }
+                if (jsonData.length < 2) throw new Error("El archivo está vacío.");
 
                 const headers = jsonData[0].map(h => h.toString().toLowerCase().trim().replace(/\s+/g, ''));
-                const requiredHeaders = ['sector', 'nombrecomercial', 'nombrepersonal', 'telefono', 'cep'];
-                const headerMap = {};
-                let missingHeader = false;
+                const map = { 
+                    sector: headers.indexOf('sector'), 
+                    ncom: headers.indexOf('nombrecomercial'), 
+                    nper: headers.indexOf('nombrepersonal'), 
+                    tel: headers.indexOf('telefono'), 
+                    cep: headers.indexOf('cep'),
+                    coords: headers.indexOf('coordenadas')
+                };
 
-                requiredHeaders.forEach(rh => {
-                    const index = headers.indexOf(rh);
-                    if (index !== -1) headerMap[rh] = index;
-                    else { _showModal('Error', `Falta la columna: "${rh}"`); missingHeader = true; }
-                });
-
-                if (missingHeader) return;
-
-                _clientesParaImportar = jsonData.slice(1).map((row, rowIndex) => {
-                    const nCom = (row[headerMap['nombrecomercial']] || '').toString().trim().toUpperCase();
-                    if (!nCom) return null;
-
-                    const saldoVaciosInicial = {};
-                    TIPOS_VACIO.forEach(tipo => saldoVaciosInicial[tipo] = 0);
-
+                _clientesParaImportar = jsonData.slice(1).map(row => {
+                    const nameCom = (row[map.ncom] || '').toString().trim().toUpperCase();
+                    if (!nameCom) return null;
+                    const sv = {}; TIPOS_VACIO.forEach(t => sv[t] = 0);
                     return {
-                        sector: (row[headerMap['sector']] || '').toString().trim().toUpperCase(),
-                        nombreComercial: nCom,
-                        nombrePersonal: (row[headerMap['nombrepersonal']] || '').toString().trim().toUpperCase(),
-                        telefono: (row[headerMap['telefono']] || '').toString().trim(),
-                        codigoCEP: (row[headerMap['cep']] || 'N/A').toString().trim(),
-                        coordenadas: '',
-                        saldoVacios: saldoVaciosInicial
+                        sector: (row[map.sector] || '').toString().trim().toUpperCase(),
+                        nombreComercial: nameCom,
+                        nombrePersonal: (row[map.nper] || '').toString().trim().toUpperCase(),
+                        telefono: (row[map.tel] || '').toString().trim(),
+                        codigoCEP: (row[map.cep] || 'N/A').toString().trim(),
+                        coordenadas: (row[map.coords] || '').toString().trim(),
+                        saldoVacios: sv
                     };
                 }).filter(c => c !== null);
-
                 renderPreviewTable(_clientesParaImportar);
-            } catch (err) {
-                 _showModal('Error de Lectura', `Fallo al procesar Excel: ${err.message}`);
-                 renderPreviewTable([]);
-            }
+            } catch (err) { _showModal('Error', err.message); }
         };
         reader.readAsArrayBuffer(file);
     }
 
-    /**
-     * Muestra una tabla de vista previa con los datos del Excel.
-     */
     function renderPreviewTable(clientes) {
-        const container = document.getElementById('preview-container');
-        const actionsContainer = document.getElementById('import-actions');
-        const backButton = document.getElementById('backToAdvancedFunctionsBtn');
-        const uploadInput = document.getElementById('excel-uploader');
-
-        if (clientes.length === 0) {
-            container.innerHTML = `<p class="text-center text-red-500 p-4 font-bold">Archivo sin clientes válidos.</p>`;
-            actionsContainer.classList.add('hidden');
-            backButton.classList.remove('hidden');
-            return;
-        }
-
-        let tableHTML = `<div class="p-4">
-                            <h3 class="font-bold text-lg mb-2">Vista Previa (${clientes.length} clientes)</h3>
-                            <table class="min-w-full bg-white text-xs border">
-                                <thead class="bg-gray-200"><tr>
-                                    <th class="p-2 border text-left">Sector</th>
-                                    <th class="p-2 border text-left">N. Comercial</th>
-                                    <th class="p-2 border text-left">N. Personal</th>
-                                </tr></thead><tbody>`;
-
-        clientes.slice(0, 10).forEach(c => {
-            tableHTML += `<tr class="border-b">
-                <td class="p-2 border">${c.sector}</td>
-                <td class="p-2 border">${c.nombreComercial}</td>
-                <td class="p-2 border">${c.nombrePersonal}</td>
-            </tr>`;
+        const cont = document.getElementById('preview-container');
+        const acts = document.getElementById('import-actions');
+        if (clientes.length === 0) { cont.innerHTML = '<p class="text-red-500 p-4">No hay datos válidos.</p>'; return; }
+        let html = `<table class="min-w-full text-xs"><thead><tr class="bg-gray-100 text-left"><th>Sector</th><th>Comercial</th><th>GPS</th></tr></thead><tbody>`;
+        clientes.slice(0, 10).forEach(c => { 
+            html += `<tr class="border-b"><td>${c.sector}</td><td>${c.nombreComercial}</td><td>${c.coordenadas ? 'SI' : 'NO'}</td></tr>`; 
         });
-        tableHTML += '</tbody></table>';
-        if (clientes.length > 10) tableHTML += `<p class="text-xs text-gray-500 mt-2 italic text-center">... y ${clientes.length - 10} más.</p>`;
-        tableHTML += '</div>';
-        
-        container.innerHTML = tableHTML;
-        actionsContainer.classList.remove('hidden');
-        backButton.classList.add('hidden');
-
+        html += '</tbody></table>';
+        cont.innerHTML = html;
+        acts.classList.remove('hidden');
         document.getElementById('confirmImportBtn').onclick = handleConfirmImport;
-        document.getElementById('cancelImportBtn').onclick = () => {
-             _clientesParaImportar = [];
-             uploadInput.value = '';
-             container.innerHTML = '';
-             actionsContainer.classList.add('hidden');
-             backButton.classList.remove('hidden');
-        };
+        document.getElementById('cancelImportBtn').onclick = () => showImportarClientesView();
     }
 
-    /**
-     * Confirma y guarda los clientes y sectores importados en Firestore.
-     */
     async function handleConfirmImport() {
-        if (_clientesParaImportar.length === 0) return;
-        _showModal('Progreso', `Importando ${_clientesParaImportar.length} clientes...`);
-
+        _showModal('Progreso', 'Sincronizando con Firebase...');
         try {
-            const sectoresRef = _collection(_db, SECTORES_COLLECTION_PATH);
-            const sectoresSnapshot = await _getDocs(sectoresRef);
-            const existingSectores = new Set(sectoresSnapshot.docs.map(doc => doc.data().name.toUpperCase()));
-
-            const newSectores = new Set(_clientesParaImportar.map(c => c.sector).filter(s => s && !existingSectores.has(s)));
-
-            const batchSectores = _writeBatch(_db);
-            newSectores.forEach(sectorName => {
-                const newSectorRef = _doc(sectoresRef);
-                batchSectores.set(newSectorRef, { name: sectorName });
-            });
-            if (newSectores.size > 0) await batchSectores.commit();
-
-            const clientesRef = _collection(_db, CLIENTES_COLLECTION_PATH);
-            let clientBatch = _writeBatch(_db);
-            let clientOps = 0;
-            const BATCH_LIMIT = 450;
-
-            for (const cliente of _clientesParaImportar) {
-                 const newClienteRef = _doc(clientesRef);
-                 clientBatch.set(newClienteRef, cliente);
-                 clientOps++;
-                 if (clientOps >= BATCH_LIMIT) {
-                     await clientBatch.commit();
-                     clientBatch = _writeBatch(_db);
-                     clientOps = 0;
-                 }
-            }
-            if (clientOps > 0) await clientBatch.commit();
-
-            _showModal('Éxito', `Importación finalizada: ${_clientesParaImportar.length} clientes creados.`);
+            const batch = _writeBatch(_db);
+            const secRef = _collection(_db, SECTORES_COLLECTION_PATH);
+            const cliRef = _collection(_db, CLIENTES_COLLECTION_PATH);
+            
+            const newSecs = new Set(_clientesParaImportar.map(c => c.sector).filter(s => s));
+            newSecs.forEach(s => _setDoc(_doc(secRef), { name: s }));
+            _clientesParaImportar.forEach(c => _setDoc(_doc(cliRef), c));
+            
+            await batch.commit();
+            _showModal('Éxito', `Importación de ${_clientesParaImportar.length} clientes exitosa.`);
             showFuncionesAvanzadasView();
-        } catch (error) {
-            _showModal('Error', `Fallo al importar clientes: ${error.message}`);
-        } finally {
-            _clientesParaImportar = [];
-        }
+        } catch (e) { _showModal('Error', e.message); }
     }
 
     function getCurrentCoordinates(inputId) {
         const input = document.getElementById(inputId);
-        if (!navigator.geolocation) return _showModal('Error', 'GPS no soportado.');
-        input.placeholder = "Buscando satélites...";
-        navigator.geolocation.getCurrentPosition(position => {
-            input.value = `${position.coords.latitude.toFixed(6)}, ${position.coords.longitude.toFixed(6)}`;
-        }, error => {
-            _showModal('Error GPS', `No se pudo obtener ubicación: ${error.message}`);
-        }, { enableHighAccuracy: true });
+        if (!navigator.geolocation) return _showModal('Error', 'Geolocalización no soportada.');
+        input.placeholder = "Localizando...";
+        navigator.geolocation.getCurrentPosition(p => {
+            input.value = `${p.coords.latitude.toFixed(6)}, ${p.coords.longitude.toFixed(6)}`;
+        }, () => _showModal('Error', 'No se pudo obtener ubicación.'));
     }
 
-    /**
-     * Muestra la vista de agregar cliente.
-     */
     function showAgregarClienteView() {
-        if (_floatingControls) _floatingControls.classList.add('hidden');
         _mainContent.innerHTML = `
             <div class="p-4 pt-8">
-                <div class="container mx-auto max-w-lg bg-white p-8 rounded-lg shadow-xl text-center border border-gray-100">
-                    <h2 class="text-2xl font-bold text-gray-800 mb-6">Agregar Cliente</h2>
+                <div class="container mx-auto max-w-lg bg-white p-8 rounded-lg shadow-xl">
+                    <h2 class="text-2xl font-bold text-gray-800 mb-6 text-center">Nuevo Cliente</h2>
                     <form id="clienteForm" class="space-y-4 text-left">
-                        <div>
-                            <label class="block text-sm font-bold text-gray-600 mb-1">Sector:</label>
-                            <div class="flex space-x-2">
-                                <select id="sector" class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500" required></select>
-                                <button type="button" id="addSectorBtn" class="px-4 py-2 bg-gray-200 rounded-lg hover:bg-gray-300 font-bold">+</button>
-                            </div>
-                        </div>
-                        <div><label class="block text-sm font-bold text-gray-600 mb-1">Nombre Comercial:</label><input type="text" id="nombreComercial" class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500" required></div>
-                        <div><label class="block text-sm font-bold text-gray-600 mb-1">Nombre Personal:</label><input type="text" id="nombrePersonal" class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500" required></div>
-                        <div><label class="block text-sm font-bold text-gray-600 mb-1">Teléfono:</label><input type="tel" id="telefono" class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500" required></div>
-                        <div>
-                            <label class="block text-sm font-bold text-gray-600 mb-1">Código CEP:</label>
-                            <div class="flex items-center">
-                                <input type="text" id="codigoCEP" class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500">
-                                <label class="ml-4 flex items-center text-sm cursor-pointer text-gray-500"><input type="checkbox" id="cepNA" class="mr-2"> N/A</label>
-                            </div>
-                        </div>
-                        <div>
-                            <label class="block text-sm font-bold text-gray-600 mb-1">Coordenadas GPS:</label>
-                            <div class="flex space-x-2">
-                                <input type="text" id="coordenadas" class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500" placeholder="Lat, Lon">
-                                <button type="button" id="getCoordsBtn" class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition shadow-md">📍</button>
-                            </div>
-                        </div>
-                        <button type="submit" class="w-full px-6 py-3 bg-green-500 text-white font-bold rounded-lg shadow-md hover:bg-green-600 mt-4 transition duration-300">Guardar Cliente</button>
+                        <div><label class="text-sm font-bold">Sector</label><div class="flex gap-2"><select id="sector" class="w-full p-2 border rounded" required></select><button type="button" id="addSectorBtn" class="bg-gray-200 px-3 rounded font-bold hover:bg-gray-300">+</button></div></div>
+                        <div><label class="text-sm font-bold">Nombre Comercial</label><input type="text" id="nombreComercial" class="w-full p-2 border rounded" required></div>
+                        <div><label class="text-sm font-bold">Nombre Personal</label><input type="text" id="nombrePersonal" class="w-full p-2 border rounded" required></div>
+                        <div><label class="text-sm font-bold">Teléfono</label><input type="tel" id="telefono" class="w-full p-2 border rounded" required></div>
+                        <div><label class="text-sm font-bold">CEP</label><div class="flex items-center gap-2"><input type="text" id="codigoCEP" class="w-full p-2 border rounded"><label class="text-xs text-gray-400 flex items-center whitespace-nowrap"><input type="checkbox" id="cepNA" class="mr-1"> N/A</label></div></div>
+                        <div><label class="text-sm font-bold">Coordenadas GPS</label><div class="flex gap-2"><input type="text" id="coordenadas" class="w-full p-2 border rounded" placeholder="Lat, Lon"><button type="button" id="getCoordsBtn" class="bg-blue-500 text-white px-3 rounded hover:bg-blue-600 transition">📍</button></div></div>
+                        <button type="submit" class="w-full bg-green-500 text-white py-3 rounded-lg font-bold shadow-md mt-4 hover:bg-green-600">Guardar</button>
                     </form>
-                    <button id="backToClientesBtn" class="mt-4 w-full px-6 py-3 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500 transition duration-300">Volver</button>
+                    <button id="backBtn" class="w-full mt-4 text-gray-400 font-medium">Volver</button>
                 </div>
             </div>
         `;
         _populateDropdown(SECTORES_COLLECTION_PATH, 'sector', 'Sector');
-
-        document.getElementById('cepNA').onchange = (e) => {
-            const cepInput = document.getElementById('codigoCEP');
-            cepInput.value = e.target.checked ? 'N/A' : '';
-            cepInput.disabled = e.target.checked;
-        };
-
-        document.getElementById('clienteForm').onsubmit = agregarCliente;
-        document.getElementById('backToClientesBtn').onclick = window.showClientesSubMenu;
-        document.getElementById('addSectorBtn').onclick = () => _showAddItemModal(SECTORES_COLLECTION_PATH, 'Sector');
+        document.getElementById('cepNA').onchange = (e) => { const i = document.getElementById('codigoCEP'); i.value = e.target.checked ? 'N/A' : ''; i.disabled = e.target.checked; };
         document.getElementById('getCoordsBtn').onclick = () => getCurrentCoordinates('coordenadas');
+        document.getElementById('addSectorBtn').onclick = () => _showAddItemModal(SECTORES_COLLECTION_PATH, 'Sector');
+        document.getElementById('clienteForm').onsubmit = agregarCliente;
+        document.getElementById('backBtn').onclick = window.showClientesSubMenu;
     }
 
     async function agregarCliente(e) {
         e.preventDefault();
         const f = e.target;
-        const nombreCom = f.nombreComercial.value.trim().toUpperCase();
+        const nCom = f.nombreComercial.value.trim().toUpperCase();
+        const duplicado = _clientesCache.find(c => c.nombreComercial.toUpperCase() === nCom);
         
-        const duplicado = _clientesCache.find(c => c.nombreComercial.toUpperCase() === nombreCom);
         const guardar = async () => {
             const sv = {}; TIPOS_VACIO.forEach(t => sv[t] = 0);
             const data = {
                 sector: f.sector.value.toUpperCase(),
-                nombreComercial: nombreCom,
+                nombreComercial: nCom,
                 nombrePersonal: f.nombrePersonal.value.toUpperCase().trim(),
                 telefono: f.telefono.value.trim(),
                 codigoCEP: f.codigoCEP.value.trim() || 'N/A',
@@ -380,14 +244,11 @@
                 await _addDoc(_collection(_db, CLIENTES_COLLECTION_PATH), data);
                 _showModal('Éxito', 'Cliente guardado correctamente.');
                 f.reset();
-            } catch (err) { _showModal('Error', `Fallo al guardar: ${err.message}`); }
+            } catch (err) { _showModal('Error', err.message); }
         };
 
-        if (duplicado) {
-            _showModal('Duplicado Detectado', `Ya existe un cliente con el nombre "${nombreCom}". ¿Deseas guardarlo de todos modos?`, guardar, 'Sí, Guardar', null, true);
-        } else {
-            await guardar();
-        }
+        if (duplicado) _showModal('Atención', `Ya existe un cliente "${nCom}". ¿Deseas crearlo igualmente?`, guardar, 'Sí, Guardar', null, true);
+        else await guardar();
     }
 
     function showVerClientesView() {
@@ -395,145 +256,101 @@
         _mainContent.innerHTML = `
             <div class="p-4 pt-8">
                 <div class="container mx-auto bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl">
-                    <h2 class="text-2xl font-bold text-gray-800 mb-6 text-center">Lista de Clientes</h2>
+                    <h2 class="text-2xl font-bold text-gray-800 mb-6 text-center">Lista General de Clientes</h2>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                        <input type="text" id="search-input" placeholder="Buscar por nombre..." class="px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500">
-                        <select id="filter-sector" class="px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500"><option value="">Sectores: Todos</option></select>
+                        <input type="text" id="search" placeholder="Buscar por nombre..." class="p-2 border rounded-lg focus:ring-2 focus:ring-indigo-400">
+                        <select id="f-sector" class="p-2 border rounded-lg focus:ring-2 focus:ring-indigo-400"><option value="">Todos los sectores</option></select>
                     </div>
-                    <div id="clientesListContainer" class="overflow-x-auto max-h-96 border rounded-lg shadow-inner bg-white">
-                        <p class="text-gray-500 text-center p-8 italic">Cargando base de datos...</p>
-                    </div>
-                    <button id="backToClientesBtn" class="mt-6 w-full px-6 py-3 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500 transition duration-300">Volver</button>
+                    <div id="list" class="overflow-x-auto max-h-96 text-sm border rounded bg-white"></div>
+                    <button id="back" class="mt-6 w-full bg-gray-400 text-white py-3 rounded-lg font-bold">Volver</button>
                 </div>
             </div>
         `;
-        _populateDropdown(SECTORES_COLLECTION_PATH, 'filter-sector', 'Sector');
-        
-        const renderList = () => {
-            const container = document.getElementById('clientesListContainer');
-            if (!container) return;
-            const term = (document.getElementById('search-input')?.value || '').toUpperCase();
-            const sector = document.getElementById('filter-sector')?.value || '';
-            
-            const filtered = _clientesCache.filter(c => 
-                (c.nombreComercial.includes(term) || c.nombrePersonal.includes(term)) && (!sector || c.sector === sector)
-            );
-
-            if (filtered.length === 0) {
-                container.innerHTML = `<p class="text-center text-gray-400 p-8">Sin resultados para los filtros actuales.</p>`;
-                return;
-            }
-
-            container.innerHTML = `
-                <table class="min-w-full text-sm border-collapse">
-                    <thead class="bg-gray-100 sticky top-0 shadow-sm border-b">
-                        <tr>
-                            <th class="p-3 border text-left">N. Comercial</th>
-                            <th class="p-3 border text-left">Personal / Sector</th>
-                            <th class="p-3 border text-center">Acciones</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y">
-                        ${filtered.map(c => `
-                            <tr class="hover:bg-gray-50 transition duration-150">
-                                <td class="p-3 border font-medium text-indigo-900">${c.nombreComercial}</td>
-                                <td class="p-3 border text-gray-600 font-normal">${c.nombrePersonal}<br><span class="text-xs italic text-gray-400 font-bold">${c.sector}</span></td>
-                                <td class="p-3 border text-center space-x-1">
-                                    <button onclick="window.clientesModule.editCliente('${c.id}')" class="px-3 py-1 bg-yellow-500 text-white rounded text-xs font-bold hover:bg-yellow-600 transition shadow-sm">Editar</button>
-                                    <button onclick="window.clientesModule.deleteCliente('${c.id}')" class="px-3 py-1 bg-red-500 text-white rounded text-xs font-bold hover:bg-red-600 transition shadow-sm">Borrar</button>
-                                </td>
-                            </tr>
-                        `).join('')}
-                    </tbody>
-                </table>
-            `;
-        };
-
+        _populateDropdown(SECTORES_COLLECTION_PATH, 'f-sector', 'Sector');
         const unsub = _onSnapshot(_collection(_db, CLIENTES_COLLECTION_PATH), (snap) => {
             _clientesCache = snap.docs.map(d => ({id: d.id, ...d.data()}));
-            renderList();
+            render();
         });
         _activeListeners.push(unsub);
-
-        document.getElementById('search-input').oninput = renderList;
-        document.getElementById('filter-sector').onchange = renderList;
-        document.getElementById('backToClientesBtn').onclick = window.showClientesSubMenu;
+        
+        const render = () => {
+            const term = document.getElementById('search').value.toUpperCase();
+            const sec = document.getElementById('f-sector').value;
+            const filtered = _clientesCache.filter(c => (c.nombreComercial.includes(term) || c.nombrePersonal.includes(term)) && (!sec || c.sector === sec));
+            document.getElementById('list').innerHTML = `<table class="w-full"><thead><tr class="bg-gray-100 text-left border-b"><th>Comercial</th><th>Sector</th><th>Acciones</th></tr></thead><tbody>` +
+                filtered.map(c => `<tr><td class="p-2 font-bold text-indigo-900">${c.nombreComercial}</td><td>${c.sector}</td><td class="flex gap-1 py-2">
+                    <button onclick="window.clientesModule.editCliente('${c.id}')" class="bg-yellow-500 text-white px-3 py-1 rounded text-xs font-bold hover:bg-yellow-600 transition">Editar</button>
+                    <button onclick="window.clientesModule.deleteCliente('${c.id}')" class="bg-red-500 text-white px-3 py-1 rounded text-xs font-bold hover:bg-red-600 transition">Borrar</button>
+                </td></tr>`).join('') + `</tbody></table>`;
+        };
+        document.getElementById('search').oninput = render;
+        document.getElementById('f-sector').onchange = render;
+        document.getElementById('back').onclick = window.showClientesSubMenu;
     }
 
-    /**
-     * Muestra un formulario completo para editar todos los campos de un cliente.
-     */
-    function editCliente(clienteId) {
-        const c = _clientesCache.find(x => x.id === clienteId);
+    function editCliente(id) {
+        const c = _clientesCache.find(x => x.id === id);
         if (!c) return;
-
         _mainContent.innerHTML = `
             <div class="p-4 pt-8">
-                <div class="container mx-auto max-w-lg bg-white p-8 rounded-lg shadow-xl border border-indigo-100">
-                    <h2 class="text-2xl font-bold text-gray-800 mb-6 text-center">Modificar Cliente</h2>
-                    <form id="editClienteForm" class="space-y-4 text-left">
-                        <div><label class="block text-sm font-bold mb-1 text-gray-600">Sector:</label><select id="e-sector" class="w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-400" required></select></div>
-                        <div><label class="block text-sm font-bold mb-1 text-gray-600">Nombre Comercial:</label><input type="text" id="e-ncom" value="${c.nombreComercial}" class="w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-400" required></div>
-                        <div><label class="block text-sm font-bold mb-1 text-gray-600">Nombre Personal:</label><input type="text" id="e-nper" value="${c.nombrePersonal}" class="w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-400" required></div>
-                        <div><label class="block text-sm font-bold mb-1 text-gray-600">Teléfono:</label><input type="tel" id="e-tel" value="${c.telefono}" class="w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-400" required></div>
-                        <div><label class="block text-sm font-bold mb-1 text-gray-600">Código CEP:</label><input type="text" id="e-cep" value="${c.codigoCEP}" class="w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-400"></div>
-                        <div>
-                            <label class="block text-sm font-bold mb-1 text-gray-600">Coordenadas:</label>
-                            <div class="flex space-x-2">
-                                <input type="text" id="e-coord" value="${c.coordenadas}" class="w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-400">
-                                <button type="button" id="getEditCoords" class="bg-blue-500 text-white px-3 rounded-lg hover:bg-blue-600 transition shadow-md">📍</button>
-                            </div>
-                        </div>
-                        <button type="submit" class="w-full px-6 py-3 bg-indigo-600 text-white font-bold rounded-lg shadow-md hover:bg-indigo-700 mt-4 transition duration-300">Guardar Cambios</button>
+                <div class="container mx-auto max-w-lg bg-white p-8 rounded-lg shadow-xl">
+                    <h2 class="text-2xl font-bold mb-6 text-center text-indigo-800">Modificar Cliente</h2>
+                    <form id="editForm" class="space-y-4 text-left">
+                        <div><label class="text-xs font-bold text-gray-500 uppercase">Sector</label><select id="e-sec" class="w-full p-2 border rounded" required></select></div>
+                        <div><label class="text-xs font-bold text-gray-500 uppercase">Nombre Comercial</label><input type="text" id="e-com" value="${c.nombreComercial}" class="w-full p-2 border rounded" required></div>
+                        <div><label class="text-xs font-bold text-gray-500 uppercase">Nombre Personal</label><input type="text" id="e-per" value="${c.nombrePersonal}" class="w-full p-2 border rounded" required></div>
+                        <div><label class="text-xs font-bold text-gray-500 uppercase">Teléfono</label><input type="tel" id="e-tel" value="${c.telefono}" class="w-full p-2 border rounded" required></div>
+                        <div><label class="text-xs font-bold text-gray-500 uppercase">Código CEP</label><input type="text" id="e-cep" value="${c.codigoCEP}" class="w-full p-2 border rounded"></div>
+                        <div><label class="text-xs font-bold text-gray-500 uppercase">Coordenadas</label><div class="flex gap-2"><input type="text" id="e-gps" value="${c.coordenadas}" class="w-full p-2 border rounded" placeholder="Lat, Lon"><button type="button" id="getEgps" class="bg-blue-500 text-white px-3 rounded shadow">📍</button></div></div>
+                        <button type="submit" class="w-full bg-indigo-600 text-white py-3 rounded-lg font-bold shadow-md hover:bg-indigo-700 transition mt-4">Actualizar Datos</button>
                     </form>
-                    <button id="backFromEdit" class="mt-4 w-full px-6 py-2 bg-gray-400 text-white rounded-lg shadow-md hover:bg-gray-500 transition duration-300">Cancelar</button>
+                    <button id="cancelEdit" class="w-full mt-4 text-gray-400 font-medium">Cancelar</button>
                 </div>
             </div>
         `;
-        _populateDropdown(SECTORES_COLLECTION_PATH, 'e-sector', 'Sector', c.sector);
-        document.getElementById('getEditCoords').onclick = () => getCurrentCoordinates('e-coord');
-        document.getElementById('backFromEdit').onclick = showVerClientesView;
-
-        document.getElementById('editClienteForm').onsubmit = async (e) => {
+        _populateDropdown(SECTORES_COLLECTION_PATH, 'e-sec', 'Sector', c.sector);
+        document.getElementById('getEgps').onclick = () => getCurrentCoordinates('e-gps');
+        document.getElementById('cancelEdit').onclick = showVerClientesView;
+        document.getElementById('editForm').onsubmit = async e => {
             e.preventDefault();
             const data = {
-                sector: document.getElementById('e-sector').value.toUpperCase(),
-                nombreComercial: document.getElementById('e-ncom').value.toUpperCase().trim(),
-                nombrePersonal: document.getElementById('e-nper').value.toUpperCase().trim(),
+                sector: document.getElementById('e-sec').value.toUpperCase(),
+                nombreComercial: document.getElementById('e-com').value.toUpperCase().trim(),
+                nombrePersonal: document.getElementById('e-per').value.toUpperCase().trim(),
                 telefono: document.getElementById('e-tel').value.trim(),
                 codigoCEP: document.getElementById('e-cep').value.trim() || 'N/A',
-                coordenadas: document.getElementById('e-coord').value.trim()
+                coordenadas: document.getElementById('e-gps').value.trim()
             };
             try {
-                await _setDoc(_doc(_db, CLIENTES_COLLECTION_PATH, clienteId), data, { merge: true });
-                _showModal('Éxito', 'Los cambios han sido guardados correctamente.');
+                await _setDoc(_doc(_db, CLIENTES_COLLECTION_PATH, id), data, { merge: true });
+                _showModal('Éxito', 'Información actualizada en Firebase.');
                 showVerClientesView();
-            } catch (err) { _showModal('Error', `Fallo al actualizar en Firebase: ${err.message}`); }
+            } catch (err) { _showModal('Error', err.message); }
         };
     }
 
     function deleteCliente(id) {
-        _showModal('Borrar Cliente', '¿Estás seguro de que quieres eliminar este cliente de la base de datos pública?', async () => {
+        _showModal('Confirmación', '¿Eliminar este cliente de forma permanente?', async () => {
             await _deleteDoc(_doc(_db, CLIENTES_COLLECTION_PATH, id));
-        }, 'Sí, Eliminar', null, true);
+        }, 'Eliminar', null, true);
     }
 
     function showSaldosVaciosView() {
         _mainContent.innerHTML = `
             <div class="p-4 pt-8"><div class="container mx-auto bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl text-center">
-                <h2 class="text-2xl font-bold text-gray-800 mb-6 text-center">Cartera de Envases (Vacíos)</h2>
-                <div id="saldosList" class="space-y-3 text-left"></div>
-                <button onclick="window.showClientesSubMenu()" class="mt-6 w-full bg-gray-400 text-white py-3 rounded-lg font-bold shadow hover:bg-gray-500 transition">Volver</button>
+                <h2 class="text-2xl font-bold text-gray-800 mb-6">Estado de Envases de Clientes</h2>
+                <div id="saldos" class="space-y-3 text-left"></div>
+                <button onclick="window.showClientesSubMenu()" class="mt-6 w-full bg-gray-400 text-white py-3 rounded-lg font-bold transition">Volver</button>
             </div></div>
         `;
-        const container = document.getElementById('saldosList');
+        const cont = document.getElementById('saldos');
         const unsub = _onSnapshot(_collection(_db, CLIENTES_COLLECTION_PATH), snap => {
             const clients = snap.docs.map(d => ({id: d.id, ...d.data()})).filter(c => c.saldoVacios);
-            container.innerHTML = clients.map(c => {
-                const saldos = Object.entries(c.saldoVacios).map(([t, v]) => `${t}: <b class="${v !== 0 ? 'text-red-500' : 'text-gray-400'}">${v}</b>`).join(' | ');
-                return `<div class="p-4 border rounded-lg flex justify-between items-center shadow-sm bg-white hover:border-indigo-200 transition">
-                    <div><b class="text-indigo-900 text-lg">${c.nombreComercial}</b><br><span class="text-xs text-gray-500">${saldos}</span></div>
-                    <button onclick="window.clientesModule.showSaldoDetalleModal('${c.id}')" class="px-4 py-2 bg-indigo-600 text-white rounded-md text-xs font-bold hover:bg-indigo-700 transition shadow-sm">Ajustar</button>
+            cont.innerHTML = clients.map(c => {
+                const s = Object.entries(c.saldoVacios).map(([t, v]) => `${t}: <b class="${v!==0?'text-red-500':'text-gray-400'}">${v}</b>`).join(' | ');
+                return `<div class="p-4 border rounded-lg flex justify-between items-center bg-white shadow-sm hover:border-indigo-300 transition">
+                    <div><b class="text-indigo-900">${c.nombreComercial}</b><br><span class="text-xs font-semibold">${s}</span></div>
+                    <button onclick="window.clientesModule.showSaldoDetalleModal('${c.id}')" class="bg-blue-600 text-white px-4 py-2 rounded-md text-xs font-bold shadow-sm hover:bg-blue-700">Ajustar</button>
                 </div>`;
             }).join('');
         });
@@ -544,23 +361,23 @@
         const c = _clientesCache.find(x => x.id === id);
         const modalHtml = `
             <div class="space-y-4">
-                <div><label class="text-xs font-bold text-gray-500 uppercase">Tipo de Envase</label><select id="adj-type" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500">${TIPOS_VACIO.map(t => `<option>${t}</option>`)}</select></div>
-                <div><label class="text-xs font-bold text-gray-500 uppercase">Cantidad</label><input type="number" id="adj-qty" placeholder="Ej: 5" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500"></div>
-                <div class="flex gap-4 pt-2">
-                    <button id="btn-p" class="flex-1 py-3 bg-orange-400 text-white rounded-lg font-bold shadow hover:bg-orange-500 transition">Préstamo (+)</button>
-                    <button id="btn-d" class="flex-1 py-3 bg-teal-600 text-white rounded-lg font-bold shadow hover:bg-teal-700 transition">Devolución (-)</button>
+                <div><label class="text-xs font-bold text-gray-500 uppercase">Envase</label><select id="adj-type" class="w-full p-2 border rounded focus:ring-2 focus:ring-indigo-300">${TIPOS_VACIO.map(t => `<option>${t}</option>`)}</select></div>
+                <div><label class="text-xs font-bold text-gray-500 uppercase">Cantidad</label><input type="number" id="adj-qty" placeholder="Ej: 5" class="w-full p-2 border rounded focus:ring-2 focus:ring-indigo-300"></div>
+                <div class="flex gap-3 pt-2">
+                    <button id="btn-p" class="flex-1 py-3 bg-yellow-500 text-gray-800 rounded font-bold shadow hover:bg-yellow-600">Préstamo (+)</button>
+                    <button id="btn-d" class="flex-1 py-3 bg-green-500 text-white rounded font-bold shadow hover:bg-green-600">Devolución (-)</button>
                 </div>
             </div>
         `;
-        _showModal(`Ajustar Saldo: ${c.nombreComercial}`, modalHtml);
+        _showModal(`Saldo: ${c.nombreComercial}`, modalHtml);
         const update = async (mode) => {
             const t = document.getElementById('adj-type').value, q = parseInt(document.getElementById('adj-qty').value);
             if (!q || q <= 0) return;
-            const sv = c.saldoVacios || {}; sv[t] = (sv[t] || 0) + (mode === 'p' ? q : -q);
+            const sv = { ...c.saldoVacios }; sv[t] = (sv[t] || 0) + (mode === 'p' ? q : -q);
             try {
                 await _setDoc(_doc(_db, CLIENTES_COLLECTION_PATH, id), { saldoVacios: sv }, { merge: true });
                 document.getElementById('modalContainer').classList.add('hidden');
-            } catch (err) { _showModal('Error', 'Fallo al actualizar el saldo en la base de datos.'); }
+            } catch (err) { _showModal('Error', 'Fallo al actualizar saldo.'); }
         };
         document.getElementById('btn-p').onclick = () => update('p');
         document.getElementById('btn-d').onclick = () => update('d');
@@ -568,42 +385,41 @@
 
     function showDatosMaestrosSectoresView() {
         _mainContent.innerHTML = `
-            <div class="p-4 pt-8"><div class="container mx-auto max-w-md bg-white p-8 rounded-lg shadow-xl text-center border border-yellow-100">
+            <div class="p-4 pt-8"><div class="container mx-auto max-w-md bg-white p-8 rounded-lg shadow-xl text-center">
                 <h2 class="text-2xl font-bold text-gray-800 mb-6 border-b pb-2">Gestión de Sectores</h2>
-                <div id="sec-list" class="space-y-2 text-left mb-6 max-h-72 overflow-y-auto pr-2"></div>
-                <button id="backSec" class="w-full py-3 bg-gray-400 text-white rounded-lg font-bold hover:bg-gray-500 transition duration-300 shadow-md">Volver</button>
+                <div id="sec-list" class="space-y-2 text-left mb-6 max-h-72 overflow-y-auto"></div>
+                <button id="backSec" class="w-full py-3 bg-gray-400 text-white rounded-lg font-bold shadow hover:bg-gray-500 transition">Volver</button>
             </div></div>
         `;
         document.getElementById('backSec').onclick = showFuncionesAvanzadasView;
         const unsub = _onSnapshot(_collection(_db, SECTORES_COLLECTION_PATH), snap => {
             const list = document.getElementById('sec-list');
             if(!list) return;
-            list.innerHTML = snap.docs.map(d => `<div class="flex justify-between items-center p-3 border-b hover:bg-gray-50 transition">
+            list.innerHTML = snap.docs.map(d => `<div class="flex justify-between items-center p-3 border-b hover:bg-gray-50">
                 <span class="font-medium text-gray-700">${d.data().name}</span>
-                <button onclick="window.clientesModule.deleteSector('${d.id}','${d.data().name}')" class="text-red-500 font-bold px-3 py-1 border border-red-200 rounded hover:bg-red-50 transition">X</button>
+                <button onclick="window.clientesModule.deleteSector('${d.id}','${d.data().name}')" class="text-red-500 font-bold px-2 py-1 border border-red-100 rounded hover:bg-red-50">X</button>
             </div>`).join('');
         });
         _activeListeners.push(unsub);
     }
 
     async function deleteSector(id, name) {
-        _showModal('Eliminar Sector', `¿Deseas eliminar el sector "${name}"? No debe haber clientes asociados.`, async () => { 
+        _showModal('Borrar', `¿Eliminar sector "${name}"? No debe haber clientes vinculados.`, async () => { 
             await _deleteDoc(_doc(_db, SECTORES_COLLECTION_PATH, id)); 
-        }, 'Sí, Eliminar', null, true);
+        }, 'Eliminar', null, true);
     }
 
     async function handleDeleteAllClientes() {
-        _showModal('BORRADO MASIVO', '¡ATENCIÓN! Vas a eliminar TODOS los clientes. Esta acción no se puede revertir.', async () => {
-            _showModal('Progreso', 'Limpiando colección pública...');
+        _showModal('BORRADO MASIVO', '¡ADVERTENCIA! Se borrarán TODOS los clientes. Esta acción es definitiva.', async () => {
+            _showModal('Progreso', 'Vaciando colección pública...');
             const snap = await _getDocs(_collection(_db, CLIENTES_COLLECTION_PATH));
             const batch = _writeBatch(_db);
             snap.docs.forEach(d => batch.delete(d.ref));
             await batch.commit();
-            _showModal('Éxito', 'Colección de clientes vaciada.');
-        }, 'BORRAR TODO', null, true);
+            _showModal('Éxito', 'Todos los clientes han sido eliminados.');
+        }, 'BORRAR TODOS', null, true);
     }
 
-    // Exponer funciones del módulo
     window.clientesModule = { editCliente, deleteCliente, deleteSector, showSaldoDetalleModal };
 
 })();
