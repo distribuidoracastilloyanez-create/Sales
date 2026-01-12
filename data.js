@@ -1273,12 +1273,25 @@
                 const cliSnaps = await _getDocs(cliRef); 
                 _consolidatedClientsCache = cliSnaps.docs.map(d => ({id: d.id, ...d.data()})); 
             }
-            const cliCoords = _consolidatedClientsCache.filter(c => { if(!c.coordenadas)return false; const p=c.coordenadas.split(','); if(p.length!==2)return false; const lat=parseFloat(p[0]), lon=parseFloat(p[1]); return !isNaN(lat)&&!isNaN(lon)&&lat>=0&&lat<=13&&lon>=-74&&lon<=-59; });
+            const cliCoords = _consolidatedClientsCache.filter(c => {
+                if(!c.coordenadas) return false;
+                // Cleanup string: remove quotes, parens, trim
+                const cleanCoords = c.coordenadas.toString().replace(/['"()]/g, '').trim();
+                const p = cleanCoords.split(',');
+                if(p.length !== 2) return false;
+                const lat = parseFloat(p[0]);
+                const lon = parseFloat(p[1]);
+                // Basic global bounds check: Lat -90 to 90, Lon -180 to 180
+                return !isNaN(lat) && !isNaN(lon) && lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180;
+            });
             if (cliCoords.length === 0) { mapCont.innerHTML = '<p class="text-gray-500">No hay clientes con coordenadas válidas.</p>'; return; }
             mapInstance = L.map('client-map').setView([7.77, -72.22], 13); L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OSM', maxZoom: 19 }).addTo(mapInstance);
             const rI = new L.Icon({iconUrl:'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png', shadowUrl:'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png', iconSize:[25,41],iconAnchor:[12,41],popupAnchor:[1,-34],shadowSize:[41,41]}); 
             const bI = new L.Icon({iconUrl:'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png', shadowUrl:'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png', iconSize:[25,41],iconAnchor:[12,41],popupAnchor:[1,-34],shadowSize:[41,41]});
-            mapMarkers.clear(); const mGroup=[]; cliCoords.forEach(cli=>{try{const coords=cli.coordenadas.split(',').map(p=>parseFloat(p)); const hasCEP=cli.codigoCEP&&cli.codigoCEP.toLowerCase()!=='n/a'; const marker=L.marker(coords,{icon:hasCEP?bI:rI}).bindPopup(`<b>${cli.nombreComercial}</b><br><small>${cli.nombrePersonal||''}</small><br><small>Sector: ${cli.sector||'N/A'}</small>${hasCEP?`<br><b>CEP: ${cli.codigoCEP}</b>`:''}<br><a href="https://www.google.com/maps?q=${coords[0]},${coords[1]}" target="_blank" class="text-xs text-blue-600">Maps</a>`); mGroup.push(marker); mapMarkers.set(cli.id, marker);}catch(e){}});
+            mapMarkers.clear(); const mGroup=[]; cliCoords.forEach(cli=>{try{
+                const cleanCoords = cli.coordenadas.toString().replace(/['"()]/g, '').trim();
+                const coords=cleanCoords.split(',').map(p=>parseFloat(p)); 
+                const hasCEP=cli.codigoCEP&&cli.codigoCEP.toLowerCase()!=='n/a'; const marker=L.marker(coords,{icon:hasCEP?bI:rI}).bindPopup(`<b>${cli.nombreComercial}</b><br><small>${cli.nombrePersonal||''}</small><br><small>Sector: ${cli.sector||'N/A'}</small>${hasCEP?`<br><b>CEP: ${cli.codigoCEP}</b>`:''}<br><a href="https://www.google.com/maps?q=${coords[0]},${coords[1]}" target="_blank" class="text-xs text-blue-600">Maps</a>`); mGroup.push(marker); mapMarkers.set(cli.id, marker);}catch(e){}});
             if(mGroup.length > 0) { const g = L.featureGroup(mGroup).addTo(mapInstance); mapInstance.fitBounds(g.getBounds().pad(0.1)); }
             setupMapSearch(cliCoords);
         } catch (error) { console.error("Error mapa:", error); }
