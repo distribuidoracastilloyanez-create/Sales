@@ -17,6 +17,9 @@
     // Rutas relativas y dinámicas
     const SORT_CONFIG_PATH = 'config/productSortOrder'; 
     let REPORTE_DESIGN_CONFIG_PATH;
+
+    // --- CORRECCIÓN: ID HARDCODED PARA DATOS PÚBLICOS (Debe coincidir con clientes.js y admin.js) ---
+    const PUBLIC_DATA_ID = 'ventas-9a210';
     
     // Configuración por defecto para los estilos del Reporte Excel (Preservada del original)
     const DEFAULT_REPORTE_SETTINGS = {
@@ -1213,8 +1216,8 @@
     async function loadAndRenderConsolidatedClients() {
         const cont = document.getElementById('consolidated-clients-container'), filtCont = document.getElementById('consolidated-clients-filters'); if(!cont || !filtCont) return;
         try {
-            // RUTA ACTUALIZADA: artifacts/{appId}/public/data/clientes
-            const cliRef = _collection(_db, `artifacts/${_appId}/public/data/clientes`); 
+            // --- CORRECCIÓN: Usar PUBLIC_DATA_ID hardcoded ---
+            const cliRef = _collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/clientes`); 
             const cliSnaps = await _getDocs(cliRef);
             _consolidatedClientsCache = cliSnaps.docs.map(d => ({id: d.id, ...d.data()}));
             filtCont.innerHTML = `<div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 p-4 border rounded-lg bg-gray-50"> <input type="text" id="client-search-input" placeholder="Buscar..." class="md:col-span-2 w-full px-4 py-2 border rounded-lg text-sm"> <div> <label for="client-filter-sector" class="block text-xs mb-1">Sector</label> <select id="client-filter-sector" class="w-full px-2 py-1 border rounded-lg text-sm"><option value="">Todos</option></select> </div> <button id="clear-client-filters-btn" class="bg-gray-300 text-xs font-semibold text-gray-700 rounded-lg self-end py-1.5 px-3 hover:bg-gray-400">Limpiar</button> </div>`;
@@ -1268,8 +1271,8 @@
         const mapCont = document.getElementById('client-map'); if (!mapCont || typeof L === 'undefined') return;
         try {
             if (_consolidatedClientsCache.length === 0) { 
-                // RUTA ACTUALIZADA: artifacts/{appId}/public/data/clientes
-                const cliRef = _collection(_db, `artifacts/${_appId}/public/data/clientes`); 
+                // --- CORRECCIÓN: Usar PUBLIC_DATA_ID hardcoded ---
+                const cliRef = _collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/clientes`); 
                 const cliSnaps = await _getDocs(cliRef); 
                 _consolidatedClientsCache = cliSnaps.docs.map(d => ({id: d.id, ...d.data()})); 
             }
