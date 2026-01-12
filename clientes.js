@@ -123,7 +123,7 @@
                 <div class="container mx-auto max-w-4xl">
                     <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl">
                         <h2 class="text-2xl font-bold text-gray-800 mb-4 text-center">Importar Clientes desde Excel</h2>
-                        <p class="text-center text-gray-600 mb-6">Selecciona un archivo .xlsx o .csv. La primera fila debe contener los encabezados: Sector, Nombre Comercial, Nombre Personal, telefono, CEP, y opcionalmente: Coordenadas (o X, Y).</p>
+                        <p class="text-center text-gray-600 mb-6">Selecciona un archivo .xlsx o .csv. La primera fila debe contener los encabezados: Sector, Nombre Comercial, Nombre Personal, telefono, CEP, y opcionalmente: Coordenadas (o X, Y / Latitud, Longitud).</p>
                         <input type="file" id="excel-uploader" accept=".xlsx, .xls, .csv" class="w-full p-4 border-2 border-dashed rounded-lg">
                         <div id="preview-container" class="mt-6 overflow-auto max-h-96"></div>
                         <div id="import-actions" class="mt-6 flex flex-col sm:flex-row gap-4 hidden">
@@ -171,7 +171,8 @@
 
             const headers = jsonData[0].map(h => (h ? h.toString().toLowerCase().trim().replace(/\s+/g, '') : ''));
             const requiredHeaders = ['sector', 'nombrecomercial', 'nombrepersonal', 'telefono', 'cep'];
-            const optionalHeaders = ['coordenadas', 'x', 'y'];
+            // Añado más opciones para coordenadas para ser más robusto
+            const optionalHeaders = ['coordenadas', 'x', 'y', 'latitud', 'longitud', 'lat', 'lon']; 
             const headerMap = {};
             let missingHeader = false;
 
@@ -180,8 +181,8 @@
                 if (index !== -1) {
                     headerMap[rh] = index;
                 } else {
-                     _showModal('Error', `Falta la columna requerida: "${rh}" (sin espacios) en el archivo.`);
-                     missingHeader = true;
+                      _showModal('Error', `Falta la columna requerida: "${rh}" (sin espacios) en el archivo.`);
+                      missingHeader = true;
                 }
             });
              if (missingHeader) {
@@ -198,13 +199,31 @@
 
             _clientesParaImportar = jsonData.slice(1).map((row, rowIndex) => {
                 let coordenadas = '';
+                
+                // Prioridad 1: Columna 'coordenadas' explicita
                 if (headerMap['coordenadas'] !== undefined) {
                     coordenadas = (row[headerMap['coordenadas']] || '').toString().trim();
-                } else if (headerMap['x'] !== undefined && headerMap['y'] !== undefined) {
+                } 
+                // Prioridad 2: Columnas 'latitud' y 'longitud' (o lat/lon)
+                else if ((headerMap['latitud'] !== undefined || headerMap['lat'] !== undefined) && 
+                         (headerMap['longitud'] !== undefined || headerMap['lon'] !== undefined)) {
+                    
+                    let lat = headerMap['latitud'] !== undefined ? row[headerMap['latitud']] : row[headerMap['lat']];
+                    let lon = headerMap['longitud'] !== undefined ? row[headerMap['longitud']] : row[headerMap['lon']];
+                    
+                    lat = (lat || '').toString().trim();
+                    lon = (lon || '').toString().trim();
+
+                    if (lat && lon) {
+                        coordenadas = `${lat}, ${lon}`;
+                    }
+                }
+                // Prioridad 3: Columnas X e Y (Soporte Legacy/GIS)
+                else if (headerMap['x'] !== undefined && headerMap['y'] !== undefined) {
                     const x = (row[headerMap['x']] || '').toString().trim();
                     const y = (row[headerMap['y']] || '').toString().trim();
                     if (x && y) {
-                        coordenadas = `${y}, ${x}`; // Formato standard es Lat, Lon
+                        coordenadas = `${y}, ${x}`; // Formato standard es Lat, Lon (Y suele ser Latitud en proyecciones planas simples, pero depende del origen)
                     }
                 }
 
@@ -224,8 +243,8 @@
                 };
                 if (!cliente.codigoCEP) cliente.codigoCEP = 'N/A';
                 if (!cliente.nombreComercial && !cliente.nombrePersonal) {
-                     console.warn(`Fila ${rowIndex + 2}: Faltan Nombre Comercial y Nombre Personal. Fila ignorada.`);
-                     return null; // Ignorar fila si faltan ambos nombres
+                      console.warn(`Fila ${rowIndex + 2}: Faltan Nombre Comercial y Nombre Personal. Fila ignorada.`);
+                      return null; // Ignorar fila si faltan ambos nombres
                 }
                 return cliente;
             }).filter(c => c !== null); // Filtrar las filas ignoradas (null)
@@ -777,7 +796,7 @@
 
 
     function editCliente(clienteId) {
-        _floatingControls.classList.add('hidden');
+         _floatingControls.classList.add('hidden');
         const cliente = _clientesCache.find(c => c.id === clienteId);
         if (!cliente) return;
 
@@ -993,8 +1012,8 @@
                 let updatedClientsCount = 0;
 
                 if (!clientesSnapshot.empty) {
-                     updatedClientsCount = clientesSnapshot.size;
-                     _showModal('Progreso', `Actualizando ${updatedClientsCount} cliente(s)...`);
+                      updatedClientsCount = clientesSnapshot.size;
+                      _showModal('Progreso', `Actualizando ${updatedClientsCount} cliente(s)...`);
                     const batch = _writeBatch(_db); // Use _writeBatch
                     clientesSnapshot.docs.forEach(doc => {
                         batch.update(doc.ref, { sector: nuevoNombreMayus });
