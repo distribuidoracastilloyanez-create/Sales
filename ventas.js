@@ -15,8 +15,7 @@
     // Asume que TIPOS_VACIO_GLOBAL se define o está disponible globalmente
     // Usaremos window.TIPOS_VACIO_GLOBAL si existe, o un default
     const TIPOS_VACIO = window.TIPOS_VACIO_GLOBAL || ["1/4 - 1/3", "ret 350 ml", "ret 1.25 Lts"];
-    // --- CORRECCIÓN: La definición de SNAPSHOT_DOC_PATH se mueve DENTRO de las funciones que la usan ---
-
+    
     window.initVentas = function(dependencies) {
         _db = dependencies.db;
         _userId = dependencies.userId;
@@ -86,14 +85,13 @@
         document.getElementById('tasaCopInput').addEventListener('input', (e) => { _tasaCOP = parseFloat(e.target.value) || 0; localStorage.setItem('tasaCOP', _tasaCOP); if (_monedaActual === 'COP') { renderVentasInventario(); updateVentaTotal(); } });
         document.getElementById('tasaBsInput').addEventListener('input', (e) => { _tasaBs = parseFloat(e.target.value) || 0; localStorage.setItem('tasaBs', _tasaBs); if (_monedaActual === 'Bs') { renderVentasInventario(); updateVentaTotal(); } });
         document.getElementById('rubroFilter').addEventListener('change', renderVentasInventario);
-        document.getElementById('generarTicketBtn').addEventListener('click', generarTicket); // Llama a la nueva lógica
+        document.getElementById('generarTicketBtn').addEventListener('click', generarTicket); 
         document.getElementById('backToVentasBtn').addEventListener('click', showVentasView);
         loadDataForNewSale();
     }
 
     function loadDataForNewSale() {
         const clientesRef = _collection(_db, `artifacts/ventas-9a210/public/data/clientes`);
-        // --- FIX: Manejador de error de listener ---
         const unsubClientes = _onSnapshot(clientesRef, snap => { _clientesCache = snap.docs.map(d => ({ id: d.id, ...d.data() })); }, err => { 
             if (err.code === 'permission-denied' || err.code === 'unauthenticated') {
                 console.log(`Ventas (clientes) listener error ignored (assumed logout): ${err.code}`);
@@ -102,7 +100,6 @@
             console.error("Error clientes:", err); 
         });
         const inventarioRef = _collection(_db, `artifacts/${_appId}/users/${_userId}/inventario`);
-        // --- FIX: Manejador de error de listener ---
         const unsubInventario = _onSnapshot(inventarioRef, snap => { 
             _inventarioCache = snap.docs.map(d => ({ id: d.id, ...d.data() })); 
             populateRubroFilter(); 
@@ -145,14 +142,16 @@
     async function renderVentasInventario() {
         const body = document.getElementById('inventarioTableBody'), rF = document.getElementById('rubroFilter'); if (!body || !rF) return; body.innerHTML = `<tr><td colspan="4" class="text-center text-gray-500">Cargando...</td></tr>`;
         const selRubro = rF.value; const invFilt = _inventarioCache.filter(p => (p.cantidadUnidades || 0) > 0 || _ventaActual.productos[p.id]); let filtInv = selRubro ? invFilt.filter(p => p.rubro === selRubro) : invFilt;
-        // Usa la función global para ordenar el inventario en la vista de venta
+        
         const sortFunc = await window.getGlobalProductSortFunction();
         filtInv.sort(sortFunc);
+        
         body.innerHTML = '';
         if (filtInv.length === 0) { body.innerHTML = `<tr><td colspan="4" class="text-center text-gray-500">No hay productos ${selRubro ? 'en este rubro' : ''}.</td></tr>`; return; }
+        
         let lastHKey = null;
-        // Obtiene el primer criterio de ordenamiento de la preferencia global (si existe)
         const fSortKey = window._sortPreferenceCache ? window._sortPreferenceCache[0] : 'segmento';
+        
         filtInv.forEach(prod => {
             const curHVal = prod[fSortKey] || `Sin ${fSortKey}`; if (curHVal !== lastHKey) { lastHKey = curHVal; const hRow = document.createElement('tr'); hRow.innerHTML = `<td colspan="4" class="py-1 px-2 bg-gray-100 font-bold sticky top-[calc(theme(height.10))] z-[9]">${lastHKey}</td>`; body.appendChild(hRow); }
             const vPor = prod.ventaPor || { und: true }, vActProd = _ventaActual.productos[prod.id] || {}, precios = prod.precios || { und: prod.precioPorUnidad || 0 };
@@ -192,8 +191,6 @@
         productosVendidos.forEach(p => {
             const precios = p.precios || { und: p.precioPorUnidad || 0 };
             const cant = p.cantidadVendida || { cj: p.cantCj || 0, paq: p.cantPaq || 0, und: p.cantUnd || 0 };
-            const uCj = p.unidadesPorCaja || 1;
-            const uPaq = p.unidadesPorPaquete || 1;
             let desc = `${p.segmento || ''} ${p.marca || ''} ${p.presentacion}`;
             let qtyText = '', priceText = '', subtotal = 0;
 
@@ -209,9 +206,7 @@
                 subtotal = (precios.und || 0) * cant.und;
                 qtyText = `${cant.und} UND`;
                 priceText = `$${(precios.und || 0).toFixed(2)}`;
-            } else {
-                return; // No mostrar si no hay cantidad
-            }
+            } else { return; }
             total += subtotal;
 
             productosHTML += `
@@ -358,20 +353,18 @@
     async function handleShareRawText(textContent, callbackDespuesDeCompartir) {
         let success = false;
          if (navigator.share) { try { await navigator.share({ title: 'Ticket de Venta', text: textContent }); success = true; } catch (err) { console.warn("Share API error:", err.name); } }
-         else { try { legacyCopyToClipboard(textContent, (copySuccess) => { success = copySuccess; }); } catch (copyErr) { console.error('Fallback copy failed:', copyErr); } } // Pasar callback a legacy
-         // Asegurarse de llamar al callback DESPUÉS de intentar, incluso si legacyCopyToClipboard es asíncrono en su modal
-         // Usar un pequeño timeout si legacyCopyToClipboard no retorna directamente el estado
+         else { try { legacyCopyToClipboard(textContent, (copySuccess) => { success = copySuccess; }); } catch (copyErr) { console.error('Fallback copy failed:', copyErr); } } 
          setTimeout(() => {
             if (callbackDespuesDeCompartir) callbackDespuesDeCompartir(success);
-         }, 100); // Pequeña espera por si el modal de legacyCopyToClipboard es lento
+         }, 100); 
     }
     function copyToClipboard(textContent, callbackDespuesDeCopia) {
         if (navigator.clipboard && window.isSecureContext) {
             navigator.clipboard.writeText(textContent)
                 .then(() => { _showModal('Copiado', 'Texto copiado.'); if(callbackDespuesDeCopia) callbackDespuesDeCopia(true); })
-                .catch(err => legacyCopyToClipboard(textContent, callbackDespuesDeCopia)); // Fallback
+                .catch(err => legacyCopyToClipboard(textContent, callbackDespuesDeCopia)); 
         } else {
-            legacyCopyToClipboard(textContent, callbackDespuesDeCopia); // Fallback directo
+            legacyCopyToClipboard(textContent, callbackDespuesDeCopia); 
         }
     }
     function legacyCopyToClipboard(textContent, callbackDespuesDeCopia) {
@@ -381,175 +374,175 @@
         catch (err) { console.error('Fallback copy failed:', err); _showModal('Error', 'No se pudo copiar el texto.'); success = false;}
         finally { document.body.removeChild(textArea); if(callbackDespuesDeCopia) callbackDespuesDeCopia(success); }
     }
-    // *** MODIFICADO: showSharingOptions ahora recibe callbackFinal ***
+    
     function showSharingOptions(venta, productos, vaciosDevueltosPorTipo, tipo, callbackFinal) {
         const modalContent = `<div class="text-center"><h3 class="text-xl font-bold mb-4">Generar ${tipo}</h3><p class="mb-6">Elige formato.</p><div class="space-y-4"><button id="printTextBtn" class="w-full px-6 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600">Imprimir (Texto)</button><button id="shareImageBtn" class="w-full px-6 py-3 bg-green-500 text-white rounded-lg hover:bg-green-600">Compartir (Imagen)</button></div></div>`;
-        _showModal('Elige opción', modalContent, null, ''); // Sin botón 'Confirmar' por defecto
-        // Llama al callbackFinal *después* de intentar compartir/imprimir
+        _showModal('Elige opción', modalContent, null, ''); 
         document.getElementById('printTextBtn').addEventListener('click', () => { const rawText = createRawTextTicket(venta, productos, vaciosDevueltosPorTipo); handleShareRawText(rawText, callbackFinal); });
         document.getElementById('shareImageBtn').addEventListener('click', () => { const html = createTicketHTML(venta, productos, vaciosDevueltosPorTipo, tipo); handleShareTicket(html, callbackFinal); });
     }
 
-    // *** MODIFICADO: _processAndSaveVenta ahora es la función que guarda ***
+    // *** MODIFICADO: _processAndSaveVenta CON TRANSACCIÓN ATÓMICA ***
     async function _processAndSaveVenta() {
-        console.log("Starting _processAndSaveVenta...");
-        
-        // --- INICIO: Lógica del Snapshot ---
-        // --- CORRECCIÓN: Definir SNAPSHOT_DOC_PATH aquí ---
+        console.log("Starting _processAndSaveVenta (Transaction)...");
+
+        // --- Snapshot Logic (Keep independent/optimistic for now) ---
         const SNAPSHOT_DOC_PATH = `artifacts/${_appId}/users/${_userId}/config/cargaInicialSnapshot`;
         const snapshotRef = _doc(_db, SNAPSHOT_DOC_PATH);
         try {
+            // This read is not part of the main transaction to avoid contention on config doc
             const snapshotDoc = await _getDoc(snapshotRef);
             if (!snapshotDoc.exists()) {
-                // No existe, es la primera venta. Guardar snapshot.
-                console.log("Primera venta del día detectada. Guardando snapshot de inventario...");
-                if (_inventarioCache && _inventarioCache.length > 0) {
-                    await _setDoc(snapshotRef, { inventario: _inventarioCache, fecha: new Date() });
-                    console.log("Snapshot de carga inicial guardado.");
-                } else {
-                    console.warn("No hay inventario en caché para guardar en snapshot.");
-                }
+                 console.log("Primera venta del día detectada. Guardando snapshot...");
+                 if (_inventarioCache && _inventarioCache.length > 0) {
+                     await _setDoc(snapshotRef, { inventario: _inventarioCache, fecha: new Date() });
+                 }
             }
-        } catch (snapError) {
-            console.error("Error al verificar/guardar snapshot de carga inicial:", snapError);
-            // No detenemos la venta, pero sí avisamos.
-            _showModal('Advertencia', 'No se pudo guardar la Carga Inicial (snapshot). El reporte de cierre podría no ser exacto.');
+        } catch (e) { console.warn("Snapshot check failed", e); }
+
+
+        const prodsParaGuardar = Object.values(_ventaActual.productos);
+        if (prodsParaGuardar.length === 0 && Object.values(_ventaActual.vaciosDevueltosPorTipo).every(v => v === 0)) {
+             throw new Error("No hay productos ni vacíos para guardar.");
         }
-        // --- FIN: Lógica del Snapshot ---
 
-        // Esta función ahora contiene la lógica de guardado que estaba antes en handleSaveVentaAndAdjustments
+        const ventaRef = _doc(_collection(_db, `artifacts/${_appId}/users/${_userId}/ventas`));
+        const clientRef = _doc(_db, `artifacts/ventas-9a210/public/data/clientes`, _ventaActual.cliente.id);
+
         try {
-            const batch = _writeBatch(_db);
-            const ventaRef = _doc(_collection(_db, `artifacts/${_appId}/users/${_userId}/ventas`));
-            let totalVenta=0;
-            const itemsVenta=[];
-            const vaciosChanges={}; // tipoVacio: cambio_neto_para_saldo_cliente
-            const prodsParaGuardar = Object.values(_ventaActual.productos);
+            const savedData = await _runTransaction(_db, async (transaction) => {
+                // 1. READS
+                const clientDoc = await transaction.get(clientRef);
+                if (!clientDoc.exists()) throw "El cliente no existe.";
 
-            for(const p of prodsParaGuardar){
-                const pCache=_inventarioCache.find(i=>i.id===p.id);
-                if(!pCache) throw new Error(`Producto ${p.presentacion} no encontrado en caché.`);
-                const stockU=pCache.cantidadUnidades||0;
-                const restarU=p.totalUnidadesVendidas||0;
-                if(restarU < 0) throw new Error(`Cantidad inválida para ${p.presentacion}.`);
-                if(stockU < restarU) throw new Error(`Stock insuficiente para ${p.presentacion}. Disponible: ${stockU}, Vendido: ${restarU}`);
-                if(restarU > 0){
-                    const pRef=_doc(_db,`artifacts/${_appId}/users/${_userId}/inventario`,p.id);
-                    batch.update(pRef,{cantidadUnidades: stockU - restarU});
-                }
-                const precios=p.precios||{und:p.precioPorUnidad||0};
-                const sub=(precios.cj||0)*(p.cantCj||0)+(precios.paq||0)*(p.cantPaq||0)+(precios.und||0)*(p.cantUnd||0);
-                totalVenta+=sub;
-
-                if(pCache.manejaVacios && pCache.tipoVacio){
-                    const tV=pCache.tipoVacio;
-                    const cjV=p.cantCj||0;
-                    if(cjV > 0) vaciosChanges[tV] = (vaciosChanges[tV] || 0) + cjV; // Aumenta deuda cliente
+                const invRefs = [];
+                for (const p of prodsParaGuardar) {
+                    const ref = _doc(_db, `artifacts/${_appId}/users/${_userId}/inventario`, p.id);
+                    invRefs.push({ id: p.id, ref: ref, qty: p.totalUnidadesVendidas || 0, presentacion: p.presentacion });
                 }
 
-                if(restarU > 0) {
-                     itemsVenta.push({
-                         id:p.id, presentacion:p.presentacion, rubro:p.rubro??null, marca:p.marca??null, segmento:p.segmento??null,
-                         precios:p.precios, ventaPor:p.ventaPor,
-                         unidadesPorPaquete:p.unidadesPorPaquete, unidadesPorCaja:p.unidadesPorCaja,
-                         cantidadVendida:{cj:p.cantCj||0,paq:p.cantPaq||0,und:p.cantUnd||0},
-                         totalUnidadesVendidas:p.totalUnidadesVendidas,
-                         iva:p.iva??0, manejaVacios:p.manejaVacios||false, tipoVacio:p.tipoVacio||null
-                     });
-                }
-            }
+                // Execute all inventory reads
+                const invDocs = await Promise.all(invRefs.map(item => transaction.get(item.ref)));
+                
+                // 2. LOGIC & VALIDATION
+                let totalVenta = 0;
+                const itemsVenta = [];
+                const vaciosChanges = {};
 
-            for(const tV in _ventaActual.vaciosDevueltosPorTipo){
-                const dev=_ventaActual.vaciosDevueltosPorTipo[tV]||0;
-                if(dev > 0) vaciosChanges[tV] = (vaciosChanges[tV] || 0) - dev; // Disminuye deuda cliente
-            }
-
-            if(Object.values(vaciosChanges).some(c => c !== 0)){
-                const cliRef=_doc(_db,`artifacts/ventas-9a210/public/data/clientes`,_ventaActual.cliente.id);
-                await _runTransaction(_db,async(t)=>{
-                    const cliDoc=await t.get(cliRef);
-                    if(!cliDoc.exists()) throw "Cliente no existe.";
-                    const cliData=cliDoc.data();
-                    const sVac = cliData.saldoVacios || {};
-                    for(const tV in vaciosChanges){
-                        const ch=vaciosChanges[tV];
-                        if(ch !== 0) sVac[tV] = (sVac[tV] || 0) + ch;
+                // Process Products
+                invRefs.forEach((item, index) => {
+                    const invDoc = invDocs[index];
+                    if (!invDoc.exists()) throw `Producto ${item.presentacion} no existe en inventario.`;
+                    
+                    const currentStock = invDoc.data().cantidadUnidades || 0;
+                    if (currentStock < item.qty) {
+                        throw `Stock insuficiente para ${item.presentacion}. Disponible: ${currentStock}, Solicitado: ${item.qty}`;
                     }
-                    t.update(cliRef,{saldoVacios: sVac});
+
+                    // Prepare Inventory Update
+                    if (item.qty > 0) {
+                        transaction.update(item.ref, { cantidadUnidades: currentStock - item.qty });
+                    }
+
+                    // Prepare Sale Item Data
+                    const p = prodsParaGuardar.find(prod => prod.id === item.id);
+                    const precios = p.precios || { und: p.precioPorUnidad || 0 };
+                    const sub = (precios.cj || 0) * (p.cantCj || 0) + (precios.paq || 0) * (p.cantPaq || 0) + (precios.und || 0) * (p.cantUnd || 0);
+                    totalVenta += sub;
+
+                    // Empty bottles logic (Entregados)
+                    if (invDoc.data().manejaVacios && invDoc.data().tipoVacio) {
+                        const tV = invDoc.data().tipoVacio;
+                        const cjV = p.cantCj || 0;
+                        if (cjV > 0) vaciosChanges[tV] = (vaciosChanges[tV] || 0) + cjV;
+                    }
+
+                    if (item.qty > 0) {
+                        itemsVenta.push({
+                           id: p.id, presentacion: p.presentacion, rubro: p.rubro??null, marca: p.marca??null, segmento: p.segmento??null,
+                           precios: p.precios, ventaPor: p.ventaPor,
+                           unidadesPorPaquete: p.unidadesPorPaquete, unidadesPorCaja: p.unidadesPorCaja,
+                           cantidadVendida: { cj: p.cantCj||0, paq: p.cantPaq||0, und: p.cantUnd||0 },
+                           totalUnidadesVendidas: p.totalUnidadesVendidas,
+                           iva: p.iva??0, manejaVacios: p.manejaVacios||false, tipoVacio: p.tipoVacio||null
+                        });
+                    }
                 });
-            }
 
-            const ventaDataToSave = {
-                clienteId:_ventaActual.cliente.id,
-                clienteNombre:_ventaActual.cliente.nombreComercial||_ventaActual.cliente.nombrePersonal,
-                clienteNombrePersonal:_ventaActual.cliente.nombrePersonal,
-                fecha:new Date(),
-                total:totalVenta,
-                productos:itemsVenta,
-                vaciosDevueltosPorTipo:_ventaActual.vaciosDevueltosPorTipo
-            };
+                // Empty bottles logic (Devueltos)
+                for (const tV in _ventaActual.vaciosDevueltosPorTipo) {
+                    const dev = _ventaActual.vaciosDevueltosPorTipo[tV] || 0;
+                    if (dev > 0) vaciosChanges[tV] = (vaciosChanges[tV] || 0) - dev;
+                }
 
-             if (itemsVenta.length > 0 || Object.values(_ventaActual.vaciosDevueltosPorTipo).some(v => v > 0)) {
-                batch.set(ventaRef, ventaDataToSave);
-            } else {
-                 console.warn("No se guardó la venta: sin productos ni vacíos devueltos.");
-                 throw new Error("No hay productos ni vacíos devueltos para guardar."); // Lanzar error para que no continúe
-            }
+                // 3. WRITES
+                // Update Client Balance
+                if (Object.values(vaciosChanges).some(c => c !== 0)) {
+                    const cliData = clientDoc.data();
+                    const sVac = cliData.saldoVacios || {};
+                    for (const tV in vaciosChanges) {
+                        const ch = vaciosChanges[tV];
+                        if (ch !== 0) sVac[tV] = (sVac[tV] || 0) + ch;
+                    }
+                    transaction.update(clientRef, { saldoVacios: sVac });
+                }
 
-            await batch.commit();
-            console.log("_processAndSaveVenta finished successfully.");
-            // Devolver los datos guardados para usarlos en el ticket
-            return { venta: ventaDataToSave, productos: itemsVenta, vaciosDevueltosPorTipo: ventaDataToSave.vaciosDevueltosPorTipo };
+                // Save Sale Document
+                const ventaDataToSave = {
+                    clienteId: _ventaActual.cliente.id,
+                    clienteNombre: _ventaActual.cliente.nombreComercial || _ventaActual.cliente.nombrePersonal,
+                    clienteNombrePersonal: _ventaActual.cliente.nombrePersonal,
+                    fecha: new Date(),
+                    total: totalVenta,
+                    productos: itemsVenta,
+                    vaciosDevueltosPorTipo: _ventaActual.vaciosDevueltosPorTipo
+                };
+                
+                transaction.set(ventaRef, ventaDataToSave);
+                
+                return { venta: ventaDataToSave, productos: itemsVenta, vaciosDevueltosPorTipo: ventaDataToSave.vaciosDevueltosPorTipo }; 
+            });
+
+            return savedData;
 
         } catch (e) {
-            console.error("Error in _processAndSaveVenta:", e);
-            throw e; // Relanzar el error para que sea capturado por generarTicket
+            console.error("Transaction failed: ", e);
+            throw e;
         }
     }
 
-    // *** MODIFICADO: generarTicket ahora confirma, llama a _processAndSaveVenta, y LUEGO muestra opciones ***
     async function generarTicket() {
         if (!_ventaActual.cliente) { _showModal('Error', 'Selecciona cliente.'); return; }
         const prods = Object.values(_ventaActual.productos);
         const hayVac = Object.values(_ventaActual.vaciosDevueltosPorTipo).some(c => c > 0);
         if (prods.length === 0 && !hayVac) { _showModal('Error', 'Agrega productos o registra vacíos devueltos.'); return; }
 
-        // 1. Mostrar modal de confirmación para GUARDAR
         _showModal('Confirmar Venta', '¿Guardar esta transacción?', async () => {
-            _showModal('Progreso', 'Guardando transacción...'); // Mostrar progreso mientras se guarda
+            _showModal('Progreso', 'Guardando transacción...'); 
             try {
-                // 2. Llamar a la función que guarda y ajusta (y crea snapshot si es necesario)
                 const savedData = await _processAndSaveVenta();
 
-                // 3. Si tuvo éxito, AHORA mostrar las opciones de ticket
-                // Pasar showNuevaVentaView como callback final
                 showSharingOptions(
-                    { cliente: _ventaActual.cliente, fecha: savedData.venta.fecha }, // Datos básicos
-                    savedData.productos, // Productos guardados
-                    savedData.vaciosDevueltosPorTipo, // Vacíos guardados
+                    { cliente: _ventaActual.cliente, fecha: savedData.venta.fecha }, 
+                    savedData.productos, 
+                    savedData.vaciosDevueltosPorTipo, 
                     'Nota de Entrega',
-                    () => { // Callback que se ejecuta después de imprimir/compartir
+                    () => { 
                          _showModal('Éxito', 'Venta registrada y ticket generado/compartido.', showNuevaVentaView);
                     }
                 );
 
             } catch (saveError) {
-                // Si _processAndSaveVenta falló, mostrar el error
                 console.error("Error al guardar venta:", saveError);
-                 const progressModal = document.getElementById('modalContainer'); // Cerrar modal de progreso si aún está visible
+                 const progressModal = document.getElementById('modalContainer'); 
                  if(progressModal && !progressModal.classList.contains('hidden') && progressModal.querySelector('h3')?.textContent.startsWith('Progreso')) {
                       progressModal.classList.add('hidden');
                  }
-                _showModal('Error', `Error al guardar la venta: ${saveError.message}`);
+                _showModal('Error', `Error al guardar la venta: ${saveError.message || saveError}`);
             }
-            
-            // --- ¡CORRECCIÓN AÑADIDA AQUÍ! ---
-            // Esto evita que el modal de "Confirmar" se cierre antes de que 
-            // aparezca el modal de "showSharingOptions".
             return false; 
-            // --- FIN DE LA CORRECCIÓN ---
 
-        }, 'Sí, guardar', () => { /* No hacer nada si cancela la confirmación */ }, true); // True para indicar lógica de confirmación (mostrar progreso)
+        }, 'Sí, guardar', () => { }, true); 
     }
 
     function showVentasTotalesView() {
@@ -584,7 +577,6 @@
     function renderVentasList() {
         const cont = document.getElementById('ventasListContainer'); if (!cont) return;
         const vRef = _collection(_db, `artifacts/${_appId}/users/${_userId}/ventas`); const q = _query(vRef);
-        // --- FIX: Manejador de error de listener ---
         const unsub = _onSnapshot(q, (snap) => {
             _ventasGlobal = snap.docs.map(d => ({ id: d.id, ...d.data() })); _ventasGlobal.sort((a,b)=>(b.fecha?.toDate()??0)-(a.fecha?.toDate()??0));
             if (_ventasGlobal.length === 0) { cont.innerHTML = `<p class="text-center text-gray-500">No hay ventas.</p>`; return; }
@@ -618,11 +610,6 @@
         document.getElementById('backToVentasTotalesBtn').addEventListener('click', showVentasTotalesView);
     }
 
-    // --- INICIO DE REFACTORIZACIÓN (Paso 2 y 3) ---
-    // La función `processSalesDataForReport` que estaba aquí fue ELIMINADA.
-    // Era duplicada, tenía bugs y ahora usamos la de `data.js`.
-    // --- FIN DE REFACTORIZACIÓN (Paso 2 y 3) ---
-
     async function showVerCierreView() {
         _showModal('Progreso', 'Generando reporte...');
         const ventasSnapshot = await _getDocs(_collection(_db, `artifacts/${_appId}/users/${_userId}/ventas`));
@@ -631,7 +618,6 @@
         const obsequiosSnapshot = await _getDocs(_collection(_db, `artifacts/${_appId}/users/${_userId}/obsequios_entregados`));
         const obsequios = obsequiosSnapshot.docs.map(doc => doc.data());
 
-        // --- CORRECCIÓN: Definir SNAPSHOT_DOC_PATH aquí ---
         const SNAPSHOT_DOC_PATH = `artifacts/${_appId}/users/${_userId}/config/cargaInicialSnapshot`;
         let cargaInicialInventario = [];
         try {
@@ -650,14 +636,12 @@
         }
         
         try {
-            // --- CAMBIO: Llamar a la función centralizada de data.js ---
             if (!window.dataModule || !window.dataModule._processSalesDataForModal || !window.dataModule.getDisplayQty) {
                 throw new Error("El módulo de datos (dataModule) o sus funciones no están disponibles.");
             }
 
             const { clientData, clientTotals, grandTotalValue, sortedClients, finalProductOrder, vaciosMovementsPorTipo } = 
                 await window.dataModule._processSalesDataForModal(ventas, obsequios, cargaInicialInventario, _userId);
-            // --- FIN CAMBIO ---
 
             let hHTML = `<tr class="sticky top-0 z-20 bg-gray-200"><th class="p-1 border sticky left-0 z-30 bg-gray-200">Cliente</th>`;
             finalProductOrder.forEach(p => { hHTML += `<th class="p-1 border whitespace-nowrap text-xs" title="${p.marca||''} - ${p.segmento||''}">${p.presentacion}</th>`; });
@@ -673,11 +657,7 @@
                 bHTML+=`<tr class="${rowClass}"><td class="p-1 border font-medium bg-white sticky left-0 z-10">${clientNameDisplay}</td>`; 
                 finalProductOrder.forEach(p=>{
                     const qU=cCli.products[p.id]||0; 
-                    
-                    // --- CAMBIO: Llamar a la función centralizada de data.js ---
                     const qtyDisplay = window.dataModule.getDisplayQty(qU, p);
-                    // --- FIN CAMBIO ---
-
                     let dQ = (qU > 0) ? `${qtyDisplay.value}` : '';
                     let cellClass = '';
                     if (qU > 0 && esSoloObsequio) {
@@ -694,42 +674,32 @@
                 let tQ=0; 
                 sortedClients.forEach(cli=>tQ+=clientData[cli].products[p.id]||0); 
                 
-                // --- CAMBIO: Llamar a la función centralizada de data.js ---
                 const qtyDisplay = window.dataModule.getDisplayQty(tQ, p);
-                // --- FIN CAMBIO ---
-
+                
                 let dT = (tQ > 0) ? `${qtyDisplay.value} ${qtyDisplay.unit}` : '';
                 fHTML+=`<td class="p-1 border text-center">${dT}</td>`;
             }); 
             fHTML+=`<td class="p-1 border text-right sticky right-0 z-10">$${grandTotalValue.toFixed(2)}</td></tr>`;
             
-            let vHTML=''; const TIPOS_VACIO_GLOBAL = window.TIPOS_VACIO_GLOBAL || ["1/4 - 1/3", "ret 350 ml", "ret 1.25 Lts"]; const cliVacios=Object.keys(vaciosMovementsPorTipo).filter(cli=>TIPOS_VACIO_GLOBAL.some(t=>(vaciosMovementsPorTipo[cli][t]?.entregados||0)>0||(vaciosMovementsPorTipo[cli][t]?.devueltos||0)>0)).sort(); if(cliVacios.length>0){ vHTML=`<h3 class="text-xl my-6">Reporte Vacíos</h3><div class="overflow-auto border"><table><thead><tr><th>Cliente</th><th>Tipo</th><th>Entregados</th><th>Devueltos</th><th>Neto</th></tr></thead><tbody>`; cliVacios.forEach(cli=>{const movs=vaciosMovementsPorTipo[cli]; TIPOS_VACIO_GLOBAL.forEach(t=>{const mov=movs[t]||{e:0,d:0}; if(mov.entregados>0||mov.devueltos>0){const neto=mov.entregados-mov.devueltos; const nClass=neto>0?'text-red-600':(neto<0?'text-green-600':''); vHTML+=`<tr><td>${cli}</td><td>${t}</td><td>${mov.entregados}</td><td>${mov.devueltos}</td><td class="${nClass}">${neto>0?`+${neto}`:neto}</td></tr>`;}});}); vHTML+='</tbody></table></div>';}
+            let vHTML=''; const cliVacios=Object.keys(vaciosMovementsPorTipo).filter(cli=>TIPOS_VACIO.some(t=>(vaciosMovementsPorTipo[cli][t]?.entregados||0)>0||(vaciosMovementsPorTipo[cli][t]?.devueltos||0)>0)).sort(); if(cliVacios.length>0){ vHTML=`<h3 class="text-xl my-6">Reporte Vacíos</h3><div class="overflow-auto border"><table><thead><tr><th>Cliente</th><th>Tipo</th><th>Entregados</th><th>Devueltos</th><th>Neto</th></tr></thead><tbody>`; cliVacios.forEach(cli=>{const movs=vaciosMovementsPorTipo[cli]; TIPOS_VACIO.forEach(t=>{const mov=movs[t]||{e:0,d:0}; if(mov.entregados>0||mov.devueltos>0){const neto=mov.entregados-mov.devueltos; const nClass=neto>0?'text-red-600':(neto<0?'text-green-600':''); vHTML+=`<tr><td>${cli}</td><td>${t}</td><td>${mov.entregados}</td><td>${mov.devueltos}</td><td class="${nClass}">${neto>0?`+${neto}`:neto}</td></tr>`;}});}); vHTML+='</tbody></table></div>';}
             
-            // const snapshotWarning = hasSnapshot ? '' : '<p class="text-sm text-yellow-700 bg-yellow-100 p-2 rounded-lg my-4"><strong>Aviso:</strong> No se encontró Carga Inicial. Los totales de inventario se calculan desde el stock actual (método antiguo).</p>';
-            const snapshotWarning = ''; // 'hasSnapshot' no está definido aquí, la lógica de advertencia está en data.js
+            const snapshotWarning = ''; 
 
             const reportHTML = `<div class="text-left max-h-[80vh] overflow-auto"> <h3 class="text-xl font-bold mb-4">Reporte Cierre</h3> ${snapshotWarning} <div class="overflow-auto border"> <table class="min-w-full bg-white text-xs"> <thead class="bg-gray-200">${hHTML}</thead> <tbody>${bHTML}</tbody> <tfoot>${fHTML}</tfoot> </table> </div> ${vHTML} </div>`;
             _showModal('Reporte de Cierre', reportHTML, null, 'Cerrar');
         } catch (error) { console.error("Error reporte:", error); _showModal('Error', `No se pudo generar: ${error.message}`); }
     }
     
-    // --- MODIFICACIÓN: `ejecutarCierre` ---
     async function ejecutarCierre() {
         _showModal('Confirmar Cierre Definitivo', 'Generará Excel, archivará ventas y eliminará activas. IRREVERSIBLE. ¿Continuar?', async () => {
             _showModal('Progreso', 'Obteniendo ventas y obsequios...');
             
-            // --- MODIFICADO: Leer Ventas, Obsequios y Snapshot ---
             const ventasRef = _collection(_db, `artifacts/${_appId}/users/${_userId}/ventas`); 
             const ventasSnap = await _getDocs(ventasRef); 
             const ventas = ventasSnap.docs.map(d=>({id: d.id, ...d.data()}));
             
             const obsequiosRef = _collection(_db, `artifacts/${_appId}/users/${_userId}/obsequios_entregados`);
-            
-            // --- INICIO DE LA CORRECCIÓN (Error 5) ---
-            // El error estaba aquí: se usaba obsequiosSnap antes de definirlo.
             const obsequiosSnap = await _getDocs(obsequiosRef);
-            // --- FIN DE LA CORRECCIÓN ---
-            
             const obsequios = obsequiosSnap.docs.map(d => ({id: d.id, ...d.data()}));
 
             if (ventas.length === 0 && obsequios.length === 0) { 
@@ -737,7 +707,6 @@
                 return false; 
             }
             
-            // --- CORRECCIÓN: Definir SNAPSHOT_DOC_PATH aquí ---
             const SNAPSHOT_DOC_PATH = `artifacts/${_appId}/users/${_userId}/config/cargaInicialSnapshot`;
             let cargaInicialInventario = [];
             const snapshotRef = _doc(_db, SNAPSHOT_DOC_PATH);
@@ -753,7 +722,6 @@
                 console.error("Error al leer snapshot de Carga Inicial durante el cierre:", snapError);
                 _showModal('Advertencia', 'Error al leer Carga Inicial (snapshot). El reporte podría no ser exacto.');
             }
-            // --- FIN MODIFICACIÓN LECTURA ---
 
             try {
                  _showModal('Progreso', 'Generando Excel...'); 
@@ -773,7 +741,6 @@
                      vendedorInfo: vendedorInfo
                  }; 
 
-                 // --- MODIFICADO: Llamar a la función de exportación global de data.js ---
                  if (window.dataModule && typeof window.dataModule.exportSingleClosingToExcel === 'function') {
                     await window.dataModule.exportSingleClosingToExcel(cierreData);
                  } else {
@@ -788,11 +755,9 @@
                  if (window.userRole === 'user') {
                      cDocRef=_doc(_collection(_db,`public_data/${_appId}/user_closings`));
                      await _setDoc(cDocRef, cierreData);
-                     console.log("Cierre de vendedor guardado en colección pública.");
                  } else { 
                      cDocRef = _doc(_collection(_db, `artifacts/${_appId}/users/${_userId}/cierres`));
                      await _setDoc(cDocRef, cierreData);
-                     console.log("Cierre de admin guardado en colección privada.");
                  }
                  
                  const batch = _writeBatch(_db); 
@@ -805,8 +770,8 @@
             } catch(e) { console.error("Error cierre:", e); _showModal('Error', `Error: ${e.message}`); return false; }
         }, 'Sí, Ejecutar Cierre', null, true);
     }
+
     function showPastSaleOptions(ventaId, tipo = 'ticket') {
-        console.log("showPastSaleOptions called with ID:", ventaId);
         const venta = _ventasGlobal.find(v => v.id === ventaId);
         if (!venta) { _showModal('Error', 'Venta no encontrada.'); return; }
         const productosFormateados = (venta.productos || []).map(p => ({
@@ -817,15 +782,15 @@
         }));
         showSharingOptions(venta, productosFormateados, venta.vaciosDevueltosPorTipo || {}, tipo, showVentasActualesView);
     }
+
     function editVenta(ventaId) {
-        console.log("editVenta called with ID:", ventaId);
         const venta = _ventasGlobal.find(v => v.id === ventaId);
         if (!venta) { _showModal('Error', 'Venta no encontrada.'); return; }
          _originalVentaForEdit = JSON.parse(JSON.stringify(venta));
         showEditVentaView(venta);
     }
+    
     function deleteVenta(ventaId) {
-        console.log("deleteVenta called with ID:", ventaId);
          const venta = _ventasGlobal.find(v => v.id === ventaId);
          if (!venta) {
             _showModal('Error', 'Venta no encontrada en la lista actual.');
@@ -839,8 +804,8 @@
                 const clienteRef = _doc(_db, `artifacts/ventas-9a210/public/data/clientes`, venta.clienteId);
 
                 await _runTransaction(_db, async (transaction) => {
-                    console.log("Transaction: Reading venta and cliente...");
                     const ventaDoc = await transaction.get(ventaRef);
+                    // Check if client exists (could be deleted)
                     const clienteDoc = await transaction.get(clienteRef);
 
                     if (!ventaDoc.exists()) throw new Error("La venta ya no existe.");
@@ -851,7 +816,7 @@
 
                     const inventarioRefs = {};
                     const productoIds = productosVendidos.map(p => p.id).filter(id => id);
-                    console.log(`Transaction: Reading ${productoIds.length} inventory items...`);
+                    
                     const inventarioDocsMap = new Map();
                     if (productoIds.length > 0) {
                         const uniqueProductIds = [...new Set(productoIds)];
@@ -865,7 +830,6 @@
                             inventarioDocsMap.set(uniqueProductIds[index], docSnap);
                         });
                     }
-                    console.log("Transaction: All reads completed.");
 
                     const saldoVaciosClienteActual = clienteData?.saldoVacios || {};
                     const nuevosSaldoVaciosCliente = { ...saldoVaciosClienteActual };
@@ -878,8 +842,6 @@
                             const productoInventarioRef = inventarioRefs[productoVendido.id];
                             if (productoInventarioRef) {
                                 ajustesInventario.push({ ref: productoInventarioRef, cantidad: unidadesARestaurar, id: productoVendido.id });
-                            } else {
-                                console.warn(`No se encontró ref de inventario para producto ${productoVendido.id} en la venta.`);
                             }
                         }
 
@@ -900,13 +862,10 @@
                         }
                     }
 
-                    console.log("Transaction: Starting writes...");
-
                     for (const ajuste of ajustesInventario) {
                          const invDoc = inventarioDocsMap.get(ajuste.id);
                          const stockActual = invDoc && invDoc.exists() ? (invDoc.data().cantidadUnidades || 0) : 0;
                          const nuevoStock = stockActual + ajuste.cantidad;
-                         console.log(`Transaction: Updating inventory ${ajuste.id}. Old: ${stockActual}, Adjustment: ${ajuste.cantidad}, New: ${nuevoStock}`);
                          transaction.set(ajuste.ref, { cantidadUnidades: nuevoStock }, { merge: true });
                     }
 
@@ -920,19 +879,11 @@
                             }
                         }
                         if (saldoVaciosModificado) {
-                            console.log("Transaction: Updating client empty balance.", nuevosSaldoVaciosCliente);
                             transaction.update(clienteRef, { saldoVacios: nuevosSaldoVaciosCliente });
-                        } else {
-                            console.log("Transaction: No client empty balance changes needed.");
                         }
-                    } else {
-                         console.warn("Transaction: Client doc does not exist, skipping empty balance update.");
                     }
 
-                    console.log("Transaction: Deleting sale document.");
                     transaction.delete(ventaRef);
-
-                    console.log("Transaction: All writes queued.");
                 });
 
                 _showModal('Éxito', 'Venta eliminada. Inventario y saldos de vacíos ajustados.');
@@ -943,6 +894,7 @@
             }
         }, 'Sí, Eliminar y Revertir', null, true);
     }
+
     async function showEditVentaView(venta) {
         if (_floatingControls) _floatingControls.classList.add('hidden'); _monedaActual = 'USD';
         _mainContent.innerHTML = `
@@ -969,6 +921,7 @@
             renderEditVentasInventario(); updateVentaTotal(); document.getElementById('modalContainer').classList.add('hidden');
         } catch (error) { console.error("Error cargando edit:", error); _showModal('Error', `Error: ${error.message}`); showVentasActualesView(); }
     }
+
     async function renderEditVentasInventario() {
         const body = document.getElementById('inventarioTableBody'), rF = document.getElementById('rubroFilter'); if (!body || !rF) return; body.innerHTML = `<tr><td colspan="4" class="text-center text-gray-500">Cargando...</td></tr>`;
         const selRubro = rF.value; let invToShow = _inventarioCache.filter(p => _originalVentaForEdit.productos.some(oP => oP.id === p.id) || (p.cantidadUnidades || 0) > 0);
@@ -986,11 +939,13 @@
              if (vPor.und) { cERow('und', vActProd.cantUnd||0, precios.und||0, `${prod.presentacion} (Und)`); }
         }); updateVentaTotal();
     }
+
+    // *** MODIFICADO: handleGuardarVentaEditada CON TRANSACCIÓN ATÓMICA ***
     async function handleGuardarVentaEditada() {
         if (!_originalVentaForEdit) { _showModal('Error', 'Venta original no encontrada.'); return; }
         const prods = Object.values(_ventaActual.productos).filter(p => p.totalUnidadesVendidas > 0);
         const hayVac = Object.values(_ventaActual.vaciosDevueltosPorTipo || {}).some(c => c > 0);
-        // Permitir guardar aunque no haya productos si hay vacíos (o viceversa), pero no si ambos están vacíos
+        
         if (prods.length === 0 && !hayVac && Object.values(_originalVentaForEdit.vaciosDevueltosPorTipo || {}).every(c => c === 0)) {
             _showModal('Error', 'La venta editada no puede quedar completamente vacía.'); return;
         }
@@ -998,16 +953,119 @@
         _showModal('Confirmar Cambios', '¿Guardar cambios? Stock y saldos se ajustarán.', async () => {
             _showModal('Progreso', 'Guardando y ajustando...');
             try {
-                const batch=_writeBatch(_db); const origProds=new Map((_originalVentaForEdit.productos||[]).map(p=>[p.id,p])); const newProds=new Map(Object.values(_ventaActual.productos).map(p=>[p.id,p])); const allPIds=new Set([...origProds.keys(),...newProds.keys()]); const vaciosAdj={}; TIPOS_VACIO.forEach(t=>vaciosAdj[t]=0);
-                for(const pId of allPIds){ const origP=origProds.get(pId), newP=newProds.get(pId), pCache=_inventarioCache.find(p=>p.id===pId); if(!pCache)continue; const origU=origP?(origP.totalUnidadesVendidas||0):0, newU=newP?(newP.totalUnidadesVendidas||0):0, deltaU=origU-newU; // deltaU > 0 significa que se devolvió stock
-                    if(deltaU!==0){ const cStockU=pCache.cantidadUnidades||0, fStockU=cStockU+deltaU; if(fStockU<0)throw new Error(`Stock insuficiente "${pCache.presentacion}" (${fStockU} unidades). Ajuste requerido: ${deltaU}.`); const pRef=_doc(_db,`artifacts/${_appId}/users/${_userId}/inventario`,pId); batch.update(pRef,{cantidadUnidades:fStockU}); }
-                    if(pCache.manejaVacios&&pCache.tipoVacio){ const tV=pCache.tipoVacio, origCj=origP?.cantidadVendida?.cj||0, newCj=newP?.cantCj||0, deltaCj=newCj-origCj; if(vaciosAdj.hasOwnProperty(tV))vaciosAdj[tV]+=deltaCj; } } // deltaCj > 0 significa que se entregaron más vacíos (aumenta deuda)
-                const origVac=_originalVentaForEdit.vaciosDevueltosPorTipo||{}, newVac=_ventaActual.vaciosDevueltosPorTipo||{}; TIPOS_VACIO.forEach(t=>{const origD=origVac[t]||0, newD=newVac[t]||0, deltaD=newD-origD; if(vaciosAdj.hasOwnProperty(t))vaciosAdj[t]-=deltaD;}); // deltaD > 0 significa que se recibieron más vacíos (disminuye deuda)
-                if(Object.values(vaciosAdj).some(a=>a!==0)){const cliRef=_doc(_db,`artifacts/ventas-9a210/public/data/clientes`,_originalVentaForEdit.clienteId); try{await _runTransaction(_db,async(t)=>{const cliDoc=await t.get(cliRef); if(!cliDoc.exists())return; const cliData=cliDoc.data(), sVac=cliData.saldoVacios||{}; for(const tV in vaciosAdj){const adj=vaciosAdj[tV]; if(adj!==0) sVac[tV]=(sVac[tV]||0)+adj;} t.update(cliRef,{saldoVacios:sVac});});} catch(transErr){console.error(`Error ajustando vacíos cli ${_originalVentaForEdit.clienteId}:`,transErr); _showModal('Advertencia','No se pudieron ajustar los saldos de vacíos del cliente.');}} // Continuar aunque falle ajuste de saldo
-                let nTotal=0; const nItems=Object.values(_ventaActual.productos).filter(p=>p.totalUnidadesVendidas>0).map(p=>{ const pr=p.precios||{und:p.precioPorUnidad||0}; const sub=(pr.cj||0)*(p.cantCj||0)+(pr.paq||0)*(p.cantPaq||0)+(pr.und||0)*(p.cantUnd||0); nTotal+=sub; const uCj=p.unidadesPorCaja||1, uPaq=p.unidadesPorPaquete||1; const totURecalc=(p.cantCj||0)*uCj+(p.cantPaq||0)*uPaq+(p.cantUnd||0); return { id:p.id, presentacion:p.presentacion, rubro:p.rubro??null, marca:p.marca??null, segmento:p.segmento??null, precios:p.precios, ventaPor:p.ventaPor, unidadesPorPaquete:p.unidadesPorPaquete, unidadesPorCaja:p.unidadesPorCaja, cantidadVendida:{cj:p.cantCj||0,paq:p.cantPaq||0,und:p.cantUnd||0}, totalUnidadesVendidas:totURecalc, iva:p.iva??0, manejaVacios:p.manejaVacios||false, tipoVacio:p.tipoVacio||null }; });
-                const vRef=_doc(_db,`artifacts/${_appId}/users/${_userId}/ventas`,_originalVentaForEdit.id); batch.update(vRef,{productos:nItems, total:nTotal, vaciosDevueltosPorTipo:_ventaActual.vaciosDevueltosPorTipo, fechaModificacion:new Date()});
-                await batch.commit(); _originalVentaForEdit=null; _showModal('Éxito','Venta actualizada.',showVentasActualesView);
-            } catch (error) { console.error("Error guardando edit:", error); _showModal('Error', `Error: ${error.message}`); }
+                const ventaRef = _doc(_db, `artifacts/${_appId}/users/${_userId}/ventas`, _originalVentaForEdit.id);
+                const clientRef = _doc(_db, `artifacts/ventas-9a210/public/data/clientes`, _originalVentaForEdit.clienteId);
+
+                await _runTransaction(_db, async (transaction) => {
+                     // 1. Prepare Data
+                     const origProds = new Map((_originalVentaForEdit.productos||[]).map(p=>[p.id,p]));
+                     const newProds = new Map(Object.values(_ventaActual.productos).map(p=>[p.id,p]));
+                     const allPIds = new Set([...origProds.keys(),...newProds.keys()]);
+                     
+                     // 2. READS
+                     const clientDoc = await transaction.get(clientRef);
+                     
+                     const invRefs = [];
+                     allPIds.forEach(id => {
+                         invRefs.push({ id: id, ref: _doc(_db, `artifacts/${_appId}/users/${_userId}/inventario`, id) });
+                     });
+                     
+                     // Execute all inventory reads
+                     const invDocs = await Promise.all(invRefs.map(item => transaction.get(item.ref)));
+                     const invMap = new Map();
+                     invDocs.forEach((doc, i) => {
+                         if (doc.exists()) invMap.set(invRefs[i].id, doc);
+                     });
+
+                     // 3. LOGIC
+                     const vaciosAdj = {}; 
+                     TIPOS_VACIO.forEach(t=>vaciosAdj[t]=0);
+                     
+                     for (const pId of allPIds) {
+                         const origP = origProds.get(pId);
+                         const newP = newProds.get(pId);
+                         
+                         const origU = origP ? (origP.totalUnidadesVendidas||0) : 0;
+                         const newU = newP ? (newP.totalUnidadesVendidas||0) : 0;
+                         const deltaU = origU - newU; // Positive = Returning to stock, Negative = Taking more
+
+                         const invDoc = invMap.get(pId);
+                         if (!invDoc) {
+                             if (deltaU < 0) throw `Producto ID ${pId} ya no existe en inventario, no se puede vender más.`;
+                             continue; 
+                         }
+                         
+                         const pData = invDoc.data();
+                         
+                         if (deltaU !== 0) {
+                             const currentStock = pData.cantidadUnidades || 0;
+                             const newStock = currentStock + deltaU;
+                             if (newStock < 0) throw `Stock insuficiente para ${pData.presentacion}. Disponible: ${currentStock}, Necesario: ${Math.abs(deltaU)}`;
+                             transaction.update(invRefs.find(r=>r.id===pId).ref, { cantidadUnidades: newStock });
+                         }
+
+                         if (pData.manejaVacios && pData.tipoVacio) {
+                             const tV = pData.tipoVacio;
+                             const origCj = origP?.cantidadVendida?.cj || 0;
+                             const newCj = newP?.cantCj || 0;
+                             const deltaCj = newCj - origCj; 
+                             if (vaciosAdj.hasOwnProperty(tV)) vaciosAdj[tV] += deltaCj;
+                         }
+                     }
+
+                     const origVac = _originalVentaForEdit.vaciosDevueltosPorTipo || {};
+                     const newVac = _ventaActual.vaciosDevueltosPorTipo || {};
+                     TIPOS_VACIO.forEach(t => {
+                         const origD = origVac[t] || 0;
+                         const newD = newVac[t] || 0;
+                         const deltaD = newD - origD; 
+                         if (vaciosAdj.hasOwnProperty(t)) vaciosAdj[t] -= deltaD;
+                     });
+
+                     // 4. WRITES
+                     if (clientDoc.exists() && Object.values(vaciosAdj).some(a => a !== 0)) {
+                         const cliData = clientDoc.data();
+                         const sVac = cliData.saldoVacios || {};
+                         for (const tV in vaciosAdj) {
+                             const adj = vaciosAdj[tV];
+                             if (adj !== 0) sVac[tV] = (sVac[tV] || 0) + adj;
+                         }
+                         transaction.update(clientRef, { saldoVacios: sVac });
+                     }
+
+                     let nTotal = 0;
+                     const nItems = Object.values(_ventaActual.productos).filter(p => p.totalUnidadesVendidas > 0).map(p => {
+                         const pr = p.precios || { und: p.precioPorUnidad || 0 };
+                         const sub = (pr.cj || 0) * (p.cantCj || 0) + (pr.paq || 0) * (p.cantPaq || 0) + (pr.und || 0) * (p.cantUnd || 0);
+                         nTotal += sub;
+                         
+                         const uCj = p.unidadesPorCaja || 1;
+                         const uPaq = p.unidadesPorPaquete || 1;
+                         const totURecalc = (p.cantCj || 0) * uCj + (p.cantPaq || 0) * uPaq + (p.cantUnd || 0);
+
+                         return {
+                             id: p.id, presentacion: p.presentacion, rubro: p.rubro ?? null, marca: p.marca ?? null, segmento: p.segmento ?? null,
+                             precios: p.precios, ventaPor: p.ventaPor, unidadesPorPaquete: p.unidadesPorPaquete, unidadesPorCaja: p.unidadesPorCaja,
+                             cantidadVendida: { cj: p.cantCj || 0, paq: p.cantPaq || 0, und: p.cantUnd || 0 },
+                             totalUnidadesVendidas: totURecalc, iva: p.iva ?? 0, manejaVacios: p.manejaVacios || false, tipoVacio: p.tipoVacio || null
+                         };
+                     });
+                     
+                     transaction.update(ventaRef, {
+                         productos: nItems,
+                         total: nTotal,
+                         vaciosDevueltosPorTipo: _ventaActual.vaciosDevueltosPorTipo,
+                         fechaModificacion: new Date()
+                     });
+                });
+
+                _originalVentaForEdit=null; 
+                _showModal('Éxito','Venta actualizada con integridad.', showVentasActualesView);
+
+            } catch (error) { 
+                console.error("Error guardando edit:", error); 
+                _showModal('Error', `Error: ${error.message}`); 
+            }
         }, 'Sí, Guardar', null, true);
     }
 
