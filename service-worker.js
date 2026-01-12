@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v9'; // Actualizado a v9 para forzar recarga
+const CACHE_NAME = 'ventas-app-cache-v9'; // Incrementa esto cada vez que subas cambios
 
 const urlsToCache = [
     './',
@@ -11,33 +11,36 @@ const urlsToCache = [
     './ventas.js',
     './obsequios.js',
     './manifest.json',
+    './css/tailwind.min.css', // Asegúrate de incluir CSS locales si los tienes
+    './css/inter.css',
     './images/icons/icon-192x192.png',
     './images/icons/icon-512x512.png',
     './images/fondo.png',
     './images/cervezayvinos.png',
     './images/maltinypepsi.png',
     './images/alimentospolar.png',
-    './images/p&g.png'
+    './images/p&g.png',
+    './images/no-image.png' // Añadido por si acaso
 ];
 
 self.addEventListener('install', event => {
-    console.log('[Service Worker] Instalando versión v9...');
-    self.skipWaiting(); 
+    console.log('[Service Worker] Instalando...');
+    self.skipWaiting(); // Forzar activación inmediata
     
     event.waitUntil(
         caches.open(CACHE_NAME)
             .then(cache => {
-                console.log('[Service Worker] Guardando App Shell local en caché.');
+                console.log('[Service Worker] Cacheando archivos estáticos.');
                 return cache.addAll(urlsToCache);
             })
             .catch(error => {
-                console.error('[Service Worker] Falló el precaching del App Shell:', error);
+                console.error('[Service Worker] Falló el precaching:', error);
             })
     );
 });
 
 self.addEventListener('activate', event => {
-    console.log('[Service Worker] Activando v9 y limpiando cachés antiguas...');
+    console.log('[Service Worker] Activando...');
     const cacheWhitelist = [CACHE_NAME];
     
     event.waitUntil(
@@ -45,56 +48,57 @@ self.addEventListener('activate', event => {
             return Promise.all(
                 cacheNames.map(cacheName => {
                     if (cacheWhitelist.indexOf(cacheName) === -1) {
-                        console.log(`[Service Worker] Eliminando caché antigua: ${cacheName}`);
+                        console.log(`[Service Worker] Borrando caché obsoleta: ${cacheName}`);
                         return caches.delete(cacheName);
                     }
                 })
             );
         })
     );
+    return self.clients.claim(); // Tomar control de todos los clientes inmediatamente
 });
 
 self.addEventListener('fetch', event => {
-    if (event.request.method !== 'GET') {
-        return;
-    }
-    
-    // No cachear solicitudes a terceros (CDNs, Firebase, etc.)
-    if (!event.request.url.startsWith(self.location.origin)) {
-        return; 
-    }
-    
-    if (event.request.url.includes('firestore.googleapis.com')) {
+    // Solo procesar peticiones GET
+    if (event.request.method !== 'GET') return;
+
+    const url = new URL(event.request.url);
+
+    // 1. Ignorar peticiones a Firebase/Google APIs (Firebase SDK maneja su propia persistencia)
+    if (url.origin.includes('firestore.googleapis.com') || 
+        url.origin.includes('googleapis.com') ||
+        url.origin.includes('firebase')) {
         return;
     }
 
-    // Estrategia: Red primero, luego caché (SOLO para archivos locales críticos)
-    // Esto ayuda a que los cambios en JS se vean más rápido en desarrollo
-    if (event.request.url.includes('.js')) {
-        event.respondWith(
-            fetch(event.request)
-                .then(networkResponse => {
-                    return caches.open(CACHE_NAME).then(cache => {
-                        cache.put(event.request, networkResponse.clone());
-                        return networkResponse;
-                    });
-                })
-                .catch(() => caches.match(event.request))
-        );
-        return;
-    }
-
-    // Estrategia Cache First para lo demás (imágenes, css, html estático)
+    // 2. Estrategia para archivos estáticos locales: Cache First, Network Fallback
+    // Busca en caché primero. Si está, devuélvelo. Si no, ve a la red.
     event.respondWith(
-        caches.open(CACHE_NAME).then(cache => {
-            return fetch(event.request)
-                .then(networkResponse => {
-                    cache.put(event.request, networkResponse.clone());
+        caches.match(event.request)
+            .then(cachedResponse => {
+                if (cachedResponse) {
+                    return cachedResponse;
+                }
+
+                // Si no está en caché, ir a la red
+                return fetch(event.request).then(networkResponse => {
+                    // Verificar respuesta válida
+                    if (!networkResponse || networkResponse.status !== 200 || networkResponse.type !== 'basic') {
+                        return networkResponse;
+                    }
+
+                    // Clonar respuesta para guardarla en caché
+                    const responseToCache = networkResponse.clone();
+
+                    caches.open(CACHE_NAME).then(cache => {
+                        cache.put(event.request, responseToCache);
+                    });
+
                     return networkResponse;
-                })
-                .catch(() => {
-                    return cache.match(event.request);
+                }).catch(err => {
+                    console.log('[Service Worker] Fetch fallido (Offline):', err);
+                    // Opcional: Devolver una página offline.html si es una navegación
                 });
-        })
+            })
     );
 });
