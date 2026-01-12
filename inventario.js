@@ -8,6 +8,9 @@
     let _lastFilters = { searchTerm: '', rubro: '', segmento: '', marca: '' };
     let _inventarioListenerUnsubscribe = null;
     let _marcasCache = null;
+    
+    // Nueva variable para persistir las cantidades ingresadas en la recarga mientras se navega por filtros
+    let _recargaTempState = {}; 
 
     // Cache para ordenamiento de Segmentos/Marcas (se invalida si cambian)
     let _segmentoOrderCache = null;
@@ -503,12 +506,16 @@
     // --- NUEVA FUNCIÓN: Recarga de Productos (Reemplaza Ajuste Masivo) ---
     function showRecargaProductosView() {
          if (_floatingControls) _floatingControls.classList.add('hidden');
+         
+         // Limpiar el estado temporal al abrir la vista para empezar de cero
+         _recargaTempState = {};
+
         _mainContent.innerHTML = `
             <div class="p-4 pt-8">
                 <div class="container mx-auto">
                     <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl">
                         <h2 class="text-2xl font-bold text-gray-800 mb-6 text-center">Recarga de Productos</h2>
-                        <p class="text-center text-gray-600 mb-4 text-sm">Ingrese el inventario FINAL. Se calculará la diferencia y se guardará un registro histórico.</p>
+                        <p class="text-center text-gray-600 mb-4 text-sm">Ingrese el inventario FINAL. Se calculará la diferencia y se guardará un registro histórico. Los cambios se mantienen al cambiar de filtro.</p>
                         ${getFiltrosHTML('recarga')}
                         <div id="recargaListContainer" class="overflow-x-auto max-h-96 border rounded-lg">
                             <p class="text-gray-500 text-center p-4">Cargando productos...</p>
@@ -594,6 +601,16 @@
 
             const currentDisplayStock = Math.floor(cStockU / factor);
 
+            // --- LÓGICA DE PERSISTENCIA ---
+            // Si ya existe un valor en _recargaTempState para este producto, usarlo.
+            // Si no, usar el valor actual calculado.
+            let inputValue;
+            if (_recargaTempState.hasOwnProperty(p.id)) {
+                inputValue = _recargaTempState[p.id];
+            } else {
+                inputValue = currentDisplayStock;
+            }
+
             tableHTML += `
                 <tr class="hover:bg-gray-50">
                     <td class="py-2 px-4 border-b">
@@ -606,11 +623,9 @@
                     <td class="py-2 px-4 border-b text-center align-middle">
                         <div class="flex items-center justify-center">
                             <input type="number" 
-                                value="${currentDisplayStock}" 
+                                value="${inputValue}" 
                                 data-doc-id="${p.id}"
-                                data-current-base="${cStockU}"
                                 data-factor="${factor}"
-                                data-name="${p.presentacion}"
                                 min="0" step="1" 
                                 class="w-20 p-1 text-center border rounded-lg focus:ring-1 focus:ring-teal-500 focus:border-teal-500 recarga-qty-input font-bold">
                             <span class="ml-2 text-xs font-semibold text-gray-500">${unitLabel}</span>
@@ -620,53 +635,69 @@
         });
         tableHTML += `</tbody></table>`; 
         container.innerHTML = tableHTML;
+
+        // Añadir listeners para guardar el estado temporal al escribir
+        container.querySelectorAll('.recarga-qty-input').forEach(input => {
+            input.addEventListener('input', (e) => {
+                const val = e.target.value;
+                // Guardamos el valor tal cual lo escribe el usuario (string) para no perder estados intermedios
+                _recargaTempState[e.target.dataset.docId] = val;
+            });
+        });
     }
 
     async function handleGuardarRecarga() {
-        const inputs = document.querySelectorAll('#recargaListContainer .recarga-qty-input');
-        if (inputs.length === 0) { _showModal('Aviso', 'No hay productos listados.'); return; }
+        // En lugar de leer solo los inputs visibles, iteramos sobre TODO el inventario
+        // y verificamos si hay cambios en _recargaTempState
+        
+        if (_inventarioCache.length === 0) { _showModal('Aviso', 'No hay productos en inventario.'); return; }
         
         const batch = _writeBatch(_db);
         let changesCount = 0;
         let invalidValues = false;
         const recargaDetalles = []; // Array para guardar el historial
 
-        inputs.forEach(input => {
-            input.classList.remove('border-red-500','ring-1','ring-red-500');
-            const docId = input.dataset.docId;
-            const factor = parseInt(input.dataset.factor, 10);
-            const currentBase = parseInt(input.dataset.currentBase, 10);
-            const productName = input.dataset.name;
-            const newValueStr = input.value.trim();
-            const newValueDisplay = parseInt(newValueStr, 10);
+        _inventarioCache.forEach(p => {
+            // Verificar si tenemos un valor modificado para este producto
+            if (_recargaTempState.hasOwnProperty(p.id)) {
+                const newValStr = String(_recargaTempState[p.id]).trim();
+                const newVal = parseInt(newValStr, 10);
 
-            if (newValueStr === '' || isNaN(newValueDisplay) || newValueDisplay < 0) {
-                input.classList.add('border-red-500','ring-1','ring-red-500');
-                invalidValues = true;
-                return;
-            }
+                // Validar
+                if (newValStr === '' || isNaN(newVal) || newVal < 0) {
+                    invalidValues = true;
+                    return; // Saltamos este producto si es inválido
+                }
 
-            const newBaseTotal = newValueDisplay * factor;
+                // Calcular factor (debe coincidir con la lógica de render)
+                const vPor = p.ventaPor || {und:true};
+                let factor = 1;
+                if(vPor.cj) factor = p.unidadesPorCaja||1;
+                else if(vPor.paq) factor = p.unidadesPorPaquete||1;
 
-            if (newBaseTotal !== currentBase) {
-                // Actualizar inventario
-                const docRef = _doc(_db, `artifacts/${_appId}/users/${_userId}/inventario`, docId);
-                batch.update(docRef, { cantidadUnidades: newBaseTotal });
-                
-                // Agregar al detalle de recarga
-                recargaDetalles.push({
-                    productoId: docId,
-                    presentacion: productName,
-                    unidadesAnteriores: currentBase,
-                    unidadesNuevas: newBaseTotal,
-                    diferenciaUnidades: newBaseTotal - currentBase, // Positivo es carga, negativo es descarga
-                    factorUtilizado: factor
-                });
-                changesCount++;
+                const currentBase = p.cantidadUnidades || 0;
+                const newBaseTotal = newVal * factor;
+
+                if (newBaseTotal !== currentBase) {
+                    // Actualizar inventario
+                    const docRef = _doc(_db, `artifacts/${_appId}/users/${_userId}/inventario`, p.id);
+                    batch.update(docRef, { cantidadUnidades: newBaseTotal });
+                    
+                    // Agregar al detalle de recarga
+                    recargaDetalles.push({
+                        productoId: p.id,
+                        presentacion: p.presentacion,
+                        unidadesAnteriores: currentBase,
+                        unidadesNuevas: newBaseTotal,
+                        diferenciaUnidades: newBaseTotal - currentBase, // Positivo es carga, negativo es descarga
+                        factorUtilizado: factor
+                    });
+                    changesCount++;
+                }
             }
         });
 
-        if (invalidValues) { _showModal('Error', 'Corrija los valores en rojo (deben ser números positivos).'); return; }
+        if (invalidValues) { _showModal('Error', 'Hay valores inválidos en las cantidades ingresadas (vacíos o negativos). Por favor revise incluso en las categorías ocultas.'); return; }
         if (changesCount === 0) { _showModal('Aviso', 'No se detectaron cambios en el stock.'); return; }
 
         _showModal('Confirmar Recarga', `Se detectaron cambios en ${changesCount} productos. Se actualizará el inventario y se guardará el registro. ¿Continuar?`, async () => {
@@ -685,6 +716,10 @@
                 await batch.commit();
                 
                 _showModal('Éxito', 'Recarga procesada y registrada correctamente.');
+                
+                // Limpiar el estado temporal después de guardar con éxito
+                _recargaTempState = {};
+                
                 renderRecargaList(); // Refrescar vista
             } catch (error) {
                 console.error("Error en recarga:", error);
@@ -773,7 +808,7 @@
             <div class="p-4 pt-8"> <div class="container mx-auto max-w-2xl"> <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl text-center">
                 <h2 class="text-2xl font-bold text-gray-800 mb-6">Agregar Producto</h2>
                 <form id="productoForm" class="space-y-4 text-left">
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4"> <div> <label for="rubro">Rubro:</label> <div class="flex items-center space-x-2"> <select id="rubro" class="w-full px-4 py-2 border rounded-lg" required></select> <button type="button" onclick="window.inventarioModule.showAddCategoryModal('rubros', 'Rubro')" class="px-3 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 text-xs">+</button> </div> </div> <div> <label for="segmento">Segmento:</label> <div class="flex items-center space-x-2"> <select id="segmento" class="w-full px-4 py-2 border rounded-lg" required></select> <button type="button" onclick="window.inventarioModule.showAddCategoryModal('segmentos', 'Segmento')" class="px-3 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 text-xs">+</button> </div> </div> <div> <label for="marca">Marca:</label> <div class="flex items-center space-x-2"> <select id="marca" class="w-full px-4 py-2 border rounded-lg" required></select> <button type="button" onclick="window.inventarioModule.showAddCategoryModal('marcas', 'Marca')" class="px-3 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 text-xs">+</button> </div> </div> <div> <label for="presentacion">Presentación:</label> <input type="text" id="presentacion" class="w-full px-4 py-2 border rounded-lg" required> </div> </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4"> <div> <label for="rubro">Rubro:</label> <div class="flex items-center space-x-2"> <select id="rubro" class="w-full px-4 py-2 border rounded-lg" required></select> <button type="button" onclick="window.inventarioModule.showAddCategoryModal('rubros', 'Rubro')" class="px-3 py-2 bg-blue-500 text-white rounded-lg text-xs hover:bg-blue-600">+</button> </div> </div> <div> <label for="segmento">Segmento:</label> <div class="flex items-center space-x-2"> <select id="segmento" class="w-full px-4 py-2 border rounded-lg" required></select> <button type="button" onclick="window.inventarioModule.showAddCategoryModal('segmentos', 'Segmento')" class="px-3 py-2 bg-blue-500 text-white rounded-lg text-xs hover:bg-blue-600">+</button> </div> </div> <div> <label for="marca">Marca:</label> <div class="flex items-center space-x-2"> <select id="marca" class="w-full px-4 py-2 border rounded-lg" required></select> <button type="button" onclick="window.inventarioModule.showAddCategoryModal('marcas', 'Marca')" class="px-3 py-2 bg-blue-500 text-white rounded-lg text-xs hover:bg-blue-600">+</button> </div> </div> <div> <label for="presentacion">Presentación:</label> <input type="text" id="presentacion" class="w-full px-4 py-2 border rounded-lg" required> </div> </div>
                     <div class="border-t pt-4 mt-4"> <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4"> <div> <label class="block mb-2">Venta por:</label> <div id="ventaPorContainer" class="flex items-center space-x-4"> <label class="flex items-center"><input type="checkbox" id="ventaPorUnd" class="h-4 w-4"> <span class="ml-2">Und.</span></label> <label class="flex items-center"><input type="checkbox" id="ventaPorPaq" class="h-4 w-4"> <span class="ml-2">Paq.</span></label> <label class="flex items-center"><input type="checkbox" id="ventaPorCj" class="h-4 w-4"> <span class="ml-2">Cj.</span></label> </div> </div> <div class="mt-4 md:mt-0"> <label class="flex items-center cursor-pointer"> <input type="checkbox" id="manejaVaciosCheck" class="h-4 w-4"> <span class="ml-2 font-medium">Maneja Vacío</span> </label> <div id="tipoVacioContainer" class="mt-2 hidden"> <label for="tipoVacioSelect" class="block text-sm">Tipo:</label> <select id="tipoVacioSelect" class="w-full px-2 py-1 border rounded-lg text-sm bg-gray-50"> <option value="">Seleccione...</option> <option value="1/4 - 1/3">1/4 - 1/3</option> <option value="ret 350 ml">Ret 350 ml</option> <option value="ret 1.25 Lts">Ret 1.25 Lts</option> </select> </div> </div> </div> <div id="empaquesContainer" class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4"></div> <div id="preciosContainer" class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4"></div> </div>
                     <div class="border-t pt-4 mt-4"> <div class="grid grid-cols-1 md:grid-cols-2 gap-4"> <div> <label>Cantidad Inicial:</label> <input type="number" id="cantidadInicial" value="0" class="w-full px-4 py-2 border rounded-lg bg-gray-100" readonly> <p class="text-xs text-gray-500 mt-1">Siempre 0 al agregar.</p> </div> <div> <label for="ivaTipo">IVA:</label> <select id="ivaTipo" class="w-full px-4 py-2 border rounded-lg" required> <option value="16" selected>16%</option> <option value="0">Exento 0%</option> </select> </div> </div> </div>
                     <button type="submit" class="w-full px-6 py-3 bg-green-500 text-white rounded-lg shadow-md hover:bg-green-600">Guardar y Propagar</button>
