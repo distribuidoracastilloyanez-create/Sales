@@ -99,7 +99,7 @@
                     <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl text-center">
                         <h1 class="text-3xl font-bold text-gray-800 mb-6">Funciones Avanzadas de Clientes</h1>
                         <div class="space-y-4">
-                            <button id="importarClientesBtn" class="w-full px-6 py-3 bg-teal-500 text-white font-semibold rounded-lg shadow-md hover:bg-teal-600">Importar Clientes desde Excel</button>
+                            <button id="importarClientesBtn" class="w-full px-6 py-3 bg-teal-500 text-white font-semibold rounded-lg shadow-md hover:bg-teal-600">Importar Clientes desde Excel/CSV</button>
                             <button id="datosMaestrosSectoresBtn" class="w-full px-6 py-3 bg-yellow-500 text-gray-800 font-semibold rounded-lg shadow-md hover:bg-yellow-600">Gestionar Sectores</button>
                             <button id="deleteAllClientesBtn" class="w-full px-6 py-3 bg-red-600 text-white font-semibold rounded-lg shadow-md hover:bg-red-700">Eliminar Todos los Clientes</button>
                             <button id="backToClientesMenuBtn" class="w-full px-6 py-3 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500">Volver a Clientes</button>
@@ -122,8 +122,8 @@
             <div class="p-4 pt-8">
                 <div class="container mx-auto max-w-4xl">
                     <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl">
-                        <h2 class="text-2xl font-bold text-gray-800 mb-4 text-center">Importar Clientes desde Excel</h2>
-                        <p class="text-center text-gray-600 mb-6">Selecciona un archivo .xlsx o .csv. La primera fila debe contener los encabezados: Sector, Nombre Comercial, Nombre Personal, telefono, CEP, y opcionalmente: Coordenadas (o X, Y / Latitud, Longitud).</p>
+                        <h2 class="text-2xl font-bold text-gray-800 mb-4 text-center">Importar Clientes desde CSV/Excel</h2>
+                        <p class="text-center text-gray-600 mb-6">Selecciona un archivo .csv o .xlsx. La primera fila debe contener los encabezados: Sector, Nombre Comercial, Nombre Personal, telefono, CEP, y opcionalmente: Coordenadas (o X, Y / Latitud, Longitud).</p>
                         <input type="file" id="excel-uploader" accept=".xlsx, .xls, .csv" class="w-full p-4 border-2 border-dashed rounded-lg">
                         <div id="preview-container" class="mt-6 overflow-auto max-h-96"></div>
                         <div id="import-actions" class="mt-6 flex flex-col sm:flex-row gap-4 hidden">
@@ -140,28 +140,96 @@
     }
 
     /**
-     * Maneja la carga y parseo del archivo Excel.
+     * Función auxiliar para parsear CSV manualmente respetando comillas.
+     * Ejemplo: "Dato, con comas" se leerá como una sola celda.
+     */
+    function parseCSV(text) {
+        const rows = [];
+        let currentRow = [];
+        let currentCell = '';
+        let insideQuotes = false;
+
+        // Normalizar saltos de línea y recorrer caracter por caracter
+        text = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+        
+        for (let i = 0; i < text.length; i++) {
+            const char = text[i];
+            const nextChar = text[i + 1];
+
+            if (char === '"') {
+                if (insideQuotes && nextChar === '"') {
+                    // Doble comilla escapada dentro de comillas ("" -> ")
+                    currentCell += '"';
+                    i++; 
+                } else {
+                    // Alternar estado de comillas
+                    insideQuotes = !insideQuotes;
+                }
+            } else if (char === ',' && !insideQuotes) {
+                // Fin de celda
+                currentRow.push(currentCell.trim());
+                currentCell = '';
+            } else if (char === '\n' && !insideQuotes) {
+                // Fin de fila
+                currentRow.push(currentCell.trim());
+                if (currentRow.length > 0 && (currentRow.length > 1 || currentRow[0] !== '')) {
+                     rows.push(currentRow);
+                }
+                currentRow = [];
+                currentCell = '';
+            } else {
+                currentCell += char;
+            }
+        }
+        // Añadir última celda y fila si existen
+        if (currentCell || currentRow.length > 0) {
+             currentRow.push(currentCell.trim());
+             rows.push(currentRow);
+        }
+        
+        return rows;
+    }
+
+    /**
+     * Maneja la carga y parseo del archivo Excel o CSV.
      */
     function handleFileUpload(event) {
         const file = event.target.files[0];
         if (!file) return;
         _clientesParaImportar = []; // Reset cache
 
+        const fileName = file.name.toLowerCase();
+        const isCSV = fileName.endsWith('.csv') || file.type === 'text/csv';
+        const isExcel = fileName.endsWith('.xlsx') || fileName.endsWith('.xls');
+
         const reader = new FileReader();
+
         reader.onload = function(e) {
             const data = e.target.result;
             let jsonData = [];
+
             try {
-                const workbook = XLSX.read(data, { type: 'binary' });
-                const firstSheetName = workbook.SheetNames[0];
-                const worksheet = workbook.Sheets[firstSheetName];
-                jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+                if (isCSV) {
+                    // Usar parser nativo para CSV
+                    jsonData = parseCSV(data);
+                } else if (isExcel) {
+                    // Intentar usar librería XLSX si está disponible
+                    if (typeof XLSX !== 'undefined') {
+                        const workbook = XLSX.read(data, { type: 'binary' });
+                        const firstSheetName = workbook.SheetNames[0];
+                        const worksheet = workbook.Sheets[firstSheetName];
+                        jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+                    } else {
+                        throw new Error("La librería para leer Excel (XLSX) no está cargada. Por favor guarda tu archivo como CSV e inténtalo de nuevo.");
+                    }
+                } else {
+                    throw new Error("Formato de archivo no reconocido.");
+                }
             } catch (readError) {
-                 _showModal('Error de Lectura', `No se pudo leer el archivo Excel: ${readError.message}`);
+                 _showModal('Error de Lectura', readError.message);
                  renderPreviewTable([]); // Clear preview
                  return;
             }
-
 
             if (jsonData.length < 2) {
                 _showModal('Error', 'El archivo está vacío o no tiene datos después de la fila de encabezado.');
@@ -169,6 +237,7 @@
                 return;
             }
 
+            // Procesar encabezados (fila 0)
             const headers = jsonData[0].map(h => (h ? h.toString().toLowerCase().trim().replace(/\s+/g, '') : ''));
             const requiredHeaders = ['sector', 'nombrecomercial', 'nombrepersonal', 'telefono', 'cep'];
             // Añado más opciones para coordenadas para ser más robusto
@@ -197,12 +266,17 @@
                 }
             });
 
+            // Procesar filas de datos
             _clientesParaImportar = jsonData.slice(1).map((row, rowIndex) => {
+                // Protección contra filas vacías al final del CSV
+                if (row.length <= 1 && (!row[0] || row[0].trim() === '')) return null;
+
                 let coordenadas = '';
                 
                 // Prioridad 1: Columna 'coordenadas' explicita
                 if (headerMap['coordenadas'] !== undefined) {
-                    coordenadas = (row[headerMap['coordenadas']] || '').toString().trim();
+                    // Limpiar comillas extras si quedaron por el parser CSV manual en casos extremos
+                    coordenadas = (row[headerMap['coordenadas']] || '').toString().trim().replace(/^"|"$/g, '');
                 } 
                 // Prioridad 2: Columnas 'latitud' y 'longitud' (o lat/lon)
                 else if ((headerMap['latitud'] !== undefined || headerMap['lat'] !== undefined) && 
@@ -234,8 +308,8 @@
 
                 const cliente = {
                     sector: (row[headerMap['sector']] || '').toString().trim().toUpperCase(),
-                    nombreComercial: (row[headerMap['nombrecomercial']] || '').toString().trim().toUpperCase(), // Corregido: nombrecomercial
-                    nombrePersonal: (row[headerMap['nombrepersonal']] || '').toString().trim().toUpperCase(), // Corregido: nombrepersonal
+                    nombreComercial: (row[headerMap['nombrecomercial']] || '').toString().trim().toUpperCase(), 
+                    nombrePersonal: (row[headerMap['nombrepersonal']] || '').toString().trim().toUpperCase(), 
                     telefono: (row[headerMap['telefono']] || '').toString().trim(),
                     codigoCEP: (row[headerMap['cep']] || 'N/A').toString().trim(),
                     coordenadas: coordenadas,
@@ -251,11 +325,18 @@
 
             renderPreviewTable(_clientesParaImportar);
         };
+
         reader.onerror = function(e) {
              _showModal('Error de Archivo', 'No se pudo leer el archivo seleccionado.');
              renderPreviewTable([]);
         };
-        reader.readAsBinaryString(file);
+
+        // Decidir cómo leer el archivo
+        if (isCSV) {
+            reader.readAsText(file, 'UTF-8'); // Leer como texto para CSV
+        } else {
+            reader.readAsBinaryString(file); // Leer como binario para Excel (si estuviera soportado)
+        }
     }
 
     /**
