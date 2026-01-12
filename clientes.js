@@ -1,7 +1,7 @@
 // --- Lógica del módulo de Clientes ---
 
 (function() {
-    // Variables locales del módulo que se inicializarán desde index.html
+    // Variables locales del módulo inicializadas desde la app principal
     let _db, _userId, _userRole, _appId, _mainContent, _floatingControls, _activeListeners;
     let _showMainMenu, _showModal, _showAddItemModal, _populateDropdown;
     let _collection, _onSnapshot, _doc, _addDoc, _setDoc, _deleteDoc, _getDoc, _getDocs, _query, _where, _writeBatch, _runTransaction, _limit;
@@ -9,21 +9,21 @@
     let _clientesCache = []; // Caché local para búsquedas y ediciones rápidas
     let _clientesParaImportar = []; // Caché para la data del Excel a importar
 
-    // Definir rutas usando el ID de proyecto hardcoded para datos públicos
-    const CLIENTES_COLLECTION_PATH = `artifacts/${'ventas-9a210'}/public/data/clientes`;
-    const SECTORES_COLLECTION_PATH = `artifacts/${'ventas-9a210'}/public/data/sectores`;
+    // Rutas dinámicas para datos públicos
+    const CLIENTES_COLLECTION_PATH = `artifacts/ventas-9a210/public/data/clientes`;
+    const SECTORES_COLLECTION_PATH = `artifacts/ventas-9a210/public/data/sectores`;
 
-    // --- Tipos de Vacío ---
+    // Tipos de Envases Retornables
     const TIPOS_VACIO = ["1/4 - 1/3", "ret 350 ml", "ret 1.25 Lts"];
 
     /**
-     * Inicializa el módulo con las dependencias necesarias desde la app principal.
+     * Inicializa el módulo con las dependencias necesarias.
      */
     window.initClientes = function(dependencies) {
         _db = dependencies.db;
         _userId = dependencies.userId;
         _userRole = dependencies.userRole;
-        _appId = dependencies.appId; 
+        _appId = dependencies.appId;
         _mainContent = dependencies.mainContent;
         _floatingControls = dependencies.floatingControls;
         _activeListeners = dependencies.activeListeners;
@@ -57,13 +57,13 @@
                     <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl text-center">
                         <h1 class="text-3xl font-bold text-gray-800 mb-6">Gestión de Clientes</h1>
                         <div class="space-y-4">
-                            <button id="verClientesBtn" class="w-full px-6 py-3 bg-indigo-500 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-600 transition">Ver Clientes</button>
-                            <button id="agregarClienteBtn" class="w-full px-6 py-3 bg-indigo-500 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-600 transition">Agregar Cliente</button>
-                            <button id="saldosVaciosBtn" class="w-full px-6 py-3 bg-cyan-500 text-white font-semibold rounded-lg shadow-md hover:bg-cyan-600 transition">Consultar Saldos de Vacíos</button>
+                            <button id="verClientesBtn" class="w-full px-6 py-3 bg-indigo-500 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-600 transition duration-300">Ver Clientes</button>
+                            <button id="agregarClienteBtn" class="w-full px-6 py-3 bg-indigo-500 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-600 transition duration-300">Agregar Cliente</button>
+                            <button id="saldosVaciosBtn" class="w-full px-6 py-3 bg-cyan-500 text-white font-semibold rounded-lg shadow-md hover:bg-cyan-600 transition duration-300">Consultar Saldos de Vacíos</button>
                             ${_userRole === 'admin' ? `
-                            <button id="funcionesAvanzadasBtn" class="w-full px-6 py-3 bg-gray-700 text-white font-semibold rounded-lg shadow-md hover:bg-gray-800 transition">Funciones Avanzadas</button>
+                            <button id="funcionesAvanzadasBtn" class="w-full px-6 py-3 bg-gray-700 text-white font-semibold rounded-lg shadow-md hover:bg-gray-800 transition duration-300">Funciones Avanzadas</button>
                             ` : ''}
-                            <button id="backToMenuBtn" class="w-full px-6 py-3 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500 transition">Volver al Menú Principal</button>
+                            <button id="backToMenuBtn" class="w-full px-6 py-3 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500 transition duration-300">Volver al Menú Principal</button>
                         </div>
                     </div>
                 </div>
@@ -88,10 +88,10 @@
                     <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl text-center">
                         <h1 class="text-3xl font-bold text-gray-800 mb-6">Funciones Avanzadas de Clientes</h1>
                         <div class="space-y-4">
-                            <button id="importarClientesBtn" class="w-full px-6 py-3 bg-teal-500 text-white font-semibold rounded-lg shadow-md hover:bg-teal-600">Importar Clientes desde Excel</button>
-                            <button id="datosMaestrosSectoresBtn" class="w-full px-6 py-3 bg-yellow-500 text-gray-800 font-semibold rounded-lg shadow-md hover:bg-yellow-600">Gestionar Sectores</button>
-                            <button id="deleteAllClientesBtn" class="w-full px-6 py-3 bg-red-600 text-white font-semibold rounded-lg shadow-md hover:bg-red-700">Eliminar Todos los Clientes</button>
-                            <button id="backToClientesMenuBtn" class="w-full px-6 py-3 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500">Volver a Clientes</button>
+                            <button id="importarClientesBtn" class="w-full px-6 py-3 bg-teal-500 text-white font-semibold rounded-lg shadow-md hover:bg-teal-600 transition duration-300">Importar Clientes desde Excel</button>
+                            <button id="datosMaestrosSectoresBtn" class="w-full px-6 py-3 bg-yellow-500 text-gray-800 font-semibold rounded-lg shadow-md hover:bg-yellow-600 transition duration-300">Gestionar Sectores</button>
+                            <button id="deleteAllClientesBtn" class="w-full px-6 py-3 bg-red-600 text-white font-semibold rounded-lg shadow-md hover:bg-red-700 transition duration-300">Eliminar Todos los Clientes</button>
+                            <button id="backToClientesMenuBtn" class="w-full px-6 py-3 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500 transition duration-300">Volver a Clientes</button>
                         </div>
                     </div>
                 </div>
@@ -112,14 +112,14 @@
                 <div class="container mx-auto max-w-4xl">
                     <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl">
                         <h2 class="text-2xl font-bold text-gray-800 mb-4 text-center">Importar Clientes desde Excel</h2>
-                        <p class="text-center text-gray-600 mb-6 text-sm">Selecciona un archivo .xlsx. La primera fila debe contener: Sector, Nombre Comercial, Nombre Personal, telefono, CEP.</p>
+                        <p class="text-center text-gray-600 mb-6 text-sm">Selecciona un archivo .xlsx. Las columnas deben ser: Sector, Nombre Comercial, Nombre Personal, telefono, CEP.</p>
                         <input type="file" id="excel-uploader" accept=".xlsx" class="w-full p-4 border-2 border-dashed rounded-lg mb-6">
-                        <div id="preview-container" class="mt-6 overflow-auto max-h-96 border rounded-lg"></div>
+                        <div id="preview-container" class="mt-6 overflow-auto max-h-96 border rounded-lg shadow-inner"></div>
                         <div id="import-actions" class="mt-6 flex flex-col sm:flex-row gap-4 hidden">
-                             <button id="confirmImportBtn" class="w-full px-6 py-3 bg-green-500 text-white font-bold rounded-lg shadow-md hover:bg-green-600">Confirmar e Importar</button>
-                             <button id="cancelImportBtn" class="w-full px-6 py-3 bg-gray-400 text-white font-bold rounded-lg shadow-md hover:bg-gray-500">Cancelar</button>
+                             <button id="confirmImportBtn" class="w-full px-6 py-3 bg-green-500 text-white font-bold rounded-lg shadow-md hover:bg-green-600 transition duration-300">Confirmar e Importar</button>
+                             <button id="cancelImportBtn" class="w-full px-6 py-3 bg-gray-400 text-white font-bold rounded-lg shadow-md hover:bg-gray-500 transition duration-300">Cancelar</button>
                         </div>
-                         <button id="backToAdvancedFunctionsBtn" class="mt-6 w-full px-6 py-3 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500">Volver</button>
+                         <button id="backToAdvancedFunctionsBtn" class="mt-6 w-full px-6 py-3 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500 transition duration-300">Volver</button>
                     </div>
                 </div>
             </div>
@@ -147,12 +147,13 @@
                 const jsonData = [];
 
                 worksheet.eachRow({ includeEmpty: false }, (row) => {
-                    // Limpiar valores null/undefined para el mapeo
-                    jsonData.push(row.values.slice(1).map(v => v === null || v === undefined ? '' : v));
+                    // ExcelJS usa índices base 1, convertimos a array simple base 0
+                    const rowValues = row.values.slice(1).map(v => v === null || v === undefined ? '' : v);
+                    jsonData.push(rowValues);
                 });
 
                 if (jsonData.length < 2) {
-                    _showModal('Error', 'El archivo está vacío o no tiene datos.');
+                    _showModal('Error', 'El archivo no tiene datos suficientes.');
                     return;
                 }
 
@@ -164,7 +165,7 @@
                 requiredHeaders.forEach(rh => {
                     const index = headers.indexOf(rh);
                     if (index !== -1) headerMap[rh] = index;
-                    else { _showModal('Error', `Falta la columna requerida: "${rh}"`); missingHeader = true; }
+                    else { _showModal('Error', `Falta la columna: "${rh}"`); missingHeader = true; }
                 });
 
                 if (missingHeader) return;
@@ -189,7 +190,7 @@
 
                 renderPreviewTable(_clientesParaImportar);
             } catch (err) {
-                 _showModal('Error', `No se pudo leer el archivo: ${err.message}`);
+                 _showModal('Error de Lectura', `Fallo al procesar Excel: ${err.message}`);
                  renderPreviewTable([]);
             }
         };
@@ -205,11 +206,10 @@
         const backButton = document.getElementById('backToAdvancedFunctionsBtn');
         const uploadInput = document.getElementById('excel-uploader');
 
-        if (!container || !actionsContainer) return;
-
         if (clientes.length === 0) {
-            container.innerHTML = `<p class="text-center text-red-500 p-4">No se encontraron clientes válidos.</p>`;
+            container.innerHTML = `<p class="text-center text-red-500 p-4 font-bold">Archivo sin clientes válidos.</p>`;
             actionsContainer.classList.add('hidden');
+            backButton.classList.remove('hidden');
             return;
         }
 
@@ -222,7 +222,7 @@
                                     <th class="p-2 border text-left">N. Personal</th>
                                 </tr></thead><tbody>`;
 
-        clientes.slice(0, 15).forEach(c => {
+        clientes.slice(0, 10).forEach(c => {
             tableHTML += `<tr class="border-b">
                 <td class="p-2 border">${c.sector}</td>
                 <td class="p-2 border">${c.nombreComercial}</td>
@@ -230,7 +230,7 @@
             </tr>`;
         });
         tableHTML += '</tbody></table>';
-        if (clientes.length > 15) tableHTML += `<p class="text-xs text-gray-500 mt-2 italic text-center">... y ${clientes.length - 15} registros más.</p>`;
+        if (clientes.length > 10) tableHTML += `<p class="text-xs text-gray-500 mt-2 italic text-center">... y ${clientes.length - 10} más.</p>`;
         tableHTML += '</div>';
         
         container.innerHTML = tableHTML;
@@ -261,21 +261,17 @@
 
             const newSectores = new Set(_clientesParaImportar.map(c => c.sector).filter(s => s && !existingSectores.has(s)));
 
-            const batch = _writeBatch(_db);
-            let operations = 0;
-            const BATCH_LIMIT = 450;
-
+            const batchSectores = _writeBatch(_db);
             newSectores.forEach(sectorName => {
                 const newSectorRef = _doc(sectoresRef);
-                batch.set(newSectorRef, { name: sectorName });
-                operations++;
+                batchSectores.set(newSectorRef, { name: sectorName });
             });
-
-            if (operations > 0) await batch.commit();
+            if (newSectores.size > 0) await batchSectores.commit();
 
             const clientesRef = _collection(_db, CLIENTES_COLLECTION_PATH);
             let clientBatch = _writeBatch(_db);
             let clientOps = 0;
+            const BATCH_LIMIT = 450;
 
             for (const cliente of _clientesParaImportar) {
                  const newClienteRef = _doc(clientesRef);
@@ -289,28 +285,24 @@
             }
             if (clientOps > 0) await clientBatch.commit();
 
-            _showModal('Éxito', `Se han importado ${_clientesParaImportar.length} clientes.`);
+            _showModal('Éxito', `Importación finalizada: ${_clientesParaImportar.length} clientes creados.`);
             showFuncionesAvanzadasView();
         } catch (error) {
-            _showModal('Error', `Fallo en la importación: ${error.message}`);
+            _showModal('Error', `Fallo al importar clientes: ${error.message}`);
         } finally {
             _clientesParaImportar = [];
         }
     }
 
     function getCurrentCoordinates(inputId) {
-        const coordsInput = document.getElementById(inputId);
-        if (!coordsInput) return;
-        if (navigator.geolocation) {
-            coordsInput.placeholder = 'Obteniendo GPS...';
-            navigator.geolocation.getCurrentPosition(position => {
-                coordsInput.value = `${position.coords.latitude.toFixed(6)}, ${position.coords.longitude.toFixed(6)}`;
-            }, error => {
-                _showModal('Error GPS', `No se pudo obtener la ubicación: ${error.message}`);
-            });
-        } else {
-            _showModal('No Soportado', 'GPS no soportado en este navegador.');
-        }
+        const input = document.getElementById(inputId);
+        if (!navigator.geolocation) return _showModal('Error', 'GPS no soportado.');
+        input.placeholder = "Buscando satélites...";
+        navigator.geolocation.getCurrentPosition(position => {
+            input.value = `${position.coords.latitude.toFixed(6)}, ${position.coords.longitude.toFixed(6)}`;
+        }, error => {
+            _showModal('Error GPS', `No se pudo obtener ubicación: ${error.message}`);
+        }, { enableHighAccuracy: true });
     }
 
     /**
@@ -320,45 +312,36 @@
         if (_floatingControls) _floatingControls.classList.add('hidden');
         _mainContent.innerHTML = `
             <div class="p-4 pt-8">
-                <div class="container mx-auto max-w-lg bg-white p-8 rounded-lg shadow-xl text-center">
+                <div class="container mx-auto max-w-lg bg-white p-8 rounded-lg shadow-xl text-center border border-gray-100">
                     <h2 class="text-2xl font-bold text-gray-800 mb-6">Agregar Cliente</h2>
                     <form id="clienteForm" class="space-y-4 text-left">
                         <div>
-                            <label class="block text-gray-700 font-medium mb-1">Sector:</label>
+                            <label class="block text-sm font-bold text-gray-600 mb-1">Sector:</label>
                             <div class="flex space-x-2">
-                                <select id="sector" class="w-full px-4 py-2 border rounded-lg" required></select>
-                                <button type="button" id="addSectorBtn" class="px-3 py-2 bg-gray-200 rounded-lg hover:bg-gray-300">+</button>
+                                <select id="sector" class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500" required></select>
+                                <button type="button" id="addSectorBtn" class="px-4 py-2 bg-gray-200 rounded-lg hover:bg-gray-300 font-bold">+</button>
                             </div>
                         </div>
+                        <div><label class="block text-sm font-bold text-gray-600 mb-1">Nombre Comercial:</label><input type="text" id="nombreComercial" class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500" required></div>
+                        <div><label class="block text-sm font-bold text-gray-600 mb-1">Nombre Personal:</label><input type="text" id="nombrePersonal" class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500" required></div>
+                        <div><label class="block text-sm font-bold text-gray-600 mb-1">Teléfono:</label><input type="tel" id="telefono" class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500" required></div>
                         <div>
-                            <label class="block text-gray-700 font-medium mb-1">Nombre Comercial:</label>
-                            <input type="text" id="nombreComercial" class="w-full px-4 py-2 border rounded-lg" required>
-                        </div>
-                        <div>
-                            <label class="block text-gray-700 font-medium mb-1">Nombre Personal:</label>
-                            <input type="text" id="nombrePersonal" class="w-full px-4 py-2 border rounded-lg" required>
-                        </div>
-                        <div>
-                            <label class="block text-gray-700 font-medium mb-1">Teléfono:</label>
-                            <input type="tel" id="telefono" class="w-full px-4 py-2 border rounded-lg" required>
-                        </div>
-                        <div>
-                            <label class="block text-gray-700 font-medium mb-1">Código CEP:</label>
+                            <label class="block text-sm font-bold text-gray-600 mb-1">Código CEP:</label>
                             <div class="flex items-center">
-                                <input type="text" id="codigoCEP" class="w-full px-4 py-2 border rounded-lg">
-                                <label class="ml-4 flex items-center text-sm cursor-pointer"><input type="checkbox" id="cepNA" class="mr-2"> N/A</label>
+                                <input type="text" id="codigoCEP" class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500">
+                                <label class="ml-4 flex items-center text-sm cursor-pointer text-gray-500"><input type="checkbox" id="cepNA" class="mr-2"> N/A</label>
                             </div>
                         </div>
                         <div>
-                            <label class="block text-gray-700 font-medium mb-1">Coordenadas:</label>
+                            <label class="block text-sm font-bold text-gray-600 mb-1">Coordenadas GPS:</label>
                             <div class="flex space-x-2">
-                                <input type="text" id="coordenadas" class="w-full px-4 py-2 border rounded-lg" placeholder="Lat, Lon">
-                                <button type="button" id="getCoordsBtn" class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600">📍</button>
+                                <input type="text" id="coordenadas" class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500" placeholder="Lat, Lon">
+                                <button type="button" id="getCoordsBtn" class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition shadow-md">📍</button>
                             </div>
                         </div>
-                        <button type="submit" class="w-full px-6 py-3 bg-green-500 text-white font-bold rounded-lg shadow-md hover:bg-green-600 mt-4">Guardar Cliente</button>
+                        <button type="submit" class="w-full px-6 py-3 bg-green-500 text-white font-bold rounded-lg shadow-md hover:bg-green-600 mt-4 transition duration-300">Guardar Cliente</button>
                     </form>
-                    <button id="backToClientesBtn" class="mt-4 w-full px-6 py-3 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500">Volver</button>
+                    <button id="backToClientesBtn" class="mt-4 w-full px-6 py-3 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500 transition duration-300">Volver</button>
                 </div>
             </div>
         `;
@@ -395,13 +378,13 @@
             };
             try {
                 await _addDoc(_collection(_db, CLIENTES_COLLECTION_PATH), data);
-                _showModal('Éxito', 'Cliente agregado.');
+                _showModal('Éxito', 'Cliente guardado correctamente.');
                 f.reset();
-            } catch (err) { _showModal('Error', err.message); }
+            } catch (err) { _showModal('Error', `Fallo al guardar: ${err.message}`); }
         };
 
         if (duplicado) {
-            _showModal('Aviso', `Ya existe un cliente con el nombre: "${nombreCom}". ¿Deseas agregarlo igual?`, guardar, 'Sí, Guardar', null, true);
+            _showModal('Duplicado Detectado', `Ya existe un cliente con el nombre "${nombreCom}". ¿Deseas guardarlo de todos modos?`, guardar, 'Sí, Guardar', null, true);
         } else {
             await guardar();
         }
@@ -414,13 +397,13 @@
                 <div class="container mx-auto bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl">
                     <h2 class="text-2xl font-bold text-gray-800 mb-6 text-center">Lista de Clientes</h2>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                        <input type="text" id="search-input" placeholder="Buscar por nombre..." class="px-4 py-2 border rounded-lg">
-                        <select id="filter-sector" class="px-4 py-2 border rounded-lg"><option value="">Sectores: Todos</option></select>
+                        <input type="text" id="search-input" placeholder="Buscar por nombre..." class="px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500">
+                        <select id="filter-sector" class="px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500"><option value="">Sectores: Todos</option></select>
                     </div>
-                    <div id="clientesListContainer" class="overflow-x-auto max-h-96 border rounded-lg shadow-inner">
-                        <p class="text-gray-500 text-center p-8 italic">Cargando...</p>
+                    <div id="clientesListContainer" class="overflow-x-auto max-h-96 border rounded-lg shadow-inner bg-white">
+                        <p class="text-gray-500 text-center p-8 italic">Cargando base de datos...</p>
                     </div>
-                    <button id="backToClientesBtn" class="mt-6 w-full px-6 py-3 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500">Volver</button>
+                    <button id="backToClientesBtn" class="mt-6 w-full px-6 py-3 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500 transition duration-300">Volver</button>
                 </div>
             </div>
         `;
@@ -437,13 +420,13 @@
             );
 
             if (filtered.length === 0) {
-                container.innerHTML = `<p class="text-center text-gray-400 p-8">No se encontraron clientes.</p>`;
+                container.innerHTML = `<p class="text-center text-gray-400 p-8">Sin resultados para los filtros actuales.</p>`;
                 return;
             }
 
             container.innerHTML = `
                 <table class="min-w-full text-sm border-collapse">
-                    <thead class="bg-gray-200 sticky top-0">
+                    <thead class="bg-gray-100 sticky top-0 shadow-sm border-b">
                         <tr>
                             <th class="p-3 border text-left">N. Comercial</th>
                             <th class="p-3 border text-left">Personal / Sector</th>
@@ -452,12 +435,12 @@
                     </thead>
                     <tbody class="divide-y">
                         ${filtered.map(c => `
-                            <tr class="hover:bg-gray-50 transition">
-                                <td class="p-3 border font-medium">${c.nombreComercial}</td>
-                                <td class="p-3 border text-gray-600">${c.nombrePersonal}<br><span class="text-xs italic">${c.sector}</span></td>
+                            <tr class="hover:bg-gray-50 transition duration-150">
+                                <td class="p-3 border font-medium text-indigo-900">${c.nombreComercial}</td>
+                                <td class="p-3 border text-gray-600 font-normal">${c.nombrePersonal}<br><span class="text-xs italic text-gray-400 font-bold">${c.sector}</span></td>
                                 <td class="p-3 border text-center space-x-1">
-                                    <button onclick="window.clientesModule.editCliente('${c.id}')" class="px-3 py-1 bg-yellow-500 text-white rounded-md text-xs font-bold hover:bg-yellow-600">Editar</button>
-                                    <button onclick="window.clientesModule.deleteCliente('${c.id}')" class="px-3 py-1 bg-red-500 text-white rounded-md text-xs font-bold hover:bg-red-600">Borrar</button>
+                                    <button onclick="window.clientesModule.editCliente('${c.id}')" class="px-3 py-1 bg-yellow-500 text-white rounded text-xs font-bold hover:bg-yellow-600 transition shadow-sm">Editar</button>
+                                    <button onclick="window.clientesModule.deleteCliente('${c.id}')" class="px-3 py-1 bg-red-500 text-white rounded text-xs font-bold hover:bg-red-600 transition shadow-sm">Borrar</button>
                                 </td>
                             </tr>
                         `).join('')}
@@ -486,18 +469,24 @@
 
         _mainContent.innerHTML = `
             <div class="p-4 pt-8">
-                <div class="container mx-auto max-w-lg bg-white p-8 rounded-lg shadow-xl text-center">
-                    <h2 class="text-2xl font-bold text-gray-800 mb-6">Editar Datos del Cliente</h2>
+                <div class="container mx-auto max-w-lg bg-white p-8 rounded-lg shadow-xl border border-indigo-100">
+                    <h2 class="text-2xl font-bold text-gray-800 mb-6 text-center">Modificar Cliente</h2>
                     <form id="editClienteForm" class="space-y-4 text-left">
-                        <div><label class="block text-sm font-bold mb-1">Sector:</label><select id="e-sector" class="w-full p-2 border rounded-lg" required></select></div>
-                        <div><label class="block text-sm font-bold mb-1">Nombre Comercial:</label><input type="text" id="e-ncom" value="${c.nombreComercial}" class="w-full p-2 border rounded-lg" required></div>
-                        <div><label class="block text-sm font-bold mb-1">Nombre Personal:</label><input type="text" id="e-nper" value="${c.nombrePersonal}" class="w-full p-2 border rounded-lg" required></div>
-                        <div><label class="block text-sm font-bold mb-1">Teléfono:</label><input type="tel" id="e-tel" value="${c.telefono}" class="w-full p-2 border rounded-lg" required></div>
-                        <div><label class="block text-sm font-bold mb-1">CEP:</label><input type="text" id="e-cep" value="${c.codigoCEP}" class="w-full p-2 border rounded-lg"></div>
-                        <div><label class="block text-sm font-bold mb-1">Coordenadas:</label><div class="flex gap-2"><input type="text" id="e-coord" value="${c.coordenadas}" class="w-full p-2 border rounded-lg"><button type="button" id="getEditCoords" class="bg-blue-500 text-white px-3 rounded-lg">📍</button></div></div>
-                        <button type="submit" class="w-full px-6 py-3 bg-blue-600 text-white font-bold rounded-lg shadow-md hover:bg-blue-700 mt-4 transition">Guardar Cambios</button>
+                        <div><label class="block text-sm font-bold mb-1 text-gray-600">Sector:</label><select id="e-sector" class="w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-400" required></select></div>
+                        <div><label class="block text-sm font-bold mb-1 text-gray-600">Nombre Comercial:</label><input type="text" id="e-ncom" value="${c.nombreComercial}" class="w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-400" required></div>
+                        <div><label class="block text-sm font-bold mb-1 text-gray-600">Nombre Personal:</label><input type="text" id="e-nper" value="${c.nombrePersonal}" class="w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-400" required></div>
+                        <div><label class="block text-sm font-bold mb-1 text-gray-600">Teléfono:</label><input type="tel" id="e-tel" value="${c.telefono}" class="w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-400" required></div>
+                        <div><label class="block text-sm font-bold mb-1 text-gray-600">Código CEP:</label><input type="text" id="e-cep" value="${c.codigoCEP}" class="w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-400"></div>
+                        <div>
+                            <label class="block text-sm font-bold mb-1 text-gray-600">Coordenadas:</label>
+                            <div class="flex space-x-2">
+                                <input type="text" id="e-coord" value="${c.coordenadas}" class="w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-400">
+                                <button type="button" id="getEditCoords" class="bg-blue-500 text-white px-3 rounded-lg hover:bg-blue-600 transition shadow-md">📍</button>
+                            </div>
+                        </div>
+                        <button type="submit" class="w-full px-6 py-3 bg-indigo-600 text-white font-bold rounded-lg shadow-md hover:bg-indigo-700 mt-4 transition duration-300">Guardar Cambios</button>
                     </form>
-                    <button id="backFromEdit" class="mt-4 w-full px-6 py-2 bg-gray-400 text-white rounded-lg shadow-md hover:bg-gray-500 transition">Cancelar</button>
+                    <button id="backFromEdit" class="mt-4 w-full px-6 py-2 bg-gray-400 text-white rounded-lg shadow-md hover:bg-gray-500 transition duration-300">Cancelar</button>
                 </div>
             </div>
         `;
@@ -517,34 +506,34 @@
             };
             try {
                 await _setDoc(_doc(_db, CLIENTES_COLLECTION_PATH, clienteId), data, { merge: true });
-                _showModal('Éxito', 'Cliente actualizado correctamente.');
+                _showModal('Éxito', 'Los cambios han sido guardados correctamente.');
                 showVerClientesView();
-            } catch (err) { _showModal('Error', err.message); }
+            } catch (err) { _showModal('Error', `Fallo al actualizar en Firebase: ${err.message}`); }
         };
     }
 
     function deleteCliente(id) {
-        _showModal('Eliminar', '¿Borrar este cliente definitivamente?', async () => {
+        _showModal('Borrar Cliente', '¿Estás seguro de que quieres eliminar este cliente de la base de datos pública?', async () => {
             await _deleteDoc(_doc(_db, CLIENTES_COLLECTION_PATH, id));
-        }, 'Sí, Borrar', null, true);
+        }, 'Sí, Eliminar', null, true);
     }
 
     function showSaldosVaciosView() {
         _mainContent.innerHTML = `
             <div class="p-4 pt-8"><div class="container mx-auto bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl text-center">
-                <h2 class="text-2xl font-bold text-gray-800 mb-6">Saldos de Vacíos</h2>
-                <div id="saldosList" class="space-y-2 text-left"></div>
-                <button onclick="window.showClientesSubMenu()" class="mt-6 w-full bg-gray-400 text-white py-3 rounded-lg font-bold hover:bg-gray-500">Volver</button>
+                <h2 class="text-2xl font-bold text-gray-800 mb-6 text-center">Cartera de Envases (Vacíos)</h2>
+                <div id="saldosList" class="space-y-3 text-left"></div>
+                <button onclick="window.showClientesSubMenu()" class="mt-6 w-full bg-gray-400 text-white py-3 rounded-lg font-bold shadow hover:bg-gray-500 transition">Volver</button>
             </div></div>
         `;
         const container = document.getElementById('saldosList');
         const unsub = _onSnapshot(_collection(_db, CLIENTES_COLLECTION_PATH), snap => {
             const clients = snap.docs.map(d => ({id: d.id, ...d.data()})).filter(c => c.saldoVacios);
             container.innerHTML = clients.map(c => {
-                const saldos = Object.entries(c.saldoVacios).map(([t, v]) => `${t}: <b>${v}</b>`).join(' | ');
-                return `<div class="p-4 border rounded-lg flex justify-between items-center shadow-sm bg-gray-50">
-                    <div><b class="text-indigo-800">${c.nombreComercial}</b><br><span class="text-xs text-gray-500">${saldos}</span></div>
-                    <button onclick="window.clientesModule.showSaldoDetalleModal('${c.id}')" class="px-4 py-2 bg-blue-600 text-white rounded-md text-xs font-bold hover:bg-blue-700 transition">Ajustar</button>
+                const saldos = Object.entries(c.saldoVacios).map(([t, v]) => `${t}: <b class="${v !== 0 ? 'text-red-500' : 'text-gray-400'}">${v}</b>`).join(' | ');
+                return `<div class="p-4 border rounded-lg flex justify-between items-center shadow-sm bg-white hover:border-indigo-200 transition">
+                    <div><b class="text-indigo-900 text-lg">${c.nombreComercial}</b><br><span class="text-xs text-gray-500">${saldos}</span></div>
+                    <button onclick="window.clientesModule.showSaldoDetalleModal('${c.id}')" class="px-4 py-2 bg-indigo-600 text-white rounded-md text-xs font-bold hover:bg-indigo-700 transition shadow-sm">Ajustar</button>
                 </div>`;
             }).join('');
         });
@@ -555,15 +544,15 @@
         const c = _clientesCache.find(x => x.id === id);
         const modalHtml = `
             <div class="space-y-4">
-                <select id="adj-type" class="w-full p-3 border rounded-lg">${TIPOS_VACIO.map(t => `<option>${t}</option>`)}</select>
-                <input type="number" id="adj-qty" placeholder="Cantidad de cajas" class="w-full p-3 border rounded-lg">
-                <div class="flex gap-4">
-                    <button id="btn-p" class="flex-1 py-3 bg-yellow-500 text-gray-800 rounded-lg font-bold shadow hover:bg-yellow-600">Préstamo (+)</button>
-                    <button id="btn-d" class="flex-1 py-3 bg-green-500 text-white rounded-lg font-bold shadow hover:bg-green-600">Devolución (-)</button>
+                <div><label class="text-xs font-bold text-gray-500 uppercase">Tipo de Envase</label><select id="adj-type" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500">${TIPOS_VACIO.map(t => `<option>${t}</option>`)}</select></div>
+                <div><label class="text-xs font-bold text-gray-500 uppercase">Cantidad</label><input type="number" id="adj-qty" placeholder="Ej: 5" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500"></div>
+                <div class="flex gap-4 pt-2">
+                    <button id="btn-p" class="flex-1 py-3 bg-orange-400 text-white rounded-lg font-bold shadow hover:bg-orange-500 transition">Préstamo (+)</button>
+                    <button id="btn-d" class="flex-1 py-3 bg-teal-600 text-white rounded-lg font-bold shadow hover:bg-teal-700 transition">Devolución (-)</button>
                 </div>
             </div>
         `;
-        _showModal('Ajuste de Saldo de Vacíos', modalHtml);
+        _showModal(`Ajustar Saldo: ${c.nombreComercial}`, modalHtml);
         const update = async (mode) => {
             const t = document.getElementById('adj-type').value, q = parseInt(document.getElementById('adj-qty').value);
             if (!q || q <= 0) return;
@@ -571,7 +560,7 @@
             try {
                 await _setDoc(_doc(_db, CLIENTES_COLLECTION_PATH, id), { saldoVacios: sv }, { merge: true });
                 document.getElementById('modalContainer').classList.add('hidden');
-            } catch (err) { _showModal('Error', 'No se pudo actualizar saldo.'); }
+            } catch (err) { _showModal('Error', 'Fallo al actualizar el saldo en la base de datos.'); }
         };
         document.getElementById('btn-p').onclick = () => update('p');
         document.getElementById('btn-d').onclick = () => update('d');
@@ -579,42 +568,42 @@
 
     function showDatosMaestrosSectoresView() {
         _mainContent.innerHTML = `
-            <div class="p-4 pt-8"><div class="container mx-auto max-w-md bg-white p-8 rounded-lg shadow-xl text-center">
+            <div class="p-4 pt-8"><div class="container mx-auto max-w-md bg-white p-8 rounded-lg shadow-xl text-center border border-yellow-100">
                 <h2 class="text-2xl font-bold text-gray-800 mb-6 border-b pb-2">Gestión de Sectores</h2>
-                <div id="sec-list" class="space-y-2 text-left mb-6 overflow-y-auto max-h-72"></div>
-                <button id="backSec" class="w-full py-3 bg-gray-400 text-white rounded-lg font-bold hover:bg-gray-500 transition">Volver</button>
+                <div id="sec-list" class="space-y-2 text-left mb-6 max-h-72 overflow-y-auto pr-2"></div>
+                <button id="backSec" class="w-full py-3 bg-gray-400 text-white rounded-lg font-bold hover:bg-gray-500 transition duration-300 shadow-md">Volver</button>
             </div></div>
         `;
         document.getElementById('backSec').onclick = showFuncionesAvanzadasView;
         const unsub = _onSnapshot(_collection(_db, SECTORES_COLLECTION_PATH), snap => {
             const list = document.getElementById('sec-list');
             if(!list) return;
-            list.innerHTML = snap.docs.map(d => `<div class="flex justify-between items-center p-3 border-b hover:bg-gray-50">
+            list.innerHTML = snap.docs.map(d => `<div class="flex justify-between items-center p-3 border-b hover:bg-gray-50 transition">
                 <span class="font-medium text-gray-700">${d.data().name}</span>
-                <button onclick="window.clientesModule.deleteSector('${d.id}','${d.data().name}')" class="text-red-500 font-bold px-2 py-1 border border-red-200 rounded hover:bg-red-50">X</button>
+                <button onclick="window.clientesModule.deleteSector('${d.id}','${d.data().name}')" class="text-red-500 font-bold px-3 py-1 border border-red-200 rounded hover:bg-red-50 transition">X</button>
             </div>`).join('');
         });
         _activeListeners.push(unsub);
     }
 
     async function deleteSector(id, name) {
-        _showModal('Confirmar', `¿Eliminar sector "${name}" definitivamente?`, async () => { 
+        _showModal('Eliminar Sector', `¿Deseas eliminar el sector "${name}"? No debe haber clientes asociados.`, async () => { 
             await _deleteDoc(_doc(_db, SECTORES_COLLECTION_PATH, id)); 
-        }, 'Sí, Borrar', null, true);
+        }, 'Sí, Eliminar', null, true);
     }
 
     async function handleDeleteAllClientes() {
-        _showModal('⚠️ ALERTA CRÍTICA', '¿BORRAR TODOS LOS CLIENTES DEL SISTEMA? Esta acción es irreversible.', async () => {
-            _showModal('Progreso', 'Vaciando colección...');
+        _showModal('BORRADO MASIVO', '¡ATENCIÓN! Vas a eliminar TODOS los clientes. Esta acción no se puede revertir.', async () => {
+            _showModal('Progreso', 'Limpiando colección pública...');
             const snap = await _getDocs(_collection(_db, CLIENTES_COLLECTION_PATH));
             const batch = _writeBatch(_db);
             snap.docs.forEach(d => batch.delete(d.ref));
             await batch.commit();
-            _showModal('Éxito', 'Todos los clientes eliminados.');
+            _showModal('Éxito', 'Colección de clientes vaciada.');
         }, 'BORRAR TODO', null, true);
     }
 
-    // Exponer funciones públicas
+    // Exponer funciones del módulo
     window.clientesModule = { editCliente, deleteCliente, deleteSector, showSaldoDetalleModal };
 
 })();
