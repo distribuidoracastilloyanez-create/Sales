@@ -125,30 +125,44 @@
         document.getElementById('backToAdvancedFunctionsBtn').addEventListener('click', showFuncionesAvanzadasView);
     }
 
+    // --- CORRECCIÓN: Uso de ExcelJS en lugar de XLSX para lectura ---
     function handleFileUpload(event) {
         const file = event.target.files[0];
         if (!file) return;
         _clientesParaImportar = [];
 
         const reader = new FileReader();
-        reader.onload = function(e) {
+        reader.onload = async function(e) {
             const data = e.target.result;
             let jsonData = [];
+            
             try {
-                const workbook = XLSX.read(data, { type: 'binary' });
-                const firstSheetName = workbook.SheetNames[0];
-                const worksheet = workbook.Sheets[firstSheetName];
-                jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+                if (typeof ExcelJS === 'undefined') {
+                    throw new Error("Librería ExcelJS no cargada.");
+                }
+                const workbook = new ExcelJS.Workbook();
+                await workbook.xlsx.load(data);
+                const worksheet = workbook.getWorksheet(1); // Primera hoja
+
+                worksheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
+                    // ExcelJS devuelve valores empezando en índice 1, y el 0 es null. Hacemos slice(1) para limpiar.
+                    // Sin embargo, para mapear, mejor convertimos a array simple.
+                    const rowValues = row.values.slice(1).map(val => val === null || val === undefined ? '' : val);
+                    jsonData.push(rowValues);
+                });
+
             } catch (readError) {
-                 _showModal('Error de Lectura', 'No se pudo leer el archivo Excel.');
+                 console.error(readError);
+                 _showModal('Error de Lectura', 'No se pudo leer el archivo Excel. Asegúrate de que sea válido (.xlsx).');
                  return;
             }
 
             if (jsonData.length < 2) {
-                _showModal('Error', 'El archivo no tiene datos suficientes.');
+                _showModal('Error', 'El archivo no tiene datos suficientes (cabecera + datos).');
                 return;
             }
 
+            // Procesar Cabeceras
             const headers = jsonData[0].map(h => (h ? h.toString().toLowerCase().trim().replace(/\s+/g, '') : ''));
             const headerMap = {};
             const required = ['sector', 'nombrecomercial', 'nombrepersonal', 'telefono', 'cep'];
@@ -168,20 +182,31 @@
             headerMap['y'] = headers.indexOf('y');
 
             _clientesParaImportar = jsonData.slice(1).map(row => {
-                if (!row[headerMap['nombrecomercial']]) return null;
+                // Función auxiliar para obtener valor seguro por nombre de columna
+                const val = (key) => {
+                    const idx = headerMap[key];
+                    if (idx !== undefined && idx !== -1 && row[idx] !== undefined) return row[idx];
+                    return '';
+                };
+
+                const nCom = val('nombrecomercial');
+                if (!nCom) return null;
 
                 let coords = '';
-                if (headerMap['coordenadas'] !== -1) coords = row[headerMap['coordenadas']] || '';
-                else if (headerMap['x'] !== -1 && headerMap['y'] !== -1) coords = `${row[headerMap['y']]}, ${row[headerMap['x']]}`;
+                if (headerMap['coordenadas'] !== -1) coords = val('coordenadas');
+                else if (headerMap['x'] !== -1 && headerMap['y'] !== -1) {
+                    const x = val('x'); const y = val('y');
+                    if(x && y) coords = `${y}, ${x}`;
+                }
 
                 const sv = {}; TIPOS_VACIO.forEach(t => sv[t] = 0);
 
                 return {
-                    sector: (row[headerMap['sector']] || '').toString().toUpperCase().trim(),
-                    nombreComercial: row[headerMap['nombrecomercial']].toString().toUpperCase().trim(),
-                    nombrePersonal: (row[headerMap['nombrepersonal']] || '').toString().toUpperCase().trim(),
-                    telefono: (row[headerMap['telefono']] || '').toString().trim(),
-                    codigoCEP: (row[headerMap['cep']] || 'N/A').toString().trim(),
+                    sector: val('sector').toString().toUpperCase().trim(),
+                    nombreComercial: nCom.toString().toUpperCase().trim(),
+                    nombrePersonal: val('nombrepersonal').toString().toUpperCase().trim(),
+                    telefono: val('telefono').toString().trim(),
+                    codigoCEP: val('cep').toString().trim() || 'N/A',
                     coordenadas: coords.toString().trim(),
                     saldoVacios: sv
                 };
@@ -189,7 +214,8 @@
 
             renderPreviewTable(_clientesParaImportar);
         };
-        reader.readAsBinaryString(file);
+        // Leer como ArrayBuffer para ExcelJS
+        reader.readAsArrayBuffer(file);
     }
 
     function renderPreviewTable(clientes) {
@@ -403,12 +429,21 @@
             <div class="p-4 pt-8"><div class="container mx-auto max-w-md bg-white p-6 rounded-lg shadow-xl">
                 <h2 class="text-xl font-bold mb-4">Sectores</h2>
                 <div id="sec-list" class="space-y-2"></div>
-                <button onclick="window.initClientes({db:_db, appId:_appId}).then(showFuncionesAvanzadasView())" class="w-full mt-4 text-gray-500">Volver</button>
+                <button onclick="window.initClientes({db:_db, appId:_appId, userId:_userId, userRole:_userRole, mainContent:_mainContent, floatingControls:_floatingControls, showMainMenu:_showMainMenu, showModal:_showModal, showAddItemModal:_showAddItemModal, populateDropdown:_populateDropdown, collection:_collection, onSnapshot:_onSnapshot, doc:_doc, addDoc:_addDoc, setDoc:_setDoc, deleteDoc:_deleteDoc, getDocs:_getDocs, query:_query, where:_where, writeBatch:_writeBatch, runTransaction:_runTransaction, limit:_limit, activeListeners:_activeListeners}).then(() => window.clientesModule.showFuncionesAvanzadasView ? window.clientesModule.showFuncionesAvanzadasView() : window.showClientesSubMenu())" class="w-full mt-4 text-gray-500">Volver</button>
             </div></div>
         `;
         const container = document.getElementById('sec-list');
         _onSnapshot(_collection(_db, SECTORES_COLLECTION_PATH), snap => {
-            container.innerHTML = snap.docs.map(d => `<div class="flex justify-between p-2 border-b"><span>${d.data().name}</span><button onclick="window.clientesModule.deleteSector('${d.id}','${d.data().name}')" class="text-red-500">Eliminar</button></div>`).join('');
+            container.innerHTML = snap.docs.map(d => `<div class="flex justify-between p-2 border-b"><span>${d.data().name}</span><div class="flex gap-2"><button onclick="window.clientesModule.editSector('${d.id}','${d.data().name}')" class="text-blue-500">Edit</button><button onclick="window.clientesModule.deleteSector('${d.id}','${d.data().name}')" class="text-red-500">Eliminar</button></div></div>`).join('');
+        });
+    }
+
+    // Función faltante: editSector
+    function editSector(id, name) {
+        _showModal('Editar Sector', `Nombre: <input id="edit-sector-name" value="${name}" class="border p-1 w-full">`, async () => {
+            const val = document.getElementById('edit-sector-name').value.toUpperCase().trim();
+            if(!val) return;
+            await _setDoc(_doc(_db, SECTORES_COLLECTION_PATH, id), { name: val }, { merge: true });
         });
     }
 
@@ -431,9 +466,11 @@
     window.clientesModule = {
         editCliente,
         deleteCliente,
-        editSector: (id, name) => editSector(id, name),
+        editSector, // Ahora está definida
         deleteSector,
-        showSaldoDetalleModal
+        showSaldoDetalleModal,
+        // Helper para volver desde el botón "Volver" dinámico en sectores
+        showFuncionesAvanzadasView: () => { if(_userRole === 'admin') showFuncionesAvanzadasView(); else window.showClientesSubMenu(); }
     };
 
 })();
