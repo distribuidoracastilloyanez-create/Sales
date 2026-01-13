@@ -948,6 +948,27 @@
         try { await _setDoc(_doc(_db, REPORTE_DESIGN_CONFIG_PATH), newSettings); _showModal('Éxito', 'Diseño guardado correctamente.', showDataView); } catch (error) { console.error("Error guardando diseño:", error); _showModal('Error', `No se pudo guardar: ${error.message}`); }
     }
 
+    // --- REINCORPORACIÓN DE FUNCIONES FALTANTES ---
+    async function handleDownloadSingleClosing(closingId) {
+        const closingData = window.tempClosingsData?.find(c => c.id === closingId);
+        if (!closingData) { _showModal('Error', 'Datos no encontrados.'); return; }
+        
+        const modalContainer = document.getElementById('modalContainer');
+        if (modalContainer && !modalContainer.classList.contains('hidden') && modalContainer.querySelector('h3')?.textContent.startsWith('Progreso')) {
+            modalContainer.classList.add('hidden');
+        }
+
+        _showModal('Progreso', 'Cargando diseño y generando Excel...');
+        try {
+            await exportSingleClosingToExcel(closingData);
+            const m = document.getElementById('modalContainer');
+            if(m && !m.classList.contains('hidden') && m.querySelector('h3')?.textContent.startsWith('Progreso')) m.classList.add('hidden');
+        } catch (error) { 
+             const m = document.getElementById('modalContainer');
+             if(m && !m.classList.contains('hidden') && m.querySelector('h3')?.textContent.startsWith('Progreso')) m.classList.add('hidden');
+        }
+    }
+
     // --- SETUP GLOBALS ---
     window.dataModule = { 
         showClosingDetail, 
