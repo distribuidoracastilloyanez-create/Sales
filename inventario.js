@@ -369,6 +369,185 @@
         container.innerHTML = tableHTML;
     }
 
+    // --- NUEVAS FUNCIONES FALTANTES PARA AGREGAR PRODUCTOS Y GESTIONAR DATOS ---
+
+    async function showAgregarProductoView() {
+        if (_userRole !== 'admin') return;
+        if (_floatingControls) _floatingControls.classList.add('hidden');
+        
+        _mainContent.innerHTML = `<div class="p-4 pt-8"> <div class="container mx-auto max-w-2xl"> <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl text-center"> <h2 class="text-2xl font-bold mb-6">Agregar Nuevo Producto</h2> <form id="addProductoForm" class="space-y-4 text-left"> <div class="grid grid-cols-1 md:grid-cols-2 gap-4"> <div> <label for="rubro">Rubro:</label> <div class="flex items-center space-x-2"> <select id="rubro" class="w-full px-4 py-2 border rounded-lg" required></select> <button type="button" onclick="window.inventarioModule.showAddCategoryModal('rubros','Rubro')" class="px-3 py-2 bg-blue-500 text-white rounded-lg text-xs hover:bg-blue-600">+</button> </div> </div> <div> <label for="segmento">Segmento:</label> <div class="flex items-center space-x-2"> <select id="segmento" class="w-full px-4 py-2 border rounded-lg" required></select> <button type="button" onclick="window.inventarioModule.showAddCategoryModal('segmentos','Segmento')" class="px-3 py-2 bg-blue-500 text-white rounded-lg text-xs hover:bg-blue-600">+</button> </div> </div> <div> <label for="marca">Marca:</label> <div class="flex items-center space-x-2"> <select id="marca" class="w-full px-4 py-2 border rounded-lg" required></select> <button type="button" onclick="window.inventarioModule.showAddCategoryModal('marcas','Marca')" class="px-3 py-2 bg-blue-500 text-white rounded-lg text-xs hover:bg-blue-600">+</button> </div> </div> <div> <label for="presentacion">Presentación:</label> <input type="text" id="presentacion" class="w-full px-4 py-2 border rounded-lg" required> </div> </div> <div class="border-t pt-4 mt-4"> <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4"> <div> <label class="block mb-2 font-medium">Venta por:</label> <div id="ventaPorContainer" class="flex space-x-4"> <label class="flex items-center"><input type="checkbox" id="ventaPorUnd" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> <span class="ml-2">Und.</span></label> <label class="flex items-center"><input type="checkbox" id="ventaPorPaq" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> <span class="ml-2">Paq.</span></label> <label class="flex items-center"><input type="checkbox" id="ventaPorCj" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> <span class="ml-2">Cj.</span></label> </div> </div> <div class="mt-4 md:mt-0"> <label class="flex items-center cursor-pointer"> <input type="checkbox" id="manejaVaciosCheck" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> <span class="ml-2 font-medium">Maneja Vacío</span> </label> <div id="tipoVacioContainer" class="mt-2 hidden"> <label for="tipoVacioSelect" class="block text-sm font-medium">Tipo:</label> <select id="tipoVacioSelect" class="w-full mt-1 px-2 py-1 border rounded-lg text-sm bg-gray-50"> <option value="">Seleccione...</option> <option value="1/4 - 1/3">1/4 - 1/3</option> <option value="ret 350 ml">Ret 350 ml</option> <option value="ret 1.25 Lts">Ret 1.25 Lts</option> </select> </div> </div> </div> <div id="empaquesContainer" class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4"></div> <div id="preciosContainer" class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4"></div> </div> <div class="border-t pt-4 mt-4"> <div class="grid grid-cols-1 md:grid-cols-2 gap-4"> <div> <label for="cantidadActual" class="block font-medium">Stock Inicial (Und. Base):</label> <input type="number" id="cantidadActual" value="0" min="0" class="w-full mt-1 px-4 py-2 border rounded-lg bg-white text-gray-700"> </div> <div> <label for="ivaTipo" class="block font-medium">IVA:</label> <select id="ivaTipo" class="w-full mt-1 px-4 py-2 border rounded-lg bg-white" required> <option value="16">16%</option> <option value="0">Exento 0%</option> </select> </div> </div> </div> <button type="submit" class="w-full px-6 py-3 bg-green-500 text-white font-semibold rounded-lg shadow-md hover:bg-green-600 transition duration-150">Agregar Producto</button> </form> <button id="backToMenuBtn" class="mt-4 w-full px-6 py-3 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500 transition duration-150">Volver</button> </div> </div> </div>`;
+
+        await Promise.all([
+            _populateDropdown(`artifacts/${_appId}/users/${_userId}/rubros`, 'rubro', 'Rubro'),
+            _populateDropdown(`artifacts/${_appId}/users/${_userId}/segmentos`, 'segmento', 'Segmento'),
+            _populateDropdown(`artifacts/${_appId}/users/${_userId}/marcas`, 'marca', 'Marca')
+        ]);
+
+        const ventaPorContainer=document.getElementById('ventaPorContainer');
+        const preciosContainer=document.getElementById('preciosContainer');
+        const empaquesContainer=document.getElementById('empaquesContainer');
+        const manejaVaciosCheck=document.getElementById('manejaVaciosCheck');
+        const tipoVacioContainer=document.getElementById('tipoVacioContainer');
+        const tipoVacioSelect=document.getElementById('tipoVacioSelect');
+
+        const updateDynamicInputs = () => {
+            empaquesContainer.innerHTML='';
+            preciosContainer.innerHTML='';
+            const ventaPaq=document.getElementById('ventaPorPaq').checked;
+            const ventaCj=document.getElementById('ventaPorCj').checked;
+            const ventaUnd=document.getElementById('ventaPorUnd').checked;
+
+            if(ventaPaq) empaquesContainer.innerHTML += `<div><label for="unidadesPorPaquete" class="block text-sm font-medium">Und./Paquete:</label><input type="number" id="unidadesPorPaquete" min="1" class="w-full mt-1 px-2 py-1 border rounded-lg" value="1" required></div>`;
+            if(ventaCj) empaquesContainer.innerHTML += `<div><label for="unidadesPorCaja" class="block text-sm font-medium">Und./Caja:</label><input type="number" id="unidadesPorCaja" min="1" class="w-full mt-1 px-2 py-1 border rounded-lg" value="1" required></div>`;
+
+            if(ventaUnd) preciosContainer.innerHTML += `<div><label for="precioUnd" class="block text-sm font-medium">Precio Und.:</label><input type="number" step="0.01" min="0" id="precioUnd" class="w-full mt-1 px-2 py-1 border rounded-lg" required></div>`;
+            if(ventaPaq) preciosContainer.innerHTML += `<div><label for="precioPaq" class="block text-sm font-medium">Precio Paq.:</label><input type="number" step="0.01" min="0" id="precioPaq" class="w-full mt-1 px-2 py-1 border rounded-lg" required></div>`;
+            if(ventaCj) preciosContainer.innerHTML += `<div><label for="precioCj" class="block text-sm font-medium">Precio Cj.:</label><input type="number" step="0.01" min="0" id="precioCj" class="w-full mt-1 px-2 py-1 border rounded-lg" required></div>`;
+
+             preciosContainer.querySelectorAll('input[type="number"]').forEach(input => {
+                 const type = input.id.substring(6).toLowerCase(); 
+                 input.required = document.getElementById(`ventaPor${type.charAt(0).toUpperCase() + type.slice(1)}`)?.checked ?? false;
+             });
+        };
+
+        manejaVaciosCheck.addEventListener('change', () => {
+            if(manejaVaciosCheck.checked){
+                tipoVacioContainer.classList.remove('hidden');
+                tipoVacioSelect.required = true;
+            } else {
+                tipoVacioContainer.classList.add('hidden');
+                tipoVacioSelect.required = false;
+                tipoVacioSelect.value = '';
+            }
+        });
+
+        ventaPorContainer.addEventListener('change', updateDynamicInputs);
+        
+        // Inicializar
+        document.getElementById('ventaPorUnd').checked = true;
+        updateDynamicInputs();
+
+        document.getElementById('addProductoForm').addEventListener('submit', handleAddProducto);
+        document.getElementById('backToMenuBtn').addEventListener('click', showInventarioSubMenu);
+    }
+
+    async function handleAddProducto(e) {
+        e.preventDefault();
+        const data = getProductoDataFromForm(false); // false = isUpdate (no)
+        if (!data.rubro||!data.segmento||!data.marca||!data.presentacion){_showModal('Error','Completa Rubro, Segmento, Marca y Presentación.');return;}
+        if (!data.ventaPor.und&&!data.ventaPor.paq&&!data.ventaPor.cj){_showModal('Error','Selecciona al menos una forma de venta.');return;}
+        
+        // Validación de precios
+        let precioValido = (data.ventaPor.und && data.precios.und > 0) || 
+                           (data.ventaPor.paq && data.precios.paq > 0) || 
+                           (data.ventaPor.cj && data.precios.cj > 0);
+        if(!precioValido){_showModal('Error','Ingresa al menos un precio válido (> 0) para la forma de venta seleccionada.');return;}
+        
+        if (data.manejaVacios && !data.tipoVacio){_showModal('Error','Si maneja vacío, selecciona el tipo.');return;}
+
+        _showModal('Progreso', 'Agregando producto...');
+        try {
+            const docRef = await _addDoc(_collection(_db, `artifacts/${_appId}/users/${_userId}/inventario`), data);
+            
+            // Propagar creación
+            if (window.adminModule?.propagateProductChange) {
+                _showModal('Progreso', 'Propagando nuevo producto...');
+                await window.adminModule.propagateProductChange(docRef.id, data);
+            }
+            
+            _showModal('Éxito', 'Producto agregado correctamente.', showInventarioSubMenu);
+        } catch (err) {
+            console.error("Error agregando producto:", err);
+            _showModal('Error', `No se pudo agregar: ${err.message}`);
+        }
+    }
+
+    function showAddCategoryModal(collectionName, title) {
+        // Usamos el modal global definido en index.html
+        if (_showAddItemModal) {
+            _showAddItemModal(collectionName, title);
+        } else {
+            alert("Función para agregar categoría no disponible.");
+        }
+    }
+
+    function showModificarDatosView() {
+        if (_userRole !== 'admin') return;
+        if (_floatingControls) _floatingControls.classList.add('hidden');
+        
+        _mainContent.innerHTML = `
+            <div class="p-4 pt-8">
+                <div class="container mx-auto max-w-lg">
+                    <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl text-center">
+                        <h2 class="text-2xl font-bold mb-6 text-gray-800">Modificar Datos Maestros</h2>
+                        <p class="text-gray-600 mb-6 text-sm">Herramientas para la gestión de Rubros, Segmentos y Marcas.</p>
+                        
+                        <button id="cleanDataBtn" class="w-full px-6 py-3 bg-red-600 text-white font-semibold rounded-lg shadow-md hover:bg-red-700 mb-4">
+                            Eliminar Categorías No Usadas
+                        </button>
+                        
+                        <button id="backToInvBtn" class="w-full px-6 py-3 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500">
+                            Volver
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        document.getElementById('cleanDataBtn').addEventListener('click', handleDeleteAllDatosMaestros);
+        document.getElementById('backToInvBtn').addEventListener('click', showInventarioSubMenu);
+    }
+
+    async function handleDeleteDataItem(collectionName, id) {
+        // Función utilitaria por si se necesita borrar un item especifico desde otro módulo
+        try {
+            await _deleteDoc(_doc(_db, `artifacts/${_appId}/users/${_userId}/${collectionName}`, id));
+            return true;
+        } catch(e) {
+            console.error("Error eliminando item de datos:", e);
+            throw e;
+        }
+    }
+
+    // Helper para extraer datos del form (usado en Edit y Add)
+    function getProductoDataFromForm(isUpdate) {
+        const rubro = document.getElementById('rubro').value;
+        const segmento = document.getElementById('segmento').value;
+        const marca = document.getElementById('marca').value;
+        const presentacion = document.getElementById('presentacion').value.trim().toUpperCase();
+        
+        const ventaPor = {
+            und: document.getElementById('ventaPorUnd').checked,
+            paq: document.getElementById('ventaPorPaq').checked,
+            cj: document.getElementById('ventaPorCj').checked
+        };
+        
+        const unidadesPorPaquete = ventaPor.paq ? parseInt(document.getElementById('unidadesPorPaquete').value) : 0;
+        const unidadesPorCaja = ventaPor.cj ? parseInt(document.getElementById('unidadesPorCaja').value) : 0;
+        
+        const precios = {};
+        if (ventaPor.und) precios.und = parseFloat(document.getElementById('precioUnd').value);
+        if (ventaPor.paq) precios.paq = parseFloat(document.getElementById('precioPaq').value);
+        if (ventaPor.cj) precios.cj = parseFloat(document.getElementById('precioCj').value);
+        
+        const manejaVacios = document.getElementById('manejaVaciosCheck').checked;
+        const tipoVacio = manejaVacios ? document.getElementById('tipoVacioSelect').value : null;
+        
+        const ivaTipo = parseInt(document.getElementById('ivaTipo').value);
+        
+        const data = {
+            rubro, segmento, marca, presentacion,
+            ventaPor, unidadesPorPaquete, unidadesPorCaja,
+            precios, manejaVacios, tipoVacio, iva: ivaTipo
+        };
+
+        if (!isUpdate) {
+             // Solo al crear leemos el stock inicial del input
+             data.cantidadUnidades = parseInt(document.getElementById('cantidadActual').value) || 0;
+        }
+        
+        return data;
+    }
 
     async function editProducto(productId) {
         if (_userRole !== 'admin') { _showModal('Acceso Denegado', 'Solo administradores pueden editar definiciones.'); return; } const prod = _inventarioCache.find(p => p.id === productId); if (!prod) { _showModal('Error', 'Producto no encontrado en caché.'); return; } if (_floatingControls) _floatingControls.classList.add('hidden');
@@ -456,7 +635,7 @@
     // --- CORRECCIÓN: Uso de {merge: true} para proteger campos ocultos ---
     async function handleUpdateProducto(e, productId) {
         e.preventDefault(); if (_userRole !== 'admin') return; 
-        const updatedData = getProductoDataFromForm(true); 
+        const updatedData = getProductoDataFromForm(true); // true = isUpdate
         const productoOriginal = _inventarioCache.find(p => p.id === productId); 
         if (!productoOriginal) { _showModal('Error', 'Producto original no encontrado.'); return; } 
         if (!updatedData.rubro||!updatedData.segmento||!updatedData.marca||!updatedData.presentacion){_showModal('Error','Completa Rubro, Segmento, Marca y Presentación.');return;} if (!updatedData.ventaPor.und&&!updatedData.ventaPor.paq&&!updatedData.ventaPor.cj){_showModal('Error','Selecciona al menos una forma de venta.');return;} if (updatedData.manejaVacios&&!updatedData.tipoVacio){_showModal('Error','Si maneja vacío, selecciona el tipo.');document.getElementById('tipoVacioSelect')?.focus();return;} let precioValido=(updatedData.ventaPor.und&&updatedData.precios.und>0)||(updatedData.ventaPor.paq&&updatedData.precios.paq>0)||(updatedData.ventaPor.cj&&updatedData.precios.cj>0); if(!precioValido){_showModal('Error','Ingresa al menos un precio válido (> 0) para la forma de venta seleccionada.');document.querySelector('#preciosContainer input[required]')?.focus();return;}
@@ -571,7 +750,7 @@
     async function showRecargaProductosView() {
          if (_floatingControls) _floatingControls.classList.add('hidden');
          
-         // Limpiar el estado temporal al abrir la vista para empezar de cero
+         // Limpiar el estado temporal al abrir la vista
          _recargaTempState = {};
 
         _mainContent.innerHTML = `
@@ -787,6 +966,343 @@
                 _showModal('Error', `Error al procesar: ${error.message}`);
             }
         }, 'Sí, Procesar', null, true);
+    }
+
+
+    function showOrdenarSegmentosMarcasView() {
+        if (_userRole !== 'admin') {
+            _showModal('Acceso Denegado', 'Solo administradores.');
+            return;
+        }
+        if (_floatingControls) _floatingControls.classList.add('hidden');
+        _mainContent.innerHTML = `
+            <div class="p-4 pt-8">
+                <div class="container mx-auto max-w-2xl">
+                    <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl">
+                        <h2 class="text-2xl font-bold text-gray-800 mb-4 text-center">Ordenar Segmentos y Marcas (Visualización)</h2>
+                        <p class="text-center text-gray-600 mb-6">Arrastra Segmentos para reordenarlos. Arrastra Marcas <span class="font-bold">dentro</span> de su Segmento.</p>
+                        <div class="mb-4">
+                           <label for="ordenarRubroFilter" class="block text-gray-700 font-medium mb-2">Filtrar por Rubro (Opcional):</label>
+                           <select id="ordenarRubroFilter" class="w-full px-4 py-2 border rounded-lg">
+                               <option value="">Todos</option>
+                           </select>
+                        </div>
+                        <div id="segmentos-marcas-sortable-list" class="space-y-4 border rounded-lg p-4 max-h-[60vh] overflow-y-auto bg-gray-50">
+                            <p class="text-gray-500 text-center">Cargando...</p>
+                        </div>
+                        <div class="mt-6 flex flex-col sm:flex-row gap-4">
+                            <button id="backToInventarioBtn" class="w-full px-6 py-3 bg-gray-400 text-white rounded-lg shadow-md hover:bg-gray-500">Volver</button>
+                            <button id="saveOrderBtn" class="w-full px-6 py-3 bg-green-500 text-white rounded-lg shadow-md hover:bg-green-600">Guardar Orden</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.getElementById('backToInventarioBtn').addEventListener('click', showInventarioSubMenu);
+        document.getElementById('saveOrderBtn').addEventListener('click', handleGuardarOrdenJerarquia);
+        const rubroFilter = document.getElementById('ordenarRubroFilter');
+        _populateDropdown(`artifacts/${_appId}/users/${_userId}/rubros`, 'ordenarRubroFilter', 'Rubro');
+        rubroFilter.addEventListener('change', () => renderSortableHierarchy(rubroFilter.value));
+        renderSortableHierarchy('');
+    }
+
+    async function getAllMarcas() {
+        if (_marcasCache) return _marcasCache;
+        try {
+            const marcasRef = _collection(_db, `artifacts/${_appId}/users/${_userId}/marcas`);
+            const snapshot = await _getDocs(marcasRef);
+            _marcasCache = snapshot.docs.map(doc => ({ id: doc.id, name: doc.data().name }));
+            return _marcasCache;
+        } catch (error) { console.error("Error cargando marcas:", error); return []; }
+    }
+
+    async function renderSortableHierarchy(rubroFiltro = '') {
+        const container = document.getElementById('segmentos-marcas-sortable-list');
+        if (!container) return;
+        container.innerHTML = `<p class="text-gray-500 text-center">Cargando...</p>`;
+        try {
+            const segmentosRef = _collection(_db, `artifacts/${_appId}/users/${_userId}/segmentos`);
+            let segSnapshot = await _getDocs(segmentosRef);
+            let allSegments = segSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+            const segsSinOrden = allSegments.filter(s => s.orden === undefined || s.orden === null);
+            if (segsSinOrden.length > 0) {
+                 const segsConOrden = allSegments.filter(s => s.orden !== undefined && s.orden !== null);
+                 const maxOrden = segsConOrden.reduce((max, s) => Math.max(max, s.orden ?? -1), -1);
+                 const batch = _writeBatch(_db);
+                 segsSinOrden.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+                 segsSinOrden.forEach((seg, index) => {
+                    const dRef = _doc(segmentosRef, seg.id);
+                    const nOrden = maxOrden + 1 + index;
+                    batch.update(dRef, { orden: nOrden });
+                    seg.orden = nOrden;
+                 });
+                 await batch.commit();
+                 allSegments = [...segsConOrden, ...segsSinOrden];
+                 console.log("Orden inicial asignado a segmentos.");
+             }
+            allSegments.sort((a, b) => (a.orden ?? 9999) - (b.orden ?? 9999));
+
+            const allMarcas = await getAllMarcas();
+            const marcasMap = new Map(allMarcas.map(m => [m.name, m.id]));
+
+            let prodsQuery = _collection(_db, `artifacts/${_appId}/users/${_userId}/inventario`);
+            if (rubroFiltro) {
+                prodsQuery = _query(prodsQuery, _where("rubro", "==", rubroFiltro));
+            }
+            const prodSnap = await _getDocs(prodsQuery);
+            const prodsEnRubro = prodSnap.docs.map(d => d.data());
+            const segmentsWithProductsInRubro = rubroFiltro ? new Set(prodsEnRubro.map(p => p.segmento).filter(Boolean)) : null;
+
+            container.innerHTML = '';
+            if (allSegments.length === 0) {
+                container.innerHTML = `<p class="text-gray-500 text-center">No hay segmentos definidos.</p>`;
+                return;
+            }
+
+            allSegments.forEach(seg => {
+                const segCont = document.createElement('div');
+                segCont.className = 'segmento-container border border-gray-300 rounded-lg mb-3 bg-white shadow';
+                segCont.dataset.segmentoId = seg.id;
+                segCont.dataset.segmentoName = seg.name;
+                segCont.dataset.type = 'segmento';
+
+                const segmentHasProductsInRubro = !segmentsWithProductsInRubro || segmentsWithProductsInRubro.has(seg.name);
+                if (rubroFiltro && !segmentHasProductsInRubro) {
+                    segCont.classList.add('hidden'); 
+                }
+
+                const segTitle = document.createElement('div');
+                segTitle.className = 'segmento-title p-3 bg-gray-200 rounded-t-lg cursor-grab active:cursor-grabbing font-semibold flex justify-between items-center';
+                segTitle.draggable = true;
+                segTitle.textContent = seg.name;
+                segCont.appendChild(segTitle);
+
+                const marcasList = document.createElement('ul');
+                marcasList.className = 'marcas-sortable-list p-3 space-y-1 bg-white rounded-b-lg';
+                marcasList.dataset.segmentoParent = seg.id;
+
+                const marcasEnSeg = [...new Set(prodsEnRubro
+                    .filter(p => p.segmento === seg.name && p.marca)
+                    .map(p => p.marca)
+                )];
+
+                const marcaOrderPref = seg.marcaOrder || [];
+                marcasEnSeg.sort((a, b) => {
+                    const indexA = marcaOrderPref.indexOf(a);
+                    const indexB = marcaOrderPref.indexOf(b);
+                    if (indexA !== -1 && indexB !== -1) return indexA - indexB;
+                    if (indexA !== -1) return -1;
+                    if (indexB !== -1) return 1;
+                    return a.localeCompare(b);
+                });
+
+                if (marcasEnSeg.length === 0) {
+                    marcasList.innerHTML = `<li class="text-xs text-gray-500 italic pl-2">No hay marcas ${rubroFiltro ? 'en este rubro' : ''} para este segmento.</li>`;
+                } else {
+                    marcasEnSeg.forEach(marcaName => {
+                        const marcaId = marcasMap.get(marcaName) || `temp_${marcaName.replace(/\s+/g,'_')}`;
+                        const li = document.createElement('li');
+                        li.dataset.marcaId = marcaId;
+                        li.dataset.marcaName = marcaName;
+                        li.dataset.type = 'marca';
+                        li.className = 'marca-item p-2 bg-gray-50 rounded shadow-xs cursor-grab active:cursor-grabbing hover:bg-gray-100 text-sm';
+                        li.textContent = marcaName;
+                        li.draggable = true;
+                        marcasList.appendChild(li);
+                    });
+                }
+                segCont.appendChild(marcasList);
+                container.appendChild(segCont);
+            });
+
+            addDragAndDropHandlersHierarchy(container);
+
+        } catch (error) {
+            console.error("Error al renderizar jerarquía:", error);
+            container.innerHTML = `<p class="text-red-500 text-center">Error al cargar la estructura.</p>`;
+        }
+    }
+
+
+    function addDragAndDropHandlersHierarchy(container) {
+        let draggedItem = null;
+        let draggedItemElement = null; 
+        let draggedType = null;
+        let sourceList = null; 
+        let placeholder = null; 
+
+        const createPlaceholder = (type) => {
+            if(placeholder) placeholder.remove(); 
+            placeholder = document.createElement(type === 'segmento' ? 'div' : 'li');
+            placeholder.className = type === 'segmento' ? 'segmento-placeholder' : 'marca-placeholder';
+            placeholder.style.height = type === 'segmento' ? '60px' : '30px';
+            placeholder.style.background = type === 'segmento' ? '#dbeafe' : '#e0e7ff';
+            placeholder.style.border = type === 'segmento' ? '2px dashed #3b82f6' : '1px dashed #6366f1';
+            placeholder.style.borderRadius = type === 'segmento' ? '0.5rem' : '0.25rem';
+            placeholder.style.margin = type === 'segmento' ? '1rem 0' : '0.25rem 0';
+            if(type === 'marca') placeholder.style.listStyleType = 'none'; 
+        };
+
+        container.addEventListener('dragstart', e => {
+            draggedItemElement = e.target.closest('.segmento-title, .marca-item'); 
+            if (!draggedItemElement) { e.preventDefault(); return; }
+
+            draggedType = draggedItemElement.dataset.type || (draggedItemElement.classList.contains('segmento-title') ? 'segmento' : null); 
+            draggedItem = (draggedType === 'segmento') ? draggedItemElement.closest('.segmento-container') : draggedItemElement;
+
+            if (!draggedType || !draggedItem) { e.preventDefault(); return; } 
+
+            sourceList = draggedItem.parentNode; 
+
+            setTimeout(() => { if (draggedItem) draggedItem.classList.add('opacity-50'); }, 0);
+            e.dataTransfer.effectAllowed = 'move';
+            createPlaceholder(draggedType); 
+        });
+
+        container.addEventListener('dragend', e => {
+            if (draggedItem) draggedItem.classList.remove('opacity-50'); 
+            draggedItem = null; draggedItemElement = null; draggedType = null; sourceList = null;
+            if (placeholder) placeholder.remove(); placeholder = null; 
+        });
+
+        container.addEventListener('dragover', e => {
+            e.preventDefault(); 
+            if (!draggedItem || !placeholder) return; 
+
+            const targetList = e.target.closest(draggedType === 'segmento' ? '#segmentos-marcas-sortable-list' : '.marcas-sortable-list');
+
+            if (!targetList || (draggedType === 'marca' && targetList !== sourceList)) {
+                if (placeholder.parentNode) placeholder.remove(); 
+                e.dataTransfer.dropEffect = 'none'; 
+                return;
+            }
+
+            e.dataTransfer.dropEffect = 'move'; 
+
+            const afterElement = getDragAfterElementHierarchy(targetList, e.clientY, draggedType);
+            if (afterElement === null) {
+                targetList.appendChild(placeholder); 
+            } else {
+                targetList.insertBefore(placeholder, afterElement); 
+            }
+        });
+
+        container.addEventListener('drop', e => {
+            e.preventDefault(); 
+            const targetList = e.target.closest(draggedType === 'segmento' ? '#segmentos-marcas-sortable-list' : '.marcas-sortable-list');
+
+            if (draggedItem && placeholder && placeholder.parentNode && targetList && !(draggedType === 'marca' && targetList !== sourceList) ) {
+                placeholder.parentNode.insertBefore(draggedItem, placeholder); 
+            }
+
+            if (draggedItem) draggedItem.classList.remove('opacity-50');
+            if (placeholder) placeholder.remove();
+            draggedItem = null; draggedItemElement = null; draggedType = null; sourceList = null; placeholder = null;
+        });
+
+        container.addEventListener('dragleave', e => {
+            if (!container.contains(e.relatedTarget) && placeholder) {
+                 placeholder.remove();
+                 placeholder = null;
+            }
+        });
+
+        function getDragAfterElementHierarchy(listContainer, y, itemType) {
+            const selector = itemType === 'segmento' ? '.segmento-container:not(.opacity-50)' : '.marca-item:not(.opacity-50)'; 
+            const draggables = [...listContainer.children].filter(c => c.matches(selector) && c !== draggedItem && !c.matches('.segmento-placeholder') && !c.matches('.marca-placeholder'));
+
+            return draggables.reduce((closest, child) => {
+                const box = child.getBoundingClientRect();
+                const offset = y - box.top - box.height / 2; 
+                if (offset < 0 && offset > closest.offset) {
+                    return { offset: offset, element: child };
+                } else {
+                    return closest;
+                }
+            }, { offset: Number.NEGATIVE_INFINITY }).element; 
+        }
+    }
+
+    async function handleGuardarOrdenJerarquia() {
+        if (_userRole !== 'admin') return;
+        const segConts = document.querySelectorAll('#segmentos-marcas-sortable-list .segmento-container'); 
+        if (segConts.length === 0) { _showModal('Aviso', 'No hay elementos para ordenar.'); return; }
+        _showModal('Progreso', 'Guardando nuevo orden...');
+        const batch = _writeBatch(_db);
+        let segOrderChanged = false, marcaOrderChanged = false;
+        const orderedSegIds = []; 
+        const currentSegmentDocs = {}; 
+
+        try {
+            const segsRef = _collection(_db, `artifacts/${_appId}/users/${_userId}/segmentos`);
+            const segsSnap = await _getDocs(segsRef);
+            segsSnap.docs.forEach(doc => { currentSegmentDocs[doc.id] = doc.data(); });
+        } catch (e) {
+            console.warn("No se pudieron precargar los datos de segmentos:", e);
+        }
+
+        segConts.forEach((segCont, index) => {
+            const segId = segCont.dataset.segmentoId;
+            orderedSegIds.push(segId); 
+            const segRef = _doc(_db, `artifacts/${_appId}/users/${_userId}/segmentos`, segId);
+            const currentSegData = currentSegmentDocs[segId] || {}; 
+
+            if (currentSegData.orden === undefined || currentSegData.orden !== index) {
+                batch.update(segRef, { orden: index });
+                segOrderChanged = true;
+            }
+
+            const marcaItems = segCont.querySelectorAll('.marcas-sortable-list .marca-item');
+            const newMarcaOrder = Array.from(marcaItems).map(item => item.dataset.marcaName);
+            const currentMarcaOrder = currentSegData.marcaOrder || [];
+
+            if (JSON.stringify(newMarcaOrder) !== JSON.stringify(currentMarcaOrder)) {
+                batch.update(segRef, { marcaOrder: newMarcaOrder });
+                marcaOrderChanged = true;
+            }
+        });
+
+        if (!segOrderChanged && !marcaOrderChanged) {
+            _showModal('Aviso', 'No se detectaron cambios en el orden.');
+            return;
+        }
+
+        try {
+            await batch.commit(); 
+            invalidateSegmentOrderCache(); 
+            _showModal('Progreso', 'Orden guardado localmente. Propagando a usuarios...');
+            let propSuccess = true;
+
+            if (segOrderChanged && window.adminModule?.propagateCategoryOrderChange) {
+                try {
+                    await window.adminModule.propagateCategoryOrderChange('segmentos', orderedSegIds);
+                } catch (e) { propSuccess = false; console.error("Error propagando orden segmentos:", e); }
+            }
+
+            if (marcaOrderChanged && window.adminModule?.propagateCategoryChange) {
+                for (const segCont of segConts) {
+                     const segId=segCont.dataset.segmentoId;
+                     const marcaItems=segCont.querySelectorAll('.marcas-sortable-list .marca-item');
+                     const newMarcaOrder=Array.from(marcaItems).map(item=>item.dataset.marcaName);
+                     try {
+                         const segRef=_doc(_db,`artifacts/${_appId}/users/${_userId}/segmentos`,segId);
+                         const segSnap=await _getDoc(segRef); 
+                         if(segSnap.exists()){
+                             const segDataCompleto = segSnap.data();
+                             await window.adminModule.propagateCategoryChange('segmentos', segId, segDataCompleto);
+                         }
+                    } catch (e) {
+                        propSuccess=false;
+                        console.error(`Error propagando orden marcas para segmento ${segId}:`, e);
+                    }
+                }
+            }
+            _showModal(propSuccess ? 'Éxito' : 'Advertencia', `Orden guardado localmente.${propSuccess ? ' Propagado correctamente.' : ' Ocurrieron errores al propagar.'}`, showInventarioSubMenu);
+        } catch (error) {
+            console.error("Error al guardar orden:", error);
+            _showModal('Error', `Ocurrió un error al guardar: ${error.message}`);
+        }
     }
 
 
