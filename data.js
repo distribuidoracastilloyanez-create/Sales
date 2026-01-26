@@ -626,7 +626,7 @@
         tabsContainer.addEventListener('click', (e) => { const clickedTab = e.target.closest('.design-tab-btn'); if (!clickedTab) return; const tabId = clickedTab.dataset.tab; tabsContainer.querySelectorAll('.design-tab-btn').forEach(btn => btn.classList.remove('active')); clickedTab.classList.add('active'); tabContents.forEach(content => content.id === `tab-content-${tabId}` ? content.classList.remove('hidden') : content.classList.add('hidden')); });
         try { const docRef = _doc(_db, REPORTE_DESIGN_CONFIG_PATH); const docSnap = await _getDoc(docRef); let cur = JSON.parse(JSON.stringify(DEFAULT_REPORTE_SETTINGS)); if (docSnap.exists()) { const sav = docSnap.data(); cur = { ...cur, ...sav }; cur.styles = { ...DEFAULT_REPORTE_SETTINGS.styles, ...(sav.styles || {}) }; cur.columnWidths = { ...DEFAULT_REPORTE_SETTINGS.columnWidths, ...(sav.columnWidths || {}) }; } document.getElementById('chk_showCargaInicial').checked = cur.showCargaInicial; document.getElementById('chk_showCargaRestante').checked = cur.showCargaRestante; document.getElementById('chk_showVaciosSheet').checked = cur.showVaciosSheet; document.getElementById('chk_showClienteTotalSheet').checked = cur.showClienteTotalSheet;
             const s = cur.styles; const w = cur.columnWidths;
-            document.getElementById('style-zones-container').innerHTML = ` ${createZoneEditor('headerInfo', 'Info (Fecha/Usuario)', s.headerInfo)} ${createZoneEditor('headerProducts', 'Cabecera Productos', s.headerProducts)} ${createZoneEditor('rowCargaInicial', 'Fila "CARGA INICIAL"', s.rowCargaInicial)} ${createZoneEditor('rowDataClients', 'Filas Clientes (Vacías)', s.rowDataClients)} ${createZoneEditor('rowDataClientsSale', 'Filas Clientes (Venta)', s.rowDataClientsSale)} ${createZoneEditor('rowDataClientsObsequio', 'Filas Clientes (Obsequio)', s.rowDataClientsObsequio)} ${createZoneEditor('rowCargaRestante', 'Fila "CARGA RESTANTE"', s.rowCargaRestante)} ${createZoneEditor('rowTotals', 'Fila "TOTALES"', s.rowTotals)} `;
+            document.getElementById('style-zones-container').innerHTML = ` ${createZoneEditor('headerInfo', 'Info (Fecha/Usuario)', s.headerInfo)} ${createZoneEditor('headerProducts', 'Cabecera Productos', s.headerProducts)} ${createZoneEditor('rowCargaInicial', 'Fila "CARGA INICIAL"', s.rowCargaInicial)} ${createZoneEditor('rowCargaInicial', 'Fila "CARGA INICIAL"', s.rowCargaInicial)} ${createZoneEditor('rowDataClients', 'Filas Clientes (Vacías)', s.rowDataClients)} ${createZoneEditor('rowDataClientsSale', 'Filas Clientes (Venta)', s.rowDataClientsSale)} ${createZoneEditor('rowDataClientsObsequio', 'Filas Clientes (Obsequio)', s.rowDataClientsObsequio)} ${createZoneEditor('rowCargaRestante', 'Fila "CARGA RESTANTE"', s.rowCargaRestante)} ${createZoneEditor('rowTotals', 'Fila "TOTALES"', s.rowTotals)} `;
             document.getElementById('rubro-widths-container').innerHTML = ` ${createWidthEditor('width_col_A_LabelsClientes', 'Col A (Clientes)', w.col_A_LabelsClientes)} ${createWidthEditor('width_products', 'Cols Producto', w.products)} ${createWidthEditor('width_subtotal', 'Col Sub Total', w.subtotal)} `;
             document.getElementById('vacios-widths-container').innerHTML = ` ${createWidthEditor('width_vaciosCliente', 'Cliente', w.vaciosCliente)} ${createWidthEditor('width_vaciosTipo', 'Tipo Vacío', w.vaciosTipo)} ${createWidthEditor('width_vaciosQty', 'Cantidades', w.vaciosQty)} `;
             document.getElementById('vacios-styles-container').innerHTML = ` ${createZoneEditor('vaciosHeader', 'Cabecera Vacíos', s.vaciosHeader)} ${createZoneEditor('vaciosData', 'Filas Vacíos', s.vaciosData)} `;
@@ -1053,9 +1053,12 @@
                 const unitLabel = d.factorUtilizado > 1 ? (d.factorUtilizado === 1 ? 'Und' : (d.factorUtilizado > 10 ? 'Caja' : 'Paq')) : 'Und';
                 const signo = d.diferenciaUnidades > 0 ? '+' : '';
                 
+                // Construir el nombre completo del producto: Segmento Marca Presentación
+                const nombreProductoCompleto = `${d.segmento || ''} ${d.marca || ''} ${d.presentacion || ''}`.trim();
+
                 const row = worksheet.getRow(currentRowIndex);
                 row.values = [
-                    d.presentacion,
+                    nombreProductoCompleto, // Muestra Segmento + Marca + Presentación
                     d.unidadesAnteriores,
                     `${signo}${cantVisual} ${unitLabel}`,
                     d.unidadesNuevas,
