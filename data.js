@@ -652,7 +652,6 @@
     }
 
     // --- FUNCIONES EXISTENTES (CIERRES, AUDITORÍA) MANTENIDAS ---
-    // (Estas funciones no cambian, se mantienen igual que en la versión anterior)
     
     async function showClosingDataView() {
         _mainContent.innerHTML = `
@@ -885,7 +884,7 @@
         } catch (error) { console.error("Error generando detalle:", error); _showModal('Error', `No se pudo generar: ${error.message}`); }
     }
 
-    // --- RECARGAS (ADMIN) ---
+    // --- RECARGAS (ADMIN) - MODIFICADO ---
     async function showRecargasReportView() {
         if (_userRole !== 'admin') { _showModal('Acceso Denegado', 'Solo administradores pueden ver este reporte.'); return; }
         _mainContent.innerHTML = `
@@ -896,28 +895,201 @@
                     <div class="flex items-end"> <button id="loadRecargasBtn" class="w-full bg-teal-600 text-white p-2 rounded-lg font-bold hover:bg-teal-700 shadow-md transition-all"> Consultar Actividad </button> </div>
                 </div>
                 <div id="recargasTableContainer" class="overflow-x-auto border rounded-lg min-h-[300px] bg-white relative shadow-inner"> <div class="absolute inset-0 flex items-center justify-center text-gray-400 italic pointer-events-none"> Seleccione un usuario para auditar sus registros de stock. </div> </div>
-                <div class="mt-6 flex flex-col sm:flex-row gap-4"> <button id="backToDataMenuBtn" class="flex-1 py-3 bg-gray-400 text-white rounded-lg font-semibold hover:bg-gray-500 shadow-md">Volver</button> <button id="downloadExcelRecargasBtn" class="flex-1 py-3 bg-green-600 text-white rounded-lg font-semibold hidden hover:bg-green-700 shadow-md flex items-center justify-center gap-2"> Descargar Reporte Excel </button> </div>
+                <div class="mt-6 flex flex-col sm:flex-row gap-4"> 
+                    <button id="backToDataMenuBtn" class="flex-1 py-3 bg-gray-400 text-white rounded-lg font-semibold hover:bg-gray-500 shadow-md">Volver</button> 
+                </div>
             </div> </div> </div>
         `;
-        const userSelector = document.getElementById('userSelector'); const loadBtn = document.getElementById('loadRecargasBtn'); const downloadBtn = document.getElementById('downloadExcelRecargasBtn'); const tableContainer = document.getElementById('recargasTableContainer');
-        try { const usersSnap = await _getDocs(_collection(_db, "users")); userSelector.innerHTML = '<option value="">-- Elija un vendedor --</option>'; usersSnap.forEach(doc => { const data = doc.data(); userSelector.innerHTML += `<option value="${doc.id}">${data.name || data.email || doc.id} (${data.camion || 'Sin Camión'})</option>`; }); } catch (e) { console.error("Error cargando usuarios:", e); userSelector.innerHTML = '<option value="">Error al cargar usuarios</option>'; }
+        const userSelector = document.getElementById('userSelector'); 
+        const loadBtn = document.getElementById('loadRecargasBtn'); 
+        const tableContainer = document.getElementById('recargasTableContainer');
+        
+        try { 
+            const usersSnap = await _getDocs(_collection(_db, "users")); 
+            userSelector.innerHTML = '<option value="">-- Elija un vendedor --</option>'; 
+            usersSnap.forEach(doc => { 
+                const data = doc.data(); 
+                userSelector.innerHTML += `<option value="${doc.id}">${data.name || data.email || doc.id} (${data.camion || 'Sin Camión'})</option>`; 
+            }); 
+        } catch (e) { 
+            console.error("Error cargando usuarios:", e); 
+            userSelector.innerHTML = '<option value="">Error al cargar usuarios</option>'; 
+        }
+        
         loadBtn.addEventListener('click', async () => {
-            const selectedUserId = userSelector.value; if (!selectedUserId) { _showModal('Aviso', 'Por favor seleccione un vendedor de la lista.'); return; }
+            const selectedUserId = userSelector.value; 
+            if (!selectedUserId) { _showModal('Aviso', 'Por favor seleccione un vendedor de la lista.'); return; }
+            
             tableContainer.innerHTML = '<div class="flex h-64 items-center justify-center"><p class="text-teal-600 font-bold animate-pulse">Consultando registros en Firebase...</p></div>';
-            try { const recargasRef = _collection(_db, `artifacts/${_appId}/users/${selectedUserId}/recargas`); const snap = await _getDocs(recargasRef); if (snap.empty) { tableContainer.innerHTML = '<div class="flex h-64 items-center justify-center"><p class="text-gray-500">Este usuario no tiene registros de recarga.</p></div>'; downloadBtn.classList.add('hidden'); return; } let recargasData = []; snap.forEach(doc => recargasData.push({ id: doc.id, ...doc.data() })); recargasData.sort((a, b) => new Date(b.fecha) - new Date(a.fecha)); renderRecargasTable(recargasData, tableContainer); downloadBtn.classList.remove('hidden'); downloadBtn.onclick = () => exportRecargasToExcel(recargasData, userSelector.options[userSelector.selectedIndex].text); } catch (error) { console.error(error); tableContainer.innerHTML = `<div class="flex h-64 items-center justify-center"><p class="text-red-500 font-bold">Error: ${error.message}</p></div>`; }
+            
+            try { 
+                const recargasRef = _collection(_db, `artifacts/${_appId}/users/${selectedUserId}/recargas`); 
+                const snap = await _getDocs(recargasRef); 
+                
+                if (snap.empty) { 
+                    tableContainer.innerHTML = '<div class="flex h-64 items-center justify-center"><p class="text-gray-500">Este usuario no tiene registros de recarga.</p></div>'; 
+                    return; 
+                } 
+                
+                let recargasData = []; 
+                snap.forEach(doc => recargasData.push({ id: doc.id, ...doc.data() })); 
+                recargasData.sort((a, b) => new Date(b.fecha) - new Date(a.fecha)); 
+                
+                renderRecargasTable(recargasData, tableContainer, userSelector.options[userSelector.selectedIndex].text); 
+            } catch (error) { 
+                console.error(error); 
+                tableContainer.innerHTML = `<div class="flex h-64 items-center justify-center"><p class="text-red-500 font-bold">Error: ${error.message}</p></div>`; 
+            }
         });
         document.getElementById('backToDataMenuBtn').addEventListener('click', window.showDataView);
     }
 
-    function renderRecargasTable(data, container) {
-        let html = ` <table class="min-w-full text-sm text-left border-collapse"> <thead class="bg-gray-100 text-gray-700 uppercase text-xs font-bold sticky top-0 shadow-sm"> <tr> <th class="p-3 border-b">Fecha / Hora</th> <th class="p-3 border-b text-center">Items</th> <th class="p-3 border-b">Detalle de Productos Recargados</th> </tr> </thead> <tbody class="divide-y divide-gray-100"> `;
-        data.forEach(r => { const fecha = new Date(r.fecha).toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' }); const resumen = r.detalles.map(d => { const cant = d.diferenciaUnidades / d.factorUtilizado; const unitLabel = d.factorUtilizado > 1 ? (d.factorUtilizado === 1 ? 'Und' : 'Cj/Paq') : 'Und'; return `<span class="inline-block bg-green-50 text-green-800 border border-green-200 px-2 py-1 rounded-md text-xs m-1 shadow-sm"> <strong>${d.presentacion}</strong>: +${cant} ${unitLabel} </span>`; }).join(''); html += ` <tr class="hover:bg-gray-50 transition-colors duration-150"> <td class="p-3 border-r font-medium text-gray-600 whitespace-nowrap align-top w-32">${fecha}</td> <td class="p-3 border-r text-center font-bold text-teal-600 align-top w-16">${r.totalProductos}</td> <td class="p-3 align-top">${resumen}</td> </tr> `; });
+    function renderRecargasTable(data, container, userName) {
+        // Guardamos data en global para acceso por ID al descargar
+        window.tempRecargasData = data;
+
+        let html = ` <table class="min-w-full text-sm text-left border-collapse"> <thead class="bg-gray-100 text-gray-700 uppercase text-xs font-bold sticky top-0 shadow-sm"> <tr> <th class="p-3 border-b">Fecha / Hora</th> <th class="p-3 border-b text-center">Total Productos Impactados</th> <th class="p-3 border-b text-center">Acciones</th> </tr> </thead> <tbody class="divide-y divide-gray-100"> `;
+        
+        data.forEach(r => { 
+            const fecha = new Date(r.fecha).toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' }); 
+            html += ` 
+                <tr class="hover:bg-gray-50 transition-colors duration-150"> 
+                    <td class="p-3 border-r font-medium text-gray-600 whitespace-nowrap align-top">${fecha}</td> 
+                    <td class="p-3 border-r text-center font-bold text-teal-600 align-top">${r.totalProductos}</td> 
+                    <td class="p-3 text-center align-top">
+                        <button onclick="window.dataModule.downloadRecargaExcel('${r.id}', '${userName}')" 
+                                class="bg-green-600 text-white px-4 py-2 rounded shadow hover:bg-green-700 text-xs font-bold flex items-center justify-center gap-2 mx-auto transition-transform hover:scale-105">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                            Descargar Archivo
+                        </button>
+                    </td> 
+                </tr> `; 
+        });
         container.innerHTML = html + '</tbody></table>';
     }
 
-    function exportRecargasToExcel(data, userName) {
+    function downloadRecargaExcel(recargaId, userName) {
+        const recarga = window.tempRecargasData?.find(r => r.id === recargaId);
+        if(!recarga) {
+            _showModal('Error', 'Datos de recarga no encontrados en memoria.');
+            return;
+        }
+        exportSingleRecargaToExcel(recarga, userName);
+    }
+
+    function exportSingleRecargaToExcel(recarga, userName) {
         if (typeof ExcelJS === 'undefined') { _showModal('Error', 'Librería ExcelJS no disponible.'); return; }
-        try { const workbook = new ExcelJS.Workbook(); const worksheet = workbook.addWorksheet('Auditoria Recargas'); worksheet.columns = [ { header: 'Fecha y Hora', key: 'fecha', width: 20 }, { header: 'ID Transacción', key: 'id', width: 25 }, { header: 'Producto', key: 'producto', width: 35 }, { header: 'Stock Anterior (Unds)', key: 'ant', width: 18 }, { header: 'Nuevo Stock (Unds)', key: 'nuevo', width: 18 }, { header: 'Diferencia (Unds)', key: 'dif', width: 18 }, { header: 'Cantidad Visual', key: 'visual', width: 18 }, { header: 'Factor', key: 'factor', width: 10 } ]; worksheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } }; worksheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2E7D32' } }; data.forEach(r => { const f = new Date(r.fecha).toLocaleString(); r.detalles.forEach(d => { worksheet.addRow({ fecha: f, id: r.id, producto: d.presentacion, ant: d.unidadesAnteriores, nuevo: d.unidadesNuevas, dif: d.diferenciaUnidades, visual: d.diferenciaUnidades / d.factorUtilizado, factor: d.factorUtilizado }); }); }); workbook.xlsx.writeBuffer().then(function(buffer) { const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }); const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = `Auditoria_Recargas_${userName.replace(/[^a-zA-Z0-9]/g, '_')}_${new Date().toISOString().slice(0,10)}.xlsx`; document.body.appendChild(link); link.click(); document.body.removeChild(link); }); } catch (e) { console.error("Error exportando recargas:", e); _showModal('Error', 'No se pudo generar el archivo Excel.'); }
+        
+        try { 
+            const workbook = new ExcelJS.Workbook(); 
+            const worksheet = workbook.addWorksheet('Detalle Recarga'); 
+            
+            // --- ESTILOS ---
+            const headerInfoStyle = { font: { bold: true, size: 10 }, alignment: { horizontal: 'left' } };
+            const tableHeaderStyle = { font: { bold: true, color: { argb: 'FFFFFFFF' } }, fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF00695C' } }, alignment: { horizontal: 'center', vertical: 'middle' } };
+            const borderStyle = { top: {style:'thin'}, left: {style:'thin'}, bottom: {style:'thin'}, right: {style:'thin'} };
+
+            // --- INFORMACIÓN DE CABECERA ---
+            const fechaStr = new Date(recarga.fecha).toLocaleString('es-ES', { dateStyle: 'full', timeStyle: 'short' });
+            
+            worksheet.mergeCells('A1:E1');
+            worksheet.getCell('A1').value = `REPORTE DE RECARGA DE INVENTARIO`;
+            worksheet.getCell('A1').font = { bold: true, size: 14 };
+            worksheet.getCell('A1').alignment = { horizontal: 'center' };
+
+            worksheet.getCell('A3').value = 'USUARIO:';
+            worksheet.getCell('B3').value = userName.toUpperCase();
+            worksheet.getCell('A3').font = headerInfoStyle.font;
+
+            worksheet.getCell('A4').value = 'FECHA:';
+            worksheet.getCell('B4').value = fechaStr;
+            worksheet.getCell('A4').font = headerInfoStyle.font;
+
+            worksheet.getCell('A5').value = 'ID TRANSACCIÓN:';
+            worksheet.getCell('B5').value = recarga.id;
+            worksheet.getCell('A5').font = headerInfoStyle.font;
+
+            // --- TABLA DE PRODUCTOS ---
+            // Fila de encabezados de tabla en la fila 7
+            const headerRow = worksheet.getRow(7);
+            headerRow.values = ['Producto', 'Stock Anterior (Unds)', 'Cantidad Recargada', 'Nuevo Stock (Unds)', 'Factor Conv.'];
+            
+            // Aplicar estilos a encabezados
+            [1, 2, 3, 4, 5].forEach(col => {
+                const cell = headerRow.getCell(col);
+                cell.style = tableHeaderStyle;
+                cell.border = borderStyle;
+            });
+
+            // Columnas ancho
+            worksheet.getColumn(1).width = 40; // Producto
+            worksheet.getColumn(2).width = 20; // Stock Ant
+            worksheet.getColumn(3).width = 25; // Diferencia visual
+            worksheet.getColumn(4).width = 20; // Stock Nuevo
+            worksheet.getColumn(5).width = 15; // Factor
+
+            // Agregar datos
+            recarga.detalles.forEach(d => {
+                // Calcular visualización amigable de la cantidad recargada
+                const cantVisual = d.diferenciaUnidades / d.factorUtilizado;
+                const unitLabel = d.factorUtilizado > 1 ? (d.factorUtilizado === 1 ? 'Und' : (d.factorUtilizado > 10 ? 'Caja' : 'Paq')) : 'Und';
+                const signo = d.diferenciaUnidades > 0 ? '+' : '';
+                
+                const row = worksheet.addRow([
+                    d.presentacion,
+                    d.unidadesAnteriores,
+                    `${signo}${cantVisual} ${unitLabel}`,
+                    d.unidadesNuevas,
+                    d.factorUtilizado
+                ]);
+
+                // Bordes para cada celda de datos
+                row.eachCell((cell) => {
+                    cell.border = borderStyle;
+                    cell.alignment = { vertical: 'middle', horizontal: 'left' };
+                });
+                // Centrar columnas numéricas
+                row.getCell(2).alignment = { horizontal: 'center' };
+                row.getCell(3).alignment = { horizontal: 'center', vertical: 'middle' };
+                row.getCell(4).alignment = { horizontal: 'center' };
+                row.getCell(5).alignment = { horizontal: 'center' };
+                
+                // Color para la diferencia (verde si suma, rojo si resta)
+                if (d.diferenciaUnidades > 0) {
+                    row.getCell(3).font = { color: { argb: 'FF2E7D32' }, bold: true };
+                } else if (d.diferenciaUnidades < 0) {
+                    row.getCell(3).font = { color: { argb: 'FFC62828' }, bold: true };
+                }
+            });
+
+            // --- GENERAR NOMBRE Y DESCARGAR ---
+            // Formato solicitado: Recarga "fecha" "Usuario (Nombre y apellido)"
+            const f = new Date(recarga.fecha);
+            const dia = f.getDate().toString().padStart(2, '0');
+            const mes = (f.getMonth() + 1).toString().padStart(2, '0');
+            const anio = f.getFullYear();
+            const hora = f.getHours().toString().padStart(2, '0');
+            const min = f.getMinutes().toString().padStart(2, '0');
+            
+            const fechaNombre = `${dia}-${mes}-${anio}_${hora}${min}`;
+            // Limpiar nombre de usuario de caracteres raros para el archivo
+            const safeUserName = userName.replace(/[^a-zA-Z0-9 áéíóúÁÉÍÓÚñÑ]/g, '').trim();
+            
+            const fname = `Recarga ${fechaNombre} ${safeUserName}.xlsx`;
+
+            workbook.xlsx.writeBuffer().then(function(buffer) { 
+                const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }); 
+                const link = document.createElement('a'); 
+                link.href = URL.createObjectURL(blob); 
+                link.download = fname; 
+                document.body.appendChild(link); 
+                link.click(); 
+                document.body.removeChild(link); 
+            }); 
+        } catch (e) { 
+            console.error("Error exportando recarga individual:", e); 
+            _showModal('Error', 'No se pudo generar el archivo Excel.'); 
+        }
     }
 
     // --- DISEÑO DE REPORTE (Sin cambios mayores, solo mantenido) ---
@@ -977,7 +1149,8 @@
         _processSalesDataForModal: _processSalesDataForModal,
         getDisplayQty: getDisplayQty,
         showRecargasReportView: showRecargasReportView,
-        showUserInventoryView: showUserInventoryView // Exponer la nueva función
+        showUserInventoryView: showUserInventoryView,
+        downloadRecargaExcel // Exponer la nueva función para usar en el onclick
     };
 
 })();
