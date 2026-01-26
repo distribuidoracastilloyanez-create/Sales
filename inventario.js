@@ -958,9 +958,13 @@
 
                 await batch.commit();
                 
-                _showModal('Éxito', 'Recarga procesada y registrada correctamente.');
+                // Limpiar estado y actualizar vista antes de mostrar el modal de éxito
                 _recargaTempState = {};
                 renderRecargaList(); 
+
+                // Mensaje de éxito solicitado con botón "Continuar"
+                _showModal('Recarga Exitosa', 'La carga se realizó exitosamente y se guardó el registro.', null, 'Continuar');
+                
             } catch (error) {
                 console.error("Error en recarga:", error);
                 _showModal('Error', `Error al procesar: ${error.message}`);
