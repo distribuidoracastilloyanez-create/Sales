@@ -760,16 +760,11 @@
                  
                  _showModal('Progreso', 'Archivando y eliminando...');
                  
-                 let cDocRef;
-                 
-                 if (window.userRole === 'user') {
-                     // CORRECCIÓN DE RUTA: Ajustada a artifacts/... para cumplir con las reglas de seguridad
-                     cDocRef = _doc(_collection(_db, `artifacts/${_appId}/public/data/user_closings`));
-                     await _setDoc(cDocRef, cierreData); 
-                 } else { 
-                     cDocRef = _doc(_collection(_db, `artifacts/${_appId}/users/${_userId}/cierres`));
-                     await _setDoc(cDocRef, cierreData);
-                 }
+                 // CORRECCIÓN FINAL: Guardar siempre en la carpeta del usuario
+                 // Esto asegura que la escritura sea válida bajo las reglas de seguridad
+                 // match /users/{userId}/{document=**} { allow read, write: if isAuthenticated() && request.auth.uid == userId; }
+                 const cDocRef = _doc(_collection(_db, `artifacts/${_appId}/users/${_userId}/cierres`));
+                 await _setDoc(cDocRef, cierreData);
                  
                  const batch = _writeBatch(_db); 
                  ventas.forEach(v => batch.delete(_doc(ventasRef, v.id)));
