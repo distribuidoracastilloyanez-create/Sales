@@ -536,7 +536,7 @@
                 console.error("Error al guardar venta:", saveError);
                  const progressModal = document.getElementById('modalContainer'); 
                  if(progressModal && !progressModal.classList.contains('hidden') && progressModal.querySelector('h3')?.textContent.startsWith('Progreso')) {
-                      progressModal.classList.add('hidden');
+                       progressModal.classList.add('hidden');
                  }
                 _showModal('Error', `Error al guardar la venta: ${saveError.message || saveError}`);
             }
@@ -724,7 +724,7 @@
             }
 
             try {
-                 _showModal('Progreso', 'Generando Excel...'); 
+                 _showModal('Progreso', 'Generando Excel...');
                  
                  let vendedorInfo = {};
                  if (window.userRole === 'user') {
@@ -732,8 +732,10 @@
                      vendedorInfo={userId:_userId,nombre:uData.nombre||'',apellido:uData.apellido||'',camion:uData.camion||'',email:uData.email||''};
                  }
 
+                 const fechaCierre = new Date(); // Fecha actual estándar
+                 
                  const cierreData = { 
-                     fecha: new Date(), 
+                     fecha: fechaCierre, 
                      ventas: ventas.map(({id,...rest})=>rest), 
                      obsequios: obsequios.map(({id,...rest})=>rest),
                      total: ventas.reduce((s,v)=>s+(v.total||0),0),
@@ -741,20 +743,28 @@
                      vendedorInfo: vendedorInfo
                  }; 
 
+                 // --- FIX: Crear objeto especial solo para la exportación local ---
+                 // data.js espera un objeto Timestamp-like con .toDate()
+                 const cierreDataForExport = {
+                    ...cierreData,
+                    fecha: { toDate: () => fechaCierre }
+                 };
+
                  if (window.dataModule && typeof window.dataModule.exportSingleClosingToExcel === 'function') {
-                    await window.dataModule.exportSingleClosingToExcel(cierreData);
+                    // Usamos el objeto modificado solo para la función de exportar
+                    await window.dataModule.exportSingleClosingToExcel(cierreDataForExport);
                  } else {
                     console.error("Error: window.dataModule.exportSingleClosingToExcel no está definida.");
                     _showModal('Advertencia', 'No se pudo generar el archivo Excel (función no encontrada), pero el cierre continuará.');
                  }
                  
-                 _showModal('Progreso', 'Archivando y eliminando...'); 
+                 _showModal('Progreso', 'Archivando y eliminando...');
                  
                  let cDocRef;
                  
                  if (window.userRole === 'user') {
                      cDocRef=_doc(_collection(_db,`public_data/${_appId}/user_closings`));
-                     await _setDoc(cDocRef, cierreData);
+                     await _setDoc(cDocRef, cierreData); // Aquí guardamos el objeto normal con Date, Firebase lo maneja
                  } else { 
                      cDocRef = _doc(_collection(_db, `artifacts/${_appId}/users/${_userId}/cierres`));
                      await _setDoc(cDocRef, cierreData);
