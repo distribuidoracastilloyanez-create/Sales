@@ -111,42 +111,31 @@
     // --- CHECK Y GENERACIÓN AUTOMÁTICA DE REPORTE SEMANAL ---
     async function checkAndGenerateWeeklyReport() {
         try {
-            // Calcular semana anterior (Lunes a Domingo pasados)
             const today = new Date();
-            const startOfCurrentWeek = getStartOfWeek(today); // Lunes actual 00:00
-            
+            const startOfCurrentWeek = getStartOfWeek(today); 
             const endOfLastWeek = new Date(startOfCurrentWeek);
-            endOfLastWeek.setMilliseconds(-1); // Domingo pasado 23:59:59.999
-            
+            endOfLastWeek.setMilliseconds(-1); 
             const startOfLastWeek = new Date(startOfCurrentWeek);
-            startOfLastWeek.setDate(startOfLastWeek.getDate() - 7); // Lunes pasado 00:00
+            startOfLastWeek.setDate(startOfLastWeek.getDate() - 7); 
 
-            // ID único para el reporte: Año_Semana
-            // Usamos ISO Week date aproximada
             const oneJan = new Date(startOfLastWeek.getFullYear(), 0, 1);
             const numberOfDays = Math.floor((startOfLastWeek - oneJan) / (24 * 60 * 60 * 1000));
             const weekNum = Math.ceil((startOfLastWeek.getDay() + 1 + numberOfDays) / 7);
             const reportId = `${startOfLastWeek.getFullYear()}_Week_${weekNum}`;
 
-            // 1. Verificar si ya existe el reporte
             const historyRef = _doc(_db, `artifacts/${_appId}/users/${_userId}/historial_atencion`, reportId);
             const historySnap = await _getDoc(historyRef);
 
-            if (historySnap.exists()) {
-                console.log(`Reporte semanal ${reportId} ya existe. Skipping.`);
-                return;
-            }
+            if (historySnap.exists()) return;
 
-            console.log(`Generando reporte semanal automático para: ${reportId} (${startOfLastWeek.toLocaleDateString()} - ${endOfLastWeek.toLocaleDateString()})`);
+            console.log(`Generando reporte semanal automático para: ${reportId}`);
 
-            // 2. Obtener Clientes Públicos Activos
             const clientesRef = _collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/clientes`);
             const clientesSnap = await _getDocs(clientesRef);
             const todosLosClientes = clientesSnap.docs.map(d => ({id: d.id, ...d.data()}));
 
             if (todosLosClientes.length === 0) return;
 
-            // 3. Obtener Ventas de la Semana Pasada
             const ventasRef = _collection(_db, `artifacts/${_appId}/users/${_userId}/ventas`);
             const qVentas = _query(ventasRef, 
                 _where("fecha", ">=", startOfLastWeek),
@@ -159,10 +148,8 @@
                 if (venta.clienteId) clientesAtendidosIds.add(venta.clienteId);
             });
 
-            // 4. Calcular No Atendidos
             const clientesNoAtendidos = todosLosClientes.filter(c => !clientesAtendidosIds.has(c.id));
 
-            // 5. Guardar Reporte
             const reporteData = {
                 id: reportId,
                 fechaGeneracion: new Date(),
@@ -225,7 +212,7 @@
         document.getElementById('backToMenuBtn').addEventListener('click', _showMainMenu);
     };
 
-    // --- NUEVA FUNCIÓN: INVENTARIO POR USUARIO (ADMIN) ---
+    // --- INVENTARIO POR USUARIO (ADMIN) ---
     async function showUserInventoryView() {
         if (_userRole !== 'admin') { _showModal('Acceso Denegado', 'Solo administradores.'); return; }
         
@@ -405,8 +392,6 @@
             worksheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
             worksheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF00695C' } }; // Teal oscuro
 
-            // Usar los datos de _tempUserInventory
-            
             _tempUserInventory.forEach(p => {
                 const disp = getDisplayQty(p.cantidadUnidades || 0, p);
                 worksheet.addRow({
@@ -430,7 +415,7 @@
         } catch (e) { console.error(e); _showModal('Error', 'No se pudo exportar.'); }
     }
 
-    // --- VISTA MAPA DE RUTAS (Modificado Dinámico) ---
+    // --- VISTA MAPA DE RUTAS (Funciones completas) ---
     function showClientMapView() {
         if (mapInstance) { mapInstance.remove(); mapInstance = null; } 
         if (_salesListenerUnsubscribe) { _salesListenerUnsubscribe(); }
@@ -440,11 +425,8 @@
             <div class="p-4 pt-8"> <div class="container mx-auto"> <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl">
                 <h1 class="text-3xl font-bold text-gray-800 mb-2 text-center">Mapa de Rutas</h1>
                 <p class="text-center text-sm text-gray-600 mb-4">Verde: Atendido esta semana | Gris: Pendiente</p>
-                
                 <div class="relative mb-4"> <input type="text" id="map-search-input" placeholder="Buscar cliente..." class="w-full px-4 py-2 border rounded-lg"> <div id="map-search-results" class="absolute z-[1000] w-full bg-white border rounded-lg mt-1 max-h-60 overflow-y-auto hidden shadow-lg"></div> </div>
-                
                 <div id="client-map" class="w-full rounded-lg shadow-inner" style="height:65vh; border:1px solid #ccc; background-color:#e5e7eb;"> <p class="text-center text-gray-500 pt-10">Cargando mapa...</p> </div>
-                
                 <button id="backToDataMenuBtn" class="mt-6 w-full px-6 py-3 bg-gray-400 text-white rounded-lg shadow-md hover:bg-gray-500">Volver</button>
             </div> </div> </div>
         `;
@@ -456,7 +438,6 @@
         const mapCont = document.getElementById('client-map'); if (!mapCont || typeof L === 'undefined') return;
         
         try {
-            // 1. Cargar Clientes Públicos
             const cliRef = _collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/clientes`); 
             const cliSnaps = await _getDocs(cliRef); 
             const clients = cliSnaps.docs.map(d => ({id: d.id, ...d.data()})); 
@@ -473,31 +454,21 @@
 
             if (cliCoords.length === 0) { mapCont.innerHTML = '<p class="text-gray-500">No hay clientes con coordenadas válidas.</p>'; return; }
 
-            // 2. Inicializar Mapa
             mapInstance = L.map('client-map').setView([7.77, -72.22], 13); 
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OSM', maxZoom: 19 }).addTo(mapInstance);
             
-            // Iconos
             const greyIcon = new L.Icon({iconUrl:'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-grey.png', shadowUrl:'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png', iconSize:[25,41],iconAnchor:[12,41],popupAnchor:[1,-34],shadowSize:[41,41]}); 
             const greenIcon = new L.Icon({iconUrl:'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png', shadowUrl:'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png', iconSize:[25,41],iconAnchor:[12,41],popupAnchor:[1,-34],shadowSize:[41,41]});
 
             mapMarkers.clear(); 
             const mGroup=[];
 
-            // 3. Pintar todos en GRIS inicialmente
             cliCoords.forEach(cli=>{
                 try{
                     const cleanCoords = cli.coordenadas.toString().replace(/['"()]/g, '').trim();
                     const coords=cleanCoords.split(',').map(p=>parseFloat(p)); 
                     const hasCEP=cli.codigoCEP&&cli.codigoCEP.toLowerCase()!=='n/a'; 
-                    
-                    const marker=L.marker(coords, {icon: greyIcon}).bindPopup(`
-                        <b>${cli.nombreComercial}</b><br>
-                        <small>${cli.nombrePersonal||''}</small><br>
-                        <small>Sector: ${cli.sector||'N/A'}</small>
-                        ${hasCEP?`<br><b>CEP: ${cli.codigoCEP}</b>`:''}
-                        <br><a href="https://www.google.com/maps?q=${coords[0]},${coords[1]}" target="_blank" class="text-xs text-blue-600">Abrir en Google Maps</a>
-                    `); 
+                    const marker=L.marker(coords, {icon: greyIcon}).bindPopup(`<b>${cli.nombreComercial}</b><br><small>${cli.nombrePersonal||''}</small><br><small>Sector: ${cli.sector||'N/A'}</small>${hasCEP?`<br><b>CEP: ${cli.codigoCEP}</b>`:''}<br><a href="https://www.google.com/maps?q=${coords[0]},${coords[1]}" target="_blank" class="text-xs text-blue-600">Abrir en Google Maps</a>`); 
                     mGroup.push(marker); 
                     mapMarkers.set(cli.id, marker);
                 } catch(e){}
@@ -510,8 +481,7 @@
             
             setupMapSearch(cliCoords);
 
-            // 4. Configurar Listener en Tiempo Real para Ventas de la Semana
-            const startOfWeek = getStartOfWeek(new Date()); // Lunes 00:00
+            const startOfWeek = getStartOfWeek(new Date());
             const ventasRef = _collection(_db, `artifacts/${_appId}/users/${_userId}/ventas`);
             const q = _query(ventasRef, _where("fecha", ">=", startOfWeek));
 
@@ -522,7 +492,6 @@
                     if(v.clienteId) _soldClientIdsThisWeek.add(v.clienteId);
                 });
                 
-                // Actualizar colores dinámicamente
                 mapMarkers.forEach((marker, clientId) => {
                     if (_soldClientIdsThisWeek.has(clientId)) {
                         marker.setIcon(greenIcon);
@@ -544,7 +513,7 @@
         document.addEventListener('click', (ev)=>{ if(!resCont.contains(ev.target)&&ev.target!==sInp) resCont.classList.add('hidden'); });
     }
 
-    // --- VISTA HISTÓRICO DE ATENCIÓN (NUEVA) ---
+    // --- VISTA HISTÓRICO DE ATENCIÓN (Funciones completas) ---
     async function showAttentionHistoryView() {
         if (_floatingControls) _floatingControls.classList.add('hidden');
         _mainContent.innerHTML = `
@@ -620,28 +589,23 @@
             </div>
         `;
         _showModal('Detalle Histórico', modalHTML, null, 'Cerrar');
-        
         document.getElementById('downloadHistoryBtn').onclick = () => exportHistoryToExcel(reportData);
     }
 
     function exportHistoryToExcel(data) {
         if (typeof ExcelJS === 'undefined') { _showModal('Error', 'ExcelJS no disponible.'); return; }
-        
         const wb = new ExcelJS.Workbook();
         const ws = wb.addWorksheet('No Atendidos');
-        
         ws.columns = [
             { header: 'Nombre Comercial', key: 'name', width: 30 },
             { header: 'Nombre Personal', key: 'personal', width: 25 },
             { header: 'Sector', key: 'sector', width: 20 },
             { header: 'Teléfono', key: 'phone', width: 15 }
         ];
-        
         ws.getRow(1).font = { bold: true };
         data.listaNoAtendidos.forEach(c => {
             ws.addRow({ name: c.nombreComercial, personal: c.nombrePersonal, sector: c.sector, phone: c.telefono });
         });
-        
         const fname = `NoAtendidos_${new Date(data.semanaInicio).toISOString().slice(0,10)}.xlsx`;
         wb.xlsx.writeBuffer().then(buf => {
             const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
@@ -651,8 +615,35 @@
         });
     }
 
+    // --- DISEÑO DE REPORTE (Funciones completas y editor) ---
+    function createZoneEditor(idPrefix, label, settings) { const s = settings; return ` <div class="p-3 border rounded-lg bg-gray-50"> <h4 class="font-semibold text-gray-700">${label}</h4> <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mt-2 text-sm items-center"> <label class="flex items-center space-x-2 cursor-pointer"><input type="checkbox" id="${idPrefix}_bold" ${s.bold ? 'checked' : ''} class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"><span>Negrita</span></label> <label class="flex items-center space-x-2 cursor-pointer"><input type="checkbox" id="${idPrefix}_border" ${s.border ? 'checked' : ''} class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"><span>Bordes</span></label> <label class="flex items-center space-x-2"><span>Fondo:</span><input type="color" id="${idPrefix}_fillColor" value="${s.fillColor || '#FFFFFF'}" class="h-6 w-10 border cursor-pointer p-0"></label> <label class="flex items-center space-x-2"><span>Texto:</span><input type="color" id="${idPrefix}_fontColor" value="${s.fontColor || '#000000'}" class="h-6 w-10 border cursor-pointer p-0"></label> <label class="flex items-center space-x-2"><span>Tamaño:</span><input type="number" id="${idPrefix}_fontSize" value="${s.fontSize || 10}" min="8" max="16" class="h-7 w-12 border cursor-pointer p-1 text-sm rounded-md"></label> </div> </div>`; }
+    function createWidthEditor(id, label, value) { return ` <div class="flex items-center justify-between"> <label for="${id}" class="text-sm font-medium text-gray-700">${label}:</label> <input type="number" id="${id}" value="${value}" min="5" max="50" step="1" class="w-20 px-2 py-1 border rounded-lg text-sm"> </div>`; }
+    async function showReportDesignView() {
+        if (_floatingControls) _floatingControls.classList.add('hidden');
+        _mainContent.innerHTML = ` <style> input[type="color"] { -webkit-appearance: none; -moz-appearance: none; appearance: none; background: none; border: 1px solid #ccc; padding: 0; } input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; } input[type="color"]::-webkit-color-swatch { border: none; border-radius: 2px; } input[type="color"]::-moz-color-swatch { border: none; border-radius: 2px; } .design-tab-btn { padding: 0.5rem 1rem; cursor: pointer; border: 1px solid transparent; border-bottom: none; margin-bottom: -1px; background-color: #f9fafb; color: #6b7280; border-radius: 0.375rem 0.375rem 0 0; } .design-tab-btn.active { background-color: #ffffff; color: #3b82f6; font-weight: 600; border-color: #e5e7eb; } </style> <div class="p-4 pt-8"> <div class="container mx-auto max-w-3xl"> <div class="bg-white/90 backdrop-blur-sm p-6 md:p-8 rounded-lg shadow-xl"> <h1 class="text-3xl font-bold text-gray-800 mb-6 text-center">Diseño de Reporte de Cierre</h1> <div id="design-loader" class="text-center text-gray-500 p-4">Cargando configuración...</div> <form id="design-form-container" class="hidden text-left"> <div id="design-tabs" class="flex border-b border-gray-200 mb-4 overflow-x-auto text-sm"> <button type="button" class="design-tab-btn active" data-tab="general">General</button> <button type="button" class="design-tab-btn" data-tab="rubro">Hoja Rubros</button> <button type="button" class="design-tab-btn" data-tab="vacios">Hoja Vacíos</button> <button type="button" class="design-tab-btn" data-tab="totales">Hoja Totales</button> </div> <div id="design-tab-content" class="space-y-6"> <div id="tab-content-general" class="space-y-4"> <h3 class="text-lg font-semibold border-b pb-2 mt-4">Visibilidad de Secciones</h3> <div class="space-y-2 mt-4"> <label class="flex items-center space-x-3 p-2 rounded-lg hover:bg-gray-100 cursor-pointer"> <input type="checkbox" id="chk_showCargaInicial" class="h-5 w-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> <span>Mostrar fila "CARGA INICIAL"</span> </label> <label class="flex items-center space-x-3 p-2 rounded-lg hover:bg-gray-100 cursor-pointer"> <input type="checkbox" id="chk_showCargaRestante" class="h-5 w-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> <span>Mostrar fila "CARGA RESTANTE"</span> </label> <label class="flex items-center space-x-3 p-2 rounded-lg hover:bg-gray-100 cursor-pointer"> <input type="checkbox" id="chk_showVaciosSheet" class="h-5 w-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> <span>Incluir hoja "Reporte Vacíos"</span> </label> <label class="flex items-center space-x-3 p-2 rounded-lg hover:bg-gray-100 cursor-pointer"> <input type="checkbox" id="chk_showClienteTotalSheet" class="h-5 w-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> <span>Incluir hoja "Total Por Cliente"</span> </label> </div> </div> <div id="tab-content-rubro" class="space-y-6 hidden"> <h3 class="text-lg font-semibold border-b pb-2">Ancho de Columnas</h3> <div id="rubro-widths-container" class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3 mt-4 text-sm"></div> <h3 class="text-lg font-semibold border-b pb-2 mt-4">Estilos de Zonas</h3> <div id="style-zones-container" class="space-y-3 mt-4"></div> </div> <div id="tab-content-vacios" class="space-y-6 hidden"> <h3 class="text-lg font-semibold border-b pb-2">Ancho de Columnas</h3> <div id="vacios-widths-container" class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3 mt-4 text-sm"></div> <h3 class="text-lg font-semibold border-b pb-2 mt-4">Estilos de Zonas</h3> <div id="vacios-styles-container" class="space-y-3 mt-4"></div> </div> <div id="tab-content-totales" class="space-y-6 hidden"> <h3 class="text-lg font-semibold border-b pb-2">Ancho de Columnas</h3> <div id="totales-widths-container" class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3 mt-4 text-sm"></div> <h3 class="text-lg font-semibold border-b pb-2 mt-4">Estilos de Zonas</h3> <div id="totales-styles-container" class="space-y-3 mt-4"></div> </div> </div> <div class="flex flex-col sm:flex-row gap-4 pt-6 mt-6 border-t"> <button type="button" id="saveDesignBtn" class="w-full px-6 py-3 bg-green-500 text-white font-semibold rounded-lg shadow-md hover:bg-green-600">Guardar Diseño</button> <button type="button" id="backToDataMenuBtn" class="w-full px-6 py-3 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500">Volver</button> </div> </form> </div> </div> </div> `;
+        document.getElementById('backToDataMenuBtn').addEventListener('click', showDataView); document.getElementById('saveDesignBtn').addEventListener('click', handleSaveReportDesign);
+        const tabsContainer = document.getElementById('design-tabs'); const tabContents = document.querySelectorAll('#design-tab-content > div');
+        tabsContainer.addEventListener('click', (e) => { const clickedTab = e.target.closest('.design-tab-btn'); if (!clickedTab) return; const tabId = clickedTab.dataset.tab; tabsContainer.querySelectorAll('.design-tab-btn').forEach(btn => btn.classList.remove('active')); clickedTab.classList.add('active'); tabContents.forEach(content => content.id === `tab-content-${tabId}` ? content.classList.remove('hidden') : content.classList.add('hidden')); });
+        try { const docRef = _doc(_db, REPORTE_DESIGN_CONFIG_PATH); const docSnap = await _getDoc(docRef); let cur = JSON.parse(JSON.stringify(DEFAULT_REPORTE_SETTINGS)); if (docSnap.exists()) { const sav = docSnap.data(); cur = { ...cur, ...sav }; cur.styles = { ...DEFAULT_REPORTE_SETTINGS.styles, ...(sav.styles || {}) }; cur.columnWidths = { ...DEFAULT_REPORTE_SETTINGS.columnWidths, ...(sav.columnWidths || {}) }; } document.getElementById('chk_showCargaInicial').checked = cur.showCargaInicial; document.getElementById('chk_showCargaRestante').checked = cur.showCargaRestante; document.getElementById('chk_showVaciosSheet').checked = cur.showVaciosSheet; document.getElementById('chk_showClienteTotalSheet').checked = cur.showClienteTotalSheet;
+            const s = cur.styles; const w = cur.columnWidths;
+            document.getElementById('style-zones-container').innerHTML = ` ${createZoneEditor('headerInfo', 'Info (Fecha/Usuario)', s.headerInfo)} ${createZoneEditor('headerProducts', 'Cabecera Productos', s.headerProducts)} ${createZoneEditor('rowCargaInicial', 'Fila "CARGA INICIAL"', s.rowCargaInicial)} ${createZoneEditor('rowDataClients', 'Filas Clientes (Vacías)', s.rowDataClients)} ${createZoneEditor('rowDataClientsSale', 'Filas Clientes (Venta)', s.rowDataClientsSale)} ${createZoneEditor('rowDataClientsObsequio', 'Filas Clientes (Obsequio)', s.rowDataClientsObsequio)} ${createZoneEditor('rowCargaRestante', 'Fila "CARGA RESTANTE"', s.rowCargaRestante)} ${createZoneEditor('rowTotals', 'Fila "TOTALES"', s.rowTotals)} `;
+            document.getElementById('rubro-widths-container').innerHTML = ` ${createWidthEditor('width_col_A_LabelsClientes', 'Col A (Clientes)', w.col_A_LabelsClientes)} ${createWidthEditor('width_products', 'Cols Producto', w.products)} ${createWidthEditor('width_subtotal', 'Col Sub Total', w.subtotal)} `;
+            document.getElementById('vacios-widths-container').innerHTML = ` ${createWidthEditor('width_vaciosCliente', 'Cliente', w.vaciosCliente)} ${createWidthEditor('width_vaciosTipo', 'Tipo Vacío', w.vaciosTipo)} ${createWidthEditor('width_vaciosQty', 'Cantidades', w.vaciosQty)} `;
+            document.getElementById('vacios-styles-container').innerHTML = ` ${createZoneEditor('vaciosHeader', 'Cabecera Vacíos', s.vaciosHeader)} ${createZoneEditor('vaciosData', 'Filas Vacíos', s.vaciosData)} `;
+            document.getElementById('totales-widths-container').innerHTML = ` ${createWidthEditor('width_totalCliente', 'Cliente', w.totalCliente)} ${createWidthEditor('width_totalClienteValor', 'Gasto Total', w.totalClienteValor)} `;
+            document.getElementById('totales-styles-container').innerHTML = ` ${createZoneEditor('totalesHeader', 'Cabecera Totales', s.totalesHeader)} ${createZoneEditor('totalesData', 'Filas Clientes Totales', s.totalesData)} ${createZoneEditor('totalesTotalRow', 'Fila "GRAN TOTAL"', s.totalesTotalRow)} `;
+            document.getElementById('design-loader').classList.add('hidden'); document.getElementById('design-form-container').classList.remove('hidden');
+        } catch (error) { console.error("Error cargando diseño:", error); document.getElementById('design-loader').textContent = 'Error al cargar la configuración.'; }
+    }
+    function readZoneEditor(idPrefix) { const b = document.getElementById(`${idPrefix}_bold`); const r = document.getElementById(`${idPrefix}_border`); const f = document.getElementById(`${idPrefix}_fillColor`); const t = document.getElementById(`${idPrefix}_fontColor`); const s = document.getElementById(`${idPrefix}_fontSize`); const d = DEFAULT_REPORTE_SETTINGS.styles[idPrefix] || {}; return { bold: b ? b.checked : (d.bold || false), border: r ? r.checked : (d.border || false), fillColor: f ? f.value : (d.fillColor || '#FFFFFF'), fontColor: t ? t.value : (d.fontColor || '#000000'), fontSize: s ? (parseInt(s.value, 10) || 10) : (d.fontSize || 10) }; }
+    function readWidthInputs() { const d = DEFAULT_REPORTE_SETTINGS.columnWidths; const v = (id, def) => parseInt(document.getElementById(id)?.value, 10) || def; return { col_A_LabelsClientes: v('width_col_A_LabelsClientes', d.col_A_LabelsClientes), products: v('width_products', d.products), subtotal: v('width_subtotal', d.subtotal), vaciosCliente: v('width_vaciosCliente', d.vaciosCliente), vaciosTipo: v('width_vaciosTipo', d.vaciosTipo), vaciosQty: v('width_vaciosQty', d.vaciosQty), totalCliente: v('width_totalCliente', d.totalCliente), totalClienteValor: v('width_totalClienteValor', d.totalClienteValor) }; }
+    async function handleSaveReportDesign() {
+        _showModal('Progreso', 'Guardando diseño...');
+        const newSettings = { showCargaInicial: document.getElementById('chk_showCargaInicial').checked, showCargaRestante: document.getElementById('chk_showCargaRestante').checked, showVaciosSheet: document.getElementById('chk_showVaciosSheet').checked, showClienteTotalSheet: document.getElementById('chk_showClienteTotalSheet').checked, styles: { headerInfo: readZoneEditor('headerInfo'), headerProducts: readZoneEditor('headerProducts'), rowCargaInicial: readZoneEditor('rowCargaInicial'), rowDataClients: readZoneEditor('rowDataClients'), rowDataClientsSale: readZoneEditor('rowDataClientsSale'), rowDataClientsObsequio: readZoneEditor('rowDataClientsObsequio'), rowCargaRestante: readZoneEditor('rowCargaRestante'), rowTotals: readZoneEditor('rowTotals'), vaciosHeader: readZoneEditor('vaciosHeader'), vaciosData: readZoneEditor('vaciosData'), totalesHeader: readZoneEditor('totalesHeader'), totalesData: readZoneEditor('totalesData'), totalesTotalRow: readZoneEditor('totalesTotalRow') }, columnWidths: readWidthInputs() };
+        try { await _setDoc(_doc(_db, REPORTE_DESIGN_CONFIG_PATH), newSettings); _showModal('Éxito', 'Diseño guardado correctamente.', showDataView); } catch (error) { console.error("Error guardando diseño:", error); _showModal('Error', `No se pudo guardar: ${error.message}`); }
+    }
+
     // --- FUNCIONES EXISTENTES (CIERRES, AUDITORÍA) MANTENIDAS ---
-    
     async function showClosingDataView() {
         _mainContent.innerHTML = `
             <div class="p-4 pt-8"> <div class="container mx-auto"> <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl">
@@ -750,7 +741,6 @@
     }
 
     async function _processSalesDataForModal(ventas, obsequios, cargaInicialInventario, userIdForInventario) {
-        // ... (Lógica de procesado para modal de cierre - sin cambios mayores)
         const clientData = {}; const clientTotals = {}; let grandTotalValue = 0;
         const allProductsMap = new Map(); const vaciosMovementsPorTipo = {};
         const TIPOS_VACIO_GLOBAL = window.TIPOS_VACIO_GLOBAL || ["1/4 - 1/3", "ret 350 ml", "ret 1.25 Lts"];
@@ -809,7 +799,6 @@
             const { clientData, clientTotals, grandTotalValue, sortedClients, finalProductOrder, vaciosMovementsPorTipo } = 
                 await _processSalesDataForModal(closingData.ventas || [], closingData.obsequios || [], closingData.cargaInicialInventario || [], closingData.vendedorInfo.userId);
             
-            // ... (Código de generación de HTML de tabla - compactado para brevedad, es el mismo de antes)
             let headerHTML = `<tr class="sticky top-0 z-20 bg-gray-200"><th class="p-1 border sticky left-0 z-30 bg-gray-200">SEGMENTO</th>`;
             finalProductOrder.forEach(p => { headerHTML += `<th class="p-1 border whitespace-nowrap text-xs">${p.segmento || 'S/S'}</th>`; });
             headerHTML += `<th class="p-1 border sticky right-0 z-30 bg-gray-200"></th></tr>`;
@@ -884,20 +873,18 @@
         } catch (error) { console.error("Error generando detalle:", error); _showModal('Error', `No se pudo generar: ${error.message}`); }
     }
 
-    // --- RECARGAS (ADMIN) - MODIFICADO ---
+    // --- RECARGAS (ADMIN) - MODIFICADO CON BOTÓN DE DESCARGA INDIVIDUAL ---
     async function showRecargasReportView() {
-        if (_userRole !== 'admin') { _showModal('Acceso Denegado', 'Solo administradores pueden ver este reporte.'); return; }
+        if (_userRole !== 'admin') { _showModal('Acceso Denegado', 'Solo administradores.'); return; }
         _mainContent.innerHTML = `
             <div class="p-4 pt-8"> <div class="container mx-auto max-w-4xl"> <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl">
                 <h2 class="text-2xl font-bold text-gray-800 mb-6 text-center">Auditoría de Recargas de Productos</h2>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6 p-4 border rounded-lg bg-gray-50">
-                    <div> <label class="block text-sm font-medium text-gray-700 mb-1">Seleccionar Vendedor:</label> <select id="userSelector" class="w-full p-2 border rounded-lg bg-white shadow-sm focus:ring-2 focus:ring-teal-500"> <option value="">Cargando lista de usuarios...</option> </select> </div>
+                    <div> <label class="block text-sm font-medium text-gray-700 mb-1">Seleccionar Vendedor:</label> <select id="userSelector" class="w-full p-2 border rounded-lg bg-white shadow-sm focus:ring-2 focus:ring-teal-500"> <option value="">Cargando lista...</option> </select> </div>
                     <div class="flex items-end"> <button id="loadRecargasBtn" class="w-full bg-teal-600 text-white p-2 rounded-lg font-bold hover:bg-teal-700 shadow-md transition-all"> Consultar Actividad </button> </div>
                 </div>
-                <div id="recargasTableContainer" class="overflow-x-auto border rounded-lg min-h-[300px] bg-white relative shadow-inner"> <div class="absolute inset-0 flex items-center justify-center text-gray-400 italic pointer-events-none"> Seleccione un usuario para auditar sus registros de stock. </div> </div>
-                <div class="mt-6 flex flex-col sm:flex-row gap-4"> 
-                    <button id="backToDataMenuBtn" class="flex-1 py-3 bg-gray-400 text-white rounded-lg font-semibold hover:bg-gray-500 shadow-md">Volver</button> 
-                </div>
+                <div id="recargasTableContainer" class="overflow-x-auto border rounded-lg min-h-[300px] bg-white relative shadow-inner"> <div class="absolute inset-0 flex items-center justify-center text-gray-400 italic pointer-events-none"> Seleccione un usuario para auditar sus registros. </div> </div>
+                <div class="mt-6 flex flex-col sm:flex-row gap-4"> <button id="backToDataMenuBtn" class="flex-1 py-3 bg-gray-400 text-white rounded-lg font-semibold hover:bg-gray-500 shadow-md">Volver</button> </div>
             </div> </div> </div>
         `;
         const userSelector = document.getElementById('userSelector'); 
@@ -911,216 +898,85 @@
                 const data = doc.data(); 
                 userSelector.innerHTML += `<option value="${doc.id}">${data.name || data.email || doc.id} (${data.camion || 'Sin Camión'})</option>`; 
             }); 
-        } catch (e) { 
-            console.error("Error cargando usuarios:", e); 
-            userSelector.innerHTML = '<option value="">Error al cargar usuarios</option>'; 
-        }
+        } catch (e) { console.error("Error cargando usuarios:", e); }
         
         loadBtn.addEventListener('click', async () => {
             const selectedUserId = userSelector.value; 
             if (!selectedUserId) { _showModal('Aviso', 'Por favor seleccione un vendedor de la lista.'); return; }
-            
             tableContainer.innerHTML = '<div class="flex h-64 items-center justify-center"><p class="text-teal-600 font-bold animate-pulse">Consultando registros en Firebase...</p></div>';
-            
             try { 
                 const recargasRef = _collection(_db, `artifacts/${_appId}/users/${selectedUserId}/recargas`); 
                 const snap = await _getDocs(recargasRef); 
-                
-                if (snap.empty) { 
-                    tableContainer.innerHTML = '<div class="flex h-64 items-center justify-center"><p class="text-gray-500">Este usuario no tiene registros de recarga.</p></div>'; 
-                    return; 
-                } 
-                
+                if (snap.empty) { tableContainer.innerHTML = '<div class="flex h-64 items-center justify-center"><p class="text-gray-500">Este usuario no tiene registros de recarga.</p></div>'; return; } 
                 let recargasData = []; 
                 snap.forEach(doc => recargasData.push({ id: doc.id, ...doc.data() })); 
                 recargasData.sort((a, b) => new Date(b.fecha) - new Date(a.fecha)); 
-                
                 renderRecargasTable(recargasData, tableContainer, userSelector.options[userSelector.selectedIndex].text); 
-            } catch (error) { 
-                console.error(error); 
-                tableContainer.innerHTML = `<div class="flex h-64 items-center justify-center"><p class="text-red-500 font-bold">Error: ${error.message}</p></div>`; 
-            }
+            } catch (error) { console.error(error); tableContainer.innerHTML = `<div class="flex h-64 items-center justify-center"><p class="text-red-500 font-bold">Error: ${error.message}</p></div>`; }
         });
         document.getElementById('backToDataMenuBtn').addEventListener('click', window.showDataView);
     }
 
     function renderRecargasTable(data, container, userName) {
-        // Guardamos data en global para acceso por ID al descargar
         window.tempRecargasData = data;
-
-        let html = ` <table class="min-w-full text-sm text-left border-collapse"> <thead class="bg-gray-100 text-gray-700 uppercase text-xs font-bold sticky top-0 shadow-sm"> <tr> <th class="p-3 border-b">Fecha / Hora</th> <th class="p-3 border-b text-center">Total Productos Impactados</th> <th class="p-3 border-b text-center">Acciones</th> </tr> </thead> <tbody class="divide-y divide-gray-100"> `;
-        
+        let html = ` <table class="min-w-full text-sm text-left border-collapse"> <thead class="bg-gray-100 text-gray-700 uppercase text-xs font-bold sticky top-0 shadow-sm"> <tr> <th class="p-3 border-b">Fecha / Hora</th> <th class="p-3 border-b text-center">Total Productos</th> <th class="p-3 border-b text-center">Acciones</th> </tr> </thead> <tbody class="divide-y divide-gray-100"> `;
         data.forEach(r => { 
             const fecha = new Date(r.fecha).toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' }); 
-            html += ` 
-                <tr class="hover:bg-gray-50 transition-colors duration-150"> 
-                    <td class="p-3 border-r font-medium text-gray-600 whitespace-nowrap align-top">${fecha}</td> 
-                    <td class="p-3 border-r text-center font-bold text-teal-600 align-top">${r.totalProductos}</td> 
-                    <td class="p-3 text-center align-top">
-                        <button onclick="window.dataModule.downloadRecargaExcel('${r.id}', '${userName}')" 
-                                class="bg-green-600 text-white px-4 py-2 rounded shadow hover:bg-green-700 text-xs font-bold flex items-center justify-center gap-2 mx-auto transition-transform hover:scale-105">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
-                            Descargar Archivo
-                        </button>
-                    </td> 
-                </tr> `; 
+            // Escapar comillas en el nombre de usuario para el onclick
+            const safeUserName = userName.replace(/'/g, "\\'");
+            html += ` <tr class="hover:bg-gray-50 transition-colors duration-150"> <td class="p-3 border-r font-medium text-gray-600 whitespace-nowrap align-top">${fecha}</td> <td class="p-3 border-r text-center font-bold text-teal-600 align-top">${r.totalProductos}</td> <td class="p-3 text-center align-top"> <button onclick="window.dataModule.downloadRecargaExcel('${r.id}', '${safeUserName}')" class="bg-green-600 text-white px-4 py-2 rounded shadow hover:bg-green-700 text-xs font-bold flex items-center justify-center gap-2 mx-auto transition-transform hover:scale-105"> <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg> Descargar Archivo </button> </td> </tr> `; 
         });
         container.innerHTML = html + '</tbody></table>';
     }
 
     function downloadRecargaExcel(recargaId, userName) {
         const recarga = window.tempRecargasData?.find(r => r.id === recargaId);
-        if(!recarga) {
-            _showModal('Error', 'Datos de recarga no encontrados en memoria.');
-            return;
-        }
+        if(!recarga) { _showModal('Error', 'Datos no encontrados.'); return; }
         exportSingleRecargaToExcel(recarga, userName);
     }
 
     function exportSingleRecargaToExcel(recarga, userName) {
-        if (typeof ExcelJS === 'undefined') { _showModal('Error', 'Librería ExcelJS no disponible.'); return; }
-        
+        if (typeof ExcelJS === 'undefined') { _showModal('Error', 'ExcelJS no disponible.'); return; }
         try { 
             const workbook = new ExcelJS.Workbook(); 
             const worksheet = workbook.addWorksheet('Detalle Recarga'); 
-            
-            // --- ESTILOS ---
             const headerInfoStyle = { font: { bold: true, size: 10 }, alignment: { horizontal: 'left' } };
             const tableHeaderStyle = { font: { bold: true, color: { argb: 'FFFFFFFF' } }, fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF00695C' } }, alignment: { horizontal: 'center', vertical: 'middle' } };
             const borderStyle = { top: {style:'thin'}, left: {style:'thin'}, bottom: {style:'thin'}, right: {style:'thin'} };
 
-            // --- INFORMACIÓN DE CABECERA ---
             const fechaStr = new Date(recarga.fecha).toLocaleString('es-ES', { dateStyle: 'full', timeStyle: 'short' });
-            
-            worksheet.mergeCells('A1:E1');
-            worksheet.getCell('A1').value = `REPORTE DE RECARGA DE INVENTARIO`;
-            worksheet.getCell('A1').font = { bold: true, size: 14 };
-            worksheet.getCell('A1').alignment = { horizontal: 'center' };
+            worksheet.mergeCells('A1:E1'); worksheet.getCell('A1').value = `REPORTE DE RECARGA DE INVENTARIO`; worksheet.getCell('A1').font = { bold: true, size: 14 }; worksheet.getCell('A1').alignment = { horizontal: 'center' };
+            worksheet.getCell('A3').value = 'USUARIO:'; worksheet.getCell('B3').value = userName.toUpperCase(); worksheet.getCell('A3').font = headerInfoStyle.font;
+            worksheet.getCell('A4').value = 'FECHA:'; worksheet.getCell('B4').value = fechaStr; worksheet.getCell('A4').font = headerInfoStyle.font;
+            worksheet.getCell('A5').value = 'ID TRANSACCIÓN:'; worksheet.getCell('B5').value = recarga.id; worksheet.getCell('A5').font = headerInfoStyle.font;
 
-            worksheet.getCell('A3').value = 'USUARIO:';
-            worksheet.getCell('B3').value = userName.toUpperCase();
-            worksheet.getCell('A3').font = headerInfoStyle.font;
-
-            worksheet.getCell('A4').value = 'FECHA:';
-            worksheet.getCell('B4').value = fechaStr;
-            worksheet.getCell('A4').font = headerInfoStyle.font;
-
-            worksheet.getCell('A5').value = 'ID TRANSACCIÓN:';
-            worksheet.getCell('B5').value = recarga.id;
-            worksheet.getCell('A5').font = headerInfoStyle.font;
-
-            // --- TABLA DE PRODUCTOS ---
-            // Fila de encabezados de tabla en la fila 7
             const headerRow = worksheet.getRow(7);
             headerRow.values = ['Producto', 'Stock Anterior (Unds)', 'Cantidad Recargada', 'Nuevo Stock (Unds)', 'Factor Conv.'];
-            
-            // Aplicar estilos a encabezados
-            [1, 2, 3, 4, 5].forEach(col => {
-                const cell = headerRow.getCell(col);
-                cell.style = tableHeaderStyle;
-                cell.border = borderStyle;
-            });
+            [1, 2, 3, 4, 5].forEach(col => { const cell = headerRow.getCell(col); cell.style = tableHeaderStyle; cell.border = borderStyle; });
+            worksheet.getColumn(1).width = 40; worksheet.getColumn(2).width = 20; worksheet.getColumn(3).width = 25; worksheet.getColumn(4).width = 20; worksheet.getColumn(5).width = 15;
 
-            // Columnas ancho
-            worksheet.getColumn(1).width = 40; // Producto
-            worksheet.getColumn(2).width = 20; // Stock Ant
-            worksheet.getColumn(3).width = 25; // Diferencia visual
-            worksheet.getColumn(4).width = 20; // Stock Nuevo
-            worksheet.getColumn(5).width = 15; // Factor
-
-            // Agregar datos
             recarga.detalles.forEach(d => {
-                // Calcular visualización amigable de la cantidad recargada
                 const cantVisual = d.diferenciaUnidades / d.factorUtilizado;
                 const unitLabel = d.factorUtilizado > 1 ? (d.factorUtilizado === 1 ? 'Und' : (d.factorUtilizado > 10 ? 'Caja' : 'Paq')) : 'Und';
                 const signo = d.diferenciaUnidades > 0 ? '+' : '';
-                
-                const row = worksheet.addRow([
-                    d.presentacion,
-                    d.unidadesAnteriores,
-                    `${signo}${cantVisual} ${unitLabel}`,
-                    d.unidadesNuevas,
-                    d.factorUtilizado
-                ]);
-
-                // Bordes para cada celda de datos
-                row.eachCell((cell) => {
-                    cell.border = borderStyle;
-                    cell.alignment = { vertical: 'middle', horizontal: 'left' };
-                });
-                // Centrar columnas numéricas
-                row.getCell(2).alignment = { horizontal: 'center' };
-                row.getCell(3).alignment = { horizontal: 'center', vertical: 'middle' };
-                row.getCell(4).alignment = { horizontal: 'center' };
-                row.getCell(5).alignment = { horizontal: 'center' };
-                
-                // Color para la diferencia (verde si suma, rojo si resta)
-                if (d.diferenciaUnidades > 0) {
-                    row.getCell(3).font = { color: { argb: 'FF2E7D32' }, bold: true };
-                } else if (d.diferenciaUnidades < 0) {
-                    row.getCell(3).font = { color: { argb: 'FFC62828' }, bold: true };
-                }
+                const row = worksheet.addRow([ d.presentacion, d.unidadesAnteriores, `${signo}${cantVisual} ${unitLabel}`, d.unidadesNuevas, d.factorUtilizado ]);
+                row.eachCell((cell) => { cell.border = borderStyle; cell.alignment = { vertical: 'middle', horizontal: 'left' }; });
+                row.getCell(2).alignment = { horizontal: 'center' }; row.getCell(3).alignment = { horizontal: 'center', vertical: 'middle' }; row.getCell(4).alignment = { horizontal: 'center' }; row.getCell(5).alignment = { horizontal: 'center' };
+                if (d.diferenciaUnidades > 0) { row.getCell(3).font = { color: { argb: 'FF2E7D32' }, bold: true }; } else if (d.diferenciaUnidades < 0) { row.getCell(3).font = { color: { argb: 'FFC62828' }, bold: true }; }
             });
 
-            // --- GENERAR NOMBRE Y DESCARGAR ---
-            // Formato solicitado: Recarga "fecha" "Usuario (Nombre y apellido)"
             const f = new Date(recarga.fecha);
-            const dia = f.getDate().toString().padStart(2, '0');
-            const mes = (f.getMonth() + 1).toString().padStart(2, '0');
-            const anio = f.getFullYear();
-            const hora = f.getHours().toString().padStart(2, '0');
-            const min = f.getMinutes().toString().padStart(2, '0');
-            
-            const fechaNombre = `${dia}-${mes}-${anio}_${hora}${min}`;
-            // Limpiar nombre de usuario de caracteres raros para el archivo
+            const dia = f.getDate().toString().padStart(2, '0'); const mes = (f.getMonth() + 1).toString().padStart(2, '0'); const anio = f.getFullYear(); const hora = f.getHours().toString().padStart(2, '0'); const min = f.getMinutes().toString().padStart(2, '0');
             const safeUserName = userName.replace(/[^a-zA-Z0-9 áéíóúÁÉÍÓÚñÑ]/g, '').trim();
-            
-            const fname = `Recarga ${fechaNombre} ${safeUserName}.xlsx`;
+            const fname = `Recarga ${dia}-${mes}-${anio}_${hora}${min} ${safeUserName}.xlsx`;
 
             workbook.xlsx.writeBuffer().then(function(buffer) { 
                 const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }); 
-                const link = document.createElement('a'); 
-                link.href = URL.createObjectURL(blob); 
-                link.download = fname; 
-                document.body.appendChild(link); 
-                link.click(); 
-                document.body.removeChild(link); 
+                const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = fname; document.body.appendChild(link); link.click(); document.body.removeChild(link); 
             }); 
-        } catch (e) { 
-            console.error("Error exportando recarga individual:", e); 
-            _showModal('Error', 'No se pudo generar el archivo Excel.'); 
-        }
+        } catch (e) { console.error("Error exportando recarga:", e); _showModal('Error', 'No se pudo generar Excel.'); }
     }
 
-    // --- DISEÑO DE REPORTE (Sin cambios mayores, solo mantenido) ---
-    function createZoneEditor(idPrefix, label, settings) { const s = settings; return ` <div class="p-3 border rounded-lg bg-gray-50"> <h4 class="font-semibold text-gray-700">${label}</h4> <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mt-2 text-sm items-center"> <label class="flex items-center space-x-2 cursor-pointer"><input type="checkbox" id="${idPrefix}_bold" ${s.bold ? 'checked' : ''} class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"><span>Negrita</span></label> <label class="flex items-center space-x-2 cursor-pointer"><input type="checkbox" id="${idPrefix}_border" ${s.border ? 'checked' : ''} class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"><span>Bordes</span></label> <label class="flex items-center space-x-2"><span>Fondo:</span><input type="color" id="${idPrefix}_fillColor" value="${s.fillColor || '#FFFFFF'}" class="h-6 w-10 border cursor-pointer p-0"></label> <label class="flex items-center space-x-2"><span>Texto:</span><input type="color" id="${idPrefix}_fontColor" value="${s.fontColor || '#000000'}" class="h-6 w-10 border cursor-pointer p-0"></label> <label class="flex items-center space-x-2"><span>Tamaño:</span><input type="number" id="${idPrefix}_fontSize" value="${s.fontSize || 10}" min="8" max="16" class="h-7 w-12 border cursor-pointer p-1 text-sm rounded-md"></label> </div> </div>`; }
-    function createWidthEditor(id, label, value) { return ` <div class="flex items-center justify-between"> <label for="${id}" class="text-sm font-medium text-gray-700">${label}:</label> <input type="number" id="${id}" value="${value}" min="5" max="50" step="1" class="w-20 px-2 py-1 border rounded-lg text-sm"> </div>`; }
-    async function showReportDesignView() {
-        if (_floatingControls) _floatingControls.classList.add('hidden');
-        _mainContent.innerHTML = ` <style> input[type="color"] { -webkit-appearance: none; -moz-appearance: none; appearance: none; background: none; border: 1px solid #ccc; padding: 0; } input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; } input[type="color"]::-webkit-color-swatch { border: none; border-radius: 2px; } input[type="color"]::-moz-color-swatch { border: none; border-radius: 2px; } .design-tab-btn { padding: 0.5rem 1rem; cursor: pointer; border: 1px solid transparent; border-bottom: none; margin-bottom: -1px; background-color: #f9fafb; color: #6b7280; border-radius: 0.375rem 0.375rem 0 0; } .design-tab-btn.active { background-color: #ffffff; color: #3b82f6; font-weight: 600; border-color: #e5e7eb; } </style> <div class="p-4 pt-8"> <div class="container mx-auto max-w-3xl"> <div class="bg-white/90 backdrop-blur-sm p-6 md:p-8 rounded-lg shadow-xl"> <h1 class="text-3xl font-bold text-gray-800 mb-6 text-center">Diseño de Reporte de Cierre</h1> <div id="design-loader" class="text-center text-gray-500 p-4">Cargando configuración...</div> <form id="design-form-container" class="hidden text-left"> <div id="design-tabs" class="flex border-b border-gray-200 mb-4 overflow-x-auto text-sm"> <button type="button" class="design-tab-btn active" data-tab="general">General</button> <button type="button" class="design-tab-btn" data-tab="rubro">Hoja Rubros</button> <button type="button" class="design-tab-btn" data-tab="vacios">Hoja Vacíos</button> <button type="button" class="design-tab-btn" data-tab="totales">Hoja Totales</button> </div> <div id="design-tab-content" class="space-y-6"> <div id="tab-content-general" class="space-y-4"> <h3 class="text-lg font-semibold border-b pb-2 mt-4">Visibilidad de Secciones</h3> <div class="space-y-2 mt-4"> <label class="flex items-center space-x-3 p-2 rounded-lg hover:bg-gray-100 cursor-pointer"> <input type="checkbox" id="chk_showCargaInicial" class="h-5 w-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> <span>Mostrar fila "CARGA INICIAL"</span> </label> <label class="flex items-center space-x-3 p-2 rounded-lg hover:bg-gray-100 cursor-pointer"> <input type="checkbox" id="chk_showCargaRestante" class="h-5 w-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> <span>Mostrar fila "CARGA RESTANTE"</span> </label> <label class="flex items-center space-x-3 p-2 rounded-lg hover:bg-gray-100 cursor-pointer"> <input type="checkbox" id="chk_showVaciosSheet" class="h-5 w-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> <span>Incluir hoja "Reporte Vacíos"</span> </label> <label class="flex items-center space-x-3 p-2 rounded-lg hover:bg-gray-100 cursor-pointer"> <input type="checkbox" id="chk_showClienteTotalSheet" class="h-5 w-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> <span>Incluir hoja "Total Por Cliente"</span> </label> </div> </div> <div id="tab-content-rubro" class="space-y-6 hidden"> <h3 class="text-lg font-semibold border-b pb-2">Ancho de Columnas</h3> <div id="rubro-widths-container" class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3 mt-4 text-sm"></div> <h3 class="text-lg font-semibold border-b pb-2 mt-4">Estilos de Zonas</h3> <div id="style-zones-container" class="space-y-3 mt-4"></div> </div> <div id="tab-content-vacios" class="space-y-6 hidden"> <h3 class="text-lg font-semibold border-b pb-2">Ancho de Columnas</h3> <div id="vacios-widths-container" class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3 mt-4 text-sm"></div> <h3 class="text-lg font-semibold border-b pb-2 mt-4">Estilos de Zonas</h3> <div id="vacios-styles-container" class="space-y-3 mt-4"></div> </div> <div id="tab-content-totales" class="space-y-6 hidden"> <h3 class="text-lg font-semibold border-b pb-2">Ancho de Columnas</h3> <div id="totales-widths-container" class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3 mt-4 text-sm"></div> <h3 class="text-lg font-semibold border-b pb-2 mt-4">Estilos de Zonas</h3> <div id="totales-styles-container" class="space-y-3 mt-4"></div> </div> </div> <div class="flex flex-col sm:flex-row gap-4 pt-6 mt-6 border-t"> <button type="button" id="saveDesignBtn" class="w-full px-6 py-3 bg-green-500 text-white font-semibold rounded-lg shadow-md hover:bg-green-600">Guardar Diseño</button> <button type="button" id="backToDataMenuBtn" class="w-full px-6 py-3 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500">Volver</button> </div> </form> </div> </div> </div> `;
-        document.getElementById('backToDataMenuBtn').addEventListener('click', showDataView); document.getElementById('saveDesignBtn').addEventListener('click', handleSaveReportDesign);
-        const tabsContainer = document.getElementById('design-tabs'); const tabContents = document.querySelectorAll('#design-tab-content > div');
-        tabsContainer.addEventListener('click', (e) => { const clickedTab = e.target.closest('.design-tab-btn'); if (!clickedTab) return; const tabId = clickedTab.dataset.tab; tabsContainer.querySelectorAll('.design-tab-btn').forEach(btn => btn.classList.remove('active')); clickedTab.classList.add('active'); tabContents.forEach(content => content.id === `tab-content-${tabId}` ? content.classList.remove('hidden') : content.classList.add('hidden')); });
-        try { const docRef = _doc(_db, REPORTE_DESIGN_CONFIG_PATH); const docSnap = await _getDoc(docRef); let cur = JSON.parse(JSON.stringify(DEFAULT_REPORTE_SETTINGS)); if (docSnap.exists()) { const sav = docSnap.data(); cur = { ...cur, ...sav }; cur.styles = { ...DEFAULT_REPORTE_SETTINGS.styles, ...(sav.styles || {}) }; cur.columnWidths = { ...DEFAULT_REPORTE_SETTINGS.columnWidths, ...(sav.columnWidths || {}) }; } document.getElementById('chk_showCargaInicial').checked = cur.showCargaInicial; document.getElementById('chk_showCargaRestante').checked = cur.showCargaRestante; document.getElementById('chk_showVaciosSheet').checked = cur.showVaciosSheet; document.getElementById('chk_showClienteTotalSheet').checked = cur.showClienteTotalSheet;
-            const s = cur.styles; const w = cur.columnWidths;
-            document.getElementById('style-zones-container').innerHTML = ` ${createZoneEditor('headerInfo', 'Info (Fecha/Usuario)', s.headerInfo)} ${createZoneEditor('headerProducts', 'Cabecera Productos', s.headerProducts)} ${createZoneEditor('rowCargaInicial', 'Fila "CARGA INICIAL"', s.rowCargaInicial)} ${createZoneEditor('rowDataClients', 'Filas Clientes (Vacías)', s.rowDataClients)} ${createZoneEditor('rowDataClientsSale', 'Filas Clientes (Venta)', s.rowDataClientsSale)} ${createZoneEditor('rowDataClientsObsequio', 'Filas Clientes (Obsequio)', s.rowDataClientsObsequio)} ${createZoneEditor('rowCargaRestante', 'Fila "CARGA RESTANTE"', s.rowCargaRestante)} ${createZoneEditor('rowTotals', 'Fila "TOTALES"', s.rowTotals)} `;
-            document.getElementById('rubro-widths-container').innerHTML = ` ${createWidthEditor('width_col_A_LabelsClientes', 'Col A (Clientes)', w.col_A_LabelsClientes)} ${createWidthEditor('width_products', 'Cols Producto', w.products)} ${createWidthEditor('width_subtotal', 'Col Sub Total', w.subtotal)} `;
-            document.getElementById('vacios-widths-container').innerHTML = ` ${createWidthEditor('width_vaciosCliente', 'Cliente', w.vaciosCliente)} ${createWidthEditor('width_vaciosTipo', 'Tipo Vacío', w.vaciosTipo)} ${createWidthEditor('width_vaciosQty', 'Cantidades', w.vaciosQty)} `;
-            document.getElementById('vacios-styles-container').innerHTML = ` ${createZoneEditor('vaciosHeader', 'Cabecera Vacíos', s.vaciosHeader)} ${createZoneEditor('vaciosData', 'Filas Vacíos', s.vaciosData)} `;
-            document.getElementById('totales-widths-container').innerHTML = ` ${createWidthEditor('width_totalCliente', 'Cliente', w.totalCliente)} ${createWidthEditor('width_totalClienteValor', 'Gasto Total', w.totalClienteValor)} `;
-            document.getElementById('totales-styles-container').innerHTML = ` ${createZoneEditor('totalesHeader', 'Cabecera Totales', s.totalesHeader)} ${createZoneEditor('totalesData', 'Filas Clientes Totales', s.totalesData)} ${createZoneEditor('totalesTotalRow', 'Fila "GRAN TOTAL"', s.totalesTotalRow)} `;
-            document.getElementById('design-loader').classList.add('hidden'); document.getElementById('design-form-container').classList.remove('hidden');
-        } catch (error) { console.error("Error cargando diseño:", error); document.getElementById('design-loader').textContent = 'Error al cargar la configuración.'; }
-    }
-    function readZoneEditor(idPrefix) { const b = document.getElementById(`${idPrefix}_bold`); const r = document.getElementById(`${idPrefix}_border`); const f = document.getElementById(`${idPrefix}_fillColor`); const t = document.getElementById(`${idPrefix}_fontColor`); const s = document.getElementById(`${idPrefix}_fontSize`); const d = DEFAULT_REPORTE_SETTINGS.styles[idPrefix] || {}; return { bold: b ? b.checked : (d.bold || false), border: r ? r.checked : (d.border || false), fillColor: f ? f.value : (d.fillColor || '#FFFFFF'), fontColor: t ? t.value : (d.fontColor || '#000000'), fontSize: s ? (parseInt(s.value, 10) || 10) : (d.fontSize || 10) }; }
-    function readWidthInputs() { const d = DEFAULT_REPORTE_SETTINGS.columnWidths; const v = (id, def) => parseInt(document.getElementById(id)?.value, 10) || def; return { col_A_LabelsClientes: v('width_col_A_LabelsClientes', d.col_A_LabelsClientes), products: v('width_products', d.products), subtotal: v('width_subtotal', d.subtotal), vaciosCliente: v('width_vaciosCliente', d.vaciosCliente), vaciosTipo: v('width_vaciosTipo', d.vaciosTipo), vaciosQty: v('width_vaciosQty', d.vaciosQty), totalCliente: v('width_totalCliente', d.totalCliente), totalClienteValor: v('width_totalClienteValor', d.totalClienteValor) }; }
-    async function handleSaveReportDesign() {
-        _showModal('Progreso', 'Guardando diseño...');
-        const newSettings = { showCargaInicial: document.getElementById('chk_showCargaInicial').checked, showCargaRestante: document.getElementById('chk_showCargaRestante').checked, showVaciosSheet: document.getElementById('chk_showVaciosSheet').checked, showClienteTotalSheet: document.getElementById('chk_showClienteTotalSheet').checked, styles: { headerInfo: readZoneEditor('headerInfo'), headerProducts: readZoneEditor('headerProducts'), rowCargaInicial: readZoneEditor('rowCargaInicial'), rowDataClients: readZoneEditor('rowDataClients'), rowDataClientsSale: readZoneEditor('rowDataClientsSale'), rowDataClientsObsequio: readZoneEditor('rowDataClientsObsequio'), rowCargaRestante: readZoneEditor('rowCargaRestante'), rowTotals: readZoneEditor('rowTotals'), vaciosHeader: readZoneEditor('vaciosHeader'), vaciosData: readZoneEditor('vaciosData'), totalesHeader: readZoneEditor('totalesHeader'), totalesData: readZoneEditor('totalesData'), totalesTotalRow: readZoneEditor('totalesTotalRow') }, columnWidths: readWidthInputs() };
-        try { await _setDoc(_doc(_db, REPORTE_DESIGN_CONFIG_PATH), newSettings); _showModal('Éxito', 'Diseño guardado correctamente.', showDataView); } catch (error) { console.error("Error guardando diseño:", error); _showModal('Error', `No se pudo guardar: ${error.message}`); }
-    }
-
-    // --- REINCORPORACIÓN DE FUNCIONES FALTANTES ---
     async function handleDownloadSingleClosing(closingId) {
         const closingData = window.tempClosingsData?.find(c => c.id === closingId);
         if (!closingData) { _showModal('Error', 'Datos no encontrados.'); return; }
@@ -1141,16 +997,100 @@
         }
     }
 
+    async function exportSingleClosingToExcel(closingData) {
+        if (typeof ExcelJS === 'undefined') { _showModal('Error', 'ExcelJS no disponible.'); return; }
+        const { clientData, clientTotals, grandTotalValue, sortedClients, finalProductOrder, vaciosMovementsPorTipo } = 
+            await _processSalesDataForModal(closingData.ventas || [], closingData.obsequios || [], closingData.cargaInicialInventario || [], closingData.vendedorInfo.userId);
+        
+        const wb = new ExcelJS.Workbook();
+        const ws = wb.addWorksheet('Reporte Cierre');
+        
+        const titleStyle = { font: { bold: true, size: 14 } };
+        const headerStyle = { font: { bold: true }, fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEFEFEF' } }, border: { top: {style:'thin'}, left: {style:'thin'}, bottom: {style:'thin'}, right: {style:'thin'} } };
+        const borderStyle = { top: {style:'thin'}, left: {style:'thin'}, bottom: {style:'thin'}, right: {style:'thin'} };
+
+        ws.mergeCells('A1:C1'); ws.getCell('A1').value = 'REPORTE DE CIERRE DE VENTAS'; ws.getCell('A1').style = titleStyle;
+        ws.getCell('A3').value = 'Vendedor:'; ws.getCell('B3').value = `${closingData.vendedorInfo.nombre} ${closingData.vendedorInfo.apellido}`;
+        ws.getCell('A4').value = 'Fecha:'; ws.getCell('B4').value = closingData.fecha.toDate().toLocaleString();
+        
+        let colIndex = 2; 
+        const prodCols = {}; 
+        finalProductOrder.forEach(p => {
+            ws.getCell(7, colIndex).value = p.presentacion;
+            ws.getCell(7, colIndex).style = headerStyle;
+            prodCols[p.id] = colIndex;
+            colIndex++;
+        });
+        ws.getCell(7, 1).value = 'CLIENTE'; ws.getCell(7, 1).style = headerStyle;
+        ws.getCell(7, colIndex).value = 'TOTAL'; ws.getCell(7, colIndex).style = headerStyle;
+
+        let rowIndex = 8;
+        sortedClients.forEach(cli => {
+            const row = ws.getRow(rowIndex);
+            row.getCell(1).value = cli;
+            row.getCell(1).border = borderStyle;
+            
+            finalProductOrder.forEach(p => {
+                const q = clientData[cli].products[p.id] || 0;
+                const cell = row.getCell(prodCols[p.id]);
+                if (q > 0) {
+                    const disp = getDisplayQty(q, p);
+                    cell.value = `${disp.value} ${disp.unit}`;
+                } else {
+                    cell.value = '-';
+                }
+                cell.border = borderStyle;
+                cell.alignment = { horizontal: 'center' };
+            });
+            
+            const totalCell = row.getCell(colIndex);
+            totalCell.value = clientData[cli].totalValue;
+            totalCell.numFmt = '"$"#,##0.00';
+            totalCell.border = borderStyle;
+            rowIndex++;
+        });
+
+        const totalRow = ws.getRow(rowIndex);
+        totalRow.getCell(1).value = 'GRAN TOTAL';
+        totalRow.getCell(1).style = headerStyle;
+        
+        finalProductOrder.forEach(p => {
+            let sumQ = 0;
+            sortedClients.forEach(c => sumQ += (clientData[c].products[p.id] || 0));
+            const cell = totalRow.getCell(prodCols[p.id]);
+            const disp = getDisplayQty(sumQ, p);
+            cell.value = sumQ > 0 ? `${disp.value} ${disp.unit}` : '-';
+            cell.style = headerStyle;
+            cell.alignment = { horizontal: 'center' };
+        });
+        
+        const grandTotalCell = totalRow.getCell(colIndex);
+        grandTotalCell.value = grandTotalValue;
+        grandTotalCell.numFmt = '"$"#,##0.00';
+        grandTotalCell.style = headerStyle;
+
+        const f = closingData.fecha.toDate();
+        const fname = `Cierre_${closingData.vendedorInfo.nombre}_${f.getDate()}-${f.getMonth()+1}-${f.getFullYear()}.xlsx`;
+        const buffer = await wb.xlsx.writeBuffer();
+        const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a'); a.href = url; a.download = fname;
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    }
+
     // --- SETUP GLOBALS ---
     window.dataModule = { 
         showClosingDetail, 
         handleDownloadSingleClosing,
-        exportSingleClosingToExcel,
-        _processSalesDataForModal: _processSalesDataForModal,
-        getDisplayQty: getDisplayQty,
-        showRecargasReportView: showRecargasReportView,
-        showUserInventoryView: showUserInventoryView,
-        downloadRecargaExcel // Exponer la nueva función para usar en el onclick
+        exportSingleClosingToExcel, 
+        _processSalesDataForModal,
+        getDisplayQty,
+        showRecargasReportView,
+        showUserInventoryView,
+        downloadRecargaExcel,
+        showReportDesignView,
+        showClientMapView,
+        showAttentionHistoryView
     };
 
 })();
