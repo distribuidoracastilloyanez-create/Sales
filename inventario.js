@@ -758,7 +758,7 @@
                 <div class="container mx-auto">
                     <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl">
                         <h2 class="text-2xl font-bold text-gray-800 mb-6 text-center">Recarga de Productos</h2>
-                        <p class="text-center text-gray-600 mb-4 text-sm">Ingrese el inventario FINAL. Se calculará la diferencia y se guardará un registro histórico. Los cambios se mantienen al cambiar de filtro.</p>
+                        <p class="text-center text-gray-600 mb-4 text-sm">Ingrese la CANTIDAD A AÑADIR. Este valor se sumará al stock actual. Los cambios se mantienen al cambiar de filtro.</p>
                         ${getFiltrosHTML('recarga')}
                         <div id="recargaListContainer" class="overflow-x-auto max-h-96 border rounded-lg">
                             <p class="text-gray-500 text-center p-4">Cargando productos...</p>
@@ -828,7 +828,7 @@
                     <tr>
                         <th class="py-2 px-4 border-b text-left">Producto</th>
                         <th class="py-2 px-4 border-b text-center w-32">Stock Actual</th>
-                        <th class="py-2 px-4 border-b text-center w-40">Nuevo Stock</th>
+                        <th class="py-2 px-4 border-b text-center w-40">Cantidad a Recargar</th>
                     </tr>
                 </thead>
                 <tbody>`;
@@ -859,11 +859,9 @@
 
             const currentDisplayStock = Math.floor(cStockU / factor);
 
-            let inputValue;
+            let inputValue = 0;
             if (_recargaTempState.hasOwnProperty(p.id)) {
                 inputValue = _recargaTempState[p.id];
-            } else {
-                inputValue = currentDisplayStock;
             }
 
             tableHTML += `
@@ -882,7 +880,7 @@
                                 data-doc-id="${p.id}"
                                 data-factor="${factor}"
                                 min="0" step="1" 
-                                class="w-20 p-1 text-center border rounded-lg focus:ring-1 focus:ring-teal-500 focus:border-teal-500 recarga-qty-input font-bold">
+                                class="w-20 p-1 text-center border rounded-lg focus:ring-1 focus:ring-teal-500 focus:border-teal-500 recarga-qty-input font-bold bg-white">
                             <span class="ml-2 text-xs font-semibold text-gray-500">${unitLabel}</span>
                         </div>
                     </td>
@@ -909,23 +907,24 @@
 
         _inventarioCache.forEach(p => {
             if (_recargaTempState.hasOwnProperty(p.id)) {
-                const newValStr = String(_recargaTempState[p.id]).trim();
-                const newVal = parseInt(newValStr, 10);
+                const inputValStr = String(_recargaTempState[p.id]).trim();
+                const inputVal = parseInt(inputValStr, 10);
 
-                if (newValStr === '' || isNaN(newVal) || newVal < 0) {
+                if (inputValStr === '' || isNaN(inputVal) || inputVal < 0) {
                     invalidValues = true;
                     return; 
                 }
 
-                const vPor = p.ventaPor || {und:true};
-                let factor = 1;
-                if(vPor.cj) factor = p.unidadesPorCaja||1;
-                else if(vPor.paq) factor = p.unidadesPorPaquete||1;
+                if (inputVal > 0) {
+                    const vPor = p.ventaPor || {und:true};
+                    let factor = 1;
+                    if(vPor.cj) factor = p.unidadesPorCaja||1;
+                    else if(vPor.paq) factor = p.unidadesPorPaquete||1;
 
-                const currentBase = p.cantidadUnidades || 0;
-                const newBaseTotal = newVal * factor;
+                    const currentBase = p.cantidadUnidades || 0;
+                    const unitsToAdd = inputVal * factor;
+                    const newBaseTotal = currentBase + unitsToAdd;
 
-                if (newBaseTotal !== currentBase) {
                     const docRef = _doc(_db, `artifacts/${_appId}/users/${_userId}/inventario`, p.id);
                     batch.update(docRef, { cantidadUnidades: newBaseTotal });
                     
@@ -934,7 +933,7 @@
                         presentacion: p.presentacion,
                         unidadesAnteriores: currentBase,
                         unidadesNuevas: newBaseTotal,
-                        diferenciaUnidades: newBaseTotal - currentBase,
+                        diferenciaUnidades: unitsToAdd,
                         factorUtilizado: factor
                     });
                     changesCount++;
@@ -942,10 +941,10 @@
             }
         });
 
-        if (invalidValues) { _showModal('Error', 'Hay valores inválidos en las cantidades ingresadas (vacíos o negativos). Por favor revise incluso en las categorías ocultas.'); return; }
-        if (changesCount === 0) { _showModal('Aviso', 'No se detectaron cambios en el stock.'); return; }
+        if (invalidValues) { _showModal('Error', 'Hay valores inválidos (vacíos o negativos). Por favor revise.'); return; }
+        if (changesCount === 0) { _showModal('Aviso', 'No se ha ingresado ninguna cantidad para recargar.'); return; }
 
-        _showModal('Confirmar Recarga', `Se detectaron cambios en ${changesCount} productos. Se actualizará el inventario y se guardará el registro. ¿Continuar?`, async () => {
+        _showModal('Confirmar Recarga', `Se añadirán cantidades a ${changesCount} productos. ¿Continuar?`, async () => {
             _showModal('Progreso', 'Procesando recarga...');
             try {
                 const recargaLogRef = _collection(_db, `artifacts/${_appId}/users/${_userId}/recargas`);
@@ -962,8 +961,16 @@
                 _recargaTempState = {};
                 renderRecargaList(); 
 
-                // Mensaje de éxito solicitado con botón "Continuar"
-                _showModal('Recarga Exitosa', 'La carga se realizó exitosamente y se guardó el registro.', null, 'Continuar');
+                // Cerrar modal de progreso si está abierto antes de mostrar éxito
+                const pModal = document.getElementById('modalContainer');
+                if(pModal && pModal.querySelector('h3')?.textContent === 'Progreso') {
+                    pModal.classList.add('hidden');
+                }
+
+                // Mensaje de éxito solicitado con botón "Continuar" que simplemente cierra el modal
+                setTimeout(() => {
+                     _showModal('Recarga Exitosa', 'La carga se realizó exitosamente y se guardó el registro.', () => {}, 'Continuar');
+                }, 300);
                 
             } catch (error) {
                 console.error("Error en recarga:", error);
