@@ -929,52 +929,163 @@
         container.innerHTML = html + '</tbody></table>';
     }
 
-    function downloadRecargaExcel(recargaId, userName) {
+    async function downloadRecargaExcel(recargaId, userName) {
         const recarga = window.tempRecargasData?.find(r => r.id === recargaId);
         if(!recarga) { _showModal('Error', 'Datos no encontrados.'); return; }
-        exportSingleRecargaToExcel(recarga, userName);
+        
+        _showModal('Progreso', 'Obteniendo datos de inventario para organizar el reporte...');
+        try {
+            await exportSingleRecargaToExcel(recarga, userName);
+            // Cerrar modal de progreso si sigue abierto
+            const m = document.getElementById('modalContainer');
+            if(m && !m.classList.contains('hidden') && m.querySelector('h3')?.textContent.startsWith('Progreso')) {
+                m.classList.add('hidden');
+            }
+        } catch(e) {
+            console.error(e);
+            _showModal('Error', 'No se pudo generar el Excel: ' + e.message);
+        }
     }
 
-    function exportSingleRecargaToExcel(recarga, userName) {
-        if (typeof ExcelJS === 'undefined') { _showModal('Error', 'ExcelJS no disponible.'); return; }
-        try { 
-            const workbook = new ExcelJS.Workbook(); 
-            const worksheet = workbook.addWorksheet('Detalle Recarga'); 
-            const headerInfoStyle = { font: { bold: true, size: 10 }, alignment: { horizontal: 'left' } };
-            const tableHeaderStyle = { font: { bold: true, color: { argb: 'FFFFFFFF' } }, fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF00695C' } }, alignment: { horizontal: 'center', vertical: 'middle' } };
-            const borderStyle = { top: {style:'thin'}, left: {style:'thin'}, bottom: {style:'thin'}, right: {style:'thin'} };
+    async function exportSingleRecargaToExcel(recarga, userName) {
+        if (typeof ExcelJS === 'undefined') { throw new Error('Librería ExcelJS no disponible.'); }
+        
+        // 1. Obtener metadata de productos (Rubro, Segmento, Marca) desde el inventario del usuario
+        // Esto es necesario para ordenar y agrupar, ya que la recarga solo guarda ID y Nombre
+        const userId = recarga.usuarioId;
+        const productMetadata = new Map();
+        
+        if (userId) {
+            try {
+                const invRef = _collection(_db, `artifacts/${_appId}/users/${userId}/inventario`);
+                const invSnap = await _getDocs(invRef);
+                invSnap.forEach(doc => {
+                    const d = doc.data();
+                    productMetadata.set(doc.id, {
+                        rubro: d.rubro || 'OTROS',
+                        segmento: d.segmento || 'OTROS',
+                        marca: d.marca || 'OTROS',
+                        // El ordenamiento se hará con la función global, pero necesitamos estos campos
+                    });
+                });
+            } catch(e) {
+                console.warn("No se pudo obtener el inventario para metadatos de ordenamiento:", e);
+            }
+        }
 
-            const fechaStr = new Date(recarga.fecha).toLocaleString('es-ES', { dateStyle: 'full', timeStyle: 'short' });
-            worksheet.mergeCells('A1:E1'); worksheet.getCell('A1').value = `REPORTE DE RECARGA DE INVENTARIO`; worksheet.getCell('A1').font = { bold: true, size: 14 }; worksheet.getCell('A1').alignment = { horizontal: 'center' };
-            worksheet.getCell('A3').value = 'USUARIO:'; worksheet.getCell('B3').value = userName.toUpperCase(); worksheet.getCell('A3').font = headerInfoStyle.font;
-            worksheet.getCell('A4').value = 'FECHA:'; worksheet.getCell('B4').value = fechaStr; worksheet.getCell('A4').font = headerInfoStyle.font;
-            worksheet.getCell('A5').value = 'ID TRANSACCIÓN:'; worksheet.getCell('B5').value = recarga.id; worksheet.getCell('A5').font = headerInfoStyle.font;
+        // 2. Enriquecer los detalles de la recarga con la metadata
+        const enhancedDetalles = recarga.detalles.map(d => {
+            const meta = productMetadata.get(d.productoId) || { rubro: 'PRODUCTOS ELIMINADOS', segmento: 'ZZ', marca: 'ZZ' };
+            return {
+                ...d,
+                rubro: meta.rubro,
+                segmento: meta.segmento,
+                marca: meta.marca,
+                // Aseguramos que tenga ID para que la función de ordenamiento funcione si lo usa
+                id: d.productoId 
+            };
+        });
 
-            const headerRow = worksheet.getRow(7);
-            headerRow.values = ['Producto', 'Stock Anterior (Unds)', 'Cantidad Recargada', 'Nuevo Stock (Unds)', 'Factor Conv.'];
-            [1, 2, 3, 4, 5].forEach(col => { const cell = headerRow.getCell(col); cell.style = tableHeaderStyle; cell.border = borderStyle; });
-            worksheet.getColumn(1).width = 40; worksheet.getColumn(2).width = 20; worksheet.getColumn(3).width = 25; worksheet.getColumn(4).width = 20; worksheet.getColumn(5).width = 15;
+        // 3. Ordenar usando la función global (Jerarquía Segmento -> Marca)
+        if (typeof window.getGlobalProductSortFunction === 'function') {
+            const sortFunc = await window.getGlobalProductSortFunction();
+            enhancedDetalles.sort(sortFunc);
+        } else {
+            // Fallback si no existe la función global
+            enhancedDetalles.sort((a,b) => (a.rubro||'').localeCompare(b.rubro||'') || (a.presentacion||'').localeCompare(b.presentacion||''));
+        }
 
-            recarga.detalles.forEach(d => {
+        // 4. Agrupar por Rubro
+        const groupedByRubro = {};
+        const rubroOrder = []; // Para mantener el orden de aparición (que ya viene ordenado por la función global implícitamente si la función ordena por rubro primero, si no, los agrupamos)
+        
+        enhancedDetalles.forEach(d => {
+            const r = d.rubro || 'OTROS';
+            if (!groupedByRubro[r]) {
+                groupedByRubro[r] = [];
+                rubroOrder.push(r);
+            }
+            groupedByRubro[r].push(d);
+        });
+
+        // 5. Generar Excel
+        const workbook = new ExcelJS.Workbook(); 
+        const worksheet = workbook.addWorksheet('Detalle Recarga'); 
+        
+        const headerInfoStyle = { font: { bold: true, size: 10 }, alignment: { horizontal: 'left' } };
+        const tableHeaderStyle = { font: { bold: true, color: { argb: 'FFFFFFFF' } }, fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF00695C' } }, alignment: { horizontal: 'center', vertical: 'middle' } };
+        const borderStyle = { top: {style:'thin'}, left: {style:'thin'}, bottom: {style:'thin'}, right: {style:'thin'} };
+        const rubroHeaderStyle = { font: { bold: true, size: 11, color: { argb: 'FF000000' } }, fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE0F2F1' } }, alignment: { horizontal: 'left', vertical: 'middle' }, border: borderStyle };
+
+        const fechaStr = new Date(recarga.fecha).toLocaleString('es-ES', { dateStyle: 'full', timeStyle: 'short' });
+        
+        worksheet.mergeCells('A1:E1'); worksheet.getCell('A1').value = `REPORTE DE RECARGA DE INVENTARIO`; worksheet.getCell('A1').font = { bold: true, size: 14 }; worksheet.getCell('A1').alignment = { horizontal: 'center' };
+        worksheet.getCell('A3').value = 'USUARIO:'; worksheet.getCell('B3').value = userName.toUpperCase(); worksheet.getCell('A3').font = headerInfoStyle.font;
+        worksheet.getCell('A4').value = 'FECHA:'; worksheet.getCell('B4').value = fechaStr; worksheet.getCell('A4').font = headerInfoStyle.font;
+        worksheet.getCell('A5').value = 'ID TRANSACCIÓN:'; worksheet.getCell('B5').value = recarga.id; worksheet.getCell('A5').font = headerInfoStyle.font;
+
+        // Configurar anchos de columna
+        worksheet.getColumn(1).width = 45; // Producto
+        worksheet.getColumn(2).width = 20; // Stock Ant
+        worksheet.getColumn(3).width = 25; // Cantidad Recargada
+        worksheet.getColumn(4).width = 20; // Stock Nuevo
+        worksheet.getColumn(5).width = 15; // Factor
+
+        // Fila de encabezados generales de la tabla (Fila 7)
+        const headerRow = worksheet.getRow(7);
+        headerRow.values = ['Producto', 'Stock Anterior (Unds)', 'Cantidad Recargada', 'Nuevo Stock (Unds)', 'Factor Conv.'];
+        [1, 2, 3, 4, 5].forEach(col => { const cell = headerRow.getCell(col); cell.style = tableHeaderStyle; cell.border = borderStyle; });
+
+        let currentRowIndex = 8;
+
+        // Iterar por cada Rubro y agregar sus productos
+        rubroOrder.forEach(rubroName => {
+            // Cabecera del Rubro
+            const rubroRow = worksheet.getRow(currentRowIndex);
+            worksheet.mergeCells(`A${currentRowIndex}:E${currentRowIndex}`);
+            rubroRow.getCell(1).value = `RUBRO: ${rubroName.toUpperCase()}`;
+            rubroRow.getCell(1).style = rubroHeaderStyle;
+            currentRowIndex++;
+
+            // Productos del Rubro
+            groupedByRubro[rubroName].forEach(d => {
                 const cantVisual = d.diferenciaUnidades / d.factorUtilizado;
                 const unitLabel = d.factorUtilizado > 1 ? (d.factorUtilizado === 1 ? 'Und' : (d.factorUtilizado > 10 ? 'Caja' : 'Paq')) : 'Und';
                 const signo = d.diferenciaUnidades > 0 ? '+' : '';
-                const row = worksheet.addRow([ d.presentacion, d.unidadesAnteriores, `${signo}${cantVisual} ${unitLabel}`, d.unidadesNuevas, d.factorUtilizado ]);
+                
+                const row = worksheet.getRow(currentRowIndex);
+                row.values = [
+                    d.presentacion,
+                    d.unidadesAnteriores,
+                    `${signo}${cantVisual} ${unitLabel}`,
+                    d.unidadesNuevas,
+                    d.factorUtilizado
+                ];
+
+                // Estilos de celda
                 row.eachCell((cell) => { cell.border = borderStyle; cell.alignment = { vertical: 'middle', horizontal: 'left' }; });
-                row.getCell(2).alignment = { horizontal: 'center' }; row.getCell(3).alignment = { horizontal: 'center', vertical: 'middle' }; row.getCell(4).alignment = { horizontal: 'center' }; row.getCell(5).alignment = { horizontal: 'center' };
-                if (d.diferenciaUnidades > 0) { row.getCell(3).font = { color: { argb: 'FF2E7D32' }, bold: true }; } else if (d.diferenciaUnidades < 0) { row.getCell(3).font = { color: { argb: 'FFC62828' }, bold: true }; }
+                row.getCell(2).alignment = { horizontal: 'center' }; 
+                row.getCell(3).alignment = { horizontal: 'center', vertical: 'middle' }; 
+                row.getCell(4).alignment = { horizontal: 'center' }; 
+                row.getCell(5).alignment = { horizontal: 'center' };
+                
+                // Color condicional
+                if (d.diferenciaUnidades > 0) { row.getCell(3).font = { color: { argb: 'FF2E7D32' }, bold: true }; } 
+                else if (d.diferenciaUnidades < 0) { row.getCell(3).font = { color: { argb: 'FFC62828' }, bold: true }; }
+
+                currentRowIndex++;
             });
+        });
 
-            const f = new Date(recarga.fecha);
-            const dia = f.getDate().toString().padStart(2, '0'); const mes = (f.getMonth() + 1).toString().padStart(2, '0'); const anio = f.getFullYear(); const hora = f.getHours().toString().padStart(2, '0'); const min = f.getMinutes().toString().padStart(2, '0');
-            const safeUserName = userName.replace(/[^a-zA-Z0-9 áéíóúÁÉÍÓÚñÑ]/g, '').trim();
-            const fname = `Recarga ${dia}-${mes}-${anio}_${hora}${min} ${safeUserName}.xlsx`;
+        // Generar nombre de archivo
+        const f = new Date(recarga.fecha);
+        const dia = f.getDate().toString().padStart(2, '0'); const mes = (f.getMonth() + 1).toString().padStart(2, '0'); const anio = f.getFullYear(); const hora = f.getHours().toString().padStart(2, '0'); const min = f.getMinutes().toString().padStart(2, '0');
+        const safeUserName = userName.replace(/[^a-zA-Z0-9 áéíóúÁÉÍÓÚñÑ]/g, '').trim();
+        const fname = `Recarga ${dia}-${mes}-${anio}_${hora}${min} ${safeUserName}.xlsx`;
 
-            workbook.xlsx.writeBuffer().then(function(buffer) { 
-                const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }); 
-                const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = fname; document.body.appendChild(link); link.click(); document.body.removeChild(link); 
-            }); 
-        } catch (e) { console.error("Error exportando recarga:", e); _showModal('Error', 'No se pudo generar Excel.'); }
+        const buffer = await workbook.xlsx.writeBuffer();
+        const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }); 
+        const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = fname; document.body.appendChild(link); link.click(); document.body.removeChild(link); 
     }
 
     async function handleDownloadSingleClosing(closingId) {
