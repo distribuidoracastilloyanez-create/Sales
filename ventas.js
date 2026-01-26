@@ -763,8 +763,9 @@
                  let cDocRef;
                  
                  if (window.userRole === 'user') {
-                     cDocRef=_doc(_collection(_db,`public_data/${_appId}/user_closings`));
-                     await _setDoc(cDocRef, cierreData); // Aquí guardamos el objeto normal con Date, Firebase lo maneja
+                     // CORRECCIÓN DE RUTA: Ajustada a artifacts/... para cumplir con las reglas de seguridad
+                     cDocRef = _doc(_collection(_db, `artifacts/${_appId}/public/data/user_closings`));
+                     await _setDoc(cDocRef, cierreData); 
                  } else { 
                      cDocRef = _doc(_collection(_db, `artifacts/${_appId}/users/${_userId}/cierres`));
                      await _setDoc(cDocRef, cierreData);
