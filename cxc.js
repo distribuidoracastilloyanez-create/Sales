@@ -81,22 +81,14 @@
 
     /**
      * Lógica de Sincronización Inteligente
-     * 1. Consulta 'metadata' en Firebase (documento pequeño).
-     * 2. Compara fecha nube vs fecha local.
-     * 3. Si nube es nueva -> Descarga 'list', guarda en LocalStorage, renderiza.
-     * 4. Si es igual -> Carga desde LocalStorage (Ahorra datos).
-     * 5. Si falla internet -> Carga desde LocalStorage.
      */
     async function syncAndLoadData() {
         const statusLabel = document.getElementById('dataStatusLabel');
-        const updateLabel = document.getElementById('lastUpdateLabel');
         
         try {
-            // 1. Obtener fecha local
-            const localDateStr = localStorage.getItem(LS_KEY_DATE); // ISO String
+            const localDateStr = localStorage.getItem(LS_KEY_DATE);
             let localDate = localDateStr ? new Date(localDateStr) : null;
 
-            // 2. Consultar fecha nube (Metadata)
             const metaRef = _doc(_db, CXC_COLLECTION_PATH, 'metadata');
             const metaSnap = await _getDoc(metaRef);
 
@@ -104,16 +96,12 @@
             let downloadNeeded = true;
 
             if (metaSnap.exists()) {
-                // Timestamp de Firestore a Date JS
                 serverDate = metaSnap.data().updatedAt ? metaSnap.data().updatedAt.toDate() : null;
-                
-                // Comparamos milisegundos
                 if (localDate && serverDate && localDate.getTime() === serverDate.getTime()) {
                     downloadNeeded = false;
                 }
             } else {
-                // No existe metadata en nube (primera vez o borrado)
-                if (localDate) downloadNeeded = false; // Usar local si existe
+                if (localDate) downloadNeeded = false; 
                 else {
                     renderError("No hay datos de CXC disponibles en el servidor.");
                     return;
@@ -124,7 +112,6 @@
                 if (statusLabel) statusLabel.textContent = "📥 Descargando actualización...";
                 console.log("CXC: Nueva versión detectada. Descargando...");
 
-                // Descargar lista completa
                 const listRef = _doc(_db, CXC_COLLECTION_PATH, 'list');
                 const listSnap = await _getDoc(listRef);
 
@@ -132,32 +119,25 @@
                     const data = listSnap.data();
                     _cxcDataCache = data.clients || [];
                     
-                    // GUARDAR EN MEMORIA DEL TELÉFONO (LocalStorage)
-                    // Convertimos a string para guardar. Ojo con el límite de 5MB.
-                    // Si la lista es enorme, esto podría fallar, pero para miles de registros suele ir bien.
                     try {
                         localStorage.setItem(LS_KEY_DATA, JSON.stringify(_cxcDataCache));
                         localStorage.setItem(LS_KEY_DATE, serverDate.toISOString());
                         if (statusLabel) statusLabel.textContent = "✅ Datos actualizados.";
                     } catch (e) {
-                        console.warn("CXC: Espacio insuficiente en teléfono, usando RAM.", e);
+                        console.warn("CXC: Memoria llena.", e);
                         if (statusLabel) statusLabel.textContent = "⚠️ Memoria llena, usando versión online.";
                     }
-                    
                     updateUI(serverDate);
                 }
             } else {
-                // Usar datos locales
-                console.log("CXC: Datos actualizados. Usando caché local.");
-                if (statusLabel) statusLabel.textContent = "⚡ Usando datos guardados (Sin consumo).";
+                console.log("CXC: Usando caché local.");
+                if (statusLabel) statusLabel.textContent = "⚡ Datos locales (Sin consumo).";
                 
                 const localDataRaw = localStorage.getItem(LS_KEY_DATA);
                 if (localDataRaw) {
                     _cxcDataCache = JSON.parse(localDataRaw);
                     updateUI(localDate || serverDate);
                 } else {
-                    // Caso raro: tenemos fecha local pero no data (quizás se borró caché parcial)
-                    // Forzamos descarga en próxima
                     localStorage.removeItem(LS_KEY_DATE);
                     renderError("Error caché local. Recarga para descargar.");
                 }
@@ -165,15 +145,14 @@
 
         } catch (error) {
             console.error("CXC Sync Error:", error);
-            // Fallback Offline
             const localDataRaw = localStorage.getItem(LS_KEY_DATA);
             if (localDataRaw) {
-                if (statusLabel) statusLabel.textContent = "📡 Modo Offline (Datos locales).";
+                if (statusLabel) statusLabel.textContent = "📡 Modo Offline.";
                 _cxcDataCache = JSON.parse(localDataRaw);
                 const localDateStr = localStorage.getItem(LS_KEY_DATE);
                 updateUI(localDateStr ? new Date(localDateStr) : new Date());
             } else {
-                renderError("Sin conexión y sin datos guardados.");
+                renderError("Sin conexión y sin datos.");
             }
         }
     }
@@ -199,7 +178,6 @@
         }
 
         const term = searchTerm.toLowerCase();
-        // Optimización: Mostrar solo los primeros 100 si no hay búsqueda para no congelar la UI
         let filtered = _cxcDataCache.filter(c => c.name.toLowerCase().includes(term));
         const totalMatches = filtered.length;
         
@@ -215,7 +193,7 @@
         let html = '<div class="space-y-3">';
         filtered.forEach(client => {
             const amountClass = client.amount > 0 ? 'text-red-600' : 'text-green-600';
-            const amountLabel = client.amount > 0 ? 'Deuda' : 'Saldo a Favor';
+            const amountLabel = client.amount > 0 ? 'Deuda Total' : 'Saldo a Favor';
             const bgClass = client.amount > 0 ? 'bg-white' : 'bg-green-50';
             
             html += `
@@ -241,12 +219,12 @@
         container.innerHTML = html;
     }
 
-    // --- LÓGICA DE PARSEO Y SUBIDA (SOLO ADMIN) ---
+    // --- LÓGICA DE PARSEO AVANZADO (PÁGINAS 7+) ---
     async function handlePDFUpload(event) {
         const file = event.target.files[0];
         if (!file) return;
 
-        _showModal('Procesando', 'Analizando PDF detallado (Páginas 7+)...');
+        _showModal('Procesando', 'Analizando PDF detallado (Páginas 7 en adelante)...');
 
         try {
             const arrayBuffer = await file.arrayBuffer();
@@ -261,11 +239,11 @@
                 return;
             }
 
-            // Procesar PDF (Misma lógica de parsing robusta del paso anterior)
             for (let i = START_PAGE; i <= pdf.numPages; i++) {
                 const page = await pdf.getPage(i);
                 const textContent = await page.getTextContent();
                 
+                // Ordenar elementos por posición Y (arriba -> abajo) y X (izquierda -> derecha)
                 const items = textContent.items.map(item => ({
                     str: item.str, y: item.transform[5], x: item.transform[4]
                 }));
@@ -275,6 +253,7 @@
                     return a.x - b.x;
                 });
 
+                // Reconstruir líneas
                 let currentY = null;
                 let lines = [];
                 let currentLine = "";
@@ -290,27 +269,46 @@
                 });
                 if (currentLine) lines.push(currentLine.trim());
 
+                // Procesar Líneas
                 for (const line of lines) {
                     const cleanLine = line.trim();
                     if (!cleanLine) continue;
 
-                    const clientHeaderMatch = cleanLine.match(/^(\d{1,6})\s+([A-ZÁÉÍÓÚÑ0-9\.\-\s&]+)$/);
-                    if (clientHeaderMatch) {
-                        const potentialCode = clientHeaderMatch[1];
-                        const potentialName = clientHeaderMatch[2];
-                        const isDate = /\d{1,2}\/\d{1,2}\/\d{2,4}/.test(cleanLine);
-                        const isTotal = cleanLine.includes("TOTAL");
+                    // 1. Detectar Encabezado de Cliente
+                    // Patrón: "1234 NOMBRE DEL CLIENTE" 
+                    // Regex Explicación:
+                    // ^(\d{1,5}) -> Empieza con 1 a 5 dígitos (Código)
+                    // \s+ -> Espacio
+                    // ([A-ZÁÉÍÓÚÑ\.\-\s&]{3,}) -> Nombre (Letras mayúsculas, al menos 3 chars)
+                    // Evitamos que confunda fechas (dd/mm/yyyy) con códigos
+                    if (/^\d{1,2}\/\d{1,2}\/\d{2,4}/.test(cleanLine)) continue; 
+
+                    // Match relajado: Permite texto basura al final de la línea
+                    const headerMatch = cleanLine.match(/^(\d{1,5})\s+([A-ZÁÉÍÓÚÑ\.\-\s&]{3,})/);
+
+                    if (headerMatch && !cleanLine.includes("TOTAL")) {
+                        const code = headerMatch[1];
+                        const name = headerMatch[2].trim();
                         
-                        if (!isDate && !isTotal && potentialName.length > 3) {
-                            currentClient = { code: potentialCode, name: potentialName, amount: 0 };
+                        // Protección adicional: El nombre no debe ser solo números
+                        if (isNaN(parseFloat(name)) && name.length > 3) {
+                            currentClient = { code: code, name: name, amount: 0 };
                         }
                     }
 
-                    if (cleanLine.includes("TOTALES") || cleanLine.startsWith("TOTAL ")) {
+                    // 2. Detectar Fila de Totales
+                    // Buscamos "TOTAL" y extraemos el último número
+                    if ((cleanLine.includes("TOTAL") || cleanLine.includes("SALDO")) && currentClient) {
+                        // Extraer números (formato 1,234.56 o -50.00)
                         const amounts = cleanLine.match(/-?[\d,]+\.\d{2}|-?[\d\.]+,?\d{2}/g);
-                        if (amounts && amounts.length > 0 && currentClient) {
+                        
+                        if (amounts && amounts.length > 0) {
+                            // Limpiar comas y convertir a float
                             const numericAmounts = amounts.map(a => parseFloat(a.replace(/,/g, '')));
+                            
+                            // Asumimos que el saldo final es el ÚLTIMO número de la fila
                             const finalBalance = numericAmounts[numericAmounts.length - 1];
+                            
                             if (!isNaN(finalBalance)) {
                                 currentClient.amount = finalBalance;
                                 allClients.push({ ...currentClient });
@@ -322,20 +320,18 @@
             }
 
             if (allClients.length === 0) {
-                _showModal('Aviso', 'No se encontraron registros de clientes en las páginas seleccionadas (7+).');
+                _showModal('Aviso', 'No se encontraron datos. Verifique que el PDF tenga páginas a partir de la 7 con formato "Código Nombre" y fila "TOTALES".');
                 return;
             }
 
-            // GUARDAR EN FIREBASE (Estrategia Dividida)
-            _showModal('Subiendo', `Guardando ${allClients.length} registros en la nube...`);
+            // GUARDAR EN FIREBASE (Sobreescribir todo)
+            _showModal('Subiendo', `Guardando ${allClients.length} registros...`);
             
             const updateDate = new Date();
 
-            // 1. Guardar la lista pesada (Reemplaza la anterior completamente)
             const listRef = _doc(_db, CXC_COLLECTION_PATH, 'list');
-            await _setDoc(listRef, { clients: allClients }); // setDoc sin merge borra lo anterior
+            await _setDoc(listRef, { clients: allClients }); 
 
-            // 2. Guardar la metadata ligera
             const metaRef = _doc(_db, CXC_COLLECTION_PATH, 'metadata');
             await _setDoc(metaRef, { 
                 updatedAt: updateDate,
@@ -343,7 +339,7 @@
                 recordCount: allClients.length
             });
 
-            // 3. Actualizar mi propia caché local para no tener que redescargar lo que acabo de subir
+            // Actualizar caché local inmediata
             localStorage.setItem(LS_KEY_DATA, JSON.stringify(allClients));
             localStorage.setItem(LS_KEY_DATE, updateDate.toISOString());
 
@@ -359,7 +355,7 @@
         }
     }
 
-    // --- LÓGICA DE BÚSQUEDA DE VENTAS ---
+    // --- LÓGICA DE BÚSQUEDA DE VENTAS (Mantiene igual) ---
     window.cxcModule = {
         handleAmountClick: async (clientName, amount) => {
             if (amount <= 0) {
