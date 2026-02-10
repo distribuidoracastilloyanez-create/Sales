@@ -357,14 +357,24 @@
                 </div>
             `;
 
-            // Listeners
-            document.getElementById('inventarioBtn')?.addEventListener('click', () => { floatingControls.classList.add('hidden'); window.showInventarioSubMenu(); });
-            document.getElementById('clientesBtn')?.addEventListener('click', () => { floatingControls.classList.add('hidden'); window.showClientesSubMenu(); });
-            document.getElementById('ventasBtn')?.addEventListener('click', () => { floatingControls.classList.add('hidden'); window.showVentasView(); });
-            document.getElementById('obsequiosBtn')?.addEventListener('click', () => { floatingControls.classList.add('hidden'); window.showGestionObsequiosView(); });
-            document.getElementById('catalogoBtn')?.addEventListener('click', () => { floatingControls.classList.add('hidden'); window.showCatalogoSubMenu(); });
-            document.getElementById('profileAdminBtn')?.addEventListener('click', () => { floatingControls.classList.add('hidden'); window.showAdminOrProfileView(); });
-            document.getElementById('dataBtn')?.addEventListener('click', () => { floatingControls.classList.add('hidden'); window.showDataView(); });
+            // Listeners Seguros (Evita crashes si faltan módulos)
+            const safeNav = (fn, name) => {
+                if (typeof fn === 'function') {
+                    floatingControls.classList.add('hidden'); 
+                    fn();
+                } else {
+                    console.error(`Error de Navegación: El módulo '${name}' no está cargado.`);
+                    window.showModal('Módulo no disponible', `La sección de ${name} no se ha podido cargar correctamente.`);
+                }
+            };
+
+            document.getElementById('inventarioBtn')?.addEventListener('click', () => safeNav(window.showInventarioSubMenu, 'Inventario'));
+            document.getElementById('clientesBtn')?.addEventListener('click', () => safeNav(window.showClientesSubMenu, 'Clientes'));
+            document.getElementById('ventasBtn')?.addEventListener('click', () => safeNav(window.showVentasView, 'Ventas'));
+            document.getElementById('obsequiosBtn')?.addEventListener('click', () => safeNav(window.showGestionObsequiosView, 'Obsequios'));
+            document.getElementById('catalogoBtn')?.addEventListener('click', () => safeNav(window.showCatalogoSubMenu, 'Catálogo'));
+            document.getElementById('profileAdminBtn')?.addEventListener('click', () => safeNav(window.showAdminOrProfileView, 'Perfil/Admin'));
+            document.getElementById('dataBtn')?.addEventListener('click', () => safeNav(window.showDataView, 'Data'));
 
             const toggle = document.getElementById('offline-toggle');
             toggle.checked = localStorage.getItem('manualOfflineMode') === 'true';
@@ -417,14 +427,14 @@
                         writeBatch, runTransaction, query, where, orderBy, limit, startAfter, firebaseConfig 
                     };
                     
-                    // Init de módulos
-                    if (window.initData) window.initData(deps);
-                    if (window.initAdmin) window.initAdmin(deps);
-                    if (window.initInventario) window.initInventario(deps); 
-                    if (window.initCatalogo) window.initCatalogo(deps);
-                    if (window.initClientes) window.initClientes(deps);
-                    if (window.initVentas) window.initVentas(deps);
-                    if (window.initObsequios) window.initObsequios(deps);
+                    // Init de módulos con chequeo de seguridad
+                    if (window.initData) window.initData(deps); else console.warn("Módulo Data no encontrado");
+                    if (window.initAdmin) window.initAdmin(deps); else console.warn("Módulo Admin no encontrado");
+                    if (window.initInventario) window.initInventario(deps); else console.warn("Módulo Inventario no encontrado");
+                    if (window.initCatalogo) window.initCatalogo(deps); else console.warn("Módulo Catálogo no encontrado");
+                    if (window.initClientes) window.initClientes(deps); else console.warn("Módulo Clientes no encontrado");
+                    if (window.initVentas) window.initVentas(deps); else console.warn("Módulo Ventas no encontrado");
+                    if (window.initObsequios) window.initObsequios(deps); else console.warn("Módulo Obsequios no encontrado");
 
                     showMainMenu();
                 } else {
