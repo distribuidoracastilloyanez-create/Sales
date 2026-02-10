@@ -13,7 +13,10 @@
     let _segmentoOrderMapCache = null;
     const SORT_CONFIG_PATH = 'config/productSortOrder'; 
 
-    const REPORTE_DESIGN_CONFIG_PATH = 'artifacts/ventas-9a210/public/data/config/reporteCierreVentas';
+    // CONSTANTES DE RUTAS (Alineadas con clientes.js y ventas.js)
+    const PUBLIC_DATA_ID = 'ventas-9a210'; // ID específico para datos públicos compartidos
+    const CLIENTES_COLLECTION_PATH = `artifacts/${PUBLIC_DATA_ID}/public/data/clientes`;
+    const REPORTE_DESIGN_CONFIG_PATH = `artifacts/${PUBLIC_DATA_ID}/public/data/config/reporteCierreVentas`;
     
     const DEFAULT_REPORTE_SETTINGS = {
         showCargaInicial: true,
@@ -47,7 +50,7 @@
         }
     };
 
-    // --- Helper Function: getDisplayQty (Definida arriba para usarla globalmente) ---
+    // --- Helper Function: getDisplayQty ---
     function getDisplayQty(qU, p) {
         if (!qU || qU === 0) return { value: 0, unit: 'Unds' };
         if (!p) return { value: qU, unit: 'Unds' };
@@ -151,7 +154,7 @@
             <div class="p-4 pt-8"> <div class="container mx-auto"> <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl">
                 <h1 class="text-3xl font-bold text-gray-800 mb-6 text-center">Cierres de Vendedores</h1>
                 <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6 p-4 border rounded-lg items-end">
-                    <div> <label for="userFilter" class="block text-sm font-medium">Vendedor:</label> <select id="userFilter" class="mt-1 block w-full px-3 py-2 border rounded-md shadow-sm text-sm"> <option value="">Todos</option> </select> </div>
+                    <div> <label for="userFilter" class="block text-sm font-medium">Vendedor:</label> <select id="userFilter" class="mt-1 block w-full px-3 py-2 border rounded-md shadow-sm text-sm"> <option value="">Cargando...</option> </select> </div>
                     <div> <label for="fechaDesde" class="block text-sm font-medium">Desde:</label> <input type="date" id="fechaDesde" class="mt-1 block w-full px-3 py-2 border rounded-md shadow-sm text-sm"> </div>
                     <div> <label for="fechaHasta" class="block text-sm font-medium">Hasta:</label> <input type="date" id="fechaHasta" class="mt-1 block w-full px-3 py-2 border rounded-md shadow-sm text-sm"> </div>
                     <button id="searchCierresBtn" class="w-full px-6 py-2 bg-indigo-600 text-white rounded-lg shadow-md hover:bg-indigo-700">Buscar</button>
@@ -170,75 +173,81 @@
     async function populateUserFilter() {
         const userFilterSelect = document.getElementById('userFilter');
         if (!userFilterSelect) return;
+        userFilterSelect.innerHTML = '<option value="">-- Seleccionar --</option>'; // Default empty
         try {
+            // Nota: Esto requiere que el usuario actual tenga permiso para leer "users".
+            // Si las reglas de seguridad son estrictas, esto podría fallar para no-admins.
             const usersRef = _collection(_db, "users");
             const snapshot = await _getDocs(usersRef);
+            
+            // Si el usuario es admin, ve a todos. Si no, solo se ve a sí mismo (idealmente)
+            // Pero como estamos populando un filtro, intentamos mostrar opciones.
+            
             snapshot.docs.forEach(doc => {
                 const user = doc.data();
                 const option = document.createElement('option');
                 option.value = doc.id;
                 option.textContent = `${user.nombre || ''} ${user.apellido || user.email} (${user.camion || 'N/A'})`;
+                
+                // Si es el usuario actual, seleccionarlo por defecto
+                if (doc.id === _userId) {
+                    option.selected = true;
+                }
                 userFilterSelect.appendChild(option);
             });
-        } catch (error) { console.error("Error cargando usuarios filtro:", error); }
+        } catch (error) { 
+            console.error("Error cargando usuarios filtro:", error);
+            // Fallback: solo mostrar opción "Yo" si falla la lectura global de users
+            const option = document.createElement('option');
+            option.value = _userId;
+            option.textContent = "Mis Datos (Actual)";
+            option.selected = true;
+            userFilterSelect.appendChild(option);
+        }
     }
 
     async function handleSearchClosings() {
         const container = document.getElementById('cierres-list-container');
         container.innerHTML = `<p class="text-center text-gray-500">Buscando...</p>`;
-        const selectedUserId = document.getElementById('userFilter').value;
+        
+        let selectedUserId = document.getElementById('userFilter').value;
+        // Si no hay selección, usar el usuario actual
+        if (!selectedUserId) {
+            selectedUserId = _userId;
+        }
+
         const fechaDesdeStr = document.getElementById('fechaDesde').value;
         const fechaHastaStr = document.getElementById('fechaHasta').value;
         if (!fechaDesdeStr || !fechaHastaStr) {
             _showModal('Error', 'Seleccione ambas fechas.');
             container.innerHTML = `<p class="text-center text-gray-500">Seleccione rango.</p>`; return;
         }
+        
         const fechaDesde = new Date(fechaDesdeStr + 'T00:00:00Z');
         const fechaHasta = new Date(fechaHastaStr + 'T23:59:59Z');
+        
         try {
-            const closingsRef = _collection(_db, `artifacts/${_appId}/users/${_userId}/cierres`); // CORREGIDO PATH para consistencia
-            // Nota: Si quieres buscar cierres globales de otros usuarios, necesitarías una colección pública o permisos admin.
-            // Asumo que aquí se buscan los propios o hay una colección global configurada.
-            // Para mantener compatibilidad con tu código original de búsqueda global:
-            // const closingsRef = _collection(_db, `public_data/${_appId}/user_closings`); 
+            // CORRECCIÓN DE RUTA: Buscar en la subcolección 'cierres' del usuario seleccionado
+            const closingsRef = _collection(_db, `artifacts/${_appId}/users/${selectedUserId}/cierres`);
             
-            // Usaré la colección local por defecto a menos que tengas un índice global.
-            // Si eres ADMIN y quieres ver TODO, necesitas una estructura diferente en Firebase.
-            // Por ahora, buscaré en la colección del usuario logueado o intentaré emular la búsqueda.
+            let q = _query(closingsRef, _where("fecha", ">=", fechaDesde), _where("fecha", "<=", fechaHasta));
             
-            // Si el código original usaba `public_data`, lo respetaré:
-            const publicClosingsRef = _collection(_db, `public_data/${_appId}/user_closings`);
+            const snapshot = await _getDocs(q);
+            let closings = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             
-            let q = _query(publicClosingsRef, _where("fecha", ">=", fechaDesde), _where("fecha", "<=", fechaHasta));
-            
-            // Fallback a colección local si falla (para testing)
-            try {
-                 const snapshot = await _getDocs(q);
-                 let closings = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                 if (selectedUserId) {
-                     closings = closings.filter(c => c.vendedorInfo && c.vendedorInfo.userId === selectedUserId);
-                 }
-                 window.tempClosingsData = closings; 
-                 renderClosingsList(closings);
-            } catch (e) {
-                // Fallback local si no existe public_data
-                 const localRef = _collection(_db, `artifacts/${_appId}/users/${_userId}/cierres`);
-                 let qLocal = _query(localRef, _where("fecha", ">=", fechaDesde), _where("fecha", "<=", fechaHasta));
-                 const snapshotLocal = await _getDocs(qLocal);
-                 let closings = snapshotLocal.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                  window.tempClosingsData = closings; 
-                 renderClosingsList(closings);
-            }
+            window.tempClosingsData = closings; 
+            renderClosingsList(closings);
+
         } catch (error) {
             console.error("Error buscando cierres:", error);
-            container.innerHTML = `<p class="text-center text-red-500">Error al buscar.</p>`;
+            container.innerHTML = `<p class="text-center text-red-500">Error al buscar. Verifica permisos.</p>`;
         }
     }
 
     function renderClosingsList(closings) {
         const container = document.getElementById('cierres-list-container');
         if (closings.length === 0) {
-            container.innerHTML = `<p class="text-center text-gray-500">No se encontraron cierres.</p>`; return;
+            container.innerHTML = `<p class="text-center text-gray-500">No se encontraron cierres para este usuario en el rango seleccionado.</p>`; return;
         }
         closings.sort((a, b) => b.fecha.toDate() - a.fecha.toDate()); 
         let tableHTML = `
@@ -1376,7 +1385,8 @@
     async function loadAndRenderConsolidatedClients() {
         const cont = document.getElementById('consolidated-clients-container'), filtCont = document.getElementById('consolidated-clients-filters'); if(!cont || !filtCont) return;
         try {
-            const cliRef = _collection(_db, `artifacts/ventas-9a210/public/data/clientes`); const cliSnaps = await _getDocs(cliRef);
+            const cliRef = _collection(_db, CLIENTES_COLLECTION_PATH); 
+            const cliSnaps = await _getDocs(cliRef);
             _consolidatedClientsCache = cliSnaps.docs.map(d => ({id: d.id, ...d.data()}));
             filtCont.innerHTML = `<div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 p-4 border rounded-lg bg-gray-50"> <input type="text" id="client-search-input" placeholder="Buscar..." class="md:col-span-2 w-full px-4 py-2 border rounded-lg text-sm"> <div> <label for="client-filter-sector" class="block text-xs mb-1">Sector</label> <select id="client-filter-sector" class="w-full px-2 py-1 border rounded-lg text-sm"><option value="">Todos</option></select> </div> <button id="clear-client-filters-btn" class="bg-gray-300 text-xs font-semibold text-gray-700 rounded-lg self-end py-1.5 px-3 hover:bg-gray-400 transition duration-150">Limpiar</button> </div>`;
             const uSectors = [...new Set(_consolidatedClientsCache.map(c => c.sector).filter(Boolean))].sort(); const sFilt = document.getElementById('client-filter-sector'); uSectors.forEach(s => { const o=document.createElement('option'); o.value=s; o.textContent=s; sFilt.appendChild(o); });
@@ -1455,7 +1465,7 @@
     async function loadAndDisplayMap() {
         const mapCont = document.getElementById('client-map'); if (!mapCont || typeof L === 'undefined') { mapCont.innerHTML = '<p class="text-red-500">Error: Leaflet no cargado.</p>'; return; }
         try {
-            if (_consolidatedClientsCache.length === 0) { const cliRef = _collection(_db, `artifacts/ventas-9a210/public/data/clientes`); const cliSnaps = await _getDocs(cliRef); _consolidatedClientsCache = cliSnaps.docs.map(d => ({id: d.id, ...d.data()})); }
+            if (_consolidatedClientsCache.length === 0) { const cliRef = _collection(_db, CLIENTES_COLLECTION_PATH); const cliSnaps = await _getDocs(cliRef); _consolidatedClientsCache = cliSnaps.docs.map(d => ({id: d.id, ...d.data()})); }
             const cliCoords = _consolidatedClientsCache.filter(c => { if(!c.coordenadas)return false; const p=c.coordenadas.split(','); if(p.length!==2)return false; const lat=parseFloat(p[0]), lon=parseFloat(p[1]); return !isNaN(lat)&&!isNaN(lon)&&lat>=0&&lat<=13&&lon>=-74&&lon<=-59; });
             if (cliCoords.length === 0) { mapCont.innerHTML = '<p class="text-gray-500">No hay clientes con coordenadas válidas.</p>'; return; }
             let mapCenter = [7.77, -72.22]; let zoom = 13; mapInstance = L.map('client-map').setView(mapCenter, zoom); L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OSM', maxZoom: 19 }).addTo(mapInstance);
