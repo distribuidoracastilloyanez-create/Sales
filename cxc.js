@@ -4,11 +4,11 @@
     // Rutas de Firebase
     const CXC_COLLECTION_PATH = 'artifacts/ventas-9a210/public/data/cxc';
     
-    // Nombres de claves para LocalStorage (Memoria del teléfono)
+    // Claves LocalStorage
     const LS_KEY_DATA = 'cxc_local_data';
     const LS_KEY_DATE = 'cxc_local_date';
 
-    // Caché en memoria RAM
+    // Caché en memoria
     let _cxcDataCache = null;
 
     window.initCXC = function(dependencies) {
@@ -37,7 +37,7 @@
             <div class="p-4 pt-8 w-full max-w-4xl mx-auto">
                 <div class="bg-white/90 backdrop-blur-sm p-6 rounded-lg shadow-xl min-h-[80vh]">
                     <div class="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
-                        <h1 class="text-3xl font-bold text-gray-800">Cuentas por Cobrar</h1>
+                        <h1 class="text-3xl font-bold text-gray-800">Cuentas por Cobrar (CSV)</h1>
                         <div class="flex flex-col items-end text-right">
                             <button id="backToMenuBtn" class="px-4 py-2 bg-gray-400 text-white rounded-lg shadow hover:bg-gray-500 text-sm mb-2">Volver al Menú</button>
                             <span id="dataStatusLabel" class="text-xs font-semibold text-blue-600 mb-1"></span>
@@ -46,9 +46,10 @@
                             ${_userRole === 'admin' ? `
                                 <button id="updateCXCBtn" class="mt-2 px-4 py-2 bg-orange-600 text-white rounded-lg shadow hover:bg-orange-700 text-sm font-bold flex items-center gap-2">
                                     <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
-                                    Cargar Nuevo PDF
+                                    Cargar CSV
                                 </button>
-                                <input type="file" id="pdfInput" accept=".pdf" class="hidden">
+                                <!-- Aceptamos CSV y TXT -->
+                                <input type="file" id="csvInput" accept=".csv, .txt" class="hidden">
                             ` : ''}
                         </div>
                     </div>
@@ -69,9 +70,9 @@
         
         if (_userRole === 'admin') {
             const btn = document.getElementById('updateCXCBtn');
-            const input = document.getElementById('pdfInput');
+            const input = document.getElementById('csvInput');
             btn.addEventListener('click', () => input.click());
-            input.addEventListener('change', handlePDFUpload);
+            input.addEventListener('change', handleCSVUpload);
         }
 
         document.getElementById('clientSearch').addEventListener('input', (e) => renderCXCList(e.target.value));
@@ -80,11 +81,10 @@
     };
 
     /**
-     * Lógica de Sincronización Inteligente
+     * Sincronización (Igual que antes, robusta y offline-first)
      */
     async function syncAndLoadData() {
         const statusLabel = document.getElementById('dataStatusLabel');
-        
         try {
             const localDateStr = localStorage.getItem(LS_KEY_DATE);
             let localDate = localDateStr ? new Date(localDateStr) : null;
@@ -110,15 +110,12 @@
 
             if (downloadNeeded && metaSnap.exists()) {
                 if (statusLabel) statusLabel.textContent = "📥 Descargando actualización...";
-                console.log("CXC: Nueva versión detectada. Descargando...");
-
                 const listRef = _doc(_db, CXC_COLLECTION_PATH, 'list');
                 const listSnap = await _getDoc(listRef);
 
                 if (listSnap.exists()) {
                     const data = listSnap.data();
                     _cxcDataCache = data.clients || [];
-                    
                     try {
                         localStorage.setItem(LS_KEY_DATA, JSON.stringify(_cxcDataCache));
                         localStorage.setItem(LS_KEY_DATE, serverDate.toISOString());
@@ -132,7 +129,6 @@
             } else {
                 console.log("CXC: Usando caché local.");
                 if (statusLabel) statusLabel.textContent = "⚡ Datos locales (Sin consumo).";
-                
                 const localDataRaw = localStorage.getItem(LS_KEY_DATA);
                 if (localDataRaw) {
                     _cxcDataCache = JSON.parse(localDataRaw);
@@ -142,7 +138,6 @@
                     renderError("Error caché local. Recarga para descargar.");
                 }
             }
-
         } catch (error) {
             console.error("CXC Sync Error:", error);
             const localDataRaw = localStorage.getItem(LS_KEY_DATA);
@@ -219,143 +214,132 @@
         container.innerHTML = html;
     }
 
-    // --- LÓGICA DE PARSEO AVANZADO (PÁGINAS 7+) ---
-    async function handlePDFUpload(event) {
+    // --- PARSEO CSV / TXT ---
+    async function handleCSVUpload(event) {
         const file = event.target.files[0];
         if (!file) return;
 
-        _showModal('Procesando', 'Analizando PDF detallado (Páginas 7 en adelante)...');
+        _showModal('Procesando', 'Leyendo archivo CSV...');
 
-        try {
-            const arrayBuffer = await file.arrayBuffer();
-            const pdf = await pdfjsLib.getDocument(arrayBuffer).promise;
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+            const text = e.target.result;
+            const lines = text.split(/\r?\n/);
             
             let allClients = [];
             let currentClient = null;
-            const START_PAGE = 7; 
 
-            if (pdf.numPages < START_PAGE) {
-                _showModal('Error', 'El PDF tiene menos de 7 páginas.');
-                return;
-            }
+            // Regex para capturar montos monetarios (ej: 1,234.56 o 500.00 o -20.00)
+            // Ignora fechas como 2026 o 2/6/2026 si no tienen formato decimal exacto de dinero
+            const moneyRegex = /-?[\d,]+\.\d{2}/g;
 
-            for (let i = START_PAGE; i <= pdf.numPages; i++) {
-                const page = await pdf.getPage(i);
-                const textContent = await page.getTextContent();
+            for (let i = 0; i < lines.length; i++) {
+                // Limpiar comillas extras del CSV si existen
+                let line = lines[i].replace(/^"|"$/g, '').trim(); 
+                if (!line) continue;
+
+                // 1. Detectar Nuevo Cliente
+                // Patrón: Inicio con Dígitos + Espacio + Letras
+                // Ej: "1 ABASTO ANTONY..."
+                const headerMatch = line.match(/^(\d+)\s+([A-ZÁÉÍÓÚÑ\.\-\s&]+?)(?=\s{2,}|\s+\d|$)/);
                 
-                // Ordenar elementos por posición Y (arriba -> abajo) y X (izquierda -> derecha)
-                const items = textContent.items.map(item => ({
-                    str: item.str, y: item.transform[5], x: item.transform[4]
-                }));
+                // Evitar falsos positivos como fechas al inicio (9/2/2026)
+                const isDateStart = /^\d{1,2}\/\d{1,2}/.test(line);
 
-                items.sort((a, b) => {
-                    if (Math.abs(a.y - b.y) > 5) return b.y - a.y; 
-                    return a.x - b.x;
-                });
+                if (headerMatch && !isDateStart && !line.includes("TOTAL")) {
+                    const code = headerMatch[1];
+                    const name = headerMatch[2].trim();
 
-                // Reconstruir líneas
-                let currentY = null;
-                let lines = [];
-                let currentLine = "";
-
-                items.forEach(item => {
-                    if (currentY === null || Math.abs(item.y - currentY) > 5) {
-                        if (currentLine) lines.push(currentLine.trim());
-                        currentLine = item.str;
-                        currentY = item.y;
-                    } else {
-                        currentLine += " " + item.str;
-                    }
-                });
-                if (currentLine) lines.push(currentLine.trim());
-
-                // Procesar Líneas
-                for (const line of lines) {
-                    const cleanLine = line.trim();
-                    if (!cleanLine) continue;
-
-                    // 1. Detectar Encabezado de Cliente
-                    // Patrón: "1234 NOMBRE DEL CLIENTE" 
-                    // Regex Explicación:
-                    // ^(\d{1,5}) -> Empieza con 1 a 5 dígitos (Código)
-                    // \s+ -> Espacio
-                    // ([A-ZÁÉÍÓÚÑ\.\-\s&]{3,}) -> Nombre (Letras mayúsculas, al menos 3 chars)
-                    // Evitamos que confunda fechas (dd/mm/yyyy) con códigos
-                    if (/^\d{1,2}\/\d{1,2}\/\d{2,4}/.test(cleanLine)) continue; 
-
-                    // Match relajado: Permite texto basura al final de la línea
-                    const headerMatch = cleanLine.match(/^(\d{1,5})\s+([A-ZÁÉÍÓÚÑ\.\-\s&]{3,})/);
-
-                    if (headerMatch && !cleanLine.includes("TOTAL")) {
-                        const code = headerMatch[1];
-                        const name = headerMatch[2].trim();
+                    if (name.length > 2) {
+                        currentClient = {
+                            code: code,
+                            name: name,
+                            amount: 0
+                        };
                         
-                        // Protección adicional: El nombre no debe ser solo números
-                        if (isNaN(parseFloat(name)) && name.length > 3) {
-                            currentClient = { code: code, name: name, amount: 0 };
-                        }
-                    }
-
-                    // 2. Detectar Fila de Totales
-                    // Buscamos "TOTAL" y extraemos el último número
-                    if ((cleanLine.includes("TOTAL") || cleanLine.includes("SALDO")) && currentClient) {
-                        // Extraer números (formato 1,234.56 o -50.00)
-                        const amounts = cleanLine.match(/-?[\d,]+\.\d{2}|-?[\d\.]+,?\d{2}/g);
-                        
-                        if (amounts && amounts.length > 0) {
-                            // Limpiar comas y convertir a float
+                        // Buscar si hay saldo en la misma línea del encabezado
+                        // (Para clientes sin movimientos detallados debajo)
+                        const amounts = line.match(moneyRegex);
+                        if (amounts) {
+                            // Convertir y tomar el último número encontrado en la línea
                             const numericAmounts = amounts.map(a => parseFloat(a.replace(/,/g, '')));
-                            
-                            // Asumimos que el saldo final es el ÚLTIMO número de la fila
-                            const finalBalance = numericAmounts[numericAmounts.length - 1];
-                            
-                            if (!isNaN(finalBalance)) {
-                                currentClient.amount = finalBalance;
-                                allClients.push({ ...currentClient });
-                                currentClient = null; 
+                            // Filtramos años o números raros si se colaron, aunque la regex \.\d{2} ayuda
+                            const lastAmount = numericAmounts[numericAmounts.length - 1];
+                            if (!isNaN(lastAmount)) {
+                                currentClient.amount = lastAmount;
                             }
+                        }
+                        
+                        allClients.push(currentClient);
+                    }
+                }
+
+                // 2. Detectar Fila de TOTALES (Para actualizar saldo si hubo movimientos)
+                // Busca "TOTAL" o "SUB TOTAL" y asigna el último valor al cliente actual
+                if ((line.includes("TOTAL") || line.includes("SALDO")) && currentClient) {
+                    const amounts = line.match(moneyRegex);
+                    if (amounts) {
+                        const numericAmounts = amounts.map(a => parseFloat(a.replace(/,/g, '')));
+                        const finalBalance = numericAmounts[numericAmounts.length - 1];
+                        
+                        if (!isNaN(finalBalance)) {
+                            // Actualizamos el monto del último cliente añadido
+                            // (Referencia al objeto en el array allClients)
+                            currentClient.amount = finalBalance;
+                            // Ya no reseteamos currentClient a null aquí, 
+                            // porque a veces hay varias líneas de totales/subtotales,
+                            // la última suele ser la válida.
                         }
                     }
                 }
             }
 
             if (allClients.length === 0) {
-                _showModal('Aviso', 'No se encontraron datos. Verifique que el PDF tenga páginas a partir de la 7 con formato "Código Nombre" y fila "TOTALES".');
+                _showModal('Error', 'No se detectaron clientes. Verifique que el archivo sea el CSV correcto.');
                 return;
             }
 
-            // GUARDAR EN FIREBASE (Sobreescribir todo)
-            _showModal('Subiendo', `Guardando ${allClients.length} registros...`);
-            
+            // Subir a Firebase
+            await uploadCXCToFirebase(allClients);
+        };
+
+        reader.onerror = () => {
+            _showModal('Error', 'Error al leer el archivo.');
+        };
+
+        reader.readAsText(file); // Leer como texto plano
+        event.target.value = ''; // Reset input
+    }
+
+    async function uploadCXCToFirebase(clients) {
+        _showModal('Subiendo', `Guardando ${clients.length} registros...`);
+        try {
             const updateDate = new Date();
-
+            
+            // 1. Guardar lista
             const listRef = _doc(_db, CXC_COLLECTION_PATH, 'list');
-            await _setDoc(listRef, { clients: allClients }); 
+            await _setDoc(listRef, { clients: clients });
 
+            // 2. Guardar metadata
             const metaRef = _doc(_db, CXC_COLLECTION_PATH, 'metadata');
             await _setDoc(metaRef, { 
                 updatedAt: updateDate,
                 updatedBy: _userId,
-                recordCount: allClients.length
+                recordCount: clients.length
             });
 
-            // Actualizar caché local inmediata
-            localStorage.setItem(LS_KEY_DATA, JSON.stringify(allClients));
+            // 3. Actualizar local
+            localStorage.setItem(LS_KEY_DATA, JSON.stringify(clients));
             localStorage.setItem(LS_KEY_DATE, updateDate.toISOString());
 
-            _showModal('Éxito', `CXC Actualizado. ${allClients.length} clientes procesados.`, () => {
-                showCXCView();
-            });
-
+            _showModal('Éxito', `CXC Actualizado exitosamente.`, showCXCView);
         } catch (error) {
-            console.error("PDF/Upload Error:", error);
-            _showModal('Error', `Error: ${error.message}`);
-        } finally {
-            event.target.value = ''; 
+            console.error("Upload error:", error);
+            _showModal('Error', `Error al subir: ${error.message}`);
         }
     }
 
-    // --- LÓGICA DE BÚSQUEDA DE VENTAS (Mantiene igual) ---
+    // --- LÓGICA DE BÚSQUEDA DE VENTAS (Igual) ---
     window.cxcModule = {
         handleAmountClick: async (clientName, amount) => {
             if (amount <= 0) {
