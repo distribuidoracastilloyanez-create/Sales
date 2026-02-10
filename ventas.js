@@ -12,7 +12,6 @@
     let _tasaBs = 0;
     let _monedaActual = 'USD';
 
-    // Asume que TIPOS_VACIO_GLOBAL se define o está disponible globalmente
     // Usaremos window.TIPOS_VACIO_GLOBAL si existe, o un default
     const TIPOS_VACIO = window.TIPOS_VACIO_GLOBAL || ["1/4 - 1/3", "ret 350 ml", "ret 1.25 Lts"];
     
@@ -42,16 +41,9 @@
 
     window.showVentasView = function() {
         if (_floatingControls) _floatingControls.classList.add('hidden');
-        _mainContent.innerHTML = `
-            <div class="p-4 pt-8"> <div class="container mx-auto"> <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl text-center">
-                <h1 class="text-3xl font-bold text-gray-800 mb-6">Gestión de Ventas</h1>
-                <div class="space-y-4">
-                    <button id="nuevaVentaBtn" class="w-full px-6 py-3 bg-green-500 text-white rounded-lg shadow-md hover:bg-green-600">Nueva Venta</button>
-                    <button id="ventasTotalesBtn" class="w-full px-6 py-3 bg-blue-500 text-white rounded-lg shadow-md hover:bg-blue-600">Ventas Totales</button>
-                    <button id="backToMenuBtn" class="w-full px-6 py-3 bg-gray-400 text-white rounded-lg shadow-md hover:bg-gray-500">Volver</button>
-                </div>
-            </div> </div> </div>
-        `;
+        // REFACTOR: Usando Template UI
+        _mainContent.innerHTML = window.ventasUI.getMainViewTemplate();
+
         document.getElementById('nuevaVentaBtn').addEventListener('click', showNuevaVentaView);
         document.getElementById('ventasTotalesBtn').addEventListener('click', showVentasTotalesView);
         document.getElementById('backToMenuBtn').addEventListener('click', _showMainMenu);
@@ -63,21 +55,10 @@
         _monedaActual = 'USD';
         _ventaActual = { cliente: null, productos: {}, vaciosDevueltosPorTipo: {} };
         TIPOS_VACIO.forEach(tipo => _ventaActual.vaciosDevueltosPorTipo[tipo] = 0);
-        _mainContent.innerHTML = `
-            <div class="p-2 w-full"> <div class="bg-white/90 backdrop-blur-sm p-3 sm:p-4 rounded-lg shadow-xl flex flex-col h-full" style="min-height: calc(100vh - 1rem);">
-                <div id="venta-header-section" class="mb-2">
-                    <div class="flex justify-between items-center mb-2"> <h2 class="text-lg font-bold">Nueva Venta</h2> <button id="backToVentasBtn" class="px-3 py-1.5 bg-gray-400 text-white text-xs rounded-lg shadow-md hover:bg-gray-500">Volver</button> </div>
-                    <div id="client-search-container"> <label for="clienteSearch" class="block font-medium mb-2">Cliente:</label> <div class="relative"><input type="text" id="clienteSearch" placeholder="Buscar..." class="w-full px-4 py-2 border rounded-lg"><div id="clienteDropdown" class="autocomplete-list hidden"></div></div> </div>
-                    <div id="client-display-container" class="hidden flex-wrap items-center justify-between gap-2"> <p class="flex-grow text-sm"><span class="font-medium">Cliente:</span> <span id="selected-client-name" class="font-bold"></span></p> <div id="tasasContainer" class="flex flex-row items-center gap-2"> <div class="flex items-center space-x-1"> <label for="tasaCopInput" class="text-xs">COP:</label> <input type="number" id="tasaCopInput" placeholder="4000" class="w-16 px-1 py-1 text-sm border rounded-lg"> </div> <div class="flex items-center space-x-1"> <label for="tasaBsInput" class="text-xs">Bs.:</label> <input type="number" id="tasaBsInput" placeholder="36.5" class="w-16 px-1 py-1 text-sm border rounded-lg"> </div> </div> </div>
-                </div>
-                <div id="vacios-devueltos-section" class="mb-2 hidden"> <h3 class="text-sm font-semibold text-cyan-700 mb-1">Vacíos Devueltos:</h3> <div class="grid grid-cols-3 gap-2"> ${TIPOS_VACIO.map(tipo => `<div> <label for="vacios-${tipo.replace(/\s+/g, '-')}" class="text-xs mb-1 block">${tipo}</label> <input type="number" min="0" value="0" id="vacios-${tipo.replace(/\s+/g, '-')}" class="w-16 p-1 text-center border rounded-md" data-tipo-vacio="${tipo}" oninput="window.ventasModule.handleTipoVacioChange(event)"> </div>`).join('')} </div> </div>
-                <div id="inventarioTableContainer" class="hidden animate-fade-in flex-grow flex flex-col overflow-hidden">
-                    <div id="rubro-filter-container" class="mb-2"> <label for="rubroFilter" class="text-xs font-medium">Filtrar Rubro:</label> <select id="rubroFilter" class="w-full px-2 py-1 border rounded-lg text-sm"><option value="">Todos</option></select> </div>
-                    <div class="overflow-auto flex-grow rounded-lg shadow"> <table class="min-w-full bg-white text-sm"><thead class="bg-gray-200 sticky top-0"><tr class="uppercase text-xs"><th class="py-2 px-2 text-center w-24">Cant</th><th class="py-2 px-2 text-left">Producto</th><th class="py-2 px-2 text-left price-toggle" onclick="window.ventasModule.toggleMoneda()">Precio</th><th class="py-2 px-1 text-center">Stock</th></tr></thead><tbody id="inventarioTableBody" class="text-gray-600"></tbody></table> </div>
-                </div>
-                <div id="venta-footer-section" class="mt-2 flex items-center justify-between hidden"> <span id="ventaTotal" class="text-base font-bold">$0.00</span> <button id="generarTicketBtn" class="px-5 py-2 bg-green-500 text-white rounded-lg shadow-md hover:bg-green-600">Generar Ticket</button> </div>
-            </div> </div>
-        `;
+        
+        // REFACTOR: Usando Template UI
+        _mainContent.innerHTML = window.ventasUI.getNewSaleTemplate(TIPOS_VACIO);
+
         const clienteSearchInput = document.getElementById('clienteSearch');
         clienteSearchInput.addEventListener('input', () => { const term = clienteSearchInput.value.toLowerCase(); const filtered = _clientesCache.filter(c=>(c.nombreComercial||'').toLowerCase().includes(term)||(c.nombrePersonal||'').toLowerCase().includes(term)); renderClienteDropdown(filtered); document.getElementById('clienteDropdown').classList.remove('hidden'); });
         const savedTasa = localStorage.getItem('tasaCOP'); if (savedTasa) { _tasaCOP = parseFloat(savedTasa); document.getElementById('tasaCopInput').value = _tasaCOP; }
@@ -93,10 +74,7 @@
     function loadDataForNewSale() {
         const clientesRef = _collection(_db, `artifacts/ventas-9a210/public/data/clientes`);
         const unsubClientes = _onSnapshot(clientesRef, snap => { _clientesCache = snap.docs.map(d => ({ id: d.id, ...d.data() })); }, err => { 
-            if (err.code === 'permission-denied' || err.code === 'unauthenticated') {
-                console.log(`Ventas (clientes) listener error ignored (assumed logout): ${err.code}`);
-                return;
-            }
+            if (err.code === 'permission-denied' || err.code === 'unauthenticated') return;
             console.error("Error clientes:", err); 
         });
         const inventarioRef = _collection(_db, `artifacts/${_appId}/users/${_userId}/inventario`);
@@ -105,10 +83,7 @@
             populateRubroFilter(); 
             if (_ventaActual.cliente) renderVentasInventario(); 
         }, err => { 
-            if (err.code === 'permission-denied' || err.code === 'unauthenticated') {
-                console.log(`Ventas (inventario) listener error ignored (assumed logout): ${err.code}`);
-                return;
-            }
+            if (err.code === 'permission-denied' || err.code === 'unauthenticated') return;
             console.error("Error inventario:", err); 
             const b = document.getElementById('inventarioTableBody'); if(b) b.innerHTML = '<tr><td colspan="4" class="text-red-500">Error inventario</td></tr>'; 
         });
@@ -146,28 +121,62 @@
         const sortFunc = await window.getGlobalProductSortFunction();
         filtInv.sort(sortFunc);
         
-        body.innerHTML = '';
-        if (filtInv.length === 0) { body.innerHTML = `<tr><td colspan="4" class="text-center text-gray-500">No hay productos ${selRubro ? 'en este rubro' : ''}.</td></tr>`; return; }
+        const sortKey = window._sortPreferenceCache ? window._sortPreferenceCache[0] : 'segmento';
+        // REFACTOR: Llamada a ventasUI
+        body.innerHTML = window.ventasUI.getInventoryTableRows(filtInv, _ventaActual.productos, _monedaActual, _tasaCOP, _tasaBs, sortKey);
         
-        let lastHKey = null;
-        const fSortKey = window._sortPreferenceCache ? window._sortPreferenceCache[0] : 'segmento';
+        updateVentaTotal();
+    }
+
+    async function renderEditVentasInventario() {
+        const body = document.getElementById('inventarioTableBody'), rF = document.getElementById('rubroFilter'); if (!body || !rF) return; body.innerHTML = `<tr><td colspan="4" class="text-center text-gray-500">Cargando...</td></tr>`;
         
-        filtInv.forEach(prod => {
-            const curHVal = prod[fSortKey] || `Sin ${fSortKey}`; if (curHVal !== lastHKey) { lastHKey = curHVal; const hRow = document.createElement('tr'); hRow.innerHTML = `<td colspan="4" class="py-1 px-2 bg-gray-100 font-bold sticky top-[calc(theme(height.10))] z-[9]">${lastHKey}</td>`; body.appendChild(hRow); }
-            const vPor = prod.ventaPor || { und: true }, vActProd = _ventaActual.productos[prod.id] || {}, precios = prod.precios || { und: prod.precioPorUnidad || 0 };
-            const fPrice = (v) => { if (isNaN(v)) v=0; if (_monedaActual==='COP'&&_tasaCOP>0) return `COP ${(Math.ceil((v*_tasaCOP)/100)*100).toLocaleString('es-CO')}`; if (_monedaActual==='Bs'&&_tasaBs>0) return `Bs.S ${(v*_tasaBs).toLocaleString('es-VE',{minimumFractionDigits:2,maximumFractionDigits:2})}`; return `$${v.toFixed(2)}`; };
-            const cRow = (t, c, max, pT, stockT, descT) => { const r=document.createElement('tr'); r.className='border-b hover:bg-gray-50'; r.innerHTML=`<td class="py-2 px-2 text-center align-middle"> <input type="number" min="0" max="${max}" value="${c}" class="w-16 p-1 text-center border rounded-md" data-product-id="${prod.id}" data-tipo-venta="${t}" oninput="window.ventasModule.handleQuantityChange(event)"> </td> <td class="py-2 px-2 text-left align-middle"> ${descT} <span class="text-xs text-gray-500">${prod.marca || 'S/M'}</span> </td> <td class="py-2 px-2 text-left align-middle font-semibold price-toggle" onclick="window.ventasModule.toggleMoneda()">${fPrice(pT)}</td> <td class="py-2 px-1 text-center align-middle">${stockT}</td>`; body.appendChild(r); };
-            const stockU = prod.cantidadUnidades || 0;
-            if (vPor.cj) { const uCj=prod.unidadesPorCaja||1, maxCj=Math.floor(stockU/uCj); cRow('cj', vActProd.cantCj||0, maxCj, precios.cj||0, `${maxCj} Cj`, `${prod.presentacion} (Cj/${uCj} und)`); }
-            if (vPor.paq) { const uPaq=prod.unidadesPorPaquete||1, maxPaq=Math.floor(stockU/uPaq); cRow('paq', vActProd.cantPaq||0, maxPaq, precios.paq||0, `${maxPaq} Paq`, `${prod.presentacion} (Paq/${uPaq} und)`); }
-            if (vPor.und) { cRow('und', vActProd.cantUnd||0, stockU, precios.und||0, `${stockU} Und`, `${prod.presentacion} (Und)`); }
-        }); updateVentaTotal();
+        const selRubro = rF.value; 
+        let invToShow = _inventarioCache.filter(p => _originalVentaForEdit.productos.some(oP => oP.id === p.id) || (p.cantidadUnidades || 0) > 0);
+        if (selRubro) invToShow = invToShow.filter(p => p.rubro === selRubro);
+        
+        const sortFunc = await window.getGlobalProductSortFunction(); 
+        invToShow.sort(sortFunc);
+        
+        // Lógica especial para Edit: Sumar lo que ya se vendió al stock disponible para mostrar el "potencial" completo
+        const mappedInv = invToShow.map(p => {
+             const copy = { ...p };
+             const orig = _originalVentaForEdit.productos.find(op => op.id === p.id);
+             if (orig) {
+                 copy.cantidadUnidades = (copy.cantidadUnidades || 0) + (orig.totalUnidadesVendidas || 0);
+             }
+             return copy;
+        });
+
+        const sortKey = window._sortPreferenceCache ? window._sortPreferenceCache[0] : 'segmento';
+        // REFACTOR: Reutilizamos la misma tabla de UI
+        body.innerHTML = window.ventasUI.getInventoryTableRows(mappedInv, _ventaActual.productos, _monedaActual, _tasaCOP, _tasaBs, sortKey);
+
+        updateVentaTotal();
     }
 
     function handleQuantityChange(event) {
         const inp=event.target, pId=inp.dataset.productId, tV=inp.dataset.tipoVenta, prod=_inventarioCache.find(p=>p.id===pId); if(!prod) return; if(!_ventaActual.productos[pId]) _ventaActual.productos[pId]={...prod, cantCj:0,cantPaq:0,cantUnd:0,totalUnidadesVendidas:0};
         const qty=parseInt(inp.value,10)||0; _ventaActual.productos[pId][`cant${tV[0].toUpperCase()+tV.slice(1)}`]=qty; const pV=_ventaActual.productos[pId], uCj=pV.unidadesPorCaja||1, uPaq=pV.unidadesPorPaquete||1;
-        const totU=(pV.cantCj*uCj)+(pV.cantPaq*uPaq)+(pV.cantUnd||0); const stockU=prod.cantidadUnidades||0; if(totU>stockU){ _showModal('Stock Insuficiente',`Ajustado.`); let ex=totU-stockU; if(tV==='cj')inp.value=Math.max(0,qty-Math.ceil(ex/uCj)); else if(tV==='paq')inp.value=Math.max(0,qty-Math.ceil(ex/uPaq)); else inp.value=Math.max(0,qty-ex); handleQuantityChange({target:inp}); return; }
+        
+        // Calcular Stock Disponible (Considerando si estamos en edición)
+        let stockU = prod.cantidadUnidades || 0;
+        if (_originalVentaForEdit) {
+             const origP = _originalVentaForEdit.productos.find(op => op.id === pId);
+             if (origP) stockU += (origP.totalUnidadesVendidas || 0);
+        }
+
+        const totU=(pV.cantCj*uCj)+(pV.cantPaq*uPaq)+(pV.cantUnd||0); 
+        
+        if(totU > stockU){ 
+            _showModal('Stock Insuficiente',`Ajustado.`); 
+            let ex=totU-stockU; 
+            if(tV==='cj')inp.value=Math.max(0,qty-Math.ceil(ex/uCj)); 
+            else if(tV==='paq')inp.value=Math.max(0,qty-Math.ceil(ex/uPaq)); 
+            else inp.value=Math.max(0,qty-ex); 
+            handleQuantityChange({target:inp}); 
+            return; 
+        }
         pV.totalUnidadesVendidas=totU; if(totU===0&&pV.cantCj===0&&pV.cantPaq===0&&pV.cantUnd===0) delete _ventaActual.productos[pId]; updateVentaTotal();
     };
 
@@ -179,165 +188,7 @@
         if(_monedaActual==='COP'&&_tasaCOP>0)tEl.textContent=`Total: COP ${(Math.ceil((tUSD*_tasaCOP)/100)*100).toLocaleString('es-CO')}`; else if(_monedaActual==='Bs'&&_tasaBs>0)tEl.textContent=`Total: Bs.S ${(tUSD*_tasaBs).toLocaleString('es-VE',{minimumFractionDigits:2,maximumFractionDigits:2})}`; else tEl.textContent=`Total: $${tUSD.toFixed(2)}`;
     }
 
-    // Funciones de Ticket (sin cambios)
-    function createTicketHTML(venta, productos, vaciosDevueltosPorTipo, tipo = 'ticket') {
-        const fecha = venta.fecha ? (venta.fecha.toDate ? venta.fecha.toDate().toLocaleDateString('es-ES') : new Date(venta.fecha).toLocaleDateString('es-ES')) : new Date().toLocaleDateString('es-ES');
-        const clienteNombre = venta.cliente ? venta.cliente.nombreComercial : venta.clienteNombre;
-        const clienteNombrePersonal = (venta.cliente ? venta.cliente.nombrePersonal : venta.clienteNombrePersonal) || '';
-        let total = 0;
-        let productosHTML = '';
-        const productosVendidos = productos.filter(p => (p.totalUnidadesVendidas || (p.cantidadVendida && (p.cantidadVendida.cj > 0 || p.cantidadVendida.paq > 0 || p.cantidadVendida.und > 0)) ));
-
-        productosVendidos.forEach(p => {
-            const precios = p.precios || { und: p.precioPorUnidad || 0 };
-            const cant = p.cantidadVendida || { cj: p.cantCj || 0, paq: p.cantPaq || 0, und: p.cantUnd || 0 };
-            let desc = `${p.segmento || ''} ${p.marca || ''} ${p.presentacion}`;
-            let qtyText = '', priceText = '', subtotal = 0;
-
-            if (cant.cj > 0) {
-                subtotal = (precios.cj || 0) * cant.cj;
-                qtyText = `${cant.cj} CJ`;
-                priceText = `$${(precios.cj || 0).toFixed(2)}`;
-            } else if (cant.paq > 0) {
-                subtotal = (precios.paq || 0) * cant.paq;
-                qtyText = `${cant.paq} PAQ`;
-                priceText = `$${(precios.paq || 0).toFixed(2)}`;
-            } else if (cant.und > 0) {
-                subtotal = (precios.und || 0) * cant.und;
-                qtyText = `${cant.und} UND`;
-                priceText = `$${(precios.und || 0).toFixed(2)}`;
-            } else { return; }
-            total += subtotal;
-
-            productosHTML += `
-                 <tr class="align-top">
-                    <td class="py-2 pr-2 text-left" style="width: 55%;"><div style="line-height: 1.2;">${desc}</div></td>
-                    <td class="py-2 px-2 text-center" style="width: 15%;">${qtyText}</td>
-                    <td class="py-2 px-2 text-right" style="width: 15%;">${priceText}</td>
-                    <td class="py-2 pl-2 text-right font-bold" style="width: 15%;">$${subtotal.toFixed(2)}</td>
-                </tr>
-            `;
-        });
-
-        let vaciosHTML = '';
-        const tiposConDev = Object.entries(vaciosDevueltosPorTipo || {}).filter(([t, c]) => c > 0);
-        if (tiposConDev.length > 0) {
-            vaciosHTML = `<div class="text-3xl mt-6 border-t border-black border-dashed pt-4"> <p>ENVASES DEVUELTOS:</p> <table class="w-full text-3xl mt-2"><tbody>`;
-            tiposConDev.forEach(([t, c]) => {
-                vaciosHTML += `<tr><td class="py-1 pr-2 text-left" style="width: 70%;">${t}</td><td class="py-1 pl-2 text-right" style="width: 30%;">${c} CJ</td></tr>`;
-            });
-            vaciosHTML += `</tbody></table></div>`;
-        }
-
-        const titulo = tipo === 'factura' ? 'FACTURA FISCAL' : 'TICKET DE VENTA';
-
-        return `
-            <div id="temp-ticket-for-image" class="bg-white text-black p-4 font-bold" style="width: 768px; font-family: 'Courier New', Courier, monospace;">
-                <div class="text-center">
-                    <h2 class="text-4xl uppercase">${titulo}</h2>
-                    <p class="text-3xl">DISTRIBUIDORA CASTILLO YAÑEZ</p>
-                </div>
-                <div class="text-3xl mt-8">
-                    <p>FECHA: ${fecha}</p>
-                    <p>CLIENTE: ${clienteNombre}</p>
-                </div>
-                <table class="w-full text-3xl mt-6">
-                    <thead>
-                        <tr>
-                            <th class="pb-2 text-left">DESCRIPCION</th>
-                            <th class="pb-2 text-center">CANT</th>
-                            <th class="pb-2 text-right">PRECIO</th>
-                            <th class="pb-2 text-right">SUBTOTAL</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${productosHTML}
-                    </tbody>
-                </table>
-                <div class="text-right text-3xl mt-4 pr-2">
-                    <p class="border-t border-black pt-2 font-bold">TOTAL: $${total.toFixed(2)}</p>
-                </div>
-                ${vaciosHTML}
-                <div class="text-center mt-16">
-                    <p class="border-t border-black w-96 mx-auto"></p>
-                    <p class="mt-4 text-3xl">${clienteNombrePersonal}</p>
-                </div>
-                <hr class="border-dashed border-black mt-6">
-            </div>`;
-    }
-    function createRawTextTicket(venta, productos, vaciosDevueltosPorTipo) {
-        const fecha = venta.fecha ? (venta.fecha.toDate ? venta.fecha.toDate().toLocaleDateString('es-ES') : new Date(venta.fecha).toLocaleDateString('es-ES')) : new Date().toLocaleDateString('es-ES');
-        const toTitleCase = (str) => { if (!str) return ''; return str.replace(/\w\S*/g, (txt) => txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase()); };
-        const clienteNombre = toTitleCase(venta.cliente ? venta.cliente.nombreComercial : venta.clienteNombre);
-        const clienteNombrePersonal = toTitleCase((venta.cliente ? venta.cliente.nombrePersonal : venta.clienteNombrePersonal) || '');
-        const LINE_WIDTH = 48; let total = 0; let ticket = '';
-        const center = (text) => text.padStart(Math.floor((LINE_WIDTH - text.length) / 2) + text.length, ' ').padEnd(LINE_WIDTH, ' ');
-        const wordWrap = (text, maxWidth) => { const lines = []; if (!text) return lines; let currentLine = ''; const words = text.split(' '); for (const word of words) { if ((currentLine + ' ' + word).trim().length > maxWidth) { if(currentLine.length > 0) lines.push(currentLine.trim()); currentLine = word; } else { currentLine = (currentLine + ' ' + word).trim(); } } if (currentLine) lines.push(currentLine.trim()); return lines; };
-
-        ticket += center('Distribuidora Castillo Yañez') + '\n';
-        ticket += center('Nota de Entrega') + '\n';
-        ticket += center('(no valido como factura fiscal)') + '\n\n';
-
-        const wrappedClientName = wordWrap(`Cliente: ${clienteNombre}`, LINE_WIDTH);
-        wrappedClientName.forEach(line => { ticket += line + '\n'; });
-        ticket += `Fecha: ${fecha}\n`;
-        ticket += '-'.repeat(LINE_WIDTH) + '\n';
-
-        const productosVendidos = productos.filter(p => (p.totalUnidadesVendidas || (p.cantidadVendida && (p.cantidadVendida.cj > 0 || p.cantidadVendida.paq > 0 || p.cantidadVendida.und > 0)) ));
-
-        if (productosVendidos.length > 0) {
-            ticket += 'Producto'.padEnd(26) + 'Cant'.padStart(6) + 'Precio'.padStart(8) + 'Subt'.padStart(8) + '\n';
-            productosVendidos.forEach(p => {
-                const precios = p.precios || { und: p.precioPorUnidad || 0 };
-                const cant = p.cantidadVendida || { cj: p.cantCj || 0, paq: p.cantPaq || 0, und: p.cantUnd || 0 };
-                let desc = toTitleCase(`${p.segmento || ''} ${p.marca || ''} ${p.presentacion}`);
-                let qtyText = '', priceText = '', subtotal = 0;
-
-                if (cant.cj > 0) {
-                    subtotal = (precios.cj || 0) * cant.cj;
-                    qtyText = `${cant.cj} CJ`;
-                    priceText = `$${(precios.cj || 0).toFixed(2)}`;
-                } else if (cant.paq > 0) {
-                    subtotal = (precios.paq || 0) * cant.paq;
-                    qtyText = `${cant.paq} PQ`;
-                    priceText = `$${(precios.paq || 0).toFixed(2)}`;
-                } else if (cant.und > 0) {
-                    subtotal = (precios.und || 0) * cant.und;
-                    qtyText = `${cant.und} UN`;
-                    priceText = `$${(precios.und || 0).toFixed(2)}`;
-                } else { return; }
-                total += subtotal;
-
-                const wrappedDesc = wordWrap(desc, 25); // Max width for description column
-                wrappedDesc.forEach((line, index) => {
-                    const qtyStr = index === wrappedDesc.length - 1 ? qtyText : '';
-                    const priceStr = index === wrappedDesc.length - 1 ? priceText : '';
-                    const subtStr = index === wrappedDesc.length - 1 ? `$${subtotal.toFixed(2)}` : '';
-                    ticket += line.padEnd(26) + qtyStr.padStart(6) + priceStr.padStart(8) + subtStr.padStart(8) + '\n';
-                });
-            });
-        }
-
-        const tiposConDev = Object.entries(vaciosDevueltosPorTipo || {}).filter(([t, c]) => c > 0);
-        if (tiposConDev.length > 0) {
-            ticket += '-'.repeat(LINE_WIDTH) + '\n';
-            ticket += center('ENVASES DEVUELTOS') + '\n';
-            tiposConDev.forEach(([t, c]) => {
-                const tipoStr = t; const cantStr = `${c} CJ`;
-                ticket += tipoStr.padEnd(LINE_WIDTH - cantStr.length) + cantStr + '\n';
-            });
-        }
-
-        ticket += '-'.repeat(LINE_WIDTH) + '\n';
-        const totalString = `TOTAL: $${total.toFixed(2)}`;
-        ticket += totalString.padStart(LINE_WIDTH, ' ') + '\n\n';
-        ticket += '\n\n\n\n';
-        ticket += center('________________________') + '\n';
-        ticket += center(clienteNombrePersonal) + '\n\n';
-        ticket += '-'.repeat(LINE_WIDTH) + '\n';
-        return ticket;
-    }
-    // Funciones handleShareTicket, handleShareRawText, copyToClipboard, legacyCopyToClipboard (solo reciben callback)
+    // Funciones handleShareTicket, handleShareRawText...
     async function handleShareTicket(htmlContent, callbackDespuesDeCompartir) {
          _showModal('Progreso', 'Generando imagen...');
         const tempDiv = document.createElement('div'); tempDiv.style.position = 'absolute'; tempDiv.style.left = '-9999px'; tempDiv.style.top = '0'; tempDiv.innerHTML = htmlContent; document.body.appendChild(tempDiv);
@@ -378,19 +229,23 @@
     function showSharingOptions(venta, productos, vaciosDevueltosPorTipo, tipo, callbackFinal) {
         const modalContent = `<div class="text-center"><h3 class="text-xl font-bold mb-4">Generar ${tipo}</h3><p class="mb-6">Elige formato.</p><div class="space-y-4"><button id="printTextBtn" class="w-full px-6 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600">Imprimir (Texto)</button><button id="shareImageBtn" class="w-full px-6 py-3 bg-green-500 text-white rounded-lg hover:bg-green-600">Compartir (Imagen)</button></div></div>`;
         _showModal('Elige opción', modalContent, null, ''); 
-        document.getElementById('printTextBtn').addEventListener('click', () => { const rawText = createRawTextTicket(venta, productos, vaciosDevueltosPorTipo); handleShareRawText(rawText, callbackFinal); });
-        document.getElementById('shareImageBtn').addEventListener('click', () => { const html = createTicketHTML(venta, productos, vaciosDevueltosPorTipo, tipo); handleShareTicket(html, callbackFinal); });
+        document.getElementById('printTextBtn').addEventListener('click', () => { 
+            // REFACTOR: Llamada a ventasUI
+            const rawText = window.ventasUI.getTicketRawText(venta, productos, vaciosDevueltosPorTipo); 
+            handleShareRawText(rawText, callbackFinal); 
+        });
+        document.getElementById('shareImageBtn').addEventListener('click', () => { 
+            // REFACTOR: Llamada a ventasUI
+            const html = window.ventasUI.getTicketHTML(venta, productos, vaciosDevueltosPorTipo, tipo); 
+            handleShareTicket(html, callbackFinal); 
+        });
     }
 
-    // *** MODIFICADO: _processAndSaveVenta CON TRANSACCIÓN ATÓMICA ***
     async function _processAndSaveVenta() {
         console.log("Starting _processAndSaveVenta (Transaction)...");
-
-        // --- Snapshot Logic (Keep independent/optimistic for now) ---
         const SNAPSHOT_DOC_PATH = `artifacts/${_appId}/users/${_userId}/config/cargaInicialSnapshot`;
         const snapshotRef = _doc(_db, SNAPSHOT_DOC_PATH);
         try {
-            // This read is not part of the main transaction to avoid contention on config doc
             const snapshotDoc = await _getDoc(snapshotRef);
             if (!snapshotDoc.exists()) {
                  console.log("Primera venta del día detectada. Guardando snapshot...");
@@ -399,7 +254,6 @@
                  }
             }
         } catch (e) { console.warn("Snapshot check failed", e); }
-
 
         const prodsParaGuardar = Object.values(_ventaActual.productos);
         if (prodsParaGuardar.length === 0 && Object.values(_ventaActual.vaciosDevueltosPorTipo).every(v => v === 0)) {
@@ -411,25 +265,19 @@
 
         try {
             const savedData = await _runTransaction(_db, async (transaction) => {
-                // 1. READS
                 const clientDoc = await transaction.get(clientRef);
                 if (!clientDoc.exists()) throw "El cliente no existe.";
-
                 const invRefs = [];
                 for (const p of prodsParaGuardar) {
                     const ref = _doc(_db, `artifacts/${_appId}/users/${_userId}/inventario`, p.id);
                     invRefs.push({ id: p.id, ref: ref, qty: p.totalUnidadesVendidas || 0, presentacion: p.presentacion });
                 }
-
-                // Execute all inventory reads
                 const invDocs = await Promise.all(invRefs.map(item => transaction.get(item.ref)));
                 
-                // 2. LOGIC & VALIDATION
                 let totalVenta = 0;
                 const itemsVenta = [];
                 const vaciosChanges = {};
 
-                // Process Products
                 invRefs.forEach((item, index) => {
                     const invDoc = invDocs[index];
                     if (!invDoc.exists()) throw `Producto ${item.presentacion} no existe en inventario.`;
@@ -439,18 +287,15 @@
                         throw `Stock insuficiente para ${item.presentacion}. Disponible: ${currentStock}, Solicitado: ${item.qty}`;
                     }
 
-                    // Prepare Inventory Update
                     if (item.qty > 0) {
                         transaction.update(item.ref, { cantidadUnidades: currentStock - item.qty });
                     }
 
-                    // Prepare Sale Item Data
                     const p = prodsParaGuardar.find(prod => prod.id === item.id);
                     const precios = p.precios || { und: p.precioPorUnidad || 0 };
                     const sub = (precios.cj || 0) * (p.cantCj || 0) + (precios.paq || 0) * (p.cantPaq || 0) + (precios.und || 0) * (p.cantUnd || 0);
                     totalVenta += sub;
 
-                    // Empty bottles logic (Entregados)
                     if (invDoc.data().manejaVacios && invDoc.data().tipoVacio) {
                         const tV = invDoc.data().tipoVacio;
                         const cjV = p.cantCj || 0;
@@ -469,14 +314,11 @@
                     }
                 });
 
-                // Empty bottles logic (Devueltos)
                 for (const tV in _ventaActual.vaciosDevueltosPorTipo) {
                     const dev = _ventaActual.vaciosDevueltosPorTipo[tV] || 0;
                     if (dev > 0) vaciosChanges[tV] = (vaciosChanges[tV] || 0) - dev;
                 }
 
-                // 3. WRITES
-                // Update Client Balance
                 if (Object.values(vaciosChanges).some(c => c !== 0)) {
                     const cliData = clientDoc.data();
                     const sVac = cliData.saldoVacios || {};
@@ -487,7 +329,6 @@
                     transaction.update(clientRef, { saldoVacios: sVac });
                 }
 
-                // Save Sale Document
                 const ventaDataToSave = {
                     clienteId: _ventaActual.cliente.id,
                     clienteNombre: _ventaActual.cliente.nombreComercial || _ventaActual.cliente.nombrePersonal,
@@ -504,7 +345,6 @@
             });
 
             return savedData;
-
         } catch (e) {
             console.error("Transaction failed: ", e);
             throw e;
@@ -521,17 +361,13 @@
             _showModal('Progreso', 'Guardando transacción...'); 
             try {
                 const savedData = await _processAndSaveVenta();
-
                 showSharingOptions(
                     { cliente: _ventaActual.cliente, fecha: savedData.venta.fecha }, 
                     savedData.productos, 
                     savedData.vaciosDevueltosPorTipo, 
                     'Nota de Entrega',
-                    () => { 
-                         _showModal('Éxito', 'Venta registrada y ticket generado/compartido.', showNuevaVentaView);
-                    }
+                    () => { _showModal('Éxito', 'Venta registrada y ticket generado/compartido.', showNuevaVentaView); }
                 );
-
             } catch (saveError) {
                 console.error("Error al guardar venta:", saveError);
                  const progressModal = document.getElementById('modalContainer'); 
@@ -541,22 +377,14 @@
                 _showModal('Error', `Error al guardar la venta: ${saveError.message || saveError}`);
             }
             return false; 
-
         }, 'Sí, guardar', () => { }, true); 
     }
 
     function showVentasTotalesView() {
         if (_floatingControls) _floatingControls.classList.add('hidden');
-        _mainContent.innerHTML = `
-            <div class="p-4 pt-8"> <div class="container mx-auto"> <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl text-center">
-                <h2 class="text-2xl font-bold text-gray-800 mb-6">Ventas Totales</h2>
-                <div class="space-y-4">
-                    <button id="ventasActualesBtn" class="w-full px-6 py-3 bg-teal-500 text-white rounded-lg shadow-md hover:bg-teal-600">Ventas Actuales</button>
-                    <button id="cierreVentasBtn" class="w-full px-6 py-3 bg-red-500 text-white rounded-lg shadow-md hover:bg-red-600">Cierre de Ventas</button>
-                </div>
-                <button id="backToVentasBtn" class="mt-6 w-full px-6 py-3 bg-gray-400 text-white rounded-lg shadow-md hover:bg-gray-500">Volver</button>
-            </div> </div> </div>
-        `;
+        // REFACTOR: Usando Template UI
+        _mainContent.innerHTML = window.ventasUI.getSalesMenuTemplate();
+        
         document.getElementById('ventasActualesBtn').addEventListener('click', showVentasActualesView);
         document.getElementById('cierreVentasBtn').addEventListener('click', showCierreSubMenuView);
         document.getElementById('backToVentasBtn').addEventListener('click', showVentasView);
@@ -579,15 +407,10 @@
         const vRef = _collection(_db, `artifacts/${_appId}/users/${_userId}/ventas`); const q = _query(vRef);
         const unsub = _onSnapshot(q, (snap) => {
             _ventasGlobal = snap.docs.map(d => ({ id: d.id, ...d.data() })); _ventasGlobal.sort((a,b)=>(b.fecha?.toDate()??0)-(a.fecha?.toDate()??0));
-            if (_ventasGlobal.length === 0) { cont.innerHTML = `<p class="text-center text-gray-500">No hay ventas.</p>`; return; }
-            let tHTML = `<table class="min-w-full bg-white text-sm"><thead class="bg-gray-200 sticky top-0 z-10"><tr> <th class="py-2 px-3 border-b text-left">Cliente</th> <th class="py-2 px-3 border-b text-left">Fecha</th> <th class="py-2 px-3 border-b text-right">Total</th> <th class="py-2 px-3 border-b text-center">Acciones</th> </tr></thead><tbody>`;
-            _ventasGlobal.forEach(v => { const fV=v.fecha?.toDate?v.fecha.toDate():new Date(0); const fF=fV.toLocaleDateString('es-ES',{day:'2-digit',month:'2-digit',year:'numeric'}); tHTML+=`<tr class="hover:bg-gray-50"><td class="py-2 px-3 border-b align-middle">${v.clienteNombre||'N/A'}</td><td class="py-2 px-3 border-b align-middle">${fF}</td><td class="py-2 px-3 border-b text-right font-semibold align-middle">$${(v.total||0).toFixed(2)}</td><td class="py-2 px-3 border-b"><div class="flex flex-col items-center space-y-1"><button onclick="window.ventasModule.showPastSaleOptions('${v.id}','ticket')" class="w-full px-3 py-1.5 bg-blue-500 text-white text-xs rounded-lg hover:bg-blue-600">Compartir</button><button onclick="window.ventasModule.editVenta('${v.id}')" class="w-full px-3 py-1.5 bg-yellow-500 text-white text-xs rounded-lg hover:bg-yellow-600">Editar</button><button onclick="window.ventasModule.deleteVenta('${v.id}')" class="w-full px-3 py-1.5 bg-red-500 text-white text-xs rounded-lg hover:bg-red-600">Eliminar</button></div></td></tr>`; });
-            tHTML += `</tbody></table>`; cont.innerHTML = tHTML;
+            // REFACTOR: Usando Template UI
+            cont.innerHTML = window.ventasUI.getSalesListTemplate(_ventasGlobal);
         }, (err) => { 
-            if (err.code === 'permission-denied' || err.code === 'unauthenticated') {
-                console.log(`Ventas (lista) listener error ignored (assumed logout): ${err.code}`);
-                return;
-            }
+            if (err.code === 'permission-denied' || err.code === 'unauthenticated') return;
             console.error("Error lista ventas:", err); 
             if(cont) cont.innerHTML = `<p class="text-red-500">Error al cargar.</p>`; 
         });
@@ -595,16 +418,9 @@
     }
 
     function showCierreSubMenuView() {
-         _mainContent.innerHTML = `
-            <div class="p-4 pt-8"> <div class="container mx-auto"> <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl text-center">
-                <h2 class="text-2xl font-bold text-gray-800 mb-6">Cierre de Ventas</h2>
-                <div class="space-y-4">
-                    <button id="verCierreBtn" class="w-full px-6 py-3 bg-cyan-500 text-white rounded-lg shadow-md hover:bg-cyan-600">Ver Cierre</button>
-                    <button id="ejecutarCierreBtn" class="w-full px-6 py-3 bg-red-600 text-white rounded-lg shadow-md hover:bg-red-700">Ejecutar Cierre</button>
-                </div>
-                <button id="backToVentasTotalesBtn" class="mt-6 w-full px-6 py-3 bg-gray-400 text-white rounded-lg shadow-md hover:bg-gray-500">Volver</button>
-            </div> </div> </div>
-        `;
+        // REFACTOR: Usando Template UI
+         _mainContent.innerHTML = window.ventasUI.getClosingMenuTemplate();
+         
         document.getElementById('verCierreBtn').addEventListener('click', showVerCierreView);
         document.getElementById('ejecutarCierreBtn').addEventListener('click', ejecutarCierre);
         document.getElementById('backToVentasTotalesBtn').addEventListener('click', showVentasTotalesView);
@@ -626,9 +442,7 @@
             if (snapshotDoc.exists() && snapshotDoc.data().inventario) {
                 cargaInicialInventario = snapshotDoc.data().inventario;
             }
-        } catch (snapError) {
-            console.warn("Error al leer snapshot para 'Ver Cierre':", snapError);
-        }
+        } catch (snapError) { console.warn("Error snapshot cierre:", snapError); }
 
         if (ventas.length === 0 && obsequios.length === 0) {
             _showModal('Aviso', 'No hay ventas ni obsequios.');
@@ -637,7 +451,7 @@
         
         try {
             if (!window.dataModule || !window.dataModule._processSalesDataForModal || !window.dataModule.getDisplayQty) {
-                throw new Error("El módulo de datos (dataModule) o sus funciones no están disponibles.");
+                throw new Error("Módulo de datos no disponible.");
             }
 
             const { clientData, clientTotals, grandTotalValue, sortedClients, finalProductOrder, vaciosMovementsPorTipo } = 
@@ -673,9 +487,7 @@
             finalProductOrder.forEach(p=>{
                 let tQ=0; 
                 sortedClients.forEach(cli=>tQ+=clientData[cli].products[p.id]||0); 
-                
                 const qtyDisplay = window.dataModule.getDisplayQty(tQ, p);
-                
                 let dT = (tQ > 0) ? `${qtyDisplay.value} ${qtyDisplay.unit}` : '';
                 fHTML+=`<td class="p-1 border text-center">${dT}</td>`;
             }); 
@@ -683,9 +495,7 @@
             
             let vHTML=''; const cliVacios=Object.keys(vaciosMovementsPorTipo).filter(cli=>TIPOS_VACIO.some(t=>(vaciosMovementsPorTipo[cli][t]?.entregados||0)>0||(vaciosMovementsPorTipo[cli][t]?.devueltos||0)>0)).sort(); if(cliVacios.length>0){ vHTML=`<h3 class="text-xl my-6">Reporte Vacíos</h3><div class="overflow-auto border"><table><thead><tr><th>Cliente</th><th>Tipo</th><th>Entregados</th><th>Devueltos</th><th>Neto</th></tr></thead><tbody>`; cliVacios.forEach(cli=>{const movs=vaciosMovementsPorTipo[cli]; TIPOS_VACIO.forEach(t=>{const mov=movs[t]||{e:0,d:0}; if(mov.entregados>0||mov.devueltos>0){const neto=mov.entregados-mov.devueltos; const nClass=neto>0?'text-red-600':(neto<0?'text-green-600':''); vHTML+=`<tr><td>${cli}</td><td>${t}</td><td>${mov.entregados}</td><td>${mov.devueltos}</td><td class="${nClass}">${neto>0?`+${neto}`:neto}</td></tr>`;}});}); vHTML+='</tbody></table></div>';}
             
-            const snapshotWarning = ''; 
-
-            const reportHTML = `<div class="text-left max-h-[80vh] overflow-auto"> <h3 class="text-xl font-bold mb-4">Reporte Cierre</h3> ${snapshotWarning} <div class="overflow-auto border"> <table class="min-w-full bg-white text-xs"> <thead class="bg-gray-200">${hHTML}</thead> <tbody>${bHTML}</tbody> <tfoot>${fHTML}</tfoot> </table> </div> ${vHTML} </div>`;
+            const reportHTML = `<div class="text-left max-h-[80vh] overflow-auto"> <h3 class="text-xl font-bold mb-4">Reporte Cierre</h3> <div class="overflow-auto border"> <table class="min-w-full bg-white text-xs"> <thead class="bg-gray-200">${hHTML}</thead> <tbody>${bHTML}</tbody> <tfoot>${fHTML}</tfoot> </table> </div> ${vHTML} </div>`;
             _showModal('Reporte de Cierre', reportHTML, null, 'Cerrar');
         } catch (error) { console.error("Error reporte:", error); _showModal('Error', `No se pudo generar: ${error.message}`); }
     }
@@ -714,26 +524,19 @@
                 const snapshotDoc = await _getDoc(snapshotRef);
                 if (snapshotDoc.exists() && snapshotDoc.data().inventario) {
                     cargaInicialInventario = snapshotDoc.data().inventario;
-                    console.log("Snapshot de Carga Inicial encontrado para el cierre.");
-                } else {
-                    console.warn("No se encontró snapshot de Carga Inicial para el cierre.");
                 }
             } catch (snapError) {
                 console.error("Error al leer snapshot de Carga Inicial durante el cierre:", snapError);
-                _showModal('Advertencia', 'Error al leer Carga Inicial (snapshot). El reporte podría no ser exacto.');
             }
 
             try {
                  _showModal('Progreso', 'Generando Excel...');
-                 
                  let vendedorInfo = {};
                  if (window.userRole === 'user') {
                      const uDocRef=_doc(_db,"users",_userId); const uDoc=await _getDoc(uDocRef); const uData=uDoc.exists()?uDoc.data():{};
                      vendedorInfo={userId:_userId,nombre:uData.nombre||'',apellido:uData.apellido||'',camion:uData.camion||'',email:uData.email||''};
                  }
-
-                 const fechaCierre = new Date(); // Fecha actual estándar
-                 
+                 const fechaCierre = new Date();
                  const cierreData = { 
                      fecha: fechaCierre, 
                      ventas: ventas.map(({id,...rest})=>rest), 
@@ -742,27 +545,15 @@
                      cargaInicialInventario: cargaInicialInventario,
                      vendedorInfo: vendedorInfo
                  }; 
-
-                 // --- FIX: Crear objeto especial solo para la exportación local ---
-                 // data.js espera un objeto Timestamp-like con .toDate()
-                 const cierreDataForExport = {
-                    ...cierreData,
-                    fecha: { toDate: () => fechaCierre }
-                 };
+                 const cierreDataForExport = { ...cierreData, fecha: { toDate: () => fechaCierre } };
 
                  if (window.dataModule && typeof window.dataModule.exportSingleClosingToExcel === 'function') {
-                    // Usamos el objeto modificado solo para la función de exportar
                     await window.dataModule.exportSingleClosingToExcel(cierreDataForExport);
                  } else {
                     console.error("Error: window.dataModule.exportSingleClosingToExcel no está definida.");
-                    _showModal('Advertencia', 'No se pudo generar el archivo Excel (función no encontrada), pero el cierre continuará.');
                  }
                  
                  _showModal('Progreso', 'Archivando y eliminando...');
-                 
-                 // CORRECCIÓN FINAL: Guardar siempre en la carpeta del usuario
-                 // Esto asegura que la escritura sea válida bajo las reglas de seguridad
-                 // match /users/{userId}/{document=**} { allow read, write: if isAuthenticated() && request.auth.uid == userId; }
                  const cDocRef = _doc(_collection(_db, `artifacts/${_appId}/users/${_userId}/cierres`));
                  await _setDoc(cDocRef, cierreData);
                  
@@ -772,7 +563,7 @@
                  batch.delete(snapshotRef);
                  await batch.commit();
 
-                _showModal('Éxito', 'Cierre completado. Reporte descargado, ventas y obsequios archivados/eliminados.', showVentasTotalesView); return true;
+                _showModal('Éxito', 'Cierre completado.', showVentasTotalesView); return true;
             } catch(e) { console.error("Error cierre:", e); _showModal('Error', `Error: ${e.message}`); return false; }
         }, 'Sí, Ejecutar Cierre', null, true);
     }
@@ -798,10 +589,7 @@
     
     function deleteVenta(ventaId) {
          const venta = _ventasGlobal.find(v => v.id === ventaId);
-         if (!venta) {
-            _showModal('Error', 'Venta no encontrada en la lista actual.');
-            return;
-         }
+         if (!venta) { _showModal('Error', 'Venta no encontrada en la lista actual.'); return; }
 
         _showModal('Confirmar Eliminación', `¿Eliminar venta de ${venta.clienteNombre}? <strong class="text-red-600">Esta acción revertirá el stock y el saldo de vacíos asociados a esta venta.</strong> ¿Continuar?`, async () => {
             _showModal('Progreso', 'Eliminando venta y ajustando datos...');
@@ -811,18 +599,14 @@
 
                 await _runTransaction(_db, async (transaction) => {
                     const ventaDoc = await transaction.get(ventaRef);
-                    // Check if client exists (could be deleted)
                     const clienteDoc = await transaction.get(clienteRef);
-
                     if (!ventaDoc.exists()) throw new Error("La venta ya no existe.");
 
                     const ventaData = ventaDoc.data();
-                    const clienteData = clienteDoc.exists() ? clienteDoc.data() : null;
                     const productosVendidos = ventaData.productos || [];
 
                     const inventarioRefs = {};
                     const productoIds = productosVendidos.map(p => p.id).filter(id => id);
-                    
                     const inventarioDocsMap = new Map();
                     if (productoIds.length > 0) {
                         const uniqueProductIds = [...new Set(productoIds)];
@@ -837,8 +621,7 @@
                         });
                     }
 
-                    const saldoVaciosClienteActual = clienteData?.saldoVacios || {};
-                    const nuevosSaldoVaciosCliente = { ...saldoVaciosClienteActual };
+                    const nuevosSaldoVaciosCliente = { ...(clienteDoc.exists() ? clienteDoc.data().saldoVacios : {}) };
                     const ajustesInventario = [];
                     const ajustesVaciosNetos = {};
 
@@ -850,111 +633,68 @@
                                 ajustesInventario.push({ ref: productoInventarioRef, cantidad: unidadesARestaurar, id: productoVendido.id });
                             }
                         }
-
                         if (productoVendido.manejaVacios && productoVendido.tipoVacio) {
                             const tipo = productoVendido.tipoVacio;
                             const cajasEntregadas = productoVendido.cantidadVendida?.cj || 0;
-                            if (cajasEntregadas > 0) {
-                                ajustesVaciosNetos[tipo] = (ajustesVaciosNetos[tipo] || 0) - cajasEntregadas;
-                            }
+                            if (cajasEntregadas > 0) ajustesVaciosNetos[tipo] = (ajustesVaciosNetos[tipo] || 0) - cajasEntregadas;
                         }
                     }
 
                     const vaciosDevueltosEnVenta = ventaData.vaciosDevueltosPorTipo || {};
                     for (const tipo in vaciosDevueltosEnVenta) {
                         const cajasDevueltas = vaciosDevueltosEnVenta[tipo] || 0;
-                        if (cajasDevueltas > 0) {
-                            ajustesVaciosNetos[tipo] = (ajustesVaciosNetos[tipo] || 0) + cajasDevueltas;
-                        }
+                        if (cajasDevueltas > 0) ajustesVaciosNetos[tipo] = (ajustesVaciosNetos[tipo] || 0) + cajasDevueltas;
                     }
 
                     for (const ajuste of ajustesInventario) {
                          const invDoc = inventarioDocsMap.get(ajuste.id);
                          const stockActual = invDoc && invDoc.exists() ? (invDoc.data().cantidadUnidades || 0) : 0;
-                         const nuevoStock = stockActual + ajuste.cantidad;
-                         transaction.set(ajuste.ref, { cantidadUnidades: nuevoStock }, { merge: true });
+                         transaction.set(ajuste.ref, { cantidadUnidades: stockActual + ajuste.cantidad }, { merge: true });
                     }
 
-                    let saldoVaciosModificado = false;
                     if (clienteDoc.exists()) {
+                        let modificado = false;
                         for (const tipo in ajustesVaciosNetos) {
-                            const ajuste = ajustesVaciosNetos[tipo];
-                            if (ajuste !== 0) {
-                                nuevosSaldoVaciosCliente[tipo] = (nuevosSaldoVaciosCliente[tipo] || 0) + ajuste;
-                                saldoVaciosModificado = true;
+                            if (ajustesVaciosNetos[tipo] !== 0) {
+                                nuevosSaldoVaciosCliente[tipo] = (nuevosSaldoVaciosCliente[tipo] || 0) + ajustesVaciosNetos[tipo];
+                                modificado = true;
                             }
                         }
-                        if (saldoVaciosModificado) {
-                            transaction.update(clienteRef, { saldoVacios: nuevosSaldoVaciosCliente });
-                        }
+                        if (modificado) transaction.update(clienteRef, { saldoVacios: nuevosSaldoVaciosCliente });
                     }
-
                     transaction.delete(ventaRef);
                 });
-
                 _showModal('Éxito', 'Venta eliminada. Inventario y saldos de vacíos ajustados.');
-
-            } catch (error) {
-                console.error("Error eliminando/revirtiendo venta:", error);
-                _showModal('Error', `No se pudo eliminar/revertir la venta: ${error.message}`);
-            }
+            } catch (error) { console.error("Error eliminando:", error); _showModal('Error', `No se pudo eliminar: ${error.message}`); }
         }, 'Sí, Eliminar y Revertir', null, true);
     }
 
     async function showEditVentaView(venta) {
         if (_floatingControls) _floatingControls.classList.add('hidden'); _monedaActual = 'USD';
-        _mainContent.innerHTML = `
-            <div class="p-2 sm:p-4 w-full"> <div class="bg-white/90 backdrop-blur-sm p-4 sm:p-6 rounded-lg shadow-xl flex flex-col h-full" style="min-height: calc(100vh - 2rem);">
-                <div id="venta-header-section" class="mb-4">
-                    <div class="flex justify-between items-center mb-4"> <h2 class="text-xl font-bold">Editando Venta</h2> <button id="backToVentasBtn" class="px-4 py-2 bg-gray-400 text-white text-sm rounded-lg shadow-md hover:bg-gray-500">Volver</button> </div>
-                    <div class="p-4 bg-gray-100 rounded-lg"> <p><span class="font-medium">Cliente:</span> <span class="font-bold">${venta.clienteNombre||'N/A'}</span></p> <p class="text-sm"><span class="font-medium">Fecha Orig:</span> ${venta.fecha?.toDate?venta.fecha.toDate().toLocaleString('es-ES'):'N/A'}</p> </div>
-                </div>
-                <div id="vacios-devueltos-section" class="mb-4"> <h3 class="text-sm font-semibold text-cyan-700 mb-1">Vacíos Devueltos:</h3> <div class="grid grid-cols-3 gap-2"> ${TIPOS_VACIO.map(t => `<div><label for="vacios-${t.replace(/\s+/g,'-')}" class="text-xs mb-1 block">${t}</label><input type="number" min="0" value="${venta.vaciosDevueltosPorTipo?(venta.vaciosDevueltosPorTipo[t]||0):0}" id="vacios-${t.replace(/\s+/g,'-')}" class="w-16 p-1 text-center border rounded-md" data-tipo-vacio="${t}" oninput="window.ventasModule.handleTipoVacioChange(event)"></div>`).join('')} </div> </div>
-                <div id="inventarioTableContainer" class="animate-fade-in flex-grow flex flex-col overflow-hidden">
-                    <div class="mb-2"> <label for="rubroFilter" class="text-xs">Filtrar Rubro:</label> <select id="rubroFilter" class="w-full px-2 py-1 border rounded-lg text-sm"><option value="">Todos</option></select> </div>
-                    <div class="overflow-auto flex-grow rounded-lg shadow"> <table class="min-w-full bg-white text-xs"><thead class="bg-gray-200 sticky top-0 z-10"><tr class="uppercase"> <th class="py-2 px-1 text-center">Cant.</th> <th class="py-2 px-2 text-left">Producto</th> <th class="py-2 px-2 text-left price-toggle" onclick="window.ventasModule.toggleMoneda()">Precio</th> <th class="py-2 px-1 text-center">Stock Disp.</th> </tr></thead><tbody id="inventarioTableBody" class="text-gray-600"></tbody></table> </div>
-                </div>
-                <div id="venta-footer-section" class="mt-4 flex items-center justify-between"> <span id="ventaTotal" class="text-lg font-bold">$0.00</span> <button id="saveChangesBtn" class="px-6 py-3 bg-blue-500 text-white rounded-lg shadow-md hover:bg-blue-600">Guardar Cambios</button> </div>
-            </div> </div>
-        `;
-        document.getElementById('saveChangesBtn').addEventListener('click', handleGuardarVentaEditada); document.getElementById('backToVentasBtn').addEventListener('click', showVentasActualesView);
+        
+        // REFACTOR: Template UI
+        _mainContent.innerHTML = window.ventasUI.getEditSaleTemplate(venta, TIPOS_VACIO);
+        
+        document.getElementById('saveChangesBtn').addEventListener('click', handleGuardarVentaEditada); 
+        document.getElementById('backToVentasBtn').addEventListener('click', showVentasActualesView);
+        
         _showModal('Progreso', 'Cargando datos...');
         try {
             const invSnap = await _getDocs(_collection(_db, `artifacts/${_appId}/users/${_userId}/inventario`)); _inventarioCache = invSnap.docs.map(d => ({ id: d.id, ...d.data() }));
             _ventaActual = { cliente: { id: venta.clienteId, nombreComercial: venta.clienteNombre, nombrePersonal: venta.clienteNombrePersonal }, productos: (venta.productos||[]).reduce((acc,p)=>{const pComp=_inventarioCache.find(inv=>inv.id===p.id)||p; const cant=p.cantidadVendida||{}; acc[p.id]={...pComp, cantCj:cant.cj||0, cantPaq:cant.paq||0, cantUnd:cant.und||0, totalUnidadesVendidas:p.totalUnidadesVendidas||0}; return acc;},{}), vaciosDevueltosPorTipo: venta.vaciosDevueltosPorTipo||{} };
             TIPOS_VACIO.forEach(t => { if(!_ventaActual.vaciosDevueltosPorTipo[t]) _ventaActual.vaciosDevueltosPorTipo[t]=0; });
             document.getElementById('rubroFilter').addEventListener('change', renderEditVentasInventario); populateRubroFilter(); document.getElementById('rubroFilter').value = '';
-            renderEditVentasInventario(); updateVentaTotal(); document.getElementById('modalContainer').classList.add('hidden');
-        } catch (error) { console.error("Error cargando edit:", error); _showModal('Error', `Error: ${error.message}`); showVentasActualesView(); }
+            
+            renderEditVentasInventario(); 
+            document.getElementById('modalContainer').classList.add('hidden');
+        } catch (error) { console.error("Error edit init:", error); _showModal('Error', `Error: ${error.message}`); showVentasActualesView(); }
     }
 
-    async function renderEditVentasInventario() {
-        const body = document.getElementById('inventarioTableBody'), rF = document.getElementById('rubroFilter'); if (!body || !rF) return; body.innerHTML = `<tr><td colspan="4" class="text-center text-gray-500">Cargando...</td></tr>`;
-        const selRubro = rF.value; let invToShow = _inventarioCache.filter(p => _originalVentaForEdit.productos.some(oP => oP.id === p.id) || (p.cantidadUnidades || 0) > 0);
-        if (selRubro) invToShow = invToShow.filter(p => p.rubro === selRubro);
-        const sortFunc = await window.getGlobalProductSortFunction(); invToShow.sort(sortFunc); body.innerHTML = '';
-        if (invToShow.length === 0) { body.innerHTML = `<tr><td colspan="4" class="text-center text-gray-500">No hay productos ${selRubro ? 'en este rubro' : ''}.</td></tr>`; return; }
-        let lastHKey = null; const fSortKey = window._sortPreferenceCache ? window._sortPreferenceCache[0] : 'segmento';
-        invToShow.forEach(prod => {
-             const curHVal = prod[fSortKey] || `Sin ${fSortKey}`; if (curHVal !== lastHKey) { lastHKey = curHVal; const hRow=document.createElement('tr'); hRow.innerHTML=`<td colspan="4" class="py-1 px-2 bg-gray-100 font-bold sticky top-[calc(theme(height.10))] z-[9]">${lastHKey}</td>`; body.appendChild(hRow); }
-             const vPor=prod.ventaPor||{und:true}, vActProd=_ventaActual.productos[prod.id]||{}, origVProd=_originalVentaForEdit.productos.find(p=>p.id===prod.id), precios=prod.precios||{und:prod.precioPorUnidad||0};
-             const fPrice = (v) => { if (isNaN(v)) v=0; if (_monedaActual==='COP'&&_tasaCOP>0) return `COP ${(Math.ceil((v*_tasaCOP)/100)*100).toLocaleString('es-CO')}`; if (_monedaActual==='Bs'&&_tasaBs>0) return `Bs.S ${(v*_tasaBs).toLocaleString('es-VE',{minimumFractionDigits:2,maximumFractionDigits:2})}`; return `$${v.toFixed(2)}`; };
-             const cERow = (t, cC, pT, descT) => { const cStockU=prod.cantidadUnidades||0, origQtySold = origVProd?.cantidadVendida?.[t] ?? 0; let factor=t==='cj'?(prod.unidadesPorCaja||1):t==='paq'?(prod.unidadesPorPaquete||1):1; const maxUAvail=cStockU+(origQtySold*factor); const maxInp=Math.floor(maxUAvail/factor); const stockDispT=Math.floor(cStockU/factor); const r=document.createElement('tr'); r.className='border-b hover:bg-gray-50'; r.innerHTML=`<td class="py-2 px-1 text-center align-middle"> <input type="number" min="0" max="${maxInp}" value="${cC}" class="w-16 p-1 text-center border rounded-md" data-product-id="${prod.id}" data-tipo-venta="${t}" oninput="window.ventasModule.handleQuantityChange(event)"> </td> <td class="py-2 px-2 text-left align-middle">${descT} <span class="text-xs text-gray-500">${prod.marca||'S/M'}</span></td> <td class="py-2 px-2 text-left align-middle font-semibold price-toggle" onclick="window.ventasModule.toggleMoneda()">${fPrice(pT)}</td> <td class="py-2 px-1 text-center align-middle">${stockDispT} ${t.toUpperCase()}</td>`; body.appendChild(r); };
-             if (vPor.cj) { const uCj=prod.unidadesPorCaja||1; cERow('cj', vActProd.cantCj||0, precios.cj||0, `${prod.presentacion} (Cj/${uCj} und)`); }
-             if (vPor.paq) { const uPaq=prod.unidadesPorPaquete||1; cERow('paq', vActProd.cantPaq||0, precios.paq||0, `${prod.presentacion} (Paq/${uPaq} und)`); }
-             if (vPor.und) { cERow('und', vActProd.cantUnd||0, precios.und||0, `${prod.presentacion} (Und)`); }
-        }); updateVentaTotal();
-    }
-
-    // *** MODIFICADO: handleGuardarVentaEditada CON TRANSACCIÓN ATÓMICA ***
     async function handleGuardarVentaEditada() {
         if (!_originalVentaForEdit) { _showModal('Error', 'Venta original no encontrada.'); return; }
         const prods = Object.values(_ventaActual.productos).filter(p => p.totalUnidadesVendidas > 0);
         const hayVac = Object.values(_ventaActual.vaciosDevueltosPorTipo || {}).some(c => c > 0);
-        
-        if (prods.length === 0 && !hayVac && Object.values(_originalVentaForEdit.vaciosDevueltosPorTipo || {}).every(c => c === 0)) {
-            _showModal('Error', 'La venta editada no puede quedar completamente vacía.'); return;
-        }
+        if (prods.length === 0 && !hayVac && Object.values(_originalVentaForEdit.vaciosDevueltosPorTipo || {}).every(c => c === 0)) { _showModal('Error', 'La venta no puede quedar vacía.'); return; }
 
         _showModal('Confirmar Cambios', '¿Guardar cambios? Stock y saldos se ajustarán.', async () => {
             _showModal('Progreso', 'Guardando y ajustando...');
@@ -963,125 +703,72 @@
                 const clientRef = _doc(_db, `artifacts/ventas-9a210/public/data/clientes`, _originalVentaForEdit.clienteId);
 
                 await _runTransaction(_db, async (transaction) => {
-                     // 1. Prepare Data
                      const origProds = new Map((_originalVentaForEdit.productos||[]).map(p=>[p.id,p]));
                      const newProds = new Map(Object.values(_ventaActual.productos).map(p=>[p.id,p]));
                      const allPIds = new Set([...origProds.keys(),...newProds.keys()]);
-                     
-                     // 2. READS
                      const clientDoc = await transaction.get(clientRef);
                      
                      const invRefs = [];
-                     allPIds.forEach(id => {
-                         invRefs.push({ id: id, ref: _doc(_db, `artifacts/${_appId}/users/${_userId}/inventario`, id) });
-                     });
-                     
-                     // Execute all inventory reads
+                     allPIds.forEach(id => { invRefs.push({ id: id, ref: _doc(_db, `artifacts/${_appId}/users/${_userId}/inventario`, id) }); });
                      const invDocs = await Promise.all(invRefs.map(item => transaction.get(item.ref)));
                      const invMap = new Map();
-                     invDocs.forEach((doc, i) => {
-                         if (doc.exists()) invMap.set(invRefs[i].id, doc);
-                     });
+                     invDocs.forEach((doc, i) => { if (doc.exists()) invMap.set(invRefs[i].id, doc); });
 
-                     // 3. LOGIC
-                     const vaciosAdj = {}; 
-                     TIPOS_VACIO.forEach(t=>vaciosAdj[t]=0);
+                     const vaciosAdj = {}; TIPOS_VACIO.forEach(t=>vaciosAdj[t]=0);
                      
                      for (const pId of allPIds) {
                          const origP = origProds.get(pId);
                          const newP = newProds.get(pId);
-                         
                          const origU = origP ? (origP.totalUnidadesVendidas||0) : 0;
                          const newU = newP ? (newP.totalUnidadesVendidas||0) : 0;
-                         const deltaU = origU - newU; // Positive = Returning to stock, Negative = Taking more
+                         const deltaU = origU - newU; 
 
                          const invDoc = invMap.get(pId);
-                         if (!invDoc) {
-                             if (deltaU < 0) throw `Producto ID ${pId} ya no existe en inventario, no se puede vender más.`;
-                             continue; 
-                         }
+                         if (!invDoc) { if (deltaU < 0) throw `Producto ${pId} no existe, imposible vender más.`; continue; }
                          
                          const pData = invDoc.data();
-                         
                          if (deltaU !== 0) {
                              const currentStock = pData.cantidadUnidades || 0;
-                             const newStock = currentStock + deltaU;
-                             if (newStock < 0) throw `Stock insuficiente para ${pData.presentacion}. Disponible: ${currentStock}, Necesario: ${Math.abs(deltaU)}`;
-                             transaction.update(invRefs.find(r=>r.id===pId).ref, { cantidadUnidades: newStock });
+                             if ((currentStock + deltaU) < 0) throw `Stock insuficiente: ${pData.presentacion}`;
+                             transaction.update(invRefs.find(r=>r.id===pId).ref, { cantidadUnidades: currentStock + deltaU });
                          }
 
                          if (pData.manejaVacios && pData.tipoVacio) {
                              const tV = pData.tipoVacio;
-                             const origCj = origP?.cantidadVendida?.cj || 0;
-                             const newCj = newP?.cantCj || 0;
-                             const deltaCj = newCj - origCj; 
+                             const deltaCj = (newP?.cantCj || 0) - (origP?.cantidadVendida?.cj || 0); 
                              if (vaciosAdj.hasOwnProperty(tV)) vaciosAdj[tV] += deltaCj;
                          }
                      }
 
                      const origVac = _originalVentaForEdit.vaciosDevueltosPorTipo || {};
                      const newVac = _ventaActual.vaciosDevueltosPorTipo || {};
-                     TIPOS_VACIO.forEach(t => {
-                         const origD = origVac[t] || 0;
-                         const newD = newVac[t] || 0;
-                         const deltaD = newD - origD; 
-                         if (vaciosAdj.hasOwnProperty(t)) vaciosAdj[t] -= deltaD;
-                     });
+                     TIPOS_VACIO.forEach(t => { if (vaciosAdj.hasOwnProperty(t)) vaciosAdj[t] -= ((newVac[t] || 0) - (origVac[t] || 0)); });
 
-                     // 4. WRITES
                      if (clientDoc.exists() && Object.values(vaciosAdj).some(a => a !== 0)) {
-                         const cliData = clientDoc.data();
-                         const sVac = cliData.saldoVacios || {};
-                         for (const tV in vaciosAdj) {
-                             const adj = vaciosAdj[tV];
-                             if (adj !== 0) sVac[tV] = (sVac[tV] || 0) + adj;
-                         }
+                         const sVac = clientDoc.data().saldoVacios || {};
+                         for (const tV in vaciosAdj) if (vaciosAdj[tV] !== 0) sVac[tV] = (sVac[tV] || 0) + vaciosAdj[tV];
                          transaction.update(clientRef, { saldoVacios: sVac });
                      }
 
                      let nTotal = 0;
                      const nItems = Object.values(_ventaActual.productos).filter(p => p.totalUnidadesVendidas > 0).map(p => {
                          const pr = p.precios || { und: p.precioPorUnidad || 0 };
-                         const sub = (pr.cj || 0) * (p.cantCj || 0) + (pr.paq || 0) * (p.cantPaq || 0) + (pr.und || 0) * (p.cantUnd || 0);
-                         nTotal += sub;
-                         
-                         const uCj = p.unidadesPorCaja || 1;
-                         const uPaq = p.unidadesPorPaquete || 1;
-                         const totURecalc = (p.cantCj || 0) * uCj + (p.cantPaq || 0) * uPaq + (p.cantUnd || 0);
-
+                         nTotal += (pr.cj || 0) * (p.cantCj || 0) + (pr.paq || 0) * (p.cantPaq || 0) + (pr.und || 0) * (p.cantUnd || 0);
                          return {
-                             id: p.id, presentacion: p.presentacion, rubro: p.rubro ?? null, marca: p.marca ?? null, segmento: p.segmento ?? null,
+                             id: p.id, presentacion: p.presentacion, rubro: p.rubro, marca: p.marca, segmento: p.segmento,
                              precios: p.precios, ventaPor: p.ventaPor, unidadesPorPaquete: p.unidadesPorPaquete, unidadesPorCaja: p.unidadesPorCaja,
                              cantidadVendida: { cj: p.cantCj || 0, paq: p.cantPaq || 0, und: p.cantUnd || 0 },
-                             totalUnidadesVendidas: totURecalc, iva: p.iva ?? 0, manejaVacios: p.manejaVacios || false, tipoVacio: p.tipoVacio || null
+                             totalUnidadesVendidas: (p.cantCj||0)*(p.unidadesPorCaja||1) + (p.cantPaq||0)*(p.unidadesPorPaquete||1) + (p.cantUnd||0), 
+                             iva: p.iva ?? 0, manejaVacios: p.manejaVacios || false, tipoVacio: p.tipoVacio || null
                          };
                      });
                      
-                     transaction.update(ventaRef, {
-                         productos: nItems,
-                         total: nTotal,
-                         vaciosDevueltosPorTipo: _ventaActual.vaciosDevueltosPorTipo,
-                         fechaModificacion: new Date()
-                     });
+                     transaction.update(ventaRef, { productos: nItems, total: nTotal, vaciosDevueltosPorTipo: _ventaActual.vaciosDevueltosPorTipo, fechaModificacion: new Date() });
                 });
-
-                _originalVentaForEdit=null; 
-                _showModal('Éxito','Venta actualizada con integridad.', showVentasActualesView);
-
-            } catch (error) { 
-                console.error("Error guardando edit:", error); 
-                _showModal('Error', `Error: ${error.message}`); 
-            }
+                _originalVentaForEdit=null; _showModal('Éxito','Venta actualizada.', showVentasActualesView);
+            } catch (error) { console.error("Error edit:", error); _showModal('Error', `Error: ${error.message}`); }
         }, 'Sí, Guardar', null, true);
     }
 
-    window.ventasModule = {
-        toggleMoneda,
-        handleQuantityChange,
-        handleTipoVacioChange,
-        showPastSaleOptions,
-        editVenta,
-        deleteVenta,
-        invalidateCache: () => { /* No action needed */ }
-    };
+    window.ventasModule = { toggleMoneda, handleQuantityChange, handleTipoVacioChange, showPastSaleOptions, editVenta, deleteVenta, invalidateCache: () => { } };
 })();
