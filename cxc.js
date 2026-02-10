@@ -37,19 +37,19 @@
             <div class="p-4 pt-8 w-full max-w-4xl mx-auto">
                 <div class="bg-white/90 backdrop-blur-sm p-6 rounded-lg shadow-xl min-h-[80vh]">
                     <div class="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
-                        <h1 class="text-3xl font-bold text-gray-800">Cuentas por Cobrar (CSV)</h1>
+                        <h1 class="text-3xl font-bold text-gray-800">Cuentas por Cobrar</h1>
                         <div class="flex flex-col items-end text-right">
                             <button id="backToMenuBtn" class="px-4 py-2 bg-gray-400 text-white rounded-lg shadow hover:bg-gray-500 text-sm mb-2">Volver al Menú</button>
                             <span id="dataStatusLabel" class="text-xs font-semibold text-blue-600 mb-1"></span>
                             <span id="lastUpdateLabel" class="text-xs text-gray-500 italic"></span>
                             
                             ${_userRole === 'admin' ? `
-                                <button id="updateCXCBtn" class="mt-2 px-4 py-2 bg-orange-600 text-white rounded-lg shadow hover:bg-orange-700 text-sm font-bold flex items-center gap-2">
+                                <button id="updateCXCBtn" class="mt-2 px-4 py-2 bg-green-600 text-white rounded-lg shadow hover:bg-green-700 text-sm font-bold flex items-center gap-2">
                                     <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
-                                    Cargar CSV
+                                    Cargar Excel (XLSX)
                                 </button>
-                                <!-- Aceptamos CSV y TXT -->
-                                <input type="file" id="csvInput" accept=".csv, .txt" class="hidden">
+                                <!-- Aceptamos Excel, CSV y TXT -->
+                                <input type="file" id="fileInput" accept=".xlsx, .xls, .csv, .txt" class="hidden">
                             ` : ''}
                         </div>
                     </div>
@@ -70,9 +70,12 @@
         
         if (_userRole === 'admin') {
             const btn = document.getElementById('updateCXCBtn');
-            const input = document.getElementById('csvInput');
-            btn.addEventListener('click', () => input.click());
-            input.addEventListener('change', handleCSVUpload);
+            const input = document.getElementById('fileInput');
+            btn.addEventListener('click', () => {
+                input.value = ''; // Limpiar previo para permitir re-selección
+                input.click();
+            });
+            input.addEventListener('change', handleFileUpload);
         }
 
         document.getElementById('clientSearch').addEventListener('input', (e) => renderCXCList(e.target.value));
@@ -80,9 +83,174 @@
         await syncAndLoadData();
     };
 
-    /**
-     * Sincronización (Igual que antes, robusta y offline-first)
-     */
+    // --- MANEJO DE ARCHIVOS (EXCEL / CSV) ---
+    async function handleFileUpload(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        _showModal('Procesando', 'Leyendo archivo... Esto puede tardar unos segundos.');
+
+        const reader = new FileReader();
+
+        // Detectar tipo de archivo
+        const isExcel = file.name.endsWith('.xlsx') || file.name.endsWith('.xls');
+        
+        if (isExcel) {
+            reader.onload = async (e) => {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, { type: 'array' });
+                    
+                    let allClients = [];
+
+                    // Iterar sobre todas las hojas del Excel
+                    workbook.SheetNames.forEach(sheetName => {
+                        // Ignorar la hoja de resumen si se llama "Table 1" o similar y solo queremos detalles
+                        // Pero como el resumen tiene el ID del cliente, quizás sea útil.
+                        // La lógica será: Buscar patrón "CLIENTE" y "TOTALES" en cada hoja.
+                        
+                        const sheet = workbook.Sheets[sheetName];
+                        // Convertir hoja a JSON array de arrays para fácil lectura
+                        const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+                        
+                        let currentClient = null;
+
+                        for (let row of rows) {
+                            if (!row || row.length === 0) continue;
+
+                            const firstCol = (row[0] || '').toString().trim();
+                            
+                            // 1. Detectar CLIENTE
+                            // En el Excel convertido, parece que la Columna A tiene "CLIENTE" y la B tiene el nombre
+                            if (firstCol === 'CLIENTE') {
+                                const name = (row[1] || '').toString().trim();
+                                if (name && name.length > 2) {
+                                    currentClient = { name: name, amount: 0 };
+                                }
+                            }
+                            // A veces el nombre está en la segunda fila: "NOMBRE", [NOMBRE REAL]
+                            else if (firstCol === 'NOMBRE' && !currentClient) {
+                                // Fallback por si el formato varía
+                                const name = (row[1] || '').toString().trim();
+                                if (name && name.length > 2) {
+                                    currentClient = { name: name, amount: 0 };
+                                }
+                            }
+
+                            // 2. Detectar TOTALES
+                            // En el Excel, suele ser "TOTALES" en Col A y el monto en Col C (índice 2)
+                            if (firstCol === 'TOTALES' && currentClient) {
+                                // Buscar el valor numérico en la fila. Usualmente columna index 2 (C)
+                                let amount = 0;
+                                // A veces está en la columna 2, a veces en la 3. Buscamos el primer número válido.
+                                for (let i = 2; i < row.length; i++) {
+                                    const val = row[i];
+                                    if (typeof val === 'number') {
+                                        amount = val;
+                                        break;
+                                    } else if (typeof val === 'string') {
+                                        // Limpiar "$", "," y espacios
+                                        const cleanVal = val.replace(/[^0-9.-]/g, '');
+                                        if (cleanVal && !isNaN(parseFloat(cleanVal))) {
+                                            amount = parseFloat(cleanVal);
+                                            break;
+                                        }
+                                    }
+                                }
+                                currentClient.amount = amount;
+                                allClients.push(currentClient);
+                                currentClient = null; // Reset para siguiente hoja/bloque
+                            }
+                        }
+                    });
+
+                    if (allClients.length === 0) {
+                        _showModal('Error', 'No se encontraron clientes en el Excel. Verifique el formato.');
+                        return;
+                    }
+
+                    await uploadCXCToFirebase(allClients);
+
+                } catch (error) {
+                    console.error("Excel Error:", error);
+                    _showModal('Error', 'Error al procesar el Excel.');
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        } else {
+            // Lógica CSV (Fallback para texto plano)
+            reader.onload = async (e) => {
+                const text = e.target.result;
+                const lines = text.split(/\r?\n/);
+                let allClients = [];
+                let currentClient = null;
+
+                for (let line of lines) {
+                    // Limpieza CSV
+                    line = line.replace(/^"|"$/g, '').trim(); 
+                    if (!line) continue;
+                    
+                    // Separar por comas (CSV estándar) o tabuladores
+                    // Usamos una regex simple para separar por coma considerando posibles comillas
+                    const columns = line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/);
+                    
+                    if (columns.length > 0) {
+                        const col0 = columns[0].replace(/"/g, '').trim(); // Col A
+                        
+                        if (col0 === 'CLIENTE') {
+                            const name = (columns[1] || '').replace(/"/g, '').trim();
+                            if (name) currentClient = { name: name, amount: 0 };
+                        }
+                        
+                        if (col0 === 'TOTALES' && currentClient) {
+                            // Buscar monto en columna C (index 2)
+                            const valStr = (columns[2] || '').replace(/"/g, '').replace(/[^0-9.-]/g, '');
+                            const val = parseFloat(valStr);
+                            if (!isNaN(val)) {
+                                currentClient.amount = val;
+                                allClients.push(currentClient);
+                                currentClient = null;
+                            }
+                        }
+                    }
+                }
+
+                if (allClients.length > 0) {
+                    await uploadCXCToFirebase(allClients);
+                } else {
+                    _showModal('Error', 'No se detectaron datos en el CSV.');
+                }
+            };
+            reader.readAsText(file);
+        }
+    }
+
+    async function uploadCXCToFirebase(clients) {
+        _showModal('Subiendo', `Guardando ${clients.length} registros...`);
+        try {
+            const updateDate = new Date();
+            
+            const listRef = _doc(_db, CXC_COLLECTION_PATH, 'list');
+            await _setDoc(listRef, { clients: clients });
+
+            const metaRef = _doc(_db, CXC_COLLECTION_PATH, 'metadata');
+            await _setDoc(metaRef, { 
+                updatedAt: updateDate,
+                updatedBy: _userId,
+                recordCount: clients.length
+            });
+
+            localStorage.setItem(LS_KEY_DATA, JSON.stringify(clients));
+            localStorage.setItem(LS_KEY_DATE, updateDate.toISOString());
+
+            _showModal('Éxito', `CXC Actualizado exitosamente.`, showCXCView);
+        } catch (error) {
+            console.error("Upload error:", error);
+            _showModal('Error', `Error al subir: ${error.message}`);
+        }
+    }
+
+    // --- LÓGICA DE VISUALIZACIÓN Y SINCRONIZACIÓN (Igual que antes) ---
     async function syncAndLoadData() {
         const statusLabel = document.getElementById('dataStatusLabel');
         try {
@@ -121,13 +289,11 @@
                         localStorage.setItem(LS_KEY_DATE, serverDate.toISOString());
                         if (statusLabel) statusLabel.textContent = "✅ Datos actualizados.";
                     } catch (e) {
-                        console.warn("CXC: Memoria llena.", e);
                         if (statusLabel) statusLabel.textContent = "⚠️ Memoria llena, usando versión online.";
                     }
                     updateUI(serverDate);
                 }
             } else {
-                console.log("CXC: Usando caché local.");
                 if (statusLabel) statusLabel.textContent = "⚡ Datos locales (Sin consumo).";
                 const localDataRaw = localStorage.getItem(LS_KEY_DATA);
                 if (localDataRaw) {
@@ -174,6 +340,10 @@
 
         const term = searchTerm.toLowerCase();
         let filtered = _cxcDataCache.filter(c => c.name.toLowerCase().includes(term));
+        
+        // Ordenar alfabéticamente
+        filtered.sort((a, b) => a.name.localeCompare(b.name));
+
         const totalMatches = filtered.length;
         
         if (totalMatches > 100 && term.length === 0) {
@@ -195,7 +365,6 @@
                 <div class="${bgClass} p-4 rounded-lg shadow border border-gray-200 flex justify-between items-center">
                     <div>
                         <h3 class="font-bold text-gray-800 text-sm md:text-base">${client.name}</h3>
-                        ${client.code ? `<span class="text-xs text-gray-400">Ref: ${client.code}</span>` : ''}
                     </div>
                     <div class="text-right cursor-pointer" onclick="window.cxcModule.handleAmountClick('${client.name}', ${client.amount})">
                         <p class="text-[10px] text-gray-500 uppercase">${amountLabel}</p>
@@ -214,132 +383,6 @@
         container.innerHTML = html;
     }
 
-    // --- PARSEO CSV / TXT ---
-    async function handleCSVUpload(event) {
-        const file = event.target.files[0];
-        if (!file) return;
-
-        _showModal('Procesando', 'Leyendo archivo CSV...');
-
-        const reader = new FileReader();
-        reader.onload = async (e) => {
-            const text = e.target.result;
-            const lines = text.split(/\r?\n/);
-            
-            let allClients = [];
-            let currentClient = null;
-
-            // Regex para capturar montos monetarios (ej: 1,234.56 o 500.00 o -20.00)
-            // Ignora fechas como 2026 o 2/6/2026 si no tienen formato decimal exacto de dinero
-            const moneyRegex = /-?[\d,]+\.\d{2}/g;
-
-            for (let i = 0; i < lines.length; i++) {
-                // Limpiar comillas extras del CSV si existen
-                let line = lines[i].replace(/^"|"$/g, '').trim(); 
-                if (!line) continue;
-
-                // 1. Detectar Nuevo Cliente
-                // Patrón: Inicio con Dígitos + Espacio + Letras
-                // Ej: "1 ABASTO ANTONY..."
-                const headerMatch = line.match(/^(\d+)\s+([A-ZÁÉÍÓÚÑ\.\-\s&]+?)(?=\s{2,}|\s+\d|$)/);
-                
-                // Evitar falsos positivos como fechas al inicio (9/2/2026)
-                const isDateStart = /^\d{1,2}\/\d{1,2}/.test(line);
-
-                if (headerMatch && !isDateStart && !line.includes("TOTAL")) {
-                    const code = headerMatch[1];
-                    const name = headerMatch[2].trim();
-
-                    if (name.length > 2) {
-                        currentClient = {
-                            code: code,
-                            name: name,
-                            amount: 0
-                        };
-                        
-                        // Buscar si hay saldo en la misma línea del encabezado
-                        // (Para clientes sin movimientos detallados debajo)
-                        const amounts = line.match(moneyRegex);
-                        if (amounts) {
-                            // Convertir y tomar el último número encontrado en la línea
-                            const numericAmounts = amounts.map(a => parseFloat(a.replace(/,/g, '')));
-                            // Filtramos años o números raros si se colaron, aunque la regex \.\d{2} ayuda
-                            const lastAmount = numericAmounts[numericAmounts.length - 1];
-                            if (!isNaN(lastAmount)) {
-                                currentClient.amount = lastAmount;
-                            }
-                        }
-                        
-                        allClients.push(currentClient);
-                    }
-                }
-
-                // 2. Detectar Fila de TOTALES (Para actualizar saldo si hubo movimientos)
-                // Busca "TOTAL" o "SUB TOTAL" y asigna el último valor al cliente actual
-                if ((line.includes("TOTAL") || line.includes("SALDO")) && currentClient) {
-                    const amounts = line.match(moneyRegex);
-                    if (amounts) {
-                        const numericAmounts = amounts.map(a => parseFloat(a.replace(/,/g, '')));
-                        const finalBalance = numericAmounts[numericAmounts.length - 1];
-                        
-                        if (!isNaN(finalBalance)) {
-                            // Actualizamos el monto del último cliente añadido
-                            // (Referencia al objeto en el array allClients)
-                            currentClient.amount = finalBalance;
-                            // Ya no reseteamos currentClient a null aquí, 
-                            // porque a veces hay varias líneas de totales/subtotales,
-                            // la última suele ser la válida.
-                        }
-                    }
-                }
-            }
-
-            if (allClients.length === 0) {
-                _showModal('Error', 'No se detectaron clientes. Verifique que el archivo sea el CSV correcto.');
-                return;
-            }
-
-            // Subir a Firebase
-            await uploadCXCToFirebase(allClients);
-        };
-
-        reader.onerror = () => {
-            _showModal('Error', 'Error al leer el archivo.');
-        };
-
-        reader.readAsText(file); // Leer como texto plano
-        event.target.value = ''; // Reset input
-    }
-
-    async function uploadCXCToFirebase(clients) {
-        _showModal('Subiendo', `Guardando ${clients.length} registros...`);
-        try {
-            const updateDate = new Date();
-            
-            // 1. Guardar lista
-            const listRef = _doc(_db, CXC_COLLECTION_PATH, 'list');
-            await _setDoc(listRef, { clients: clients });
-
-            // 2. Guardar metadata
-            const metaRef = _doc(_db, CXC_COLLECTION_PATH, 'metadata');
-            await _setDoc(metaRef, { 
-                updatedAt: updateDate,
-                updatedBy: _userId,
-                recordCount: clients.length
-            });
-
-            // 3. Actualizar local
-            localStorage.setItem(LS_KEY_DATA, JSON.stringify(clients));
-            localStorage.setItem(LS_KEY_DATE, updateDate.toISOString());
-
-            _showModal('Éxito', `CXC Actualizado exitosamente.`, showCXCView);
-        } catch (error) {
-            console.error("Upload error:", error);
-            _showModal('Error', `Error al subir: ${error.message}`);
-        }
-    }
-
-    // --- LÓGICA DE BÚSQUEDA DE VENTAS (Igual) ---
     window.cxcModule = {
         handleAmountClick: async (clientName, amount) => {
             if (amount <= 0) {
