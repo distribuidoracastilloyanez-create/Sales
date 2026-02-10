@@ -6,6 +6,13 @@
     <title>Gestión Dist. Castillo</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    
+    <!-- LIBRERÍA PDF.JS (Nueva) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script>
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    </script>
+
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -179,12 +186,11 @@
     <script src="inventario.js" defer></script>
     <script src="catalogo.js" defer></script>
     <script src="clientes.js" defer></script>
-    
-    <!-- NUEVO: Importar la capa de UI antes de la lógica de ventas -->
     <script src="ventas-ui.js" defer></script>
-    
     <script src="ventas.js" defer></script>
     <script src="obsequios.js" defer></script>
+    <!-- NUEVO: Módulo CXC -->
+    <script src="cxc.js" defer></script>
 
     <script type="module"> 
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
@@ -343,6 +349,10 @@
                             <button id="inventarioBtn" class="w-full px-6 py-3 bg-blue-500 text-white rounded-lg shadow-md hover:bg-blue-600">Inventario</button>
                             <button id="clientesBtn" class="w-full px-6 py-3 bg-indigo-500 text-white rounded-lg shadow-md hover:bg-indigo-600">Clientes</button>
                             <button id="ventasBtn" class="w-full px-6 py-3 bg-green-500 text-white rounded-lg shadow-md hover:bg-green-600">Ventas</button>
+                            
+                            <!-- BOTÓN CXC (NUEVO) -->
+                            <button id="cxcBtn" class="w-full px-6 py-3 bg-orange-500 text-white rounded-lg shadow-md hover:bg-orange-600 font-bold">CXC</button>
+                            
                             ${!isAdmin ? `<button id="obsequiosBtn" class="w-full px-6 py-3 bg-cyan-500 text-white rounded-lg shadow-md hover:bg-cyan-600">Obsequios</button>` : ''}
                             <button id="catalogoBtn" class="w-full px-6 py-3 bg-purple-500 text-white rounded-lg shadow-md hover:bg-purple-600">Catálogo</button>
                             <button id="profileAdminBtn" class="w-full px-6 py-3 bg-gray-700 text-white rounded-lg shadow-md hover:bg-gray-800">${isAdmin ? 'Admin Panel' : 'Mi Perfil'}</button>
@@ -371,6 +381,10 @@
             document.getElementById('inventarioBtn')?.addEventListener('click', () => safeNav(window.showInventarioSubMenu, 'Inventario'));
             document.getElementById('clientesBtn')?.addEventListener('click', () => safeNav(window.showClientesSubMenu, 'Clientes'));
             document.getElementById('ventasBtn')?.addEventListener('click', () => safeNav(window.showVentasView, 'Ventas'));
+            
+            // Listener para CXC
+            document.getElementById('cxcBtn')?.addEventListener('click', () => safeNav(window.showCXCView, 'CXC'));
+            
             document.getElementById('obsequiosBtn')?.addEventListener('click', () => safeNav(window.showGestionObsequiosView, 'Obsequios'));
             document.getElementById('catalogoBtn')?.addEventListener('click', () => safeNav(window.showCatalogoSubMenu, 'Catálogo'));
             document.getElementById('profileAdminBtn')?.addEventListener('click', () => safeNav(window.showAdminOrProfileView, 'Perfil/Admin'));
@@ -435,6 +449,9 @@
                     if (window.initClientes) window.initClientes(deps); else console.warn("Módulo Clientes no encontrado");
                     if (window.initVentas) window.initVentas(deps); else console.warn("Módulo Ventas no encontrado");
                     if (window.initObsequios) window.initObsequios(deps); else console.warn("Módulo Obsequios no encontrado");
+                    
+                    // INIT CXC
+                    if (window.initCXC) window.initCXC(deps); else console.warn("Módulo CXC no encontrado");
 
                     showMainMenu();
                 } else {
