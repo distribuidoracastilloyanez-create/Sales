@@ -34,14 +34,22 @@
         _deleteDoc = dependencies.deleteDoc;
         _getDocs = dependencies.getDocs;
         _writeBatch = dependencies.writeBatch;
-        _runTransaction = dependencies.runTransaction;
+        _runTransaction = dependencies.runTransaction; // CRITICO: Transacciones
         _query = dependencies.query;
         _where = dependencies.where;
+
+        if (!_runTransaction) console.error("Error Crítico: 'runTransaction' no disponible en initVentas. Las ventas fallarán.");
     };
 
     window.showVentasView = function() {
         if (_floatingControls) _floatingControls.classList.add('hidden');
-        // REFACTOR: Usando Template UI
+        
+        // Verificar que ventasUI esté cargado
+        if (!window.ventasUI) {
+            _mainContent.innerHTML = `<div class="p-8 text-center text-red-600">Error: Módulo de Interfaz (ventas-ui.js) no cargado.</div>`;
+            return;
+        }
+
         _mainContent.innerHTML = window.ventasUI.getMainViewTemplate();
 
         document.getElementById('nuevaVentaBtn').addEventListener('click', showNuevaVentaView);
@@ -56,7 +64,6 @@
         _ventaActual = { cliente: null, productos: {}, vaciosDevueltosPorTipo: {} };
         TIPOS_VACIO.forEach(tipo => _ventaActual.vaciosDevueltosPorTipo[tipo] = 0);
         
-        // REFACTOR: Usando Template UI
         _mainContent.innerHTML = window.ventasUI.getNewSaleTemplate(TIPOS_VACIO);
 
         const clienteSearchInput = document.getElementById('clienteSearch');
@@ -122,7 +129,6 @@
         filtInv.sort(sortFunc);
         
         const sortKey = window._sortPreferenceCache ? window._sortPreferenceCache[0] : 'segmento';
-        // REFACTOR: Llamada a ventasUI
         body.innerHTML = window.ventasUI.getInventoryTableRows(filtInv, _ventaActual.productos, _monedaActual, _tasaCOP, _tasaBs, sortKey);
         
         updateVentaTotal();
@@ -149,7 +155,6 @@
         });
 
         const sortKey = window._sortPreferenceCache ? window._sortPreferenceCache[0] : 'segmento';
-        // REFACTOR: Reutilizamos la misma tabla de UI
         body.innerHTML = window.ventasUI.getInventoryTableRows(mappedInv, _ventaActual.productos, _monedaActual, _tasaCOP, _tasaBs, sortKey);
 
         updateVentaTotal();
@@ -169,7 +174,7 @@
         const totU=(pV.cantCj*uCj)+(pV.cantPaq*uPaq)+(pV.cantUnd||0); 
         
         if(totU > stockU){ 
-            _showModal('Stock Insuficiente',`Ajustado.`); 
+            _showModal('Stock Insuficiente',`Ajustado al máximo disponible.`); 
             let ex=totU-stockU; 
             if(tV==='cj')inp.value=Math.max(0,qty-Math.ceil(ex/uCj)); 
             else if(tV==='paq')inp.value=Math.max(0,qty-Math.ceil(ex/uPaq)); 
@@ -190,7 +195,7 @@
 
     // Funciones handleShareTicket, handleShareRawText...
     async function handleShareTicket(htmlContent, callbackDespuesDeCompartir) {
-         _showModal('Progreso', 'Generando imagen...');
+         _showModal('Progreso', 'Generando imagen...', null, '', null, false);
         const tempDiv = document.createElement('div'); tempDiv.style.position = 'absolute'; tempDiv.style.left = '-9999px'; tempDiv.style.top = '0'; tempDiv.innerHTML = htmlContent; document.body.appendChild(tempDiv);
         const ticketElement = document.getElementById('temp-ticket-for-image');
         if (!ticketElement) { _showModal('Error', 'No se pudo encontrar elemento ticket.'); document.body.removeChild(tempDiv); if(callbackDespuesDeCompartir) callbackDespuesDeCompartir(false); return; }
@@ -230,12 +235,10 @@
         const modalContent = `<div class="text-center"><h3 class="text-xl font-bold mb-4">Generar ${tipo}</h3><p class="mb-6">Elige formato.</p><div class="space-y-4"><button id="printTextBtn" class="w-full px-6 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600">Imprimir (Texto)</button><button id="shareImageBtn" class="w-full px-6 py-3 bg-green-500 text-white rounded-lg hover:bg-green-600">Compartir (Imagen)</button></div></div>`;
         _showModal('Elige opción', modalContent, null, ''); 
         document.getElementById('printTextBtn').addEventListener('click', () => { 
-            // REFACTOR: Llamada a ventasUI
             const rawText = window.ventasUI.getTicketRawText(venta, productos, vaciosDevueltosPorTipo); 
             handleShareRawText(rawText, callbackFinal); 
         });
         document.getElementById('shareImageBtn').addEventListener('click', () => { 
-            // REFACTOR: Llamada a ventasUI
             const html = window.ventasUI.getTicketHTML(venta, productos, vaciosDevueltosPorTipo, tipo); 
             handleShareTicket(html, callbackFinal); 
         });
@@ -245,6 +248,10 @@
         console.log("Starting _processAndSaveVenta (Transaction)...");
         const SNAPSHOT_DOC_PATH = `artifacts/${_appId}/users/${_userId}/config/cargaInicialSnapshot`;
         const snapshotRef = _doc(_db, SNAPSHOT_DOC_PATH);
+        
+        // La lógica de snapshot no es crítica para la integridad del inventario, 
+        // pero sí para el reporte. Se mantiene fuera de la transacción pesada para evitar 
+        // leer todo el inventario dentro de la transacción de venta.
         try {
             const snapshotDoc = await _getDoc(snapshotRef);
             if (!snapshotDoc.exists()) {
@@ -262,6 +269,8 @@
 
         const ventaRef = _doc(_collection(_db, `artifacts/${_appId}/users/${_userId}/ventas`));
         const clientRef = _doc(_db, `artifacts/ventas-9a210/public/data/clientes`, _ventaActual.cliente.id);
+
+        if (!_runTransaction) throw new Error("Dependencia crítica 'runTransaction' no disponible.");
 
         try {
             const savedData = await _runTransaction(_db, async (transaction) => {
@@ -358,7 +367,7 @@
         if (prods.length === 0 && !hayVac) { _showModal('Error', 'Agrega productos o registra vacíos devueltos.'); return; }
 
         _showModal('Confirmar Venta', '¿Guardar esta transacción?', async () => {
-            _showModal('Progreso', 'Guardando transacción...'); 
+            _showModal('Progreso', 'Guardando transacción...', null, '', null, false); 
             try {
                 const savedData = await _processAndSaveVenta();
                 showSharingOptions(
@@ -372,7 +381,7 @@
                 console.error("Error al guardar venta:", saveError);
                  const progressModal = document.getElementById('modalContainer'); 
                  if(progressModal && !progressModal.classList.contains('hidden') && progressModal.querySelector('h3')?.textContent.startsWith('Progreso')) {
-                       progressModal.classList.add('hidden');
+                        progressModal.classList.add('hidden');
                  }
                 _showModal('Error', `Error al guardar la venta: ${saveError.message || saveError}`);
             }
@@ -382,7 +391,8 @@
 
     function showVentasTotalesView() {
         if (_floatingControls) _floatingControls.classList.add('hidden');
-        // REFACTOR: Usando Template UI
+        if (!window.ventasUI) { _showModal('Error', 'UI no cargada.'); return; }
+        
         _mainContent.innerHTML = window.ventasUI.getSalesMenuTemplate();
         
         document.getElementById('ventasActualesBtn').addEventListener('click', showVentasActualesView);
@@ -407,7 +417,6 @@
         const vRef = _collection(_db, `artifacts/${_appId}/users/${_userId}/ventas`); const q = _query(vRef);
         const unsub = _onSnapshot(q, (snap) => {
             _ventasGlobal = snap.docs.map(d => ({ id: d.id, ...d.data() })); _ventasGlobal.sort((a,b)=>(b.fecha?.toDate()??0)-(a.fecha?.toDate()??0));
-            // REFACTOR: Usando Template UI
             cont.innerHTML = window.ventasUI.getSalesListTemplate(_ventasGlobal);
         }, (err) => { 
             if (err.code === 'permission-denied' || err.code === 'unauthenticated') return;
@@ -418,7 +427,6 @@
     }
 
     function showCierreSubMenuView() {
-        // REFACTOR: Usando Template UI
          _mainContent.innerHTML = window.ventasUI.getClosingMenuTemplate();
          
         document.getElementById('verCierreBtn').addEventListener('click', showVerCierreView);
@@ -597,6 +605,8 @@
                 const ventaRef = _doc(_db, `artifacts/${_appId}/users/${_userId}/ventas`, ventaId);
                 const clienteRef = _doc(_db, `artifacts/ventas-9a210/public/data/clientes`, venta.clienteId);
 
+                if (!_runTransaction) throw new Error("Dependencia crítica 'runTransaction' no disponible.");
+
                 await _runTransaction(_db, async (transaction) => {
                     const ventaDoc = await transaction.get(ventaRef);
                     const clienteDoc = await transaction.get(clienteRef);
@@ -630,7 +640,7 @@
                         if (unidadesARestaurar > 0) {
                             const productoInventarioRef = inventarioRefs[productoVendido.id];
                             if (productoInventarioRef) {
-                                ajustesInventario.push({ ref: productoInventarioRef, cantidad: unidadesARestaurar, id: productoVendido.id });
+                                ajustesInventario.push({ ref: productoInventarioRef, cantidad: unidadesARestaurar, id: productoVendido.id, datosBackup: productoVendido });
                             }
                         }
                         if (productoVendido.manejaVacios && productoVendido.tipoVacio) {
@@ -648,8 +658,27 @@
 
                     for (const ajuste of ajustesInventario) {
                          const invDoc = inventarioDocsMap.get(ajuste.id);
-                         const stockActual = invDoc && invDoc.exists() ? (invDoc.data().cantidadUnidades || 0) : 0;
-                         transaction.set(ajuste.ref, { cantidadUnidades: stockActual + ajuste.cantidad }, { merge: true });
+                         let dataToSet = {};
+                         
+                         if (invDoc && invDoc.exists()) {
+                             const stockActual = invDoc.data().cantidadUnidades || 0;
+                             dataToSet = { cantidadUnidades: stockActual + ajuste.cantidad };
+                         } else {
+                             // Si el producto fue borrado, lo restauramos con la data guardada en la venta
+                             // para evitar inconsistencias de "stock fantasma"
+                             const bk = ajuste.datosBackup;
+                             dataToSet = {
+                                 presentacion: bk.presentacion || 'Producto Restaurado',
+                                 rubro: bk.rubro || 'Restaurados',
+                                 marca: bk.marca || 'Genérica',
+                                 cantidadUnidades: ajuste.cantidad,
+                                 precios: bk.precios,
+                                 unidadesPorCaja: bk.unidadesPorCaja,
+                                 unidadesPorPaquete: bk.unidadesPorPaquete,
+                                 ventaPor: bk.ventaPor
+                             };
+                         }
+                         transaction.set(ajuste.ref, dataToSet, { merge: true });
                     }
 
                     if (clienteDoc.exists()) {
@@ -672,13 +701,12 @@
     async function showEditVentaView(venta) {
         if (_floatingControls) _floatingControls.classList.add('hidden'); _monedaActual = 'USD';
         
-        // REFACTOR: Template UI
         _mainContent.innerHTML = window.ventasUI.getEditSaleTemplate(venta, TIPOS_VACIO);
         
         document.getElementById('saveChangesBtn').addEventListener('click', handleGuardarVentaEditada); 
         document.getElementById('backToVentasBtn').addEventListener('click', showVentasActualesView);
         
-        _showModal('Progreso', 'Cargando datos...');
+        _showModal('Progreso', 'Cargando datos...', null, '', null, false);
         try {
             const invSnap = await _getDocs(_collection(_db, `artifacts/${_appId}/users/${_userId}/inventario`)); _inventarioCache = invSnap.docs.map(d => ({ id: d.id, ...d.data() }));
             _ventaActual = { cliente: { id: venta.clienteId, nombreComercial: venta.clienteNombre, nombrePersonal: venta.clienteNombrePersonal }, productos: (venta.productos||[]).reduce((acc,p)=>{const pComp=_inventarioCache.find(inv=>inv.id===p.id)||p; const cant=p.cantidadVendida||{}; acc[p.id]={...pComp, cantCj:cant.cj||0, cantPaq:cant.paq||0, cantUnd:cant.und||0, totalUnidadesVendidas:p.totalUnidadesVendidas||0}; return acc;},{}), vaciosDevueltosPorTipo: venta.vaciosDevueltosPorTipo||{} };
@@ -686,7 +714,7 @@
             document.getElementById('rubroFilter').addEventListener('change', renderEditVentasInventario); populateRubroFilter(); document.getElementById('rubroFilter').value = '';
             
             renderEditVentasInventario(); 
-            document.getElementById('modalContainer').classList.add('hidden');
+            const m = document.getElementById('modalContainer'); if(m) m.classList.add('hidden');
         } catch (error) { console.error("Error edit init:", error); _showModal('Error', `Error: ${error.message}`); showVentasActualesView(); }
     }
 
@@ -702,68 +730,91 @@
                 const ventaRef = _doc(_db, `artifacts/${_appId}/users/${_userId}/ventas`, _originalVentaForEdit.id);
                 const clientRef = _doc(_db, `artifacts/ventas-9a210/public/data/clientes`, _originalVentaForEdit.clienteId);
 
+                if (!_runTransaction) throw new Error("Dependencia crítica 'runTransaction' no disponible.");
+
                 await _runTransaction(_db, async (transaction) => {
-                     const origProds = new Map((_originalVentaForEdit.productos||[]).map(p=>[p.id,p]));
-                     const newProds = new Map(Object.values(_ventaActual.productos).map(p=>[p.id,p]));
-                     const allPIds = new Set([...origProds.keys(),...newProds.keys()]);
-                     const clientDoc = await transaction.get(clientRef);
-                     
-                     const invRefs = [];
-                     allPIds.forEach(id => { invRefs.push({ id: id, ref: _doc(_db, `artifacts/${_appId}/users/${_userId}/inventario`, id) }); });
-                     const invDocs = await Promise.all(invRefs.map(item => transaction.get(item.ref)));
-                     const invMap = new Map();
-                     invDocs.forEach((doc, i) => { if (doc.exists()) invMap.set(invRefs[i].id, doc); });
+                      const origProds = new Map((_originalVentaForEdit.productos||[]).map(p=>[p.id,p]));
+                      const newProds = new Map(Object.values(_ventaActual.productos).map(p=>[p.id,p]));
+                      const allPIds = new Set([...origProds.keys(),...newProds.keys()]);
+                      const clientDoc = await transaction.get(clientRef);
+                      
+                      const invRefs = [];
+                      allPIds.forEach(id => { invRefs.push({ id: id, ref: _doc(_db, `artifacts/${_appId}/users/${_userId}/inventario`, id) }); });
+                      const invDocs = await Promise.all(invRefs.map(item => transaction.get(item.ref)));
+                      const invMap = new Map();
+                      invDocs.forEach((doc, i) => { if (doc.exists()) invMap.set(invRefs[i].id, doc); });
 
-                     const vaciosAdj = {}; TIPOS_VACIO.forEach(t=>vaciosAdj[t]=0);
-                     
-                     for (const pId of allPIds) {
-                         const origP = origProds.get(pId);
-                         const newP = newProds.get(pId);
-                         const origU = origP ? (origP.totalUnidadesVendidas||0) : 0;
-                         const newU = newP ? (newP.totalUnidadesVendidas||0) : 0;
-                         const deltaU = origU - newU; 
+                      const vaciosAdj = {}; TIPOS_VACIO.forEach(t=>vaciosAdj[t]=0);
+                      
+                      for (const pId of allPIds) {
+                          const origP = origProds.get(pId);
+                          const newP = newProds.get(pId);
+                          const origU = origP ? (origP.totalUnidadesVendidas||0) : 0;
+                          const newU = newP ? (newP.totalUnidadesVendidas||0) : 0;
+                          const deltaU = origU - newU; 
 
-                         const invDoc = invMap.get(pId);
-                         if (!invDoc) { if (deltaU < 0) throw `Producto ${pId} no existe, imposible vender más.`; continue; }
-                         
-                         const pData = invDoc.data();
-                         if (deltaU !== 0) {
-                             const currentStock = pData.cantidadUnidades || 0;
-                             if ((currentStock + deltaU) < 0) throw `Stock insuficiente: ${pData.presentacion}`;
-                             transaction.update(invRefs.find(r=>r.id===pId).ref, { cantidadUnidades: currentStock + deltaU });
-                         }
+                          const invDoc = invMap.get(pId);
+                          
+                          // Manejo de producto borrado
+                          if (!invDoc) { 
+                              if (deltaU < 0) throw `Producto ${pId} no existe, imposible vender más.`; 
+                              // Si devolvemos stock (deltaU > 0) y el producto no existe, 
+                              // deberíamos recrearlo, pero runTransaction get() ya ocurrió.
+                              // En este flujo simplificado, si no existe el doc, lo saltamos o lanzamos error.
+                              // Para robustez, mejor lanzar error si intentamos devolver a un producto fantasma en EDIT.
+                              // Opcional: Recrear lógica similar a deleteVenta
+                              if (deltaU > 0) {
+                                  // Intentamos restaurar "algo"
+                                  const ref = invRefs.find(r=>r.id===pId).ref;
+                                  transaction.set(ref, { 
+                                      cantidadUnidades: deltaU,
+                                      presentacion: origP.presentacion || 'Restaurado (Edit)',
+                                      rubro: origP.rubro || 'Varios'
+                                  }, { merge: true });
+                                  continue;
+                              }
+                          }
+                          
+                          if (invDoc) {
+                              const pData = invDoc.data();
+                              if (deltaU !== 0) {
+                                  const currentStock = pData.cantidadUnidades || 0;
+                                  if ((currentStock + deltaU) < 0) throw `Stock insuficiente: ${pData.presentacion}`;
+                                  transaction.update(invRefs.find(r=>r.id===pId).ref, { cantidadUnidades: currentStock + deltaU });
+                              }
 
-                         if (pData.manejaVacios && pData.tipoVacio) {
-                             const tV = pData.tipoVacio;
-                             const deltaCj = (newP?.cantCj || 0) - (origP?.cantidadVendida?.cj || 0); 
-                             if (vaciosAdj.hasOwnProperty(tV)) vaciosAdj[tV] += deltaCj;
-                         }
-                     }
+                              if (pData.manejaVacios && pData.tipoVacio) {
+                                  const tV = pData.tipoVacio;
+                                  const deltaCj = (newP?.cantCj || 0) - (origP?.cantidadVendida?.cj || 0); 
+                                  if (vaciosAdj.hasOwnProperty(tV)) vaciosAdj[tV] += deltaCj;
+                              }
+                          }
+                      }
 
-                     const origVac = _originalVentaForEdit.vaciosDevueltosPorTipo || {};
-                     const newVac = _ventaActual.vaciosDevueltosPorTipo || {};
-                     TIPOS_VACIO.forEach(t => { if (vaciosAdj.hasOwnProperty(t)) vaciosAdj[t] -= ((newVac[t] || 0) - (origVac[t] || 0)); });
+                      const origVac = _originalVentaForEdit.vaciosDevueltosPorTipo || {};
+                      const newVac = _ventaActual.vaciosDevueltosPorTipo || {};
+                      TIPOS_VACIO.forEach(t => { if (vaciosAdj.hasOwnProperty(t)) vaciosAdj[t] -= ((newVac[t] || 0) - (origVac[t] || 0)); });
 
-                     if (clientDoc.exists() && Object.values(vaciosAdj).some(a => a !== 0)) {
-                         const sVac = clientDoc.data().saldoVacios || {};
-                         for (const tV in vaciosAdj) if (vaciosAdj[tV] !== 0) sVac[tV] = (sVac[tV] || 0) + vaciosAdj[tV];
-                         transaction.update(clientRef, { saldoVacios: sVac });
-                     }
+                      if (clientDoc.exists() && Object.values(vaciosAdj).some(a => a !== 0)) {
+                          const sVac = clientDoc.data().saldoVacios || {};
+                          for (const tV in vaciosAdj) if (vaciosAdj[tV] !== 0) sVac[tV] = (sVac[tV] || 0) + vaciosAdj[tV];
+                          transaction.update(clientRef, { saldoVacios: sVac });
+                      }
 
-                     let nTotal = 0;
-                     const nItems = Object.values(_ventaActual.productos).filter(p => p.totalUnidadesVendidas > 0).map(p => {
-                         const pr = p.precios || { und: p.precioPorUnidad || 0 };
-                         nTotal += (pr.cj || 0) * (p.cantCj || 0) + (pr.paq || 0) * (p.cantPaq || 0) + (pr.und || 0) * (p.cantUnd || 0);
-                         return {
-                             id: p.id, presentacion: p.presentacion, rubro: p.rubro, marca: p.marca, segmento: p.segmento,
-                             precios: p.precios, ventaPor: p.ventaPor, unidadesPorPaquete: p.unidadesPorPaquete, unidadesPorCaja: p.unidadesPorCaja,
-                             cantidadVendida: { cj: p.cantCj || 0, paq: p.cantPaq || 0, und: p.cantUnd || 0 },
-                             totalUnidadesVendidas: (p.cantCj||0)*(p.unidadesPorCaja||1) + (p.cantPaq||0)*(p.unidadesPorPaquete||1) + (p.cantUnd||0), 
-                             iva: p.iva ?? 0, manejaVacios: p.manejaVacios || false, tipoVacio: p.tipoVacio || null
-                         };
-                     });
-                     
-                     transaction.update(ventaRef, { productos: nItems, total: nTotal, vaciosDevueltosPorTipo: _ventaActual.vaciosDevueltosPorTipo, fechaModificacion: new Date() });
+                      let nTotal = 0;
+                      const nItems = Object.values(_ventaActual.productos).filter(p => p.totalUnidadesVendidas > 0).map(p => {
+                          const pr = p.precios || { und: p.precioPorUnidad || 0 };
+                          nTotal += (pr.cj || 0) * (p.cantCj || 0) + (pr.paq || 0) * (p.cantPaq || 0) + (pr.und || 0) * (p.cantUnd || 0);
+                          return {
+                              id: p.id, presentacion: p.presentacion, rubro: p.rubro, marca: p.marca, segmento: p.segmento,
+                              precios: p.precios, ventaPor: p.ventaPor, unidadesPorPaquete: p.unidadesPorPaquete, unidadesPorCaja: p.unidadesPorCaja,
+                              cantidadVendida: { cj: p.cantCj || 0, paq: p.cantPaq || 0, und: p.cantUnd || 0 },
+                              totalUnidadesVendidas: (p.cantCj||0)*(p.unidadesPorCaja||1) + (p.cantPaq||0)*(p.unidadesPorPaquete||1) + (p.cantUnd||0), 
+                              iva: p.iva ?? 0, manejaVacios: p.manejaVacios || false, tipoVacio: p.tipoVacio || null
+                          };
+                      });
+                      
+                      transaction.update(ventaRef, { productos: nItems, total: nTotal, vaciosDevueltosPorTipo: _ventaActual.vaciosDevueltosPorTipo, fechaModificacion: new Date() });
                 });
                 _originalVentaForEdit=null; _showModal('Éxito','Venta actualizada.', showVentasActualesView);
             } catch (error) { console.error("Error edit:", error); _showModal('Error', `Error: ${error.message}`); }
