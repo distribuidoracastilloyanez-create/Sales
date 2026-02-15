@@ -120,6 +120,7 @@
                                     <span class="mr-2">📥</span> Importar / Restaurar
                                 </h2>
                                 <p class="text-sm text-gray-600 mb-4">Sube un archivo <b>.json</b> (Backup) o archivos <b>.xlsx</b> (Reportes de Cierre) para integrarlos al sistema.</p>
+                                <p class="text-xs text-red-500 mb-2 font-semibold">Nota: La importación NO afecta el inventario actual.</p>
                                 
                                 <div class="space-y-3">
                                     <div>
@@ -379,7 +380,6 @@
         const workbook = XLSX.read(data, { type: 'array' });
 
         // 1. Determinar Usuario y Fecha (del primer sheet de datos)
-        // Buscamos un sheet que NO sea de resumen
         const excludedSheets = ['Total Por Cliente', 'Reporte Vacíos', 'Reporte Vacios'];
         const dataSheetName = workbook.SheetNames.find(n => !excludedSheets.includes(n));
         
@@ -387,9 +387,7 @@
 
         const firstSheet = workbook.Sheets[dataSheetName];
         
-        // Asumimos formato estándar del reporte generado:
-        // A1: Fecha (dd/mm/yyyy o similar)
-        // A2: Nombre Vendedor
+        // Asumimos formato estándar del reporte generado: A1 Fecha, A2 Vendedor
         const cellA1 = firstSheet['A1'] ? firstSheet['A1'].v : null;
         const cellA2 = firstSheet['A2'] ? firstSheet['A2'].v : null;
 
@@ -397,18 +395,14 @@
 
         // Parsear Fecha
         let cierreDate;
-        // Excel a veces guarda fechas como números seriales
         if (typeof cellA1 === 'number') {
-            // Excel serial date to JS Date (rough approximation)
             cierreDate = new Date(Math.round((cellA1 - 25569)*86400*1000));
         } else {
-            // String parsing dd/mm/yyyy
             const parts = String(cellA1).split('/');
             if (parts.length === 3) {
-                // assume dd/mm/yyyy
                 cierreDate = new Date(`${parts[2]}-${parts[1]}-${parts[0]}T12:00:00`);
             } else {
-                cierreDate = new Date(cellA1); // Try standard parse
+                cierreDate = new Date(cellA1); 
             }
         }
         if (isNaN(cierreDate.getTime())) throw new Error(`Fecha inválida en A1: ${cellA1}`);
@@ -416,8 +410,6 @@
         // Determinar Target User
         let targetUserId = forcedUserId;
         if (!targetUserId && cellA2) {
-            // Intentar buscar usuario por nombre (Fuzzy match simple)
-            // Esto es costoso si hay muchos usuarios, pero necesario
             const usersRef = _collection(_db, "users");
             const snap = await _getDocs(usersRef);
             const normalizedExcelName = String(cellA2).toLowerCase().trim();
@@ -429,12 +421,14 @@
             });
             if (found) targetUserId = found.id;
         }
-        if (!targetUserId) targetUserId = _userId; // Fallback to current admin
+        if (!targetUserId) targetUserId = _userId; 
 
-        // Cargar Inventario del Usuario para Matching
+        // IMPORTANTE:
+        // Cargamos el Inventario SOLO LECTURA para mapear IDs.
+        // No se realizará ninguna operación de escritura en esta colección.
         const inventarioRef = _collection(_db, `artifacts/${_appId}/users/${targetUserId}/inventario`);
         const invSnap = await _getDocs(inventarioRef);
-        const inventoryMap = new Map(); // Key: "Segmento|Marca|Presentacion" -> ProductData
+        const inventoryMap = new Map(); 
         invSnap.docs.forEach(d => {
             const p = d.data();
             const key = `${p.segmento || ''}|${p.marca || ''}|${p.presentacion || ''}`.toUpperCase();
@@ -443,9 +437,8 @@
 
         // Estructuras de datos para el cierre
         let totalCierre = 0;
-        const ventasPorCliente = {}; // Map: ClientName -> { total: 0, productos: [], vacios: {} }
+        const ventasPorCliente = {}; 
         const cargaInicialGlobal = [];
-        let vaciosReporte = {};
 
         // 2. Procesar Hojas de Productos
         for (const sheetName of workbook.SheetNames) {
@@ -453,33 +446,20 @@
 
             const sheet = workbook.Sheets[sheetName];
             const range = XLSX.utils.decode_range(sheet['!ref']);
-            
-            // Leer filas como array de arrays
             const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null });
             
-            // Validar estructura mínima
             if (rows.length < 8) continue; 
 
-            // Headers Rows (0-based index in array)
-            // Row 2 (Excel 3): Segmento
-            // Row 3 (Excel 4): Marca
-            // Row 4 (Excel 5): Presentacion
-            // Row 5 (Excel 6): Precio
-            // Column 0 is Labels, Products start at Col 1
-            
             const productCols = [];
             for (let c = 1; c <= range.e.c; c++) {
                 const segmento = rows[2][c];
                 const marca = rows[3][c];
                 const presentacion = rows[4][c];
-                const precioRaw = rows[5][c]; // Puede ser string "$1.00" o number
+                const precioRaw = rows[5][c];
 
-                // Detener si llegamos a "Sub Total"
                 if (String(segmento).toLowerCase() === 'sub total' || String(rows[2][c]).toLowerCase().includes('sub total')) break;
-                
-                if (!presentacion) continue; // Skip empty cols
+                if (!presentacion) continue;
 
-                // Limpiar precio
                 let precio = 0;
                 if (typeof precioRaw === 'number') precio = precioRaw;
                 else if (typeof precioRaw === 'string') {
@@ -494,16 +474,15 @@
                 if (productData) {
                     pid = productData.id;
                 } else {
-                    // Producto no encontrado: Crear un ID ficticio para mantener el dato
+                    // ID ficticio para histórico si no existe en inventario actual
                     pid = 'IMPORTED_' + key.replace(/[^A-Z0-9]/g, '');
-                    // No lo guardamos en inventario real, solo en el cierre
                     productData = {
                         id: pid,
                         segmento, marca, presentacion,
                         precioPorUnidad: precio,
-                        unidadesPorCaja: 1, // Default assumption
+                        unidadesPorCaja: 1,
                         ventaPor: { und: true },
-                        isVirtual: true // Flag
+                        isVirtual: true 
                     };
                 }
 
@@ -516,12 +495,11 @@
                 const rowCI = rows[rowCargaInicialIdx];
                 productCols.forEach((prod, colIdx) => {
                     if (rowCI[colIdx]) {
-                        // Guardar en carga inicial global
-                        const val = parseFloat(String(rowCI[colIdx]).split(' ')[0]) || 0; // "30 Unds" -> 30
+                        const val = parseFloat(String(rowCI[colIdx]).split(' ')[0]) || 0; 
                         if (val > 0) {
                             cargaInicialGlobal.push({
                                 ...prod,
-                                cantidadUnidades: val // Simplificación: asume unidades base
+                                cantidadUnidades: val 
                             });
                         }
                     }
@@ -529,7 +507,6 @@
             }
 
             // Procesar Filas de Clientes
-            // Empiezan después de carga inicial (aprox row 9 en Excel, idx 8) hasta "CARGA RESTANTE"
             const startRow = rowCargaInicialIdx !== -1 ? rowCargaInicialIdx + 1 : 8;
             
             for (let r = startRow; r < rows.length; r++) {
@@ -539,7 +516,6 @@
                 if (String(label).toUpperCase() === 'CARGA RESTANTE') break;
                 if (String(label).toUpperCase() === 'TOTALES') break;
 
-                // Es un cliente
                 const clientName = String(label).replace(' (OBSEQUIO)', '').trim();
                 const isObsequioRow = String(label).includes('(OBSEQUIO)');
 
@@ -557,13 +533,7 @@
                     if (qtyRaw) {
                         const qtyVal = parseFloat(String(qtyRaw).split(' ')[0]) || 0;
                         if (qtyVal > 0) {
-                            // Si es obsequio, el precio es 0 para el total
                             const price = isObsequioRow ? 0 : prod.extractedPrice;
-                            
-                            // Reconstruir estructura de producto vendido
-                            // Asumimos venta por unidad por defecto si no podemos deducir caja/paq del Excel
-                            // El Excel exporta "value" calculado (ej: 2.5 Cj).
-                            // Intentamos respetar eso.
                             const unitText = String(qtyRaw).split(' ')[1] || 'Unds';
                             
                             const itemVenta = {
@@ -571,7 +541,7 @@
                                 presentacion: prod.presentacion,
                                 marca: prod.marca,
                                 segmento: prod.segmento,
-                                precios: { und: prod.extractedPrice }, // Guardamos el precio histórico
+                                precios: { und: prod.extractedPrice }, 
                                 cantidadVendida: { cj:0, paq:0, und:0 },
                                 totalUnidadesVendidas: 0,
                                 manejaVacios: prod.manejaVacios || false,
@@ -589,11 +559,8 @@
                                 itemVenta.totalUnidadesVendidas = qtyVal;
                             }
 
-                            // Subtotal item
-                            // Nota: El Excel ya tiene precios calculados, pero recalculamos para consistencia
-                            // Si es obsequio, no suma al total monetario
                             if (!isObsequioRow) {
-                                ventasPorCliente[clientName].total += (price * qtyVal); // Aproximación (Precio * Cantidad Display)
+                                ventasPorCliente[clientName].total += (price * qtyVal); 
                             }
 
                             ventasPorCliente[clientName].productos.push(itemVenta);
@@ -607,8 +574,7 @@
         const vaciosSheetName = workbook.SheetNames.find(n => n.includes('Reporte Vacíos') || n.includes('Vacios'));
         if (vaciosSheetName) {
             const vSheet = workbook.Sheets[vaciosSheetName];
-            const vRows = XLSX.utils.sheet_to_json(vSheet); // Array of objects
-            // Columns: Client, "Tipo Vacío", Entregados, Devueltos
+            const vRows = XLSX.utils.sheet_to_json(vSheet); 
             vRows.forEach(row => {
                 const cli = row['Cliente'] || row['Client'];
                 const tipo = row['Tipo Vacío'] || row['Tipo Vacio'];
@@ -626,35 +592,21 @@
             });
         }
 
-        // 4. Guardar en Firestore
-        // Construir Array de Ventas
-        const ventasArray = Object.values(ventasPorCliente).map(v => {
-            // Verificar si es solo obsequio (total 0 y tiene productos)
-            // En el modelo de datos, los obsequios se separan en un array 'obsequios'
-            // O se guardan como venta con total 0. El sistema usa arrays separados 'ventas' y 'obsequios'.
-            // Sin embargo, en el Excel están mezclados.
-            // Estrategia: Si total > 0 -> Venta. Si total 0 -> Obsequio.
-            // Pero un cliente puede tener ambos. La lógica actual de Parsing los unió.
-            // Separar es complejo. Guardaremos todo en 'ventas' con total 0 si es obsequio puro, 
-            // ya que el sistema soporta ventas de valor 0.
-            return v;
-        });
-
-        // Calcular Gran Total desde los datos parseados
+        // 4. Guardar en Firestore (Colección CIERRES únicamente)
+        const ventasArray = Object.values(ventasPorCliente).map(v => v);
         totalCierre = ventasArray.reduce((acc, v) => acc + v.total, 0);
 
         const cierreData = {
             fecha: cierreDate,
-            fechaRegistro: new Date(), // Fecha de importación
+            fechaRegistro: new Date(), 
             vendedorInfo: { userId: targetUserId, note: 'Importado desde Excel' },
             total: parseFloat(totalCierre.toFixed(2)),
             ventas: ventasArray,
-            obsequios: [], // Dejamos vacío, asumimos que están en ventas con valor 0
+            obsequios: [], 
             cargaInicialInventario: cargaInicialGlobal,
             source: 'excel_import'
         };
 
-        // Guardar
         const collRef = _collection(_db, `artifacts/${_appId}/users/${targetUserId}/cierres`);
         await _setDoc(_doc(collRef), cierreData);
     }
@@ -663,7 +615,6 @@
 
     window.adminModule = {
         propagateCategoryChange: async function (collectionName, itemId, newItemData) {
-            // ... (Lógica de propagación original se mantiene igual)
             if (_userRole !== 'admin') return; 
             const BATCH_LIMIT = 450; 
             let errors = false;
