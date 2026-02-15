@@ -656,33 +656,91 @@
         },
         
         propagateOrderChange: async function(collectionName) {
-              if (_userRole !== 'admin') return;
-              const BATCH_LIMIT = 450; let errors = false; let batch = _writeBatch(_db); let ops = 0;
-              _showModal('Progreso', `Propagando orden de ${collectionName}...`);
-              try {
-                  let oMap = new Map();
-                  if(collectionName === 'rubros'){
-                      if(!_rubroOrderCacheAdmin){ const rRef=_collection(_db, `artifacts/${_appId}/users/${_userId}/rubros`); const s=await _getDocs(rRef); _rubroOrderCacheAdmin=s.docs.map(d=>({id:d.id, ...d.data()})); }
-                      _rubroOrderCacheAdmin.forEach(r => oMap.set(r.id, r.orden));
-                  } else if (collectionName === 'segmentos') {
-                      if(!_segmentoOrderCacheAdmin){ const sRef=_collection(_db, `artifacts/${_appId}/users/${_userId}/segmentos`); const s=await _getDocs(sRef); _segmentoOrderCacheAdmin=s.docs.map(d=>({id:d.id, ...d.data()})); }
-                      _segmentoOrderCacheAdmin.forEach(s => oMap.set(s.id, s.orden));
-                  }
-                  
-                  const uRef = _collection(_db, "users"); const uSnap = await _getDocs(uRef);
-                  for (const uDoc of uSnap.docs) {
-                      const uid = uDoc.id; if(uid===_userId) continue;
-                      const tColRef = _collection(_db, `artifacts/${_appId}/users/${uid}/${collectionName}`);
-                      const tSnap = await _getDocs(tColRef);
-                      let itemsUser = tSnap.docs.map(d => ({ id: d.id, data: d.data() }));
-                      let uMaxOrd = 0;
-                      itemsUser.forEach(i => uMaxOrd = Math.max(uMaxOrd, i.data.orden || 0));
-                      for (const item of itemsUser) { const cOrd = item.data.orden; let nOrd; if (oMap.has(item.id)) { nOrd = oMap.get(item.id); if (cOrd !== nOrd) { const tIRef = _doc(tColRef, item.id); batch.update(tIRef, { orden: nOrd }); ops++; } uMaxOrd = Math.max(uMaxOrd, nOrd); } if (ops >= BATCH_LIMIT) { await batch.commit(); batch = _writeBatch(_db); ops = 0; } }
-                      itemsUser.sort((a,b)=> (a.data.name || '').localeCompare(b.data.name || ''));
-                      for (const item of itemsUser) { if (!oMap.has(item.id)) { uMaxOrd++; const nOrd = uMaxOrd; const cOrd = item.data.orden; if (cOrd !== nOrd) { const tIRef = _doc(tColRef, item.id); batch.update(tIRef, { orden: nOrd }); ops++; } } if (ops >= BATCH_LIMIT) { await batch.commit(); batch = _writeBatch(_db); ops = 0; } }
-                      if (ops > 0) await batch.commit();
-                  } const modal = document.getElementById('modalContainer'); if(modal && !modal.classList.contains('hidden') && modal.querySelector('h3')?.textContent.startsWith('Progreso')) modal.classList.add('hidden'); console.log(`Order propagation complete for ${collectionName}.`);
-              } catch (error) { errors = true; console.error(`Error propagando...`, error); const modal = document.getElementById('modalContainer'); if(modal) modal.classList.add('hidden'); _showModal('Error', `Fallo propagación orden.`); }
+            if (_userRole !== 'admin') return;
+            const BATCH_LIMIT = 450; 
+            let errors = false; 
+            let batch = _writeBatch(_db); 
+            let ops = 0;
+            _showModal('Progreso', `Propagando orden de ${collectionName}...`);
+            
+            try {
+                let oMap = new Map();
+                if(collectionName === 'rubros'){
+                    if(!_rubroOrderCacheAdmin){ 
+                        const rRef=_collection(_db, `artifacts/${_appId}/users/${_userId}/rubros`); 
+                        const s=await _getDocs(rRef); 
+                        _rubroOrderCacheAdmin=s.docs.map(d=>({id:d.id, ...d.data()})); 
+                    }
+                    _rubroOrderCacheAdmin.forEach(r => oMap.set(r.id, r.orden));
+                } else if (collectionName === 'segmentos') {
+                    if(!_segmentoOrderCacheAdmin){ 
+                        const sRef=_collection(_db, `artifacts/${_appId}/users/${_userId}/segmentos`); 
+                        const s=await _getDocs(sRef); 
+                        _segmentoOrderCacheAdmin=s.docs.map(d=>({id:d.id, ...d.data()})); 
+                    }
+                    _segmentoOrderCacheAdmin.forEach(s => oMap.set(s.id, s.orden));
+                }
+                
+                const uRef = _collection(_db, "users"); 
+                const uSnap = await _getDocs(uRef);
+                
+                for (const uDoc of uSnap.docs) {
+                    const uid = uDoc.id; 
+                    if(uid===_userId) continue;
+                    
+                    const tColRef = _collection(_db, `artifacts/${_appId}/users/${uid}/${collectionName}`);
+                    const tSnap = await _getDocs(tColRef);
+                    let itemsUser = tSnap.docs.map(d => ({ id: d.id, data: d.data() }));
+                    let uMaxOrd = 0;
+                    
+                    itemsUser.forEach(i => uMaxOrd = Math.max(uMaxOrd, i.data.orden || 0));
+                    
+                    for (const item of itemsUser) { 
+                        const cOrd = item.data.orden; 
+                        let nOrd; 
+                        if (oMap.has(item.id)) { 
+                            nOrd = oMap.get(item.id); 
+                            if (cOrd !== nOrd) { 
+                                const tIRef = _doc(tColRef, item.id); 
+                                batch.update(tIRef, { orden: nOrd }); 
+                                ops++; 
+                            } 
+                            uMaxOrd = Math.max(uMaxOrd, nOrd); 
+                        } 
+                        if (ops >= BATCH_LIMIT) { await batch.commit(); batch = _writeBatch(_db); ops = 0; } 
+                    }
+                    
+                    itemsUser.sort((a,b)=> (a.data.name || '').localeCompare(b.data.name || ''));
+                    
+                    for (const item of itemsUser) { 
+                        if (!oMap.has(item.id)) { 
+                            uMaxOrd++; 
+                            const nOrd = uMaxOrd; 
+                            const cOrd = item.data.orden; 
+                            if (cOrd !== nOrd) { 
+                                const tIRef = _doc(tColRef, item.id); 
+                                batch.update(tIRef, { orden: nOrd }); 
+                                ops++; 
+                            } 
+                        } 
+                        if (ops >= BATCH_LIMIT) { await batch.commit(); batch = _writeBatch(_db); ops = 0; } 
+                    }
+                    if (ops > 0) await batch.commit();
+                } 
+                
+                const modal = document.getElementById('modalContainer'); 
+                if(modal && !modal.classList.contains('hidden') && modal.querySelector('h3')?.textContent.startsWith('Progreso')) {
+                    modal.classList.add('hidden');
+                }
+                console.log(`Order propagation complete for ${collectionName}.`);
+                
+            } catch (error) { 
+                errors = true; 
+                console.error(`Error propagando...`, error); 
+                const modal = document.getElementById('modalContainer'); 
+                if(modal) modal.classList.add('hidden'); 
+                _showModal('Error', `Fallo propagación orden.`); 
+            }
         },
 
         // Exponer nuevas funciones para uso externo si fuera necesario (aunque son internas del UI)
