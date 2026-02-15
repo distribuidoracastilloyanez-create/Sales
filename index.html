@@ -186,7 +186,7 @@
     <script src="ventas-ui.js" defer></script>
     <script src="ventas.js" defer></script>
     <script src="obsequios.js" defer></script>
-    <!-- NUEVO: Módulo CXC -->
+    <script src="edit-inventario.js" defer></script> <!-- NUEVO: Módulo Edición -->
     <script src="cxc.js" defer></script>
 
     <script type="module"> 
@@ -344,10 +344,13 @@
                         <h1 class="text-3xl font-bold text-gray-800 mb-6">Menú Principal</h1>
                         <div class="space-y-4">
                             <button id="inventarioBtn" class="w-full px-6 py-3 bg-blue-500 text-white rounded-lg shadow-md hover:bg-blue-600">Inventario</button>
+                            
+                            <!-- Botón Edición Inventario (Solo Admin) -->
+                            ${isAdmin ? `<button id="editInventarioBtn" class="w-full px-6 py-3 bg-amber-600 text-white rounded-lg shadow-md hover:bg-amber-700 font-bold">Edición de Inventario</button>` : ''}
+                            
                             <button id="clientesBtn" class="w-full px-6 py-3 bg-indigo-500 text-white rounded-lg shadow-md hover:bg-indigo-600">Clientes</button>
                             <button id="ventasBtn" class="w-full px-6 py-3 bg-green-500 text-white rounded-lg shadow-md hover:bg-green-600">Ventas</button>
                             
-                            <!-- BOTÓN CXC (NUEVO) -->
                             <button id="cxcBtn" class="w-full px-6 py-3 bg-orange-500 text-white rounded-lg shadow-md hover:bg-orange-600 font-bold">CXC</button>
                             
                             ${!isAdmin ? `<button id="obsequiosBtn" class="w-full px-6 py-3 bg-cyan-500 text-white rounded-lg shadow-md hover:bg-cyan-600">Obsequios</button>` : ''}
@@ -376,6 +379,10 @@
             };
 
             document.getElementById('inventarioBtn')?.addEventListener('click', () => safeNav(window.showInventarioSubMenu, 'Inventario'));
+            
+            // Listener Edición
+            document.getElementById('editInventarioBtn')?.addEventListener('click', () => safeNav(window.showEditInventarioMenu, 'Edición Inventario'));
+            
             document.getElementById('clientesBtn')?.addEventListener('click', () => safeNav(window.showClientesSubMenu, 'Clientes'));
             document.getElementById('ventasBtn')?.addEventListener('click', () => safeNav(window.showVentasView, 'Ventas'));
             
@@ -447,9 +454,10 @@
                     if (window.initClientes) window.initClientes(deps); else console.warn("Módulo Clientes no encontrado");
                     if (window.initVentas) window.initVentas(deps); else console.warn("Módulo Ventas no encontrado");
                     if (window.initObsequios) window.initObsequios(deps); else console.warn("Módulo Obsequios no encontrado");
-                    
-                    // INIT CXC
                     if (window.initCXC) window.initCXC(deps); else console.warn("Módulo CXC no encontrado");
+                    
+                    // INIT NUEVO MODULO DE EDICIÓN
+                    if (window.initEditInventario) window.initEditInventario(deps); else console.warn("Módulo Edit Inventario no encontrado");
 
                     showMainMenu();
                 } else {
