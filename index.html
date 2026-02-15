@@ -193,7 +193,7 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAnalytics } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-analytics.js";
         import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, createUserWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, getDoc, addDoc, setDoc, deleteDoc, onSnapshot, collection, writeBatch, runTransaction, getDocs, enableIndexedDbPersistence, query, where, orderBy, limit, startAfter, enableNetwork, disableNetwork } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, doc, getDoc, addDoc, setDoc, deleteDoc, onSnapshot, collection, writeBatch, runTransaction, getDocs, enableIndexedDbPersistence, query, where, orderBy, limit, startAfter, enableNetwork, disableNetwork, increment } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyApyjf3NIjnGJp2sWyJccsR40-Q8UnU364",
@@ -435,7 +435,8 @@
                         userRole: window.userRole, showMainMenu, showModal: window.showModal, 
                         showAddItemModal: window.showAddItemModal, populateDropdown: window.populateDropdown, 
                         collection, onSnapshot, doc, getDoc, addDoc, setDoc, deleteDoc, getDocs, 
-                        writeBatch, runTransaction, query, where, orderBy, limit, startAfter, firebaseConfig 
+                        writeBatch, runTransaction, query, where, orderBy, limit, startAfter, firebaseConfig,
+                        increment // AÑADIDO: Para soporte offline
                     };
                     
                     // Init de módulos con chequeo de seguridad
