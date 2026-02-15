@@ -6,7 +6,10 @@
     let _usersCache = [];
     let _targetInventoryCache = [];
     let _correccionActualState = {}; 
-    let _recargasSearchCache = []; // Caché para exportación
+    let _recargasSearchCache = []; 
+    
+    // Estado para filtros de corrección manual
+    let _correctionFilters = { search: '', rubro: '', segmento: '', marca: '' };
 
     window.initEditInventario = function(dependencies) {
         _db = dependencies.db;
@@ -126,6 +129,7 @@
     async function loadUserInventory(targetUser) {
         _showModal('Cargando', `Obteniendo inventario de ${targetUser.email}...`, null, '', null, false);
         _correccionActualState = {}; 
+        _correctionFilters = { search: '', rubro: '', segmento: '', marca: '' }; // Reset filtros
 
         try {
             const invRef = _collection(_db, `artifacts/${_appId}/users/${targetUser.id}/inventario`);
@@ -145,27 +149,35 @@
 
     function renderCorrectionTable(targetUser) {
         _mainContent.innerHTML = `
-            <div class="p-4 h-screen flex flex-col">
+            <div class="p-2 md:p-4 h-screen flex flex-col">
                 <div class="bg-white/95 backdrop-blur-sm p-4 rounded-lg shadow-xl flex flex-col flex-grow overflow-hidden">
                     
-                    <div class="flex justify-between items-center mb-4">
+                    <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-4 gap-4">
                         <div>
                             <h2 class="text-xl font-bold text-gray-800">Corregir Inventario</h2>
                             <p class="text-sm text-gray-600">Usuario: <span class="font-bold text-blue-600">${targetUser.email}</span></p>
                         </div>
-                        <div class="flex gap-2">
-                            <button id="btnApplyCorrections" class="px-4 py-2 bg-green-600 text-white font-bold rounded shadow hover:bg-green-700">
+                        <div class="flex gap-2 w-full md:w-auto">
+                            <button id="btnApplyCorrections" class="flex-1 md:flex-none px-4 py-2 bg-green-600 text-white font-bold rounded shadow hover:bg-green-700 text-sm">
                                 Guardar Cambios
                             </button>
-                            <button id="btnCancelCorrection" class="px-4 py-2 bg-gray-400 text-white rounded shadow hover:bg-gray-500">
+                            <button id="btnCancelCorrection" class="flex-1 md:flex-none px-4 py-2 bg-gray-400 text-white rounded shadow hover:bg-gray-500 text-sm">
                                 Cancelar
                             </button>
                         </div>
                     </div>
 
-                    <div class="flex-grow overflow-auto border rounded-lg bg-gray-50">
-                        <table class="min-w-full bg-white text-sm">
-                            <thead class="bg-gray-200 sticky top-0 z-10">
+                    <!-- Filtros -->
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-2 mb-4 p-3 bg-gray-50 rounded border">
+                        <input type="text" id="corrSearch" placeholder="Buscar producto..." class="col-span-2 md:col-span-1 w-full border rounded p-1.5 text-sm">
+                        <select id="corrRubro" class="w-full border rounded p-1.5 text-sm"><option value="">Rubro: Todos</option></select>
+                        <select id="corrSegmento" class="w-full border rounded p-1.5 text-sm"><option value="">Segmento: Todos</option></select>
+                        <select id="corrMarca" class="w-full border rounded p-1.5 text-sm"><option value="">Marca: Todas</option></select>
+                    </div>
+
+                    <div class="flex-grow overflow-auto border rounded-lg bg-gray-50 relative">
+                        <table class="min-w-full bg-white text-sm relative">
+                            <thead class="bg-gray-200 sticky top-0 z-10 shadow-sm">
                                 <tr>
                                     <th class="py-2 px-3 text-left font-semibold text-gray-700">Producto</th>
                                     <th class="py-2 px-3 text-center font-semibold text-gray-700 w-24">Stock Actual</th>
@@ -173,42 +185,12 @@
                                     <th class="py-2 px-3 text-left font-semibold text-gray-700">Observación (Obligatoria)</th>
                                 </tr>
                             </thead>
-                            <tbody class="divide-y divide-gray-100">
-                                ${_targetInventoryCache.map(p => {
-                                    let stockDisplay = `${p.cantidadUnidades || 0}`;
-                                    if (p.ventaPor?.cj && p.unidadesPorCaja > 1) {
-                                        const cjas = Math.floor((p.cantidadUnidades || 0) / p.unidadesPorCaja);
-                                        const resto = (p.cantidadUnidades || 0) % p.unidadesPorCaja;
-                                        stockDisplay = `${cjas} Cj + ${resto} und`;
-                                    }
-
-                                    return `
-                                    <tr class="hover:bg-gray-50 transition-colors">
-                                        <td class="py-2 px-3">
-                                            <div class="font-medium text-gray-800">${p.presentacion}</div>
-                                            <div class="text-xs text-gray-500">${p.marca}</div>
-                                        </td>
-                                        <td class="py-2 px-3 text-center font-mono text-blue-700 bg-gray-50">
-                                            ${stockDisplay}
-                                        </td>
-                                        <td class="py-2 px-3 text-center">
-                                            <input type="number" 
-                                                data-pid="${p.id}"
-                                                class="correction-input w-full px-2 py-1 border border-gray-300 rounded focus:ring-2 focus:ring-yellow-500 text-center font-bold"
-                                                placeholder="0">
-                                        </td>
-                                        <td class="py-2 px-3">
-                                            <input type="text" 
-                                                data-pid="${p.id}-obs"
-                                                class="observation-input w-full px-2 py-1 border border-gray-300 rounded focus:ring-blue-500"
-                                                placeholder="Razón del ajuste...">
-                                        </td>
-                                    </tr>
-                                    `;
-                                }).join('')}
+                            <tbody id="correctionTableBody" class="divide-y divide-gray-100">
+                                <!-- Filas generadas dinámicamente -->
                             </tbody>
                         </table>
                     </div>
+                    <div id="correctionEmptyState" class="hidden text-center p-8 text-gray-500">No se encontraron productos con los filtros actuales.</div>
                 </div>
             </div>
         `;
@@ -216,19 +198,138 @@
         document.getElementById('btnCancelCorrection').addEventListener('click', showUserSelectionView);
         document.getElementById('btnApplyCorrections').addEventListener('click', () => handleSaveCorrections(targetUser));
 
-        document.querySelectorAll('.correction-input').forEach(input => {
+        // Poblar filtros
+        populateCorrectionFilters();
+
+        // Listeners de filtros
+        const applyFilters = () => {
+            _correctionFilters.search = document.getElementById('corrSearch').value.toLowerCase();
+            _correctionFilters.rubro = document.getElementById('corrRubro').value;
+            _correctionFilters.segmento = document.getElementById('corrSegmento').value;
+            _correctionFilters.marca = document.getElementById('corrMarca').value;
+            renderCorrectionRows();
+        };
+
+        document.getElementById('corrSearch').addEventListener('input', applyFilters);
+        document.getElementById('corrRubro').addEventListener('change', applyFilters);
+        document.getElementById('corrSegmento').addEventListener('change', applyFilters);
+        document.getElementById('corrMarca').addEventListener('change', applyFilters);
+
+        // Render inicial
+        renderCorrectionRows();
+    }
+
+    function populateCorrectionFilters() {
+        const rubros = new Set();
+        const segmentos = new Set();
+        const marcas = new Set();
+
+        _targetInventoryCache.forEach(p => {
+            if (p.rubro) rubros.add(p.rubro);
+            if (p.segmento) segmentos.add(p.segmento);
+            if (p.marca) marcas.add(p.marca);
+        });
+
+        const fillSelect = (id, set) => {
+            const el = document.getElementById(id);
+            if(!el) return;
+            const sorted = [...set].sort();
+            sorted.forEach(val => {
+                const opt = document.createElement('option');
+                opt.value = val;
+                opt.textContent = val;
+                el.appendChild(opt);
+            });
+        };
+
+        fillSelect('corrRubro', rubros);
+        fillSelect('corrSegmento', segmentos);
+        fillSelect('corrMarca', marcas);
+    }
+
+    function renderCorrectionRows() {
+        const tbody = document.getElementById('correctionTableBody');
+        const emptyState = document.getElementById('correctionEmptyState');
+        if (!tbody) return;
+
+        tbody.innerHTML = '';
+
+        const filtered = _targetInventoryCache.filter(p => {
+            const term = _correctionFilters.search;
+            const matchSearch = !term || 
+                (p.presentacion || '').toLowerCase().includes(term) ||
+                (p.marca || '').toLowerCase().includes(term);
+            const matchRubro = !_correctionFilters.rubro || p.rubro === _correctionFilters.rubro;
+            const matchSeg = !_correctionFilters.segmento || p.segmento === _correctionFilters.segmento;
+            const matchMarca = !_correctionFilters.marca || p.marca === _correctionFilters.marca;
+            return matchSearch && matchRubro && matchSeg && matchMarca;
+        });
+
+        if (filtered.length === 0) {
+            emptyState.classList.remove('hidden');
+            return;
+        } else {
+            emptyState.classList.add('hidden');
+        }
+
+        const html = filtered.map(p => {
+            let stockDisplay = `${p.cantidadUnidades || 0}`;
+            if (p.ventaPor?.cj && p.unidadesPorCaja > 1) {
+                const cjas = Math.floor((p.cantidadUnidades || 0) / p.unidadesPorCaja);
+                const resto = (p.cantidadUnidades || 0) % p.unidadesPorCaja;
+                stockDisplay = `<span class="font-bold text-blue-700">${cjas} Cj</span>`;
+                if(resto > 0) stockDisplay += ` <span class="text-xs text-gray-500">+ ${resto}</span>`;
+            }
+
+            // Recuperar estado si existe
+            const state = _correccionActualState[p.id] || { ajuste: '', observacion: '' };
+            // Si ajuste es 0, mostrar vacío para placeholder
+            const ajusteVal = state.ajuste !== 0 ? state.ajuste : '';
+
+            return `
+            <tr class="hover:bg-gray-50 transition-colors">
+                <td class="py-2 px-3">
+                    <div class="font-medium text-gray-800">${p.presentacion}</div>
+                    <div class="text-xs text-gray-500">${p.marca} - ${p.segmento || ''}</div>
+                </td>
+                <td class="py-2 px-3 text-center bg-gray-50">
+                    ${stockDisplay}
+                </td>
+                <td class="py-2 px-3 text-center">
+                    <input type="number" 
+                        data-pid="${p.id}"
+                        value="${ajusteVal}"
+                        class="correction-input w-full px-2 py-1 border border-gray-300 rounded focus:ring-2 focus:ring-yellow-500 text-center font-bold"
+                        placeholder="0">
+                </td>
+                <td class="py-2 px-3">
+                    <input type="text" 
+                        data-pid="${p.id}-obs"
+                        value="${state.observacion || ''}"
+                        class="observation-input w-full px-2 py-1 border border-gray-300 rounded focus:ring-blue-500 text-xs"
+                        placeholder="Razón del ajuste...">
+                </td>
+            </tr>
+            `;
+        }).join('');
+
+        tbody.innerHTML = html;
+
+        // Re-asignar listeners a los inputs recién creados
+        tbody.querySelectorAll('.correction-input').forEach(input => {
             input.addEventListener('input', (e) => {
                 const pid = e.target.dataset.pid;
                 if (!_correccionActualState[pid]) _correccionActualState[pid] = { ajuste: 0, observacion: '' };
-                _correccionActualState[pid].ajuste = parseInt(e.target.value) || 0;
+                const val = parseInt(e.target.value);
+                _correccionActualState[pid].ajuste = isNaN(val) ? 0 : val;
             });
         });
 
-        document.querySelectorAll('.observation-input').forEach(input => {
+        tbody.querySelectorAll('.observation-input').forEach(input => {
             input.addEventListener('input', (e) => {
                 const pid = e.target.dataset.pid.replace('-obs', '');
                 if (!_correccionActualState[pid]) _correccionActualState[pid] = { ajuste: 0, observacion: '' };
-                _correccionActualState[pid].observacion = e.target.value.trim();
+                _correccionActualState[pid].observacion = e.target.value;
             });
         });
     }
