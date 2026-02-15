@@ -2,6 +2,7 @@
     let _db, _userId, _userRole, _appId, _mainContent, _floatingControls;
     let _showMainMenu, _showModal, _activeListeners;
     let _collection, _onSnapshot, _doc, _getDoc, _addDoc, _setDoc, _deleteDoc, _getDocs, _writeBatch, _runTransaction, _query, _where;
+    let _increment; // NUEVO: Necesario para operaciones offline
 
     let _clientesCache = [];
     let _inventarioCache = [];
@@ -34,11 +35,13 @@
         _deleteDoc = dependencies.deleteDoc;
         _getDocs = dependencies.getDocs;
         _writeBatch = dependencies.writeBatch;
-        _runTransaction = dependencies.runTransaction; // CRITICO: Transacciones
+        _runTransaction = dependencies.runTransaction; 
         _query = dependencies.query;
         _where = dependencies.where;
+        _increment = dependencies.increment; // CRÍTICO: Recibimos increment
 
-        if (!_runTransaction) console.error("Error Crítico: 'runTransaction' no disponible en initVentas. Las ventas fallarán.");
+        if (!_runTransaction) console.error("Error Crítico: 'runTransaction' no disponible en initVentas.");
+        if (!_increment) console.warn("Advertencia: 'increment' no disponible. Ventas offline limitadas.");
     };
 
     window.showVentasView = function() {
@@ -144,7 +147,6 @@
         const sortFunc = await window.getGlobalProductSortFunction(); 
         invToShow.sort(sortFunc);
         
-        // Lógica especial para Edit: Sumar lo que ya se vendió al stock disponible para mostrar el "potencial" completo
         const mappedInv = invToShow.map(p => {
              const copy = { ...p };
              const orig = _originalVentaForEdit.productos.find(op => op.id === p.id);
@@ -164,7 +166,6 @@
         const inp=event.target, pId=inp.dataset.productId, tV=inp.dataset.tipoVenta, prod=_inventarioCache.find(p=>p.id===pId); if(!prod) return; if(!_ventaActual.productos[pId]) _ventaActual.productos[pId]={...prod, cantCj:0,cantPaq:0,cantUnd:0,totalUnidadesVendidas:0};
         const qty=parseInt(inp.value,10)||0; _ventaActual.productos[pId][`cant${tV[0].toUpperCase()+tV.slice(1)}`]=qty; const pV=_ventaActual.productos[pId], uCj=pV.unidadesPorCaja||1, uPaq=pV.unidadesPorPaquete||1;
         
-        // Calcular Stock Disponible (Considerando si estamos en edición)
         let stockU = prod.cantidadUnidades || 0;
         if (_originalVentaForEdit) {
              const origP = _originalVentaForEdit.productos.find(op => op.id === pId);
@@ -193,7 +194,6 @@
         if(_monedaActual==='COP'&&_tasaCOP>0)tEl.textContent=`Total: COP ${(Math.ceil((tUSD*_tasaCOP)/100)*100).toLocaleString('es-CO')}`; else if(_monedaActual==='Bs'&&_tasaBs>0)tEl.textContent=`Total: Bs.S ${(tUSD*_tasaBs).toLocaleString('es-VE',{minimumFractionDigits:2,maximumFractionDigits:2})}`; else tEl.textContent=`Total: $${tUSD.toFixed(2)}`;
     }
 
-    // Funciones handleShareTicket, handleShareRawText...
     async function handleShareTicket(htmlContent, callbackDespuesDeCompartir) {
          _showModal('Progreso', 'Generando imagen...', null, '', null, false);
         const tempDiv = document.createElement('div'); tempDiv.style.position = 'absolute'; tempDiv.style.left = '-9999px'; tempDiv.style.top = '0'; tempDiv.innerHTML = htmlContent; document.body.appendChild(tempDiv);
@@ -206,6 +206,7 @@
         } catch(e) { _showModal('Error', `No se pudo generar/compartir: ${e.message}`); if(callbackDespuesDeCompartir) callbackDespuesDeCompartir(false); }
         finally { document.body.removeChild(tempDiv); }
     }
+    
     async function handleShareRawText(textContent, callbackDespuesDeCompartir) {
         let success = false;
          if (navigator.share) { try { await navigator.share({ title: 'Ticket de Venta', text: textContent }); success = true; } catch (err) { console.warn("Share API error:", err.name); } }
@@ -214,6 +215,7 @@
             if (callbackDespuesDeCompartir) callbackDespuesDeCompartir(success);
          }, 100); 
     }
+    
     function copyToClipboard(textContent, callbackDespuesDeCopia) {
         if (navigator.clipboard && window.isSecureContext) {
             navigator.clipboard.writeText(textContent)
@@ -223,6 +225,7 @@
             legacyCopyToClipboard(textContent, callbackDespuesDeCopia); 
         }
     }
+    
     function legacyCopyToClipboard(textContent, callbackDespuesDeCopia) {
         const textArea = document.createElement("textarea"); textArea.value = textContent; textArea.style.position = "fixed"; textArea.style.left = "-9999px"; document.body.appendChild(textArea); textArea.select();
         let success = false;
@@ -245,23 +248,22 @@
     }
 
     async function _processAndSaveVenta() {
-        console.log("Starting _processAndSaveVenta (Transaction)...");
+        console.log("Starting _processAndSaveVenta...");
+        
+        // 1. Snapshot Check (No crítico para venta, pero necesario para reporte)
         const SNAPSHOT_DOC_PATH = `artifacts/${_appId}/users/${_userId}/config/cargaInicialSnapshot`;
         const snapshotRef = _doc(_db, SNAPSHOT_DOC_PATH);
-        
-        // La lógica de snapshot no es crítica para la integridad del inventario, 
-        // pero sí para el reporte. Se mantiene fuera de la transacción pesada para evitar 
-        // leer todo el inventario dentro de la transacción de venta.
         try {
             const snapshotDoc = await _getDoc(snapshotRef);
             if (!snapshotDoc.exists()) {
-                 console.log("Primera venta del día detectada. Guardando snapshot...");
                  if (_inventarioCache && _inventarioCache.length > 0) {
+                     // Si estamos offline, esto se encolará y está bien.
                      await _setDoc(snapshotRef, { inventario: _inventarioCache, fecha: new Date() });
                  }
             }
-        } catch (e) { console.warn("Snapshot check failed", e); }
+        } catch (e) { console.warn("Snapshot check failed (non-blocking)", e); }
 
+        // 2. Preparación de Datos
         const prodsParaGuardar = Object.values(_ventaActual.productos);
         if (prodsParaGuardar.length === 0 && Object.values(_ventaActual.vaciosDevueltosPorTipo).every(v => v === 0)) {
              throw new Error("No hay productos ni vacíos para guardar.");
@@ -270,93 +272,177 @@
         const ventaRef = _doc(_collection(_db, `artifacts/${_appId}/users/${_userId}/ventas`));
         const clientRef = _doc(_db, `artifacts/ventas-9a210/public/data/clientes`, _ventaActual.cliente.id);
 
-        if (!_runTransaction) throw new Error("Dependencia crítica 'runTransaction' no disponible.");
+        // 3. Determinar Modo (Online vs Offline)
+        const isOffline = !navigator.onLine || localStorage.getItem('manualOfflineMode') === 'true';
+        
+        if (isOffline) {
+            console.log("Modo Offline Detectado: Usando Batch Write");
+            if (!_increment) throw new Error("Dependencia 'increment' no disponible para modo offline.");
 
-        try {
-            const savedData = await _runTransaction(_db, async (transaction) => {
-                const clientDoc = await transaction.get(clientRef);
-                if (!clientDoc.exists()) throw "El cliente no existe.";
-                const invRefs = [];
-                for (const p of prodsParaGuardar) {
-                    const ref = _doc(_db, `artifacts/${_appId}/users/${_userId}/inventario`, p.id);
-                    invRefs.push({ id: p.id, ref: ref, qty: p.totalUnidadesVendidas || 0, presentacion: p.presentacion });
-                }
-                const invDocs = await Promise.all(invRefs.map(item => transaction.get(item.ref)));
+            const batch = _writeBatch(_db);
+            let totalVenta = 0;
+            const itemsVenta = [];
+            const vaciosChanges = {};
+
+            // Validación Local estricta contra caché
+            for (const p of prodsParaGuardar) {
+                const stockLocal = p.cantidadUnidades || 0; 
+                const qtyNeeded = p.totalUnidadesVendidas || 0;
                 
-                let totalVenta = 0;
-                const itemsVenta = [];
-                const vaciosChanges = {};
-
-                invRefs.forEach((item, index) => {
-                    const invDoc = invDocs[index];
-                    if (!invDoc.exists()) throw `Producto ${item.presentacion} no existe en inventario.`;
+                // Aunque la UI ya valida, hacemos doble check antes de escribir
+                // En modo offline asumimos riesgo de stock negativo si el caché está viejo, 
+                // pero prevenimos vender más de lo que la tablet "cree" que tiene.
+                if (qtyNeeded > 0) {
+                    if (stockLocal < qtyNeeded) throw new Error(`Stock insuficiente localmente para: ${p.presentacion}`);
                     
-                    const currentStock = invDoc.data().cantidadUnidades || 0;
-                    if (currentStock < item.qty) {
-                        throw `Stock insuficiente para ${item.presentacion}. Disponible: ${currentStock}, Solicitado: ${item.qty}`;
+                    // Restar inventario usando increment (Atómico al sincronizar)
+                    const invRef = _doc(_db, `artifacts/${_appId}/users/${_userId}/inventario`, p.id);
+                    batch.update(invRef, { cantidadUnidades: _increment(-qtyNeeded) });
+                }
+
+                const precios = p.precios || { und: p.precioPorUnidad || 0 };
+                totalVenta += (precios.cj || 0) * (p.cantCj || 0) + (precios.paq || 0) * (p.cantPaq || 0) + (precios.und || 0) * (p.cantUnd || 0);
+
+                if (p.manejaVacios && p.tipoVacio) {
+                    const cjV = p.cantCj || 0;
+                    if (cjV > 0) vaciosChanges[p.tipoVacio] = (vaciosChanges[p.tipoVacio] || 0) + cjV;
+                }
+
+                if (qtyNeeded > 0) {
+                    itemsVenta.push({
+                        id: p.id, presentacion: p.presentacion, rubro: p.rubro??null, marca: p.marca??null, segmento: p.segmento??null,
+                        precios: p.precios, ventaPor: p.ventaPor, unidadesPorPaquete: p.unidadesPorPaquete, unidadesPorCaja: p.unidadesPorCaja,
+                        cantidadVendida: { cj: p.cantCj||0, paq: p.cantPaq||0, und: p.cantUnd||0 },
+                        totalUnidadesVendidas: p.totalUnidadesVendidas,
+                        iva: p.iva??0, manejaVacios: p.manejaVacios||false, tipoVacio: p.tipoVacio||null
+                    });
+                }
+            }
+
+            // Calcular cambios de vacíos
+            for (const tV in _ventaActual.vaciosDevueltosPorTipo) {
+                const dev = _ventaActual.vaciosDevueltosPorTipo[tV] || 0;
+                if (dev > 0) vaciosChanges[tV] = (vaciosChanges[tV] || 0) - dev;
+            }
+
+            // Aplicar cambios de vacíos usando increment y dot notation para campos anidados
+            // NOTA: Asumimos que el documento del cliente existe y tiene la estructura saldoVacios
+            for (const tV in vaciosChanges) {
+                const ch = vaciosChanges[tV];
+                if (ch !== 0) {
+                    // Usamos notación de punto para actualizar solo el campo específico dentro del mapa
+                    const fieldPath = `saldoVacios.${tV}`;
+                    batch.update(clientRef, { [fieldPath]: _increment(ch) });
+                }
+            }
+
+            // Guardar Venta
+            const ventaDataToSave = {
+                clienteId: _ventaActual.cliente.id,
+                clienteNombre: _ventaActual.cliente.nombreComercial || _ventaActual.cliente.nombrePersonal,
+                clienteNombrePersonal: _ventaActual.cliente.nombrePersonal,
+                fecha: new Date(),
+                total: totalVenta,
+                productos: itemsVenta,
+                vaciosDevueltosPorTipo: _ventaActual.vaciosDevueltosPorTipo,
+                origen: "offline" // Marcador útil para debug
+            };
+            batch.set(ventaRef, ventaDataToSave);
+
+            await batch.commit();
+            return { venta: ventaDataToSave, productos: itemsVenta, vaciosDevueltosPorTipo: ventaDataToSave.vaciosDevueltosPorTipo };
+
+        } else {
+            // --- MODO ONLINE (TRANSACTION) ---
+            if (!_runTransaction) throw new Error("Dependencia crítica 'runTransaction' no disponible.");
+            console.log("Modo Online: Usando Transaction");
+
+            try {
+                const savedData = await _runTransaction(_db, async (transaction) => {
+                    const clientDoc = await transaction.get(clientRef);
+                    if (!clientDoc.exists()) throw "El cliente no existe.";
+                    const invRefs = [];
+                    for (const p of prodsParaGuardar) {
+                        const ref = _doc(_db, `artifacts/${_appId}/users/${_userId}/inventario`, p.id);
+                        invRefs.push({ id: p.id, ref: ref, qty: p.totalUnidadesVendidas || 0, presentacion: p.presentacion });
+                    }
+                    const invDocs = await Promise.all(invRefs.map(item => transaction.get(item.ref)));
+                    
+                    let totalVenta = 0;
+                    const itemsVenta = [];
+                    const vaciosChanges = {};
+
+                    invRefs.forEach((item, index) => {
+                        const invDoc = invDocs[index];
+                        if (!invDoc.exists()) throw `Producto ${item.presentacion} no existe en inventario.`;
+                        
+                        const currentStock = invDoc.data().cantidadUnidades || 0;
+                        if (currentStock < item.qty) {
+                            throw `Stock insuficiente para ${item.presentacion}. Disponible: ${currentStock}, Solicitado: ${item.qty}`;
+                        }
+
+                        if (item.qty > 0) {
+                            transaction.update(item.ref, { cantidadUnidades: currentStock - item.qty });
+                        }
+
+                        const p = prodsParaGuardar.find(prod => prod.id === item.id);
+                        const precios = p.precios || { und: p.precioPorUnidad || 0 };
+                        const sub = (precios.cj || 0) * (p.cantCj || 0) + (precios.paq || 0) * (p.cantPaq || 0) + (precios.und || 0) * (p.cantUnd || 0);
+                        totalVenta += sub;
+
+                        if (invDoc.data().manejaVacios && invDoc.data().tipoVacio) {
+                            const tV = invDoc.data().tipoVacio;
+                            const cjV = p.cantCj || 0;
+                            if (cjV > 0) vaciosChanges[tV] = (vaciosChanges[tV] || 0) + cjV;
+                        }
+
+                        if (item.qty > 0) {
+                            itemsVenta.push({
+                               id: p.id, presentacion: p.presentacion, rubro: p.rubro??null, marca: p.marca??null, segmento: p.segmento??null,
+                               precios: p.precios, ventaPor: p.ventaPor,
+                               unidadesPorPaquete: p.unidadesPorPaquete, unidadesPorCaja: p.unidadesPorCaja,
+                               cantidadVendida: { cj: p.cantCj||0, paq: p.cantPaq||0, und: p.cantUnd||0 },
+                               totalUnidadesVendidas: p.totalUnidadesVendidas,
+                               iva: p.iva??0, manejaVacios: p.manejaVacios||false, tipoVacio: p.tipoVacio||null
+                            });
+                        }
+                    });
+
+                    for (const tV in _ventaActual.vaciosDevueltosPorTipo) {
+                        const dev = _ventaActual.vaciosDevueltosPorTipo[tV] || 0;
+                        if (dev > 0) vaciosChanges[tV] = (vaciosChanges[tV] || 0) - dev;
                     }
 
-                    if (item.qty > 0) {
-                        transaction.update(item.ref, { cantidadUnidades: currentStock - item.qty });
+                    if (Object.values(vaciosChanges).some(c => c !== 0)) {
+                        const cliData = clientDoc.data();
+                        const sVac = cliData.saldoVacios || {};
+                        for (const tV in vaciosChanges) {
+                            const ch = vaciosChanges[tV];
+                            if (ch !== 0) sVac[tV] = (sVac[tV] || 0) + ch;
+                        }
+                        transaction.update(clientRef, { saldoVacios: sVac });
                     }
 
-                    const p = prodsParaGuardar.find(prod => prod.id === item.id);
-                    const precios = p.precios || { und: p.precioPorUnidad || 0 };
-                    const sub = (precios.cj || 0) * (p.cantCj || 0) + (precios.paq || 0) * (p.cantPaq || 0) + (precios.und || 0) * (p.cantUnd || 0);
-                    totalVenta += sub;
-
-                    if (invDoc.data().manejaVacios && invDoc.data().tipoVacio) {
-                        const tV = invDoc.data().tipoVacio;
-                        const cjV = p.cantCj || 0;
-                        if (cjV > 0) vaciosChanges[tV] = (vaciosChanges[tV] || 0) + cjV;
-                    }
-
-                    if (item.qty > 0) {
-                        itemsVenta.push({
-                           id: p.id, presentacion: p.presentacion, rubro: p.rubro??null, marca: p.marca??null, segmento: p.segmento??null,
-                           precios: p.precios, ventaPor: p.ventaPor,
-                           unidadesPorPaquete: p.unidadesPorPaquete, unidadesPorCaja: p.unidadesPorCaja,
-                           cantidadVendida: { cj: p.cantCj||0, paq: p.cantPaq||0, und: p.cantUnd||0 },
-                           totalUnidadesVendidas: p.totalUnidadesVendidas,
-                           iva: p.iva??0, manejaVacios: p.manejaVacios||false, tipoVacio: p.tipoVacio||null
-                        });
-                    }
+                    const ventaDataToSave = {
+                        clienteId: _ventaActual.cliente.id,
+                        clienteNombre: _ventaActual.cliente.nombreComercial || _ventaActual.cliente.nombrePersonal,
+                        clienteNombrePersonal: _ventaActual.cliente.nombrePersonal,
+                        fecha: new Date(),
+                        total: totalVenta,
+                        productos: itemsVenta,
+                        vaciosDevueltosPorTipo: _ventaActual.vaciosDevueltosPorTipo
+                    };
+                    
+                    transaction.set(ventaRef, ventaDataToSave);
+                    
+                    return { venta: ventaDataToSave, productos: itemsVenta, vaciosDevueltosPorTipo: ventaDataToSave.vaciosDevueltosPorTipo }; 
                 });
 
-                for (const tV in _ventaActual.vaciosDevueltosPorTipo) {
-                    const dev = _ventaActual.vaciosDevueltosPorTipo[tV] || 0;
-                    if (dev > 0) vaciosChanges[tV] = (vaciosChanges[tV] || 0) - dev;
-                }
-
-                if (Object.values(vaciosChanges).some(c => c !== 0)) {
-                    const cliData = clientDoc.data();
-                    const sVac = cliData.saldoVacios || {};
-                    for (const tV in vaciosChanges) {
-                        const ch = vaciosChanges[tV];
-                        if (ch !== 0) sVac[tV] = (sVac[tV] || 0) + ch;
-                    }
-                    transaction.update(clientRef, { saldoVacios: sVac });
-                }
-
-                const ventaDataToSave = {
-                    clienteId: _ventaActual.cliente.id,
-                    clienteNombre: _ventaActual.cliente.nombreComercial || _ventaActual.cliente.nombrePersonal,
-                    clienteNombrePersonal: _ventaActual.cliente.nombrePersonal,
-                    fecha: new Date(),
-                    total: totalVenta,
-                    productos: itemsVenta,
-                    vaciosDevueltosPorTipo: _ventaActual.vaciosDevueltosPorTipo
-                };
-                
-                transaction.set(ventaRef, ventaDataToSave);
-                
-                return { venta: ventaDataToSave, productos: itemsVenta, vaciosDevueltosPorTipo: ventaDataToSave.vaciosDevueltosPorTipo }; 
-            });
-
-            return savedData;
-        } catch (e) {
-            console.error("Transaction failed: ", e);
-            throw e;
+                return savedData;
+            } catch (e) {
+                console.error("Transaction failed: ", e);
+                throw e;
+            }
         }
     }
 
