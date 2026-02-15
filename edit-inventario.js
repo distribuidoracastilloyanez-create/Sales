@@ -171,8 +171,8 @@
                     <div class="grid grid-cols-2 md:grid-cols-4 gap-2 mb-4 p-3 bg-gray-50 rounded border">
                         <input type="text" id="corrSearch" placeholder="Buscar producto..." class="col-span-2 md:col-span-1 w-full border rounded p-1.5 text-sm">
                         <select id="corrRubro" class="w-full border rounded p-1.5 text-sm"><option value="">Rubro: Todos</option></select>
-                        <select id="corrSegmento" class="w-full border rounded p-1.5 text-sm"><option value="">Segmento: Todos</option></select>
-                        <select id="corrMarca" class="w-full border rounded p-1.5 text-sm"><option value="">Marca: Todas</option></select>
+                        <select id="corrSegmento" class="w-full border rounded p-1.5 text-sm" disabled><option value="">Segmento: Todos</option></select>
+                        <select id="corrMarca" class="w-full border rounded p-1.5 text-sm" disabled><option value="">Marca: Todas</option></select>
                     </div>
 
                     <div class="flex-grow overflow-auto border rounded-lg bg-gray-50 relative">
@@ -198,53 +198,86 @@
         document.getElementById('btnCancelCorrection').addEventListener('click', showUserSelectionView);
         document.getElementById('btnApplyCorrections').addEventListener('click', () => handleSaveCorrections(targetUser));
 
-        // Poblar filtros
-        populateCorrectionFilters();
-
-        // Listeners de filtros
-        const applyFilters = () => {
-            _correctionFilters.search = document.getElementById('corrSearch').value.toLowerCase();
-            _correctionFilters.rubro = document.getElementById('corrRubro').value;
-            _correctionFilters.segmento = document.getElementById('corrSegmento').value;
-            _correctionFilters.marca = document.getElementById('corrMarca').value;
-            renderCorrectionRows();
-        };
-
-        document.getElementById('corrSearch').addEventListener('input', applyFilters);
-        document.getElementById('corrRubro').addEventListener('change', applyFilters);
-        document.getElementById('corrSegmento').addEventListener('change', applyFilters);
-        document.getElementById('corrMarca').addEventListener('change', applyFilters);
-
-        // Render inicial
-        renderCorrectionRows();
+        // Configurar lógica de filtros en cascada
+        setupCorrectionFilters();
     }
 
-    function populateCorrectionFilters() {
-        const rubros = new Set();
-        const segmentos = new Set();
-        const marcas = new Set();
+    function setupCorrectionFilters() {
+        const rubroSel = document.getElementById('corrRubro');
+        const segSel = document.getElementById('corrSegmento');
+        const marcaSel = document.getElementById('corrMarca');
+        const searchInput = document.getElementById('corrSearch');
 
-        _targetInventoryCache.forEach(p => {
-            if (p.rubro) rubros.add(p.rubro);
-            if (p.segmento) segmentos.add(p.segmento);
-            if (p.marca) marcas.add(p.marca);
-        });
-
-        const fillSelect = (id, set) => {
-            const el = document.getElementById(id);
-            if(!el) return;
-            const sorted = [...set].sort();
-            sorted.forEach(val => {
+        // Función auxiliar para renderizar opciones
+        const renderOptions = (selectEl, valuesSet, label, currentVal) => {
+            selectEl.innerHTML = `<option value="">${label}: Todos</option>`;
+            [...valuesSet].sort().forEach(val => {
                 const opt = document.createElement('option');
                 opt.value = val;
                 opt.textContent = val;
-                el.appendChild(opt);
+                if (val === currentVal) opt.selected = true;
+                selectEl.appendChild(opt);
             });
         };
 
-        fillSelect('corrRubro', rubros);
-        fillSelect('corrSegmento', segmentos);
-        fillSelect('corrMarca', marcas);
+        const updateDropdowns = (trigger) => {
+            // Actualizar estado global
+            _correctionFilters.rubro = rubroSel.value;
+            if (trigger === 'rubro') { _correctionFilters.segmento = ''; _correctionFilters.marca = ''; }
+            if (trigger === 'segmento') { _correctionFilters.marca = ''; }
+            
+            _correctionFilters.segmento = segSel.value;
+            _correctionFilters.marca = marcaSel.value;
+            _correctionFilters.search = searchInput.value.toLowerCase();
+
+            // Lógica de cascada
+            // 1. Rubros (Siempre estático, se carga una vez o se mantiene)
+            if (trigger === 'init') {
+                const rubros = new Set();
+                _targetInventoryCache.forEach(p => { if (p.rubro) rubros.add(p.rubro); });
+                renderOptions(rubroSel, rubros, 'Rubro', _correctionFilters.rubro);
+            }
+
+            // 2. Segmentos (Depende de Rubro)
+            if (trigger === 'init' || trigger === 'rubro') {
+                const segmentos = new Set();
+                _targetInventoryCache.forEach(p => {
+                    if (!_correctionFilters.rubro || p.rubro === _correctionFilters.rubro) {
+                        if (p.segmento) segmentos.add(p.segmento);
+                    }
+                });
+                renderOptions(segSel, segmentos, 'Segmento', _correctionFilters.segmento);
+                segSel.disabled = segmentos.size === 0;
+            }
+
+            // 3. Marcas (Depende de Rubro y Segmento)
+            if (trigger === 'init' || trigger === 'rubro' || trigger === 'segmento') {
+                const marcas = new Set();
+                _targetInventoryCache.forEach(p => {
+                    const matchRubro = !_correctionFilters.rubro || p.rubro === _correctionFilters.rubro;
+                    const matchSeg = !_correctionFilters.segmento || p.segmento === _correctionFilters.segmento;
+                    if (matchRubro && matchSeg && p.marca) {
+                        marcas.add(p.marca);
+                    }
+                });
+                renderOptions(marcaSel, marcas, 'Marca', _correctionFilters.marca);
+                marcaSel.disabled = marcas.size === 0;
+            }
+
+            // Redibujar tabla
+            renderCorrectionRows();
+        };
+
+        rubroSel.addEventListener('change', () => updateDropdowns('rubro'));
+        segSel.addEventListener('change', () => updateDropdowns('segmento'));
+        marcaSel.addEventListener('change', () => updateDropdowns('marca'));
+        searchInput.addEventListener('input', () => {
+             _correctionFilters.search = searchInput.value.toLowerCase();
+             renderCorrectionRows();
+        });
+
+        // Inicializar
+        updateDropdowns('init');
     }
 
     function renderCorrectionRows() {
