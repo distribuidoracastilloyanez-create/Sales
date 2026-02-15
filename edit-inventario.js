@@ -1,11 +1,12 @@
 (function() {
     let _db, _userId, _userRole, _appId, _mainContent, _floatingControls;
     let _showMainMenu, _showModal, _populateDropdown;
-    let _collection, _doc, _getDocs, _getDoc, _query, _where, _runTransaction, _addDoc, _orderBy, _limit;
+    let _collection, _doc, _getDocs, _getDoc, _query, _where, _runTransaction, _addDoc, _orderBy, _limit, _startAfter;
 
     let _usersCache = [];
     let _targetInventoryCache = [];
-    let _correccionActualState = {}; // Almacena cambios: { idProducto: { ajuste: 0, observacion: '' } }
+    let _correccionActualState = {}; 
+    let _recargasSearchCache = []; // Caché para exportación
 
     window.initEditInventario = function(dependencies) {
         _db = dependencies.db;
@@ -27,6 +28,7 @@
         _addDoc = dependencies.addDoc;
         _orderBy = dependencies.orderBy;
         _limit = dependencies.limit;
+        _startAfter = dependencies.startAfter;
 
         if (!_runTransaction) console.error("Error Crítico: 'runTransaction' no disponible en initEditInventario.");
     };
@@ -42,14 +44,17 @@
             <div class="p-4 pt-8">
                 <div class="container mx-auto max-w-lg">
                     <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl text-center">
-                        <h1 class="text-3xl font-bold text-gray-800 mb-6">Corrección de Inventario</h1>
-                        <p class="text-gray-600 mb-6 text-sm">Ajuste manual de stock por pérdidas, daños o auditoría.</p>
+                        <h1 class="text-3xl font-bold text-gray-800 mb-6">Gestión de Inventario (Admin)</h1>
+                        <p class="text-gray-600 mb-6 text-sm">Herramientas de control y auditoría de stock.</p>
                         <div class="space-y-4">
                             <button id="btnNuevaCorreccion" class="w-full px-6 py-3 bg-yellow-600 text-white font-semibold rounded-lg shadow-md hover:bg-yellow-700 transition">
-                                Realizar Nueva Corrección
+                                🛠️ Realizar Corrección Manual
+                            </button>
+                            <button id="btnVerRecargas" class="w-full px-6 py-3 bg-teal-600 text-white font-semibold rounded-lg shadow-md hover:bg-teal-700 transition">
+                                📥 Ver Reporte de Recargas
                             </button>
                             <button id="btnVerHistorial" class="w-full px-6 py-3 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 transition">
-                                Ver Historial de Cambios
+                                📜 Historial de Correcciones
                             </button>
                             <button id="btnVolverMenu" class="w-full px-6 py-3 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500 transition">
                                 Volver al Menú Principal
@@ -61,11 +66,12 @@
         `;
 
         document.getElementById('btnNuevaCorreccion').addEventListener('click', showUserSelectionView);
+        document.getElementById('btnVerRecargas').addEventListener('click', showRecargasHistoryView);
         document.getElementById('btnVerHistorial').addEventListener('click', showHistorialView);
         document.getElementById('btnVolverMenu').addEventListener('click', _showMainMenu);
     };
 
-    // --- VISTA 1: SELECCIÓN DE USUARIO ---
+    // --- VISTA 1: SELECCIÓN DE USUARIO (Para Corrección) ---
     async function showUserSelectionView() {
         _mainContent.innerHTML = `
             <div class="p-4 pt-8">
@@ -85,7 +91,7 @@
 
         try {
             const usersRef = _collection(_db, 'users');
-            const q = _query(usersRef, _where('role', '==', 'user')); // Solo vendedores
+            const q = _query(usersRef, _where('role', '==', 'user'));
             const snap = await _getDocs(q);
             _usersCache = snap.docs.map(d => ({ id: d.id, ...d.data() }));
 
@@ -116,17 +122,16 @@
         }
     }
 
-    // --- VISTA 2: TABLA DE EDICIÓN ---
+    // --- LÓGICA DE CORRECCIÓN ---
     async function loadUserInventory(targetUser) {
         _showModal('Cargando', `Obteniendo inventario de ${targetUser.email}...`, null, '', null, false);
-        _correccionActualState = {}; // Reset
+        _correccionActualState = {}; 
 
         try {
             const invRef = _collection(_db, `artifacts/${_appId}/users/${targetUser.id}/inventario`);
             const snap = await _getDocs(invRef);
             _targetInventoryCache = snap.docs.map(d => ({ id: d.id, ...d.data() }));
             
-            // Ordenar alfabéticamente
             _targetInventoryCache.sort((a, b) => (a.presentacion || '').localeCompare(b.presentacion || ''));
 
             renderCorrectionTable(targetUser);
@@ -165,12 +170,11 @@
                                     <th class="py-2 px-3 text-left font-semibold text-gray-700">Producto</th>
                                     <th class="py-2 px-3 text-center font-semibold text-gray-700 w-24">Stock Actual</th>
                                     <th class="py-2 px-3 text-center font-semibold text-gray-700 w-32">Ajuste (+/-)</th>
-                                    <th class="py-2 px-3 text-left font-semibold text-gray-700">Observación (Obligatoria si hay ajuste)</th>
+                                    <th class="py-2 px-3 text-left font-semibold text-gray-700">Observación (Obligatoria)</th>
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-gray-100">
                                 ${_targetInventoryCache.map(p => {
-                                    // Visualización amigable del stock
                                     let stockDisplay = `${p.cantidadUnidades || 0}`;
                                     if (p.ventaPor?.cj && p.unidadesPorCaja > 1) {
                                         const cjas = Math.floor((p.cantidadUnidades || 0) / p.unidadesPorCaja);
@@ -197,7 +201,7 @@
                                             <input type="text" 
                                                 data-pid="${p.id}-obs"
                                                 class="observation-input w-full px-2 py-1 border border-gray-300 rounded focus:ring-blue-500"
-                                                placeholder="Ej: Dañado en almacén...">
+                                                placeholder="Razón del ajuste...">
                                         </td>
                                     </tr>
                                     `;
@@ -212,7 +216,6 @@
         document.getElementById('btnCancelCorrection').addEventListener('click', showUserSelectionView);
         document.getElementById('btnApplyCorrections').addEventListener('click', () => handleSaveCorrections(targetUser));
 
-        // Listeners para capturar estado
         document.querySelectorAll('.correction-input').forEach(input => {
             input.addEventListener('input', (e) => {
                 const pid = e.target.dataset.pid;
@@ -231,7 +234,6 @@
     }
 
     async function handleSaveCorrections(targetUser) {
-        // Filtrar solo los que tienen ajuste != 0
         const changes = Object.entries(_correccionActualState)
             .filter(([pid, data]) => data.ajuste !== 0)
             .map(([pid, data]) => ({
@@ -241,43 +243,36 @@
             }));
 
         if (changes.length === 0) {
-            _showModal('Aviso', 'No hay ajustes para guardar (todos son 0).');
+            _showModal('Aviso', 'No hay ajustes para guardar.');
             return;
         }
 
-        // Validar observaciones
         const missingObs = changes.some(c => !c.observacion || c.observacion.length < 3);
         if (missingObs) {
-            _showModal('Validación', 'Por favor, ingrese una observación válida para CADA producto que tenga un ajuste.');
+            _showModal('Validación', 'Por favor, ingrese una observación válida para CADA producto con ajuste.');
             return;
         }
 
         _showModal('Confirmar', `Se ajustarán ${changes.length} productos del inventario de ${targetUser.email}. ¿Continuar?`, async () => {
             _showModal('Progreso', 'Aplicando correcciones...', null, '', null, false);
-            
             try {
-                // Usamos Transacción para asegurar consistencia y logs
                 await _runTransaction(_db, async (transaction) => {
                     const logRef = _doc(_collection(_db, `artifacts/${_appId}/users/${_userId}/historial_correcciones`));
                     const fecha = new Date();
-                    
                     const detallesLog = [];
 
                     for (const item of changes) {
                         const invRef = _doc(_db, `artifacts/${_appId}/users/${targetUser.id}/inventario`, item.pid);
                         const invDoc = await transaction.get(invRef);
-                        
                         if (!invDoc.exists()) throw new Error(`El producto ${item.prod.presentacion} ya no existe.`);
 
                         const currentStock = invDoc.data().cantidadUnidades || 0;
                         const newStock = currentStock + item.ajuste;
 
-                        if (newStock < 0) throw new Error(`El ajuste para ${item.prod.presentacion} resulta en stock negativo (${newStock}).`);
+                        if (newStock < 0) throw new Error(`El ajuste resulta en stock negativo para ${item.prod.presentacion}.`);
 
-                        // 1. Actualizar Inventario
                         transaction.update(invRef, { cantidadUnidades: newStock });
 
-                        // 2. Preparar Log
                         detallesLog.push({
                             productoId: item.pid,
                             presentacion: item.prod.presentacion,
@@ -289,7 +284,6 @@
                         });
                     }
 
-                    // 3. Guardar Log General
                     transaction.set(logRef, {
                         fecha: fecha,
                         adminId: _userId,
@@ -299,9 +293,7 @@
                         detalles: detallesLog
                     });
                 });
-
-                _showModal('Éxito', 'Correcciones aplicadas y registradas correctamente.', showEditInventarioMenu);
-
+                _showModal('Éxito', 'Correcciones aplicadas correctamente.', showEditInventarioMenu);
             } catch (error) {
                 console.error(error);
                 _showModal('Error', `Falló la corrección: ${error.message}`);
@@ -309,14 +301,279 @@
         }, 'Sí, Aplicar', null, true);
     }
 
-    // --- VISTA 3: HISTORIAL ---
+    // --- VISTA 3: REPORTE DE RECARGAS (NUEVA) ---
+    async function showRecargasHistoryView() {
+        // Asegurarse de tener usuarios cargados para el dropdown
+        if (_usersCache.length === 0) {
+            try {
+                const usersRef = _collection(_db, 'users');
+                const q = _query(usersRef, _where('role', '==', 'user'));
+                const snap = await _getDocs(q);
+                _usersCache = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+            } catch(e) { console.error("Error loading users for dropdown", e); }
+        }
+
+        const today = new Date().toISOString().split('T')[0];
+
+        _mainContent.innerHTML = `
+            <div class="p-4 pt-8">
+                <div class="container mx-auto max-w-5xl">
+                    <div class="bg-white/95 backdrop-blur-sm p-6 rounded-lg shadow-xl">
+                        <div class="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
+                            <h2 class="text-2xl font-bold text-gray-800">Reporte de Recargas</h2>
+                            <button id="btnBackFromRecargas" class="px-4 py-2 bg-gray-400 text-white rounded shadow hover:bg-gray-500 text-sm">
+                                Volver
+                            </button>
+                        </div>
+
+                        <!-- Filtros -->
+                        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6 p-4 bg-gray-50 rounded-lg border">
+                            <div>
+                                <label class="block text-xs font-bold text-gray-700 mb-1">Vendedor:</label>
+                                <select id="recargaUserSelect" class="w-full border rounded p-2 text-sm">
+                                    <option value="">Seleccione Vendedor...</option>
+                                    ${_usersCache.map(u => `<option value="${u.id}">${u.nombre || ''} ${u.apellido || ''} (${u.email})</option>`).join('')}
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-gray-700 mb-1">Desde:</label>
+                                <input type="date" id="recargaDateStart" value="${today}" class="w-full border rounded p-2 text-sm">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-gray-700 mb-1">Hasta:</label>
+                                <input type="date" id="recargaDateEnd" value="${today}" class="w-full border rounded p-2 text-sm">
+                            </div>
+                            <div class="flex items-end gap-2">
+                                <button id="btnBuscarRecargas" class="flex-1 bg-blue-600 text-white py-2 rounded shadow hover:bg-blue-700 text-sm font-bold">Buscar</button>
+                                <button id="btnExportRecargas" class="flex-1 bg-green-600 text-white py-2 rounded shadow hover:bg-green-700 text-sm font-bold hidden">Exportar Excel</button>
+                            </div>
+                        </div>
+                        
+                        <!-- Resultados -->
+                        <div id="recargasListContainer" class="space-y-4 overflow-y-auto" style="max-height: 60vh;">
+                            <p class="text-center text-gray-500 py-8">Seleccione filtros y presione Buscar.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        document.getElementById('btnBackFromRecargas').addEventListener('click', showEditInventarioMenu);
+        document.getElementById('btnBuscarRecargas').addEventListener('click', handleSearchRecargas);
+        document.getElementById('btnExportRecargas').addEventListener('click', exportRecargasToExcel);
+    }
+
+    async function handleSearchRecargas() {
+        const userId = document.getElementById('recargaUserSelect').value;
+        const dateStartStr = document.getElementById('recargaDateStart').value;
+        const dateEndStr = document.getElementById('recargaDateEnd').value;
+
+        if (!userId) { _showModal('Error', 'Seleccione un vendedor.'); return; }
+        if (!dateStartStr || !dateEndStr) { _showModal('Error', 'Seleccione rango de fechas.'); return; }
+
+        const container = document.getElementById('recargasListContainer');
+        container.innerHTML = '<p class="text-center text-gray-500">Buscando...</p>';
+        document.getElementById('btnExportRecargas').classList.add('hidden');
+
+        try {
+            // Ajustar fechas para query (Inicio del día start, Fin del día end)
+            const startDate = new Date(dateStartStr); startDate.setHours(0,0,0,0);
+            const endDate = new Date(dateEndStr); endDate.setHours(23,59,59,999);
+
+            const recargasRef = _collection(_db, `artifacts/${_appId}/users/${userId}/recargas`);
+            // Nota: Firestore requiere índice compuesto para where(fecha) + orderBy(fecha). 
+            // Si falla, el catch mostrará el link para crear índice.
+            const q = _query(
+                recargasRef, 
+                _where('fecha', '>=', startDate.toISOString()), 
+                _where('fecha', '<=', endDate.toISOString()),
+                _orderBy('fecha', 'desc')
+            );
+
+            const snap = await _getDocs(q);
+            const recargas = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+            
+            _recargasSearchCache = recargas; // Guardar para exportación
+
+            if (recargas.length === 0) {
+                container.innerHTML = '<p class="text-center text-gray-500">No se encontraron recargas en este periodo.</p>';
+                return;
+            }
+
+            document.getElementById('btnExportRecargas').classList.remove('hidden');
+            container.innerHTML = '';
+
+            recargas.forEach(r => {
+                const fecha = new Date(r.fecha);
+                const fechaStr = fecha.toLocaleString();
+                
+                // Detalles colapsables
+                const detallesHtml = (r.detalles || []).map(d => `
+                    <tr class="border-b text-xs hover:bg-gray-50">
+                        <td class="p-1">${d.presentacion}</td>
+                        <td class="p-1 text-center text-gray-500">${d.unidadesAnteriores}</td>
+                        <td class="p-1 text-center font-bold text-green-700">+${d.diferenciaUnidades}</td>
+                        <td class="p-1 text-center font-bold">${d.unidadesNuevas}</td>
+                    </tr>
+                `).join('');
+
+                const card = document.createElement('div');
+                card.className = 'border rounded-lg shadow-sm bg-white overflow-hidden';
+                card.innerHTML = `
+                    <div class="bg-gray-100 p-3 flex justify-between items-center cursor-pointer hover:bg-gray-200 transition" onclick="this.parentElement.querySelector('.details-body').classList.toggle('hidden')">
+                        <div>
+                            <span class="font-bold text-blue-800">📅 ${fechaStr}</span>
+                            <span class="ml-4 text-xs text-gray-600 bg-white px-2 py-1 rounded border">Productos Afectados: ${r.totalProductos}</span>
+                        </div>
+                        <span class="text-gray-500 text-xs">▼ Ver Detalles</span>
+                    </div>
+                    <div class="details-body hidden p-2 bg-white">
+                        <table class="w-full">
+                            <thead class="bg-gray-50 text-xs text-gray-500">
+                                <tr>
+                                    <th class="text-left p-1">Producto</th>
+                                    <th class="p-1">Stock Ant.</th>
+                                    <th class="p-1">Agregado</th>
+                                    <th class="p-1">Nuevo Stock</th>
+                                </tr>
+                            </thead>
+                            <tbody>${detallesHtml}</tbody>
+                        </table>
+                    </div>
+                `;
+                container.appendChild(card);
+            });
+
+        } catch (e) {
+            console.error(e);
+            container.innerHTML = `<p class="text-red-500 text-center">Error: ${e.message}<br><small>Si es error de índice, ver consola.</small></p>`;
+        }
+    }
+
+    async function exportRecargasToExcel() {
+        if (!_recargasSearchCache || _recargasSearchCache.length === 0) return;
+
+        _showModal('Progreso', 'Generando Reporte Excel...', null, '', null, false);
+
+        try {
+            const workbook = new ExcelJS.Workbook();
+            const sheet = workbook.addWorksheet('Reporte Recargas');
+            
+            // Info Vendedor
+            const userId = document.getElementById('recargaUserSelect').value;
+            const userObj = _usersCache.find(u => u.id === userId);
+            const userName = userObj ? `${userObj.nombre || ''} ${userObj.apellido || ''} (${userObj.email})` : 'Desconocido';
+
+            // --- ESTILOS ---
+            const headerFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F4E78' } }; // Azul oscuro
+            const headerFont = { color: { argb: 'FFFFFFFF' }, bold: true, size: 12 };
+            const subHeaderFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDDEBF7' } }; // Azul claro
+            const borderStyle = { top: {style:'thin'}, left: {style:'thin'}, bottom: {style:'thin'}, right: {style:'thin'} };
+
+            // Encabezado Principal
+            sheet.mergeCells('A1:E1');
+            const titleCell = sheet.getCell('A1');
+            titleCell.value = 'REPORTE DETALLADO DE RECARGAS DE INVENTARIO';
+            titleCell.font = { size: 14, bold: true };
+            titleCell.alignment = { horizontal: 'center' };
+
+            sheet.mergeCells('A2:E2');
+            sheet.getCell('A2').value = `Vendedor: ${userName}`;
+            sheet.getCell('A2').font = { bold: true };
+
+            sheet.mergeCells('A3:E3');
+            sheet.getCell('A3').value = `Generado el: ${new Date().toLocaleString()}`;
+
+            // Configurar Columnas (Fila 5)
+            sheet.getRow(5).values = ['Fecha Recarga', 'Producto', 'Stock Anterior', 'Cantidad Agregada', 'Stock Resultante'];
+            sheet.columns = [
+                { key: 'fecha', width: 22 },
+                { key: 'prod', width: 40 },
+                { key: 'ant', width: 15 },
+                { key: 'agg', width: 18 },
+                { key: 'res', width: 15 }
+            ];
+
+            // Aplicar estilo al header de tabla
+            ['A5','B5','C5','D5','E5'].forEach(cell => {
+                const c = sheet.getCell(cell);
+                c.fill = headerFill;
+                c.font = headerFont;
+                c.alignment = { horizontal: 'center' };
+                c.border = borderStyle;
+            });
+
+            let currentRow = 6;
+
+            // Iterar Recargas
+            _recargasSearchCache.forEach(recarga => {
+                const fecha = new Date(recarga.fecha).toLocaleString();
+                const detalles = recarga.detalles || [];
+
+                // Fila separadora de Recarga (Agrupador)
+                sheet.mergeCells(`A${currentRow}:E${currentRow}`);
+                const groupCell = sheet.getCell(`A${currentRow}`);
+                groupCell.value = `RECARGA: ${fecha}  |  Items: ${recarga.totalProductos}  |  ID: ${recarga.id.substring(0,8)}...`;
+                groupCell.fill = subHeaderFill;
+                groupCell.font = { bold: true, color: { argb: 'FF000000' } };
+                groupCell.border = borderStyle;
+                currentRow++;
+
+                // Detalles
+                detalles.forEach(d => {
+                    const row = sheet.getRow(currentRow);
+                    row.values = {
+                        fecha: '', // Vacío para limpieza visual bajo el grupo
+                        prod: d.presentacion,
+                        ant: d.unidadesAnteriores,
+                        agg: d.diferenciaUnidades,
+                        res: d.unidadesNuevas
+                    };
+                    
+                    // Estilos de celda
+                    row.getCell('prod').border = borderStyle;
+                    row.getCell('ant').border = borderStyle;
+                    row.getCell('ant').alignment = { horizontal: 'center' };
+                    
+                    const aggCell = row.getCell('agg');
+                    aggCell.border = borderStyle;
+                    aggCell.alignment = { horizontal: 'center' };
+                    aggCell.font = { bold: true, color: { argb: 'FF006100' } }; // Verde oscuro
+
+                    row.getCell('res').border = borderStyle;
+                    row.getCell('res').alignment = { horizontal: 'center' };
+
+                    currentRow++;
+                });
+                
+                // Espacio entre recargas
+                currentRow++; 
+            });
+
+            // Descargar
+            const buffer = await workbook.xlsx.writeBuffer();
+            const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = `Reporte_Recargas_${new Date().toISOString().slice(0,10)}.xlsx`;
+            link.click();
+
+            document.getElementById('modalContainer').classList.add('hidden');
+
+        } catch (e) {
+            console.error(e);
+            _showModal('Error', 'Falló la generación del Excel: ' + e.message);
+        }
+    }
+
+    // --- VISTA 4: HISTORIAL DE CORRECCIONES (Ya existente, mantenida) ---
     async function showHistorialView() {
         _mainContent.innerHTML = `
             <div class="p-4 pt-8">
                 <div class="container mx-auto max-w-4xl">
                     <div class="bg-white/90 backdrop-blur-sm p-6 rounded-lg shadow-xl">
                         <div class="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
-                            <h2 class="text-2xl font-bold text-gray-800">Historial de Correcciones</h2>
+                            <h2 class="text-2xl font-bold text-gray-800">Historial de Correcciones Manuales</h2>
                             <div class="flex gap-2">
                                 <button id="btnExportHistorial" class="px-4 py-2 bg-green-600 text-white font-bold rounded shadow hover:bg-green-700 text-sm">
                                     Descargar Excel
@@ -340,7 +597,6 @@
 
         try {
             const logRef = _collection(_db, `artifacts/${_appId}/users/${_userId}/historial_correcciones`);
-            // Limitar a los ultimos 50 para no saturar UI, ordenados por fecha desc
             const q = _query(logRef, _orderBy('fecha', 'desc'), _limit(50));
             const snap = await _getDocs(q);
             const logs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -401,7 +657,6 @@
                 container.appendChild(card);
             });
 
-            // Guardar logs en caché temporal para exportación si se desea
             window._tempHistorialLogs = logs;
 
         } catch (e) {
@@ -433,7 +688,6 @@
                 { header: 'Observación', key: 'obs', width: 40 }
             ];
 
-            // Estilos Header
             worksheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
             worksheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4F81BD' } };
 
@@ -451,9 +705,8 @@
                         obs: d.observacion
                     });
                     
-                    // Colorear ajuste
-                    if (d.ajuste < 0) row.getCell('ajuste').font = { color: { argb: 'FFFF0000' } }; // Rojo
-                    else row.getCell('ajuste').font = { color: { argb: 'FF008000' } }; // Verde
+                    if (d.ajuste < 0) row.getCell('ajuste').font = { color: { argb: 'FFFF0000' } };
+                    else row.getCell('ajuste').font = { color: { argb: 'FF008000' } };
                 });
             });
 
@@ -464,8 +717,7 @@
             link.download = `Historial_Correcciones_${new Date().toISOString().slice(0,10)}.xlsx`;
             link.click();
 
-            const m = document.getElementById('modalContainer');
-            if (m) m.classList.add('hidden');
+            document.getElementById('modalContainer').classList.add('hidden');
 
         } catch (e) {
             console.error(e);
