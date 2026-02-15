@@ -14,7 +14,7 @@
             return;
         }
         _db = dependencies.db;
-        _userId = dependencies.userId; // ID del Admin
+        _userId = dependencies.userId; // ID del Usuario actual
         _userRole = dependencies.userRole;
         _appId = dependencies.appId;
         _mainContent = dependencies.mainContent;
@@ -35,6 +35,44 @@
 
         console.log("Módulo Admin inicializado.");
     };
+
+    // Función Router: Decide si mostrar Admin o Perfil
+    window.showAdminOrProfileView = function() {
+        // Usamos window.userRole para asegurar el rol más actualizado si cambió desde el init
+        const currentRole = window.userRole || _userRole;
+        
+        if (currentRole === 'admin') {
+            showAdminView();
+        } else {
+            showProfileView();
+        }
+    };
+
+    function showProfileView() {
+        if (_floatingControls) _floatingControls.classList.add('hidden');
+        _mainContent.innerHTML = `
+            <div class="p-4 pt-8">
+                <div class="container mx-auto max-w-lg">
+                    <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl text-center">
+                        <h1 class="text-3xl font-bold text-gray-800 mb-6">Mi Perfil</h1>
+                        <div class="bg-gray-50 p-4 rounded-lg border mb-6 text-left">
+                            <p class="text-sm text-gray-500 font-bold uppercase mb-1">ID de Usuario</p>
+                            <p class="text-gray-800 font-mono text-xs mb-4 break-all">${_userId}</p>
+                            
+                            <p class="text-sm text-gray-500 font-bold uppercase mb-1">Rol Asignado</p>
+                            <p class="text-gray-800 mb-4 capitalize">${window.userRole || 'Usuario'}</p>
+                            
+                            <p class="text-xs text-gray-400 italic">Para cambios de contraseña o datos personales, contacte al administrador.</p>
+                        </div>
+                        <button id="backToMenuBtnProfile" class="w-full px-6 py-3 bg-gray-400 text-white rounded-lg shadow-md hover:bg-gray-500 transition duration-200">
+                            Volver al Menú
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.getElementById('backToMenuBtnProfile').addEventListener('click', _showMainMenu);
+    }
 
     window.showAdminView = function() {
         if (_floatingControls) _floatingControls.classList.add('hidden');
