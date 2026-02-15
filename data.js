@@ -173,35 +173,32 @@
     async function populateUserFilter() {
         const userFilterSelect = document.getElementById('userFilter');
         if (!userFilterSelect) return;
-        userFilterSelect.innerHTML = '<option value="">-- Seleccionar --</option>'; // Default empty
+        userFilterSelect.innerHTML = ''; 
+        
+        // Opción predeterminada "Todos"
+        const allOption = document.createElement('option');
+        allOption.value = "all";
+        allOption.textContent = "Todos los Vendedores";
+        allOption.selected = true; // Por defecto seleccionado
+        userFilterSelect.appendChild(allOption);
+
         try {
-            // Nota: Esto requiere que el usuario actual tenga permiso para leer "users".
-            // Si las reglas de seguridad son estrictas, esto podría fallar para no-admins.
             const usersRef = _collection(_db, "users");
             const snapshot = await _getDocs(usersRef);
-            
-            // Si el usuario es admin, ve a todos. Si no, solo se ve a sí mismo (idealmente)
-            // Pero como estamos populando un filtro, intentamos mostrar opciones.
             
             snapshot.docs.forEach(doc => {
                 const user = doc.data();
                 const option = document.createElement('option');
                 option.value = doc.id;
                 option.textContent = `${user.nombre || ''} ${user.apellido || user.email} (${user.camion || 'N/A'})`;
-                
-                // Si es el usuario actual, seleccionarlo por defecto
-                if (doc.id === _userId) {
-                    option.selected = true;
-                }
                 userFilterSelect.appendChild(option);
             });
         } catch (error) { 
             console.error("Error cargando usuarios filtro:", error);
-            // Fallback: solo mostrar opción "Yo" si falla la lectura global de users
+            // Fallback: solo mostrar opción "Yo" si falla la lectura global
             const option = document.createElement('option');
             option.value = _userId;
             option.textContent = "Mis Datos (Actual)";
-            option.selected = true;
             userFilterSelect.appendChild(option);
         }
     }
@@ -211,13 +208,9 @@
         container.innerHTML = `<p class="text-center text-gray-500">Buscando...</p>`;
         
         let selectedUserId = document.getElementById('userFilter').value;
-        // Si no hay selección, usar el usuario actual
-        if (!selectedUserId) {
-            selectedUserId = _userId;
-        }
-
         const fechaDesdeStr = document.getElementById('fechaDesde').value;
         const fechaHastaStr = document.getElementById('fechaHasta').value;
+
         if (!fechaDesdeStr || !fechaHastaStr) {
             _showModal('Error', 'Seleccione ambas fechas.');
             container.innerHTML = `<p class="text-center text-gray-500">Seleccione rango.</p>`; return;
@@ -227,29 +220,54 @@
         const fechaHasta = new Date(fechaHastaStr + 'T23:59:59Z');
         
         try {
-            // CORRECCIÓN DE RUTA: Buscar en la subcolección 'cierres' del usuario seleccionado
-            const closingsRef = _collection(_db, `artifacts/${_appId}/users/${selectedUserId}/cierres`);
+            let allClosings = [];
+
+            if (selectedUserId === 'all') {
+                // Buscar para TODOS los vendedores
+                // Primero obtenemos la lista de IDs de usuarios (reutilizando la lógica de populateUserFilter o consultando)
+                // Para ser precisos, consultamos la colección users nuevamente
+                const usersRef = _collection(_db, "users");
+                const userSnapshot = await _getDocs(usersRef);
+                const userIds = userSnapshot.docs.map(d => d.id);
+
+                // Promesas en paralelo para cada usuario
+                const promises = userIds.map(async (uid) => {
+                    const closingsRef = _collection(_db, `artifacts/${_appId}/users/${uid}/cierres`);
+                    const q = _query(closingsRef, _where("fecha", ">=", fechaDesde), _where("fecha", "<=", fechaHasta));
+                    const snapshot = await _getDocs(q);
+                    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                });
+
+                const results = await Promise.all(promises);
+                // Aplanar el array de arrays
+                allClosings = results.flat();
+
+            } else {
+                // Buscar para UN solo vendedor (código original)
+                if (!selectedUserId) selectedUserId = _userId; // Fallback
+                const closingsRef = _collection(_db, `artifacts/${_appId}/users/${selectedUserId}/cierres`);
+                let q = _query(closingsRef, _where("fecha", ">=", fechaDesde), _where("fecha", "<=", fechaHasta));
+                const snapshot = await _getDocs(q);
+                allClosings = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            }
             
-            let q = _query(closingsRef, _where("fecha", ">=", fechaDesde), _where("fecha", "<=", fechaHasta));
-            
-            const snapshot = await _getDocs(q);
-            let closings = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            
-            window.tempClosingsData = closings; 
-            renderClosingsList(closings);
+            window.tempClosingsData = allClosings; 
+            renderClosingsList(allClosings);
 
         } catch (error) {
             console.error("Error buscando cierres:", error);
-            container.innerHTML = `<p class="text-center text-red-500">Error al buscar. Verifica permisos.</p>`;
+            container.innerHTML = `<p class="text-center text-red-500">Error al buscar: ${error.message}</p>`;
         }
     }
 
     function renderClosingsList(closings) {
         const container = document.getElementById('cierres-list-container');
         if (closings.length === 0) {
-            container.innerHTML = `<p class="text-center text-gray-500">No se encontraron cierres para este usuario en el rango seleccionado.</p>`; return;
+            container.innerHTML = `<p class="text-center text-gray-500">No se encontraron cierres en el rango seleccionado.</p>`; return;
         }
+        // Ordenar por fecha descendente
         closings.sort((a, b) => b.fecha.toDate() - a.fecha.toDate()); 
+        
         let tableHTML = `
             <table class="min-w-full bg-white text-sm">
                 <thead class="bg-gray-200 sticky top-0 z-10"> <tr>
@@ -1454,28 +1472,209 @@
         _mainContent.innerHTML = `
             <div class="p-4 pt-8"> <div class="container mx-auto"> <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl">
                 <h1 class="text-3xl font-bold text-gray-800 mb-4 text-center">Mapa Clientes</h1>
-                <div class="relative mb-4"> <input type="text" id="map-search-input" placeholder="Buscar cliente..." class="w-full px-4 py-2 border rounded-lg"> <div id="map-search-results" class="absolute z-[1000] w-full bg-white border rounded-lg mt-1 max-h-60 overflow-y-auto hidden shadow-lg"></div> </div>
-                <div class="mb-4 p-2 bg-gray-100 border rounded-lg text-xs flex flex-wrap justify-center items-center gap-x-4 gap-y-1"> <span class="flex items-center"><img src="https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png" style="height:20px;margin-right:2px;"> Regular</span> <span class="flex items-center"><img src="https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png" style="height:20px;margin-right:2px;"> Con CEP</span> </div>
+                
+                <div class="mb-4 flex flex-col md:flex-row gap-4">
+                     <div class="relative w-full"> 
+                        <input type="text" id="map-search-input" placeholder="Buscar cliente..." class="w-full px-4 py-2 border rounded-lg"> 
+                        <div id="map-search-results" class="absolute z-[1000] w-full bg-white border rounded-lg mt-1 max-h-60 overflow-y-auto hidden shadow-lg"></div> 
+                     </div>
+                     <div class="w-full md:w-1/3">
+                        <select id="map-mode-select" class="w-full px-4 py-2 border rounded-lg shadow-sm bg-white">
+                            <option value="classic">Vista: Tipo Cliente (CEP)</option>
+                            <option value="weekly">Vista: Asistencia Semanal</option>
+                        </select>
+                     </div>
+                </div>
+
+                <div id="map-legend" class="mb-4 p-2 bg-gray-100 border rounded-lg text-xs flex flex-wrap justify-center items-center gap-x-4 gap-y-1"> 
+                    <!-- Se llena dinámicamente según el modo -->
+                </div>
+                
                 <div id="client-map" class="w-full rounded-lg shadow-inner" style="height:65vh; border:1px solid #ccc; background-color:#e5e7eb;"> <p class="text-center text-gray-500 pt-10">Cargando mapa...</p> </div>
                 <button id="backToDataMenuBtn" class="mt-6 w-full px-6 py-3 bg-gray-400 text-white rounded-lg shadow-md hover:bg-gray-500">Volver</button>
             </div> </div> </div>
         `;
-        document.getElementById('backToDataMenuBtn').addEventListener('click', showDataView); loadAndDisplayMap();
+        document.getElementById('backToDataMenuBtn').addEventListener('click', showDataView); 
+        
+        const modeSelect = document.getElementById('map-mode-select');
+        modeSelect.addEventListener('change', () => loadAndDisplayMap(modeSelect.value));
+        
+        loadAndDisplayMap('classic'); // Carga inicial
     }
-    async function loadAndDisplayMap() {
-        const mapCont = document.getElementById('client-map'); if (!mapCont || typeof L === 'undefined') { mapCont.innerHTML = '<p class="text-red-500">Error: Leaflet no cargado.</p>'; return; }
+
+    async function getAttendedClientsThisWeek() {
+        // Calcular inicio de semana (Lunes)
+        const now = new Date();
+        const day = now.getDay(); 
+        // day 0=Dom, 1=Lun... 
+        // Si es Domingo (0), restamos 6 días. Si es otro día, restamos (day - 1).
+        const diff = now.getDate() - day + (day === 0 ? -6 : 1); 
+        const monday = new Date(now.setDate(diff));
+        monday.setHours(0,0,0,0);
+
+        const attendedClients = new Set();
+
         try {
-            if (_consolidatedClientsCache.length === 0) { const cliRef = _collection(_db, CLIENTES_COLLECTION_PATH); const cliSnaps = await _getDocs(cliRef); _consolidatedClientsCache = cliSnaps.docs.map(d => ({id: d.id, ...d.data()})); }
-            const cliCoords = _consolidatedClientsCache.filter(c => { if(!c.coordenadas)return false; const p=c.coordenadas.split(','); if(p.length!==2)return false; const lat=parseFloat(p[0]), lon=parseFloat(p[1]); return !isNaN(lat)&&!isNaN(lon)&&lat>=0&&lat<=13&&lon>=-74&&lon<=-59; });
+            // Obtener todos los usuarios para buscar en sus cierres
+            const usersRef = _collection(_db, "users");
+            const usersSnap = await _getDocs(usersRef);
+            const userIds = usersSnap.docs.map(d => d.id);
+
+            const promises = userIds.map(async (uid) => {
+                const cierresRef = _collection(_db, `artifacts/${_appId}/users/${uid}/cierres`);
+                // Buscar cierres desde el lunes hasta hoy
+                const q = _query(cierresRef, _where("fecha", ">=", monday));
+                const snap = await _getDocs(q);
+                return snap.docs.map(d => d.data());
+            });
+
+            const results = await Promise.all(promises);
+            const allCierres = results.flat();
+
+            allCierres.forEach(cierre => {
+                if (cierre.ventas && Array.isArray(cierre.ventas)) {
+                    cierre.ventas.forEach(venta => {
+                        // Normalizar nombre para el Set (mejor usar ID si estuviera disponible y fiable en todos lados)
+                        if (venta.clienteNombre) {
+                            attendedClients.add(venta.clienteNombre.trim().toLowerCase());
+                        }
+                    });
+                }
+            });
+
+        } catch (e) {
+            console.error("Error calculando asistencia semanal:", e);
+        }
+        return attendedClients;
+    }
+
+    async function loadAndDisplayMap(mode = 'classic') {
+        const mapCont = document.getElementById('client-map'); 
+        const legendCont = document.getElementById('map-legend');
+
+        if (!mapCont || typeof L === 'undefined') { mapCont.innerHTML = '<p class="text-red-500">Error: Leaflet no cargado.</p>'; return; }
+        
+        // Actualizar Leyenda
+        if (mode === 'classic') {
+            legendCont.innerHTML = `
+                <span class="flex items-center"><img src="https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png" style="height:20px;margin-right:2px;"> Regular (Sin CEP)</span> 
+                <span class="flex items-center"><img src="https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png" style="height:20px;margin-right:2px;"> Con CEP</span>
+            `;
+        } else {
+             legendCont.innerHTML = `
+                <span class="flex items-center opacity-50"><img src="https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-grey.png" style="height:20px;margin-right:2px;"> No Atendido (Opaco)</span> 
+                <span class="flex items-center"><img src="https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png" style="height:20px;margin-right:2px;"> Atendido Semana (Brillante)</span>
+            `;
+        }
+
+        try {
+            if (_consolidatedClientsCache.length === 0) { 
+                const cliRef = _collection(_db, CLIENTES_COLLECTION_PATH); 
+                const cliSnaps = await _getDocs(cliRef); 
+                _consolidatedClientsCache = cliSnaps.docs.map(d => ({id: d.id, ...d.data()})); 
+            }
+            
+            const cliCoords = _consolidatedClientsCache.filter(c => { 
+                if(!c.coordenadas)return false; 
+                const p=c.coordenadas.split(','); 
+                if(p.length!==2)return false; 
+                const lat=parseFloat(p[0]), lon=parseFloat(p[1]); 
+                return !isNaN(lat)&&!isNaN(lon)&&lat>=0&&lat<=13&&lon>=-74&&lon<=-59; 
+            });
+
             if (cliCoords.length === 0) { mapCont.innerHTML = '<p class="text-gray-500">No hay clientes con coordenadas válidas.</p>'; return; }
-            let mapCenter = [7.77, -72.22]; let zoom = 13; mapInstance = L.map('client-map').setView(mapCenter, zoom); L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OSM', maxZoom: 19 }).addTo(mapInstance);
+
+            // Si es modo semanal, obtener datos de asistencia
+            let attendedSet = new Set();
+            if (mode === 'weekly') {
+                 // Mostrar indicador de carga pequeño en el mapa si tarda
+                if (mapInstance) {
+                     // Si ya existe mapa, quizás solo actualizamos markers, 
+                     // pero por simplicidad reconstruimos los markers.
+                } else {
+                    mapCont.innerHTML = '<p class="text-center text-gray-500 pt-10">Calculando asistencia...</p>'; 
+                }
+                attendedSet = await getAttendedClientsThisWeek();
+            }
+
+            // Inicializar mapa si no existe
+            if (!mapInstance) {
+                let mapCenter = [7.77, -72.22]; 
+                let zoom = 13; 
+                mapInstance = L.map('client-map').setView(mapCenter, zoom); 
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OSM', maxZoom: 19 }).addTo(mapInstance);
+            } else {
+                // Limpiar markers anteriores
+                if (mapMarkers.size > 0) {
+                     mapMarkers.forEach(marker => mapInstance.removeLayer(marker));
+                }
+                // Si había un grupo de capas (featureGroup), también deberíamos limpiarlo, 
+                // pero aquí limpiamos markers individuales del mapa para simplificar.
+                mapInstance.eachLayer((layer) => {
+                    if (layer instanceof L.Marker) {
+                        mapInstance.removeLayer(layer);
+                    }
+                });
+            }
+
+            // Iconos
             const redI = new L.Icon({iconUrl:'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png', shadowUrl:'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png', iconSize:[25,41],iconAnchor:[12,41],popupAnchor:[1,-34],shadowSize:[41,41]}); 
             const blueI = new L.Icon({iconUrl:'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png', shadowUrl:'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png', iconSize:[25,41],iconAnchor:[12,41],popupAnchor:[1,-34],shadowSize:[41,41]});
-            mapMarkers.clear(); const mGroup=[]; cliCoords.forEach(cli=>{try{const coords=cli.coordenadas.split(',').map(p=>parseFloat(p)); const hasCEP=cli.codigoCEP&&cli.codigoCEP.toLowerCase()!=='n/a'; const icon=hasCEP?blueI:redI; const pCont=`<b>${cli.nombreComercial}</b><br><small>${cli.nombrePersonal||''}</small><br><small>Tel: ${cli.telefono||'N/A'}</small><br><small>Sector: ${cli.sector||'N/A'}</small>${hasCEP?`<br><b>CEP: ${cli.codigoCEP}</b>`:''}<br><a href="https://www.google.com/maps?q=${coords[0]},${coords[1]}" target="_blank" class="text-xs text-blue-600">Ver en Maps</a>`; const marker=L.marker(coords,{icon:icon}).bindPopup(pCont,{minWidth:150}); mGroup.push(marker); mapMarkers.set(cli.id, marker);}catch(coordErr){console.warn(`Error coords cli ${cli.nombreComercial}: ${cli.coordenadas}`, coordErr);}});
-            if(mGroup.length > 0) { const group = L.featureGroup(mGroup).addTo(mapInstance); mapInstance.fitBounds(group.getBounds().pad(0.1)); } else { mapCont.innerHTML = '<p class="text-gray-500">No se pudieron mostrar clientes.</p>'; return; }
+            const greenI = new L.Icon({iconUrl:'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png', shadowUrl:'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png', iconSize:[25,41],iconAnchor:[12,41],popupAnchor:[1,-34],shadowSize:[41,41]});
+            const greyI = new L.Icon({iconUrl:'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-grey.png', shadowUrl:'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png', iconSize:[25,41],iconAnchor:[12,41],popupAnchor:[1,-34],shadowSize:[41,41]});
+
+            mapMarkers.clear(); 
+            const mGroup=[]; 
+
+            cliCoords.forEach(cli=>{
+                try {
+                    const coords=cli.coordenadas.split(',').map(p=>parseFloat(p)); 
+                    let icon, opacity = 1.0;
+
+                    if (mode === 'classic') {
+                        const hasCEP = cli.codigoCEP && cli.codigoCEP.toLowerCase() !== 'n/a'; 
+                        icon = hasCEP ? blueI : redI;
+                    } else {
+                        // Modo Semanal
+                        // Usamos nombre comercial para comparar con el Set de asistencia
+                        const nameKey = (cli.nombreComercial || '').trim().toLowerCase();
+                        const isAttended = attendedSet.has(nameKey);
+                        
+                        if (isAttended) {
+                            icon = greenI;
+                            opacity = 1.0;
+                        } else {
+                            icon = greyI;
+                            opacity = 0.5; // Opaco
+                        }
+                    }
+
+                    const hasCEP = cli.codigoCEP && cli.codigoCEP.toLowerCase()!=='n/a';
+                    const pCont=`<b>${cli.nombreComercial}</b><br><small>${cli.nombrePersonal||''}</small><br><small>Tel: ${cli.telefono||'N/A'}</small><br><small>Sector: ${cli.sector||'N/A'}</small>${hasCEP?`<br><b>CEP: ${cli.codigoCEP}</b>`:''}<br><a href="https://www.google.com/maps?q=${coords[0]},${coords[1]}" target="_blank" class="text-xs text-blue-600">Ver en Maps</a>`; 
+                    
+                    const marker = L.marker(coords, { icon: icon, opacity: opacity }).bindPopup(pCont, { minWidth: 150 }); 
+                    
+                    marker.addTo(mapInstance); // Añadir directamente
+                    mGroup.push(marker); 
+                    mapMarkers.set(cli.id, marker);
+                } catch(coordErr) {
+                    console.warn(`Error coords cli ${cli.nombreComercial}: ${cli.coordenadas}`, coordErr);
+                }
+            });
+            
+            if(mGroup.length > 0) { 
+                const group = L.featureGroup(mGroup);
+                mapInstance.fitBounds(group.getBounds().pad(0.1)); 
+            } else { 
+                mapCont.innerHTML = '<p class="text-gray-500">No se pudieron mostrar clientes.</p>'; return; 
+            }
             setupMapSearch(cliCoords);
-        } catch (error) { console.error("Error mapa:", error); mapCont.innerHTML = `<p class="text-red-500">Error al cargar datos mapa.</p>`; }
+        } catch (error) { 
+            console.error("Error mapa:", error); 
+            mapCont.innerHTML = `<p class="text-red-500">Error al cargar datos mapa.</p>`; 
+        }
     }
+
     function setupMapSearch(clientsWithCoords) {
         const sInp = document.getElementById('map-search-input'), resCont = document.getElementById('map-search-results'); if (!sInp || !resCont) return;
         sInp.addEventListener('input', () => { const sTerm = sInp.value.toLowerCase().trim(); if (sTerm.length<2){resCont.innerHTML=''; resCont.classList.add('hidden'); return;} const filtCli = clientsWithCoords.filter(cli => (cli.nombreComercial||'').toLowerCase().includes(sTerm) || (cli.nombrePersonal||'').toLowerCase().includes(sTerm) || (cli.codigoCEP&&cli.codigoCEP.toLowerCase().includes(sTerm))); if(filtCli.length===0){resCont.innerHTML='<div class="p-2 text-gray-500 text-sm">No encontrado.</div>'; resCont.classList.remove('hidden'); return;} resCont.innerHTML=filtCli.slice(0,10).map(cli=>`<div class="p-2 hover:bg-gray-100 cursor-pointer border-b" data-client-id="${cli.id}"><p class="font-semibold text-sm">${cli.nombreComercial}</p><p class="text-xs text-gray-600">${cli.nombrePersonal||''} ${cli.codigoCEP&&cli.codigoCEP!=='N/A'?`(${cli.codigoCEP})`:''}</p></div>`).join(''); resCont.classList.remove('hidden'); });
@@ -1514,11 +1713,8 @@
         showClosingDetail, 
         handleDownloadSingleClosing,
         exportSingleClosingToExcel,
-        // --- INICIO DE CORRECCIÓN DE EXPOSICIÓN ---
-        // Exponer las funciones necesarias para ventas.js
         _processSalesDataForModal: _processSalesDataForModal,
         getDisplayQty: getDisplayQty
-        // --- FIN DE CORRECCIÓN DE EXPOSICIÓN ---
     };
 
 })();
