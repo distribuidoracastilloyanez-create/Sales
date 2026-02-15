@@ -2,6 +2,8 @@
     let _db, _userId, _userRole, _appId, _mainContent, _floatingControls, _activeListeners;
     let _showMainMenu, _showModal, _showAddItemModal, _populateDropdown;
     let _collection, _onSnapshot, _doc, _addDoc, _setDoc, _deleteDoc, _query, _where, _getDocs, _writeBatch, _getDoc;
+    // CORRECCIÓN 1: Variable para la función atómica increment
+    let _increment; 
 
     let _inventarioCache = [];
     let _lastFilters = { searchTerm: '', rubro: '', segmento: '', marca: '' };
@@ -39,6 +41,10 @@
         _getDocs = dependencies.getDocs;
         _writeBatch = dependencies.writeBatch;
         _getDoc = dependencies.getDoc;
+        // CORRECCIÓN 1: Recibir increment de dependencias
+        _increment = dependencies.increment; 
+        
+        if (!_increment) console.warn("Advertencia: 'increment' no fue pasado a initInventario. Las recargas podrían no ser atómicas.");
     };
 
     // --- CORRECCIÓN: Manejador de errores asíncronos en listener ---
@@ -719,10 +725,10 @@
                             for (const colName in itemsToDelete) {
                                 for (const item of itemsToDelete[colName]) {
                                     try {
-                                        await window.adminModule.propagateCategoryChange(colName, item.id, null);
+                                         await window.adminModule.propagateCategoryChange(colName, item.id, null);
                                     } catch (propError) {
-                                        console.error(`Error propagando eliminación de ${colName}/${item.id}:`, propError);
-                                        propagationErrors++;
+                                         console.error(`Error propagando eliminación de ${colName}/${item.id}:`, propError);
+                                         propagationErrors++;
                                     }
                                 }
                             }
@@ -926,13 +932,21 @@
                     const newBaseTotal = currentBase + unitsToAdd;
 
                     const docRef = _doc(_db, `artifacts/${_appId}/users/${_userId}/inventario`, p.id);
-                    batch.update(docRef, { cantidadUnidades: newBaseTotal });
+                    
+                    // --- CORRECCIÓN CRÍTICA DE SEGURIDAD (Atomic Increment) ---
+                    // Usamos _increment si está disponible, sino fallback inseguro con warning
+                    if (_increment) {
+                         batch.update(docRef, { cantidadUnidades: _increment(unitsToAdd) });
+                    } else {
+                         // Fallback para evitar crash si main.js no se actualizó
+                         batch.update(docRef, { cantidadUnidades: newBaseTotal });
+                    }
                     
                     recargaDetalles.push({
                         productoId: p.id,
                         presentacion: p.presentacion,
                         unidadesAnteriores: currentBase,
-                        unidadesNuevas: newBaseTotal,
+                        unidadesNuevas: newBaseTotal, // Nota: esto es una estimación basada en caché local para el log
                         diferenciaUnidades: unitsToAdd,
                         factorUtilizado: factor
                     });
