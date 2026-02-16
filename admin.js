@@ -69,7 +69,6 @@
                             <button id="obsequioConfigBtn" class="w-full px-6 py-3 bg-purple-600 text-white rounded-lg shadow-md hover:bg-purple-700">Config Obsequio</button>
                             <button id="importExportInventarioBtn" class="w-full px-6 py-3 bg-teal-600 text-white rounded-lg shadow-md hover:bg-teal-700">Importar/Exportar Inventario</button>
                             
-                            <!-- NUEVO BOTÓN INTEGRADO -->
                             <button id="fileManagementBtn" class="w-full px-6 py-3 bg-green-600 text-white rounded-lg shadow-md hover:bg-green-700">Importar/Exportar Cierres</button>
                             
                             <button id="deepCleanBtn" class="w-full px-6 py-3 bg-red-700 text-white rounded-lg shadow-md hover:bg-red-800">Limpieza Profunda</button>
@@ -99,7 +98,6 @@
                         <h1 class="text-3xl font-bold text-gray-800 mb-6 text-center">Gestión de Archivos de Cierres</h1>
                         
                         <div class="flex flex-col md:flex-row gap-8">
-                            <!-- EXPORTAR -->
                             <div class="flex-1 bg-gray-50 p-6 rounded-lg border border-gray-200">
                                 <h2 class="text-xl font-bold text-blue-700 mb-4 flex items-center">
                                     <span class="mr-2">📤</span> Exportar (Backup)
@@ -130,7 +128,6 @@
                                 </div>
                             </div>
 
-                            <!-- IMPORTAR -->
                             <div class="flex-1 bg-gray-50 p-6 rounded-lg border border-gray-200">
                                 <h2 class="text-xl font-bold text-green-700 mb-4 flex items-center">
                                     <span class="mr-2">📥</span> Importar / Restaurar
@@ -238,13 +235,19 @@
 
             if (allCierres.length === 0) { _showModal('Aviso', 'No se encontraron cierres.'); return; }
 
-            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(allCierres, null, 2));
+            // MODIFICACIÓN: Se reemplaza URI Data por Blob nativo para soportar backups grandes
+            const jsonStr = JSON.stringify(allCierres, null, 2);
+            const blob = new Blob([jsonStr], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            
             const downloadAnchorNode = document.createElement('a');
-            downloadAnchorNode.setAttribute("href", dataStr);
+            downloadAnchorNode.setAttribute("href", url);
             downloadAnchorNode.setAttribute("download", `backup_cierres_${dateFrom}_al_${dateTo}.json`);
             document.body.appendChild(downloadAnchorNode);
             downloadAnchorNode.click();
             downloadAnchorNode.remove();
+            URL.revokeObjectURL(url); // Limpieza de memoria
+            
             _showModal('Éxito', `Exportación completada. ${allCierres.length} registros.`);
         } catch (error) {
             console.error("Export error:", error);
@@ -264,11 +267,11 @@
 
         for (const file of files) {
             try {
-                if (file.name.endsWith('.json')) {
+                if (file.name.toLowerCase().endsWith('.json')) {
                     const count = await processJsonImport(file);
                     successCount += count;
                     logs.push(`✅ ${file.name}: ${count} registros restaurados.`);
-                } else if (file.name.match(/\.xlsx?$/)) {
+                } else if (file.name.match(/\.xlsx?$/i)) {
                     await processExcelImport(file, forcedUserId);
                     successCount++;
                     logs.push(`✅ ${file.name}: Importado correctamente.`);
@@ -304,23 +307,66 @@
         });
     }
 
+    // MODIFICACIÓN CRÍTICA: Lógica de sanitización de Fechas para Firestore
     async function processJsonImport(file) {
         const text = await readFileAsText(file);
-        const data = JSON.parse(text);
-        if (!Array.isArray(data)) throw new Error("JSON inválido.");
+        let data;
+        try {
+            data = JSON.parse(text.trim());
+        } catch(e) {
+            throw new Error("El archivo no es un JSON válido o está corrupto.");
+        }
+        
+        if (!Array.isArray(data)) throw new Error("JSON inválido: no contiene una lista de registros.");
 
         let count = 0;
         let batch = _writeBatch(_db);
         let ops = 0;
 
-        for (const item of data) {
+        // Función recursiva poderosa para limpiar todo el objeto de fechas inválidas o TimeStamps desglosados
+        function repairFirestoreData(obj) {
+            if (obj === null || typeof obj !== 'object') return obj;
+            
+            // Procesar Arrays internos
+            if (Array.isArray(obj)) {
+                return obj.map(repairFirestoreData);
+            }
+            
+            // MAGIA: Detectar el patrón {seconds, nanoseconds} que Firebase escupió en el JSON y restaurarlo a Date
+            if ('seconds' in obj && 'nanoseconds' in obj && typeof obj.seconds === 'number') {
+                return new Date(obj.seconds * 1000);
+            }
+
+            const repaired = {};
+            for (const key in obj) {
+                let val = obj[key];
+                
+                // Tratar llaves conocidas de fechas en caso de que sean strings
+                if ((key === 'fecha' || key === 'fechaModificacion' || key === 'fechaRegistro') && typeof val === 'string') {
+                    const d = new Date(val);
+                    if (!isNaN(d.getTime())) {
+                        val = d; 
+                    } else {
+                        val = null; // Previene "Invalid Date" crash en batch.set()
+                    }
+                } else {
+                    val = repairFirestoreData(val); // Bajar recursivamente para arreglar fechas en el array 'ventas'
+                }
+                
+                if (val !== undefined) repaired[key] = val;
+            }
+            return repaired;
+        }
+
+        for (let item of data) {
             if (!item._userId || !item._id) continue; 
             const uid = item._userId;
             const saveId = item._id;
-            delete item._id; delete item._userId;
+            delete item._id; 
+            delete item._userId;
 
-            if (typeof item.fecha === 'string') item.fecha = new Date(item.fecha);
-            if (typeof item.fechaModificacion === 'string') item.fechaModificacion = new Date(item.fechaModificacion);
+            // Reparar todo el documento (incluyendo nested arrays) antes de inyectar
+            item = repairFirestoreData(item);
 
             const docRef = _doc(_db, `artifacts/${_appId}/users/${uid}/cierres`, saveId);
             batch.set(docRef, item, { merge: true });
