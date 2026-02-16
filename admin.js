@@ -492,12 +492,21 @@
             let batch = _writeBatch(_db); let ops=0; let added=0;
             for (const item of _inventarioParaImportar) {
                 if (!curInvMap.has(item.key)) {
-                    const { key, ...data } = item; data.cantidadUnidades = 0;
-                    batch.set(_doc(invRef), data); ops++; added++;
-                    if (ops>=490) { await batch.commit(); batch=_writeBatch(_db); ops=0; }
+                    // Generar ID local para el nuevo producto
+                    const newId = _doc(_collection(_db, 'dummy')).id;
+                    const { key, ...data } = item; 
+                    data.cantidadUnidades = 0;
+                    
+                    // FASE 2: Propagar creación al Maestro y a usuarios legacy
+                    // Como estamos en un bucle, usamos propagateProductChange secuencialmente
+                    // OJO: Esto puede ser lento si son muchos productos. 
+                    // Para importación masiva, idealmente haríamos un batch propio de escritura doble,
+                    // pero por simplicidad y seguridad, delegamos a la función robusta.
+                    await window.adminModule.propagateProductChange(newId, data);
+                    
+                    added++;
                 }
             }
-            if (ops>0) await batch.commit();
             _showModal('Éxito', `Se añadieron ${added} productos nuevos.`, showImportExportInventarioView);
         } catch (e) { _showModal('Error', e.message); }
     }
@@ -581,9 +590,7 @@
     // [NUEVO] Helper para escribir en el Catálogo Maestro (Centralizado)
     async function _saveToMasterCatalog(productId, productData) {
         if (!productId) return;
-        // NOTA: Usamos el ID público 'ventas-9a210' o _appId si coincide.
-        // Asumo _appId es dinámico pero la carpeta pública suele ser fija.
-        // Si tienes múltiples appIds, ajusta aquí. Por ahora uso _appId.
+        // Usamos el ID público 'ventas-9a210' o _appId si coincide.
         const masterPath = `artifacts/${_appId}/public/data/productos`;
         const masterRef = _doc(_db, masterPath, productId);
 
@@ -597,14 +604,13 @@
                 // El catálogo maestro guarda definiciones (Precio, Nombre, Marca), NO Stock.
                 // Extraemos cantidadUnidades para no guardarla en el maestro.
                 const { cantidadUnidades, ...masterData } = productData;
-                masterData.lastUpdated = new Date(); // Auditoría simple
+                masterData.lastUpdated = new Date(); 
                 
                 await _setDoc(masterRef, masterData, { merge: true });
                 console.log("✅ Sincronizado con Catálogo Maestro");
             }
         } catch (e) {
             console.warn("⚠️ Advertencia: No se pudo escribir en Catálogo Maestro (¿Faltan permisos de admin?)", e);
-            // No lanzamos throw para no detener la propagación legacy (por seguridad operativa actual)
         }
     }
 
@@ -616,8 +622,6 @@
         await _saveToMasterCatalog(productId, productData);
 
         // 2. FASE LEGACY: Mantener el comportamiento antiguo (Fan-out)
-        // Esto asegura que los usuarios actuales sigan recibiendo actualizaciones 
-        // hasta que cambiemos 'ventas.js' para leer del maestro.
         const allUIds = await _getAllOtherUserIds();
         const BATCH_LIMIT = 490;
         let batch = _writeBatch(_db);
