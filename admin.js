@@ -79,7 +79,6 @@
         document.getElementById('userManagementBtn').addEventListener('click', showUserManagementView);
         document.getElementById('obsequioConfigBtn').addEventListener('click', showObsequioConfigView);
         document.getElementById('importExportInventarioBtn').addEventListener('click', showImportExportInventarioView);
-        // Listener de Cierres Eliminado
         document.getElementById('deepCleanBtn').addEventListener('click', showDeepCleanView);
         document.getElementById('backToMenuBtn').addEventListener('click', _showMainMenu);
     }
@@ -114,9 +113,6 @@
         document.getElementById('executeCleanBtn').addEventListener('click', handleDeepCleanConfirmation);
         document.getElementById('backToAdminMenuBtn').addEventListener('click', showAdminSubMenuView);
     }
-
-    // Nota: Se eliminó la función de Backup previo a limpieza porque dependía de ExcelJS y lógica de exportación compleja que a veces fallaba en limpieza total.
-    // Si se requiere backup, usar la función de exportar inventario antes.
 
     function handleDeepCleanConfirmation() { 
         const confirmInput = document.getElementById('confirmCleanText');
@@ -161,9 +157,7 @@
             colsToDelPub.push({ path: `artifacts/${pubProjId}/public/data/sectores`, name: 'Sectores Públicos' }); 
         }
         if (cleanVen) { 
-            // Ruta corregida: artifacts/{appId}/public/data/user_closings
             colsToDelPub.push({ path: `artifacts/${_appId}/public/data/user_closings`, name: 'Cierres Vendedores Públicos' }); 
-            // Ruta CXC
             colsToDelPub.push({ path: `artifacts/${pubProjId}/public/data/cxc`, name: 'Cuentas por Cobrar (CXC)' });
         }
         if (cleanObs) { 
@@ -236,19 +230,25 @@
 
     async function deleteCollection(collectionPath) {
         if (typeof limit !== 'function') throw new Error("limit no disponible.");
-        const batchSize = 400; 
+        // FIX: Reducir batchSize para evitar sobrecargar la caché local y causar errores de BloomFilter
+        const batchSize = 100; 
         const colRef = _collection(_db, collectionPath); 
-        
-        // CORREGIDO: No usar startAfter. Simplemente repetimos la query de "los primeros 400".
-        // Al borrar los primeros, los siguientes se mueven al principio.
-        // Reutilizamos la definición de la query.
         const qDef = _query(colRef, limit(batchSize));
         
         let deletedCount = 0; 
         
         while (true) { 
-            const snap = await _getDocs(qDef); 
-            if (snap.size === 0) break; 
+            let snap;
+            try {
+                // Intento de lectura con manejo de errores transitorios
+                snap = await _getDocs(qDef);
+            } catch (e) {
+                console.warn("Error leyendo lote para borrar (reintentando...):", e);
+                await new Promise(r => setTimeout(r, 1000));
+                try { snap = await _getDocs(qDef); } catch(e2) { break; } 
+            }
+
+            if (!snap || snap.size === 0) break; 
             
             const batch = _writeBatch(_db); 
             snap.docs.forEach(d => batch.delete(d.ref)); 
@@ -256,13 +256,13 @@
             
             deletedCount += snap.size; 
             
-            // Pequeña pausa para estabilidad
-            await new Promise(r => setTimeout(r, 50));
+            // Pausa aumentada (300ms) para dar tiempo al SDK de Firebase de actualizar el BloomFilter y evitar el error
+            await new Promise(r => setTimeout(r, 300));
         }
         return deletedCount;
     }
 
-    // --- Importar/Exportar Inventario (Lógica Original) ---
+    // --- Importar/Exportar Inventario ---
     async function getRubroOrderMapAdmin() { if (_rubroOrderCacheAdmin) return _rubroOrderCacheAdmin; const map = {}; const ref = _collection(_db, `artifacts/${_appId}/users/${_userId}/rubros`); try { const snap = await _getDocs(ref); snap.docs.forEach(d => { const data = d.data(); map[data.name] = data.orden ?? 9999; }); _rubroOrderCacheAdmin = map; return map; } catch (e) { return {}; } }
     async function getSegmentoOrderMapAdmin() { if (_segmentoOrderCacheAdmin) return _segmentoOrderCacheAdmin; const map = {}; const ref = _collection(_db, `artifacts/${_appId}/users/${_userId}/segmentos`); try { const snap = await _getDocs(ref); snap.docs.forEach(d => { const data = d.data(); map[data.name] = data.orden ?? 9999; }); _segmentoOrderCacheAdmin = map; return map; } catch (e) { return {}; } }
     
