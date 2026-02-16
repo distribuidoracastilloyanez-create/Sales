@@ -194,7 +194,7 @@
         import { getFirestore, doc, getDoc, addDoc, setDoc, deleteDoc, onSnapshot, collection, writeBatch, runTransaction, getDocs, enableIndexedDbPersistence, query, where, orderBy, limit, startAfter, enableNetwork, disableNetwork, increment } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         const firebaseConfig = {
-            apiKey: "AIzaSyApyjf3NIjnGJp2sWyJccsR40-Q8UnU364",
+            apiKey: "",
             authDomain: "dist-castillo-sales.firebaseapp.com",
             projectId: "dist-castillo-sales",
             storageBucket: "dist-castillo-sales.firebasestorage.app",
@@ -207,6 +207,7 @@
         const db = getFirestore(app);
 
         let userId, userRole = 'user';
+        let currentUser = null; // CORRECCIÓN: Variable definida
         let activeListeners = [];
         let manualOffline = localStorage.getItem('manualOfflineMode') === 'true';
 
@@ -339,6 +340,7 @@
 
         onAuthStateChanged(auth, async (user) => {
             if (user) {
+                currentUser = user; // Asignar variable definida
                 userId = user.uid;
                 loginScreen.classList.add('hidden');
                 appLayout.classList.remove('hidden');
@@ -497,7 +499,12 @@
 
     <!-- PWA Register -->
     <script>
-        if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.error);
+        if ('serviceWorker' in navigator) {
+            // Check protocol to prevent error in blob/preview environments
+            if (window.location.protocol.startsWith('http')) {
+                navigator.serviceWorker.register('./sw.js').catch(console.error);
+            }
+        }
     </script>
 </body>
 </html>
