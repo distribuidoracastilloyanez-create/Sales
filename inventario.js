@@ -2,12 +2,18 @@
     let _db, _userId, _userRole, _appId, _mainContent, _floatingControls, _activeListeners;
     let _showMainMenu, _showModal, _showAddItemModal, _populateDropdown;
     let _collection, _onSnapshot, _doc, _addDoc, _setDoc, _deleteDoc, _query, _where, _getDocs, _writeBatch, _getDoc;
-    // CORRECCIÓN 1: Variable para la función atómica increment
     let _increment; 
 
+    // --- NUEVO: SISTEMA DE CACHÉ DOBLE (FASE 2) ---
+    let _masterCatalogCache = {}; // Datos públicos (Nombre, Precio, Marca) - Key: ID
+    let _userStockCache = {};     // Datos privados (Stock) - Key: ID
+    // _inventarioCache ahora será el resultado de la fusión de ambos
     let _inventarioCache = [];
+    
+    // Control de Listeners Múltiples
+    let _listenersUnsubscribes = []; 
+
     let _lastFilters = { searchTerm: '', rubro: '', segmento: '', marca: '' };
-    let _inventarioListenerUnsubscribe = null;
     let _marcasCache = null;
     
     // Variable para persistir las cantidades ingresadas en la recarga
@@ -17,6 +23,8 @@
     let _segmentoOrderCache = null;
     let _marcaOrderCacheBySegment = {};
 
+    // ID PÚBLICO FIJO (Para leer el maestro)
+    const PUBLIC_DATA_ID = 'ventas-9a210'; 
 
     window.initInventario = function(dependencies) {
         _db = dependencies.db;
@@ -41,37 +49,81 @@
         _getDocs = dependencies.getDocs;
         _writeBatch = dependencies.writeBatch;
         _getDoc = dependencies.getDoc;
-        // CORRECCIÓN 1: Recibir increment de dependencias
         _increment = dependencies.increment; 
         
         if (!_increment) console.warn("Advertencia: 'increment' no fue pasado a initInventario. Las recargas podrían no ser atómicas.");
+        console.log("Módulo Inventario FASE 2 (Híbrido) Inicializado.");
     };
 
-    // --- CORRECCIÓN: Manejador de errores asíncronos en listener ---
+    // --- NUEVO MOTOR DE LECTURA (LISTENER DOBLE) ---
     function startMainInventarioListener(callback) {
-        if (_inventarioListenerUnsubscribe) {
-            try { _inventarioListenerUnsubscribe(); } catch(e) { console.warn("Error unsubscribing previous listener:", e); }
-        }
-        const collectionRef = _collection(_db, `artifacts/${_appId}/users/${_userId}/inventario`);
-        _inventarioListenerUnsubscribe = _onSnapshot(collectionRef, (snapshot) => {
-            _inventarioCache = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            if (callback && typeof callback === 'function') {
-                 // Envolver en promesa para capturar errores asíncronos en el callback (ej. renderizado o sorting)
-                 Promise.resolve(callback()).catch(cbError => {
-                     console.error("Listener callback error (Render/Sort):", cbError);
-                 });
-            }
-        }, (error) => {
-             if (error.code === 'permission-denied' || error.code === 'unauthenticated') { 
-                 console.log(`Inventory listener error ignored (assumed logout): ${error.code}`); 
-                 return; 
-             }
-             console.error("Error en listener de inventario:", error);
-             if (error.code !== 'cancelled') { 
-                 _showModal('Error de Conexión', 'No se pudo actualizar el inventario.');
-             }
+        // Limpiar listeners anteriores
+        _listenersUnsubscribes.forEach(unsub => {
+            try { unsub(); } catch(e) { console.warn("Error limpiando listener:", e); }
         });
-        _activeListeners.push(_inventarioListenerUnsubscribe);
+        _listenersUnsubscribes = [];
+
+        // Función interna de fusión y renderizado
+        const combineAndNotify = () => {
+            _inventarioCache = [];
+            const allIds = new Set([...Object.keys(_masterCatalogCache), ...Object.keys(_userStockCache)]);
+            
+            allIds.forEach(id => {
+                const master = _masterCatalogCache[id];
+                const stockData = _userStockCache[id];
+                
+                if (master) {
+                    // Producto existe en maestro -> Usamos definición maestra + stock privado
+                    _inventarioCache.push({
+                        ...master, 
+                        cantidadUnidades: stockData ? (stockData.cantidadUnidades || 0) : 0,
+                        id: id // Asegurar ID
+                    });
+                } else if (stockData) {
+                    // Producto existe SOLO en privado (Legacy/Huerfano) -> Lo mostramos tal cual
+                    _inventarioCache.push({ ...stockData, id: id });
+                }
+            });
+
+            if (callback && typeof callback === 'function') {
+                Promise.resolve(callback()).catch(cbError => {
+                    console.error("Listener callback error (Render/Sort):", cbError);
+                });
+            }
+        };
+
+        // 1. LISTENER MAESTRO (Público)
+        const masterRef = _collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/productos`);
+        const unsubMaster = _onSnapshot(masterRef, (snapshot) => {
+            _masterCatalogCache = {};
+            snapshot.forEach(doc => { _masterCatalogCache[doc.id] = { id: doc.id, ...doc.data() }; });
+            combineAndNotify();
+        }, (error) => handleListenerError(error, "Maestro"));
+        _listenersUnsubscribes.push(unsubMaster);
+
+        // 2. LISTENER PRIVADO (Stock)
+        const stockRef = _collection(_db, `artifacts/${_appId}/users/${_userId}/inventario`);
+        const unsubStock = _onSnapshot(stockRef, (snapshot) => {
+            _userStockCache = {};
+            snapshot.forEach(doc => { _userStockCache[doc.id] = { id: doc.id, ...doc.data() }; });
+            combineAndNotify();
+        }, (error) => handleListenerError(error, "Stock Privado"));
+        _listenersUnsubscribes.push(unsubStock);
+
+        // Registramos en activeListeners global para limpieza al salir del módulo
+        _activeListeners.push(..._listenersUnsubscribes);
+    }
+
+    function handleListenerError(error, source) {
+        if (error.code === 'permission-denied' || error.code === 'unauthenticated') { 
+            console.log(`Listener error (${source}) ignored: ${error.code}`); 
+            return; 
+        }
+        console.error(`Error en listener (${source}):`, error);
+        if (error.code !== 'cancelled') { 
+            // Solo mostramos alerta si falla el Stock, el maestro puede fallar si no existe la colección aún
+            if(source === "Stock Privado") _showModal('Error de Conexión', 'No se pudo actualizar el inventario.');
+        }
     }
 
     function invalidateSegmentOrderCache() {
@@ -89,6 +141,11 @@
 
     window.showInventarioSubMenu = function() {
         if (_floatingControls) _floatingControls.classList.add('hidden');
+        
+        // Limpieza de listeners al volver al menú principal del módulo
+        _listenersUnsubscribes.forEach(u => u()); 
+        _listenersUnsubscribes = [];
+
         const isAdmin = _userRole === 'admin';
         _mainContent.innerHTML = `
             <div class="p-4 pt-8">
@@ -118,10 +175,13 @@
             document.getElementById('modificarDatosBtn')?.addEventListener('click', showModificarDatosView);
         }
         document.getElementById('recargaProductosBtn').addEventListener('click', showRecargaProductosView);
-        document.getElementById('backToMenuBtn').addEventListener('click', _showMainMenu);
+        document.getElementById('backToMenuBtn').addEventListener('click', () => {
+             // Limpiar listeners al salir totalmente
+            _listenersUnsubscribes.forEach(u => u());
+            _showMainMenu();
+        });
     }
 
-    // --- CORRECCIÓN: showModifyDeleteView ahora es Async y espera carga inicial ---
     async function showModifyDeleteView() {
          if (_floatingControls) _floatingControls.classList.add('hidden'); 
          const isAdmin = _userRole === 'admin';
@@ -131,35 +191,24 @@
         document.getElementById('backToInventarioBtn').addEventListener('click', showInventarioSubMenu);
         if (isAdmin) document.getElementById('deleteAllProductosBtn')?.addEventListener('click', handleDeleteAllProductos);
 
-        // 1. Esperar a que se poble el dropdown de Rubros
         await _populateDropdown(`artifacts/${_appId}/users/${_userId}/rubros`, 'modify-filter-rubro', 'Rubro');
 
-        // 2. Configurar filtros y obtener función de actualización
-        // Definimos un callback base para renderizar
         const baseRender = () => renderProductosList('productosListContainer', !isAdmin);
         const { updateDependentDropdowns } = setupFiltros('modify', baseRender);
 
-        // 3. Restaurar valor inicial del Rubro (ya que el dropdown está lleno)
         const rubroSelect = document.getElementById('modify-filter-rubro');
         if (rubroSelect) rubroSelect.value = _lastFilters.rubro || '';
 
-        // 4. Crear callback inteligente para el listener
         let isFirstLoad = true;
         const smartListenerCallback = async () => {
-            // Renderizar lista
             await baseRender();
-            
-            // Si es la primera carga y tenemos datos, restaurar filtros dependientes
             if (isFirstLoad && _inventarioCache.length > 0) {
-                // 'init' intentará restaurar segmento y marca desde _lastFilters
                 updateDependentDropdowns('init');
-                // Re-renderizar para aplicar los filtros de segmento/marca recién restaurados
                 await baseRender();
                 isFirstLoad = false;
             }
         };
 
-        // 5. Iniciar listener
         startMainInventarioListener(smartListenerCallback);
     }
 
@@ -191,7 +240,6 @@
         `;
     }
 
-    // --- CORRECCIÓN: setupFiltros devuelve la función de actualización y elimina setTimeout ---
     function setupFiltros(prefix, renderCallback) {
         const searchInput=document.getElementById(`${prefix}-search-input`);
         const rubroFilter=document.getElementById(`${prefix}-filter-rubro`);
@@ -206,7 +254,6 @@
             const currentSegmentoValue = (trigger === 'init' || trigger === 'rubro') ? _lastFilters.segmento : segmentoFilter.value;
             const currentMarcaValue = (trigger === 'init' || trigger === 'rubro' || trigger === 'segmento') ? _lastFilters.marca : marcaFilter.value;
 
-            // --- Actualizar Segmentos ---
             segmentoFilter.innerHTML = '<option value="">Todos</option>';
             segmentoFilter.disabled = true;
             segmentoFilter.value = "";
@@ -229,7 +276,6 @@
             }
             if (segmentoFilter.value !== currentSegmentoValue) { _lastFilters.segmento = ''; }
 
-            // --- Actualizar Marcas ---
             marcaFilter.innerHTML = '<option value="">Todos</option>';
             marcaFilter.disabled = true;
              marcaFilter.value = "";
@@ -375,8 +421,6 @@
         container.innerHTML = tableHTML;
     }
 
-    // --- NUEVAS FUNCIONES FALTANTES PARA AGREGAR PRODUCTOS Y GESTIONAR DATOS ---
-
     async function showAgregarProductoView() {
         if (_userRole !== 'admin') return;
         if (_floatingControls) _floatingControls.classList.add('hidden');
@@ -429,7 +473,6 @@
 
         ventaPorContainer.addEventListener('change', updateDynamicInputs);
         
-        // Inicializar
         document.getElementById('ventaPorUnd').checked = true;
         updateDynamicInputs();
 
@@ -437,13 +480,13 @@
         document.getElementById('backToMenuBtn').addEventListener('click', showInventarioSubMenu);
     }
 
+    // --- MODIFICADO: USA ADMIN.JS PARA PROPAGAR ---
     async function handleAddProducto(e) {
         e.preventDefault();
-        const data = getProductoDataFromForm(false); // false = isUpdate (no)
+        const data = getProductoDataFromForm(false); 
         if (!data.rubro||!data.segmento||!data.marca||!data.presentacion){_showModal('Error','Completa Rubro, Segmento, Marca y Presentación.');return;}
         if (!data.ventaPor.und&&!data.ventaPor.paq&&!data.ventaPor.cj){_showModal('Error','Selecciona al menos una forma de venta.');return;}
         
-        // Validación de precios
         let precioValido = (data.ventaPor.und && data.precios.und > 0) || 
                            (data.ventaPor.paq && data.precios.paq > 0) || 
                            (data.ventaPor.cj && data.precios.cj > 0);
@@ -451,17 +494,18 @@
         
         if (data.manejaVacios && !data.tipoVacio){_showModal('Error','Si maneja vacío, selecciona el tipo.');return;}
 
-        _showModal('Progreso', 'Agregando producto...');
+        _showModal('Progreso', 'Creando producto en Catálogo Maestro...');
         try {
-            const docRef = await _addDoc(_collection(_db, `artifacts/${_appId}/users/${_userId}/inventario`), data);
+            // FASE 2: Generar ID manual y delegar todo a admin.js
+            const newId = _doc(_collection(_db, 'dummy')).id;
             
-            // Propagar creación
             if (window.adminModule?.propagateProductChange) {
-                _showModal('Progreso', 'Propagando nuevo producto...');
-                await window.adminModule.propagateProductChange(docRef.id, data);
+                // propagateProductChange maneja la Escritura Doble (Maestro + Copia Local)
+                await window.adminModule.propagateProductChange(newId, data);
+                _showModal('Éxito', 'Producto agregado al Catálogo y propagado.', showInventarioSubMenu);
+            } else {
+                throw new Error("Módulo Admin no disponible.");
             }
-            
-            _showModal('Éxito', 'Producto agregado correctamente.', showInventarioSubMenu);
         } catch (err) {
             console.error("Error agregando producto:", err);
             _showModal('Error', `No se pudo agregar: ${err.message}`);
@@ -469,7 +513,6 @@
     }
 
     function showAddCategoryModal(collectionName, title) {
-        // Usamos el modal global definido en index.html
         if (_showAddItemModal) {
             _showAddItemModal(collectionName, title);
         } else {
@@ -505,7 +548,6 @@
     }
 
     async function handleDeleteDataItem(collectionName, id) {
-        // Función utilitaria por si se necesita borrar un item especifico desde otro módulo
         try {
             await _deleteDoc(_doc(_db, `artifacts/${_appId}/users/${_userId}/${collectionName}`, id));
             return true;
@@ -515,7 +557,6 @@
         }
     }
 
-    // Helper para extraer datos del form (usado en Edit y Add)
     function getProductoDataFromForm(isUpdate) {
         const rubro = document.getElementById('rubro').value;
         const segmento = document.getElementById('segmento').value;
@@ -548,7 +589,6 @@
         };
 
         if (!isUpdate) {
-             // Solo al crear leemos el stock inicial del input
              data.cantidadUnidades = parseInt(document.getElementById('cantidadActual').value) || 0;
         }
         
@@ -638,25 +678,26 @@
         document.getElementById('backToModifyDeleteBtn').addEventListener('click', showModifyDeleteView);
     }
 
-    // --- CORRECCIÓN: Uso de {merge: true} para proteger campos ocultos ---
+    // --- MODIFICADO: USA ADMIN.JS PARA PROPAGAR ---
     async function handleUpdateProducto(e, productId) {
         e.preventDefault(); if (_userRole !== 'admin') return; 
         const updatedData = getProductoDataFromForm(true); // true = isUpdate
-        const productoOriginal = _inventarioCache.find(p => p.id === productId); 
-        if (!productoOriginal) { _showModal('Error', 'Producto original no encontrado.'); return; } 
+        
+        // Validación básica
         if (!updatedData.rubro||!updatedData.segmento||!updatedData.marca||!updatedData.presentacion){_showModal('Error','Completa Rubro, Segmento, Marca y Presentación.');return;} if (!updatedData.ventaPor.und&&!updatedData.ventaPor.paq&&!updatedData.ventaPor.cj){_showModal('Error','Selecciona al menos una forma de venta.');return;} if (updatedData.manejaVacios&&!updatedData.tipoVacio){_showModal('Error','Si maneja vacío, selecciona el tipo.');document.getElementById('tipoVacioSelect')?.focus();return;} let precioValido=(updatedData.ventaPor.und&&updatedData.precios.und>0)||(updatedData.ventaPor.paq&&updatedData.precios.paq>0)||(updatedData.ventaPor.cj&&updatedData.precios.cj>0); if(!precioValido){_showModal('Error','Ingresa al menos un precio válido (> 0) para la forma de venta seleccionada.');document.querySelector('#preciosContainer input[required]')?.focus();return;}
         
-        updatedData.cantidadUnidades = productoOriginal.cantidadUnidades || 0;
-        _showModal('Progreso','Guardando cambios...'); 
+        // Preservar stock (no se edita aquí)
+        updatedData.cantidadUnidades = 0; // El stock es manejado aparte en Fase 2, admin.js combina.
+
+        _showModal('Progreso','Guardando cambios en Catálogo Maestro...'); 
         try { 
-            // merge: true es vital para no borrar campos que no estén en el formulario
-            await _setDoc(_doc(_db, `artifacts/${_appId}/users/${_userId}/inventario`, productId), updatedData, { merge: true }); 
+            // Delegar la actualización a admin.js
             if (window.adminModule?.propagateProductChange) { 
-                _showModal('Progreso','Propagando cambios...'); 
                 await window.adminModule.propagateProductChange(productId, updatedData); 
-            } 
-            _showModal('Éxito','Producto modificado y propagado correctamente.'); 
-            showModifyDeleteView(); 
+                 _showModal('Éxito','Producto modificado y propagado correctamente.', showModifyDeleteView); 
+            } else {
+                throw new Error("Módulo Admin no cargado.");
+            }
         } catch (err) { 
             console.error("Error modificando producto:", err); 
             _showModal('Error',`Ocurrió un error al guardar: ${err.message}`); 
@@ -666,11 +707,14 @@
 
     function deleteProducto(productId) {
         if (_userRole !== 'admin') { _showModal('Acceso Denegado', 'Solo administradores.'); return; } const prod = _inventarioCache.find(p => p.id === productId); if (!prod) { _showModal('Error', 'Producto no encontrado.'); return; }
-        _showModal('Confirmar Eliminación', `¿Estás seguro de eliminar el producto "${prod.presentacion}"? Esta acción se propagará a todos los usuarios y es IRREVERSIBLE.`, async () => { _showModal('Progreso', `Eliminando "${prod.presentacion}"...`); try { await _deleteDoc(_doc(_db, `artifacts/${_appId}/users/${_userId}/inventario`, productId)); if (window.adminModule?.propagateProductChange) { _showModal('Progreso', `Propagando eliminación...`); await window.adminModule.propagateProductChange(productId, null); } _showModal('Éxito',`Producto "${prod.presentacion}" eliminado y propagado.`); } catch (e) { console.error("Error eliminando producto:", e); _showModal('Error', `No se pudo eliminar: ${e.message}`); } }, 'Sí, Eliminar', null, true);
+        _showModal('Confirmar Eliminación', `¿Estás seguro de eliminar el producto "${prod.presentacion}"? Esta acción se propagará a todos los usuarios y es IRREVERSIBLE.`, async () => { _showModal('Progreso', `Eliminando "${prod.presentacion}"...`); try { if (window.adminModule?.propagateProductChange) { await window.adminModule.propagateProductChange(productId, null); } else { await _deleteDoc(_doc(_db, `artifacts/${_appId}/users/${_userId}/inventario`, productId)); } _showModal('Éxito',`Producto "${prod.presentacion}" eliminado y propagado.`); } catch (e) { console.error("Error eliminando producto:", e); _showModal('Error', `No se pudo eliminar: ${e.message}`); } }, 'Sí, Eliminar', null, true);
     }
 
     async function handleDeleteAllProductos() {
-        if (_userRole !== 'admin') return; _showModal('Confirmación Extrema', `¿Estás SEGURO de eliminar TODOS los productos del inventario? Esta acción es IRREVERSIBLE y se propagará.`, async () => { _showModal('Progreso', 'Eliminando productos locales...'); try { const collectionRef = _collection(_db, `artifacts/${_appId}/users/${_userId}/inventario`); const snapshot = await _getDocs(collectionRef); if (snapshot.empty) { _showModal('Aviso', 'No hay productos en el inventario para eliminar.'); return; } const productIds = snapshot.docs.map(d => d.id); const BATCH_LIMIT = 490; let batch = _writeBatch(_db), opsCount = 0, totalDeletedLocally = 0; for (const docSnapshot of snapshot.docs) { batch.delete(docSnapshot.ref); opsCount++; if (opsCount >= BATCH_LIMIT) { await batch.commit(); totalDeletedLocally += opsCount; batch = _writeBatch(_db); opsCount = 0; } } if (opsCount > 0) { await batch.commit(); totalDeletedLocally += opsCount; } _showModal('Progreso', `Se eliminaron ${totalDeletedLocally} productos localmente. Propagando eliminación...`); if (window.adminModule?.propagateProductChange) { let propagationErrors = 0; for (const productId of productIds) { try { await window.adminModule.propagateProductChange(productId, null); } catch (propError) { console.error(`Error propagando eliminación de ${productId}:`, propError); propagationErrors++; } } _showModal(propagationErrors > 0 ? 'Advertencia' : 'Éxito', `Se eliminaron ${totalDeletedLocally} productos.${propagationErrors > 0 ? ` Ocurrieron ${propagationErrors} errores al propagar.` : ' Propagado correctamente.'}`); } else { _showModal('Advertencia', `Se eliminaron ${totalDeletedLocally} productos localmente, pero la función de propagación no está disponible.`); } } catch (error) { console.error("Error al eliminar todos los productos:", error); _showModal('Error', `Hubo un error al eliminar los productos: ${error.message}`); } }, 'Sí, Eliminar Todos', null, true);
+        if (_userRole !== 'admin') return; _showModal('Confirmación Extrema', `¿Estás SEGURO de eliminar TODOS los productos del inventario? Esta acción es IRREVERSIBLE y se propagará.`, async () => { _showModal('Progreso', 'Eliminando productos...'); try { const collectionRef = _collection(_db, `artifacts/${_appId}/users/${_userId}/inventario`); const snapshot = await _getDocs(collectionRef); if (snapshot.empty) { _showModal('Aviso', 'No hay productos en el inventario para eliminar.'); return; } const productIds = snapshot.docs.map(d => d.id); 
+        
+        // FASE 2: Propagar eliminación usando admin.js
+        if (window.adminModule?.propagateProductChange) { let propagationErrors = 0; for (const productId of productIds) { try { await window.adminModule.propagateProductChange(productId, null); } catch (propError) { console.error(`Error propagando eliminación de ${productId}:`, propError); propagationErrors++; } } _showModal(propagationErrors > 0 ? 'Advertencia' : 'Éxito', `Se eliminaron ${productIds.length} productos.${propagationErrors > 0 ? ` Ocurrieron ${propagationErrors} errores al propagar.` : ' Propagado correctamente.'}`); } else { _showModal('Error', `La función de propagación no está disponible.`); } } catch (error) { console.error("Error al eliminar todos los productos:", error); _showModal('Error', `Hubo un error al eliminar los productos: ${error.message}`); } }, 'Sí, Eliminar Todos', null, true);
     }
 
     async function handleDeleteAllDatosMaestros() {
@@ -683,9 +727,8 @@
                 const itemsInUse = { rubros: new Set(), segmentos: new Set(), marcas: new Set() };
                 let totalFound = 0, totalToDelete = 0;
 
-                const inventarioSnap = await _getDocs(_collection(_db, `artifacts/${_appId}/users/${_userId}/inventario`));
-                inventarioSnap.docs.forEach(doc => {
-                    const data = doc.data();
+                // Usamos la caché actual para verificar uso
+                _inventarioCache.forEach(data => {
                     if (data.rubro) itemsInUse.rubros.add(data.rubro);
                     if (data.segmento) itemsInUse.segmentos.add(data.segmento);
                     if (data.marca) itemsInUse.marcas.add(data.marca);
@@ -711,20 +754,12 @@
                 _showModal('Confirmación Final', `Se eliminarán ${totalToDelete} datos maestros no utilizados (${itemsToDelete.rubros.length} Rubros, ${itemsToDelete.segmentos.length} Segmentos, ${itemsToDelete.marcas.length} Marcas). Esta acción se propagará. ¿Continuar?`, async () => {
                     _showModal('Progreso', `Eliminando ${totalToDelete} datos maestros localmente...`);
                     try { 
-                        const batchAdmin = _writeBatch(_db);
-                        for (const colName in itemsToDelete) {
-                            itemsToDelete[colName].forEach(item => {
-                                batchAdmin.delete(_doc(_db, `artifacts/${_appId}/users/${_userId}/${colName}`, item.id));
-                            });
-                        }
-                        await batchAdmin.commit();
-                        _showModal('Progreso', `Datos eliminados localmente. Propagando eliminación...`);
-
                         let propagationErrors = 0;
                         if (window.adminModule?.propagateCategoryChange) {
                             for (const colName in itemsToDelete) {
                                 for (const item of itemsToDelete[colName]) {
                                     try {
+                                         // Propagate con null borra
                                          await window.adminModule.propagateCategoryChange(colName, item.id, null);
                                     } catch (propError) {
                                          console.error(`Error propagando eliminación de ${colName}/${item.id}:`, propError);
@@ -734,7 +769,7 @@
                             }
                             _showModal(propagationErrors > 0 ? 'Advertencia' : 'Éxito', `Se eliminaron ${totalToDelete} datos maestros no utilizados.${propagationErrors > 0 ? ` Ocurrieron ${propagationErrors} errores al propagar.` : ' Propagado correctamente.'}`);
                         } else {
-                            _showModal('Advertencia', `Se eliminaron ${totalToDelete} datos maestros localmente, pero la función de propagación no está disponible.`);
+                            _showModal('Advertencia', `La función de propagación no está disponible.`);
                         }
                         invalidateSegmentOrderCache(); 
 
@@ -751,12 +786,8 @@
         }, 'Sí, Eliminar No Usados', null, true); 
     }
 
-    // --- Recarga de Productos (Reemplaza Ajuste Masivo) ---
-    // --- CORRECCIÓN: showRecargaProductosView ahora es Async y espera carga inicial ---
     async function showRecargaProductosView() {
          if (_floatingControls) _floatingControls.classList.add('hidden');
-         
-         // Limpiar el estado temporal al abrir la vista
          _recargaTempState = {};
 
         _mainContent.innerHTML = `
@@ -780,18 +811,14 @@
         document.getElementById('backToInventarioBtn').addEventListener('click', showInventarioSubMenu);
         document.getElementById('saveRecargaBtn').addEventListener('click', handleGuardarRecarga);
 
-        // 1. Esperar a que se poble el dropdown de Rubros
         await _populateDropdown(`artifacts/${_appId}/users/${_userId}/rubros`, 'recarga-filter-rubro', 'Rubro');
 
-        // 2. Configurar filtros y obtener función de actualización
         const baseRender = () => renderRecargaList();
         const { updateDependentDropdowns } = setupFiltros('recarga', baseRender);
 
-        // 3. Restaurar valor inicial del Rubro
         const rubroSelect = document.getElementById('recarga-filter-rubro');
         if (rubroSelect) rubroSelect.value = _lastFilters.rubro || '';
 
-        // 4. Crear callback inteligente
         let isFirstLoad = true;
         const smartListenerCallback = async () => {
             await baseRender();
@@ -802,7 +829,6 @@
             }
         };
 
-        // 5. Iniciar listener
         startMainInventarioListener(smartListenerCallback);
     }
 
@@ -931,14 +957,12 @@
                     const unitsToAdd = inputVal * factor;
                     const newBaseTotal = currentBase + unitsToAdd;
 
+                    // IMPORTANTE: Escribimos solo en el path de usuario (Stock Privado)
                     const docRef = _doc(_db, `artifacts/${_appId}/users/${_userId}/inventario`, p.id);
                     
-                    // --- CORRECCIÓN CRÍTICA DE SEGURIDAD (Atomic Increment) ---
-                    // Usamos _increment si está disponible, sino fallback inseguro con warning
                     if (_increment) {
                          batch.update(docRef, { cantidadUnidades: _increment(unitsToAdd) });
                     } else {
-                         // Fallback para evitar crash si main.js no se actualizó
                          batch.update(docRef, { cantidadUnidades: newBaseTotal });
                     }
                     
@@ -946,7 +970,7 @@
                         productoId: p.id,
                         presentacion: p.presentacion,
                         unidadesAnteriores: currentBase,
-                        unidadesNuevas: newBaseTotal, // Nota: esto es una estimación basada en caché local para el log
+                        unidadesNuevas: newBaseTotal,
                         diferenciaUnidades: unitsToAdd,
                         factorUtilizado: factor
                     });
@@ -961,6 +985,7 @@
         _showModal('Confirmar Recarga', `Se añadirán cantidades a ${changesCount} productos. ¿Continuar?`, async () => {
             _showModal('Progreso', 'Procesando recarga...');
             try {
+                // Log de auditoría
                 const recargaLogRef = _collection(_db, `artifacts/${_appId}/users/${_userId}/recargas`);
                 await _addDoc(recargaLogRef, {
                     fecha: new Date().toISOString(), 
@@ -971,17 +996,14 @@
 
                 await batch.commit();
                 
-                // Limpiar estado y actualizar vista antes de mostrar el modal de éxito
                 _recargaTempState = {};
                 renderRecargaList(); 
 
-                // Cerrar modal de progreso si está abierto antes de mostrar éxito
                 const pModal = document.getElementById('modalContainer');
                 if(pModal && pModal.querySelector('h3')?.textContent === 'Progreso') {
                     pModal.classList.add('hidden');
                 }
 
-                // Mensaje de éxito solicitado con botón "Continuar" que simplemente cierra el modal
                 setTimeout(() => {
                      _showModal('Recarga Exitosa', 'La carga se realizó exitosamente y se guardó el registro.', () => {}, 'Continuar');
                 }, 300);
@@ -992,7 +1014,6 @@
             }
         }, 'Sí, Procesar', null, true);
     }
-
 
     function showOrdenarSegmentosMarcasView() {
         if (_userRole !== 'admin') {
@@ -1064,19 +1085,17 @@
                  });
                  await batch.commit();
                  allSegments = [...segsConOrden, ...segsSinOrden];
-                 console.log("Orden inicial asignado a segmentos.");
              }
             allSegments.sort((a, b) => (a.orden ?? 9999) - (b.orden ?? 9999));
 
             const allMarcas = await getAllMarcas();
             const marcasMap = new Map(allMarcas.map(m => [m.name, m.id]));
 
-            let prodsQuery = _collection(_db, `artifacts/${_appId}/users/${_userId}/inventario`);
+            // Usamos la cache fusionada (_inventarioCache) para determinar la jerarquía visual
+            let prodsEnRubro = _inventarioCache;
             if (rubroFiltro) {
-                prodsQuery = _query(prodsQuery, _where("rubro", "==", rubroFiltro));
+                prodsEnRubro = prodsEnRubro.filter(p => p.rubro === rubroFiltro);
             }
-            const prodSnap = await _getDocs(prodsQuery);
-            const prodsEnRubro = prodSnap.docs.map(d => d.data());
             const segmentsWithProductsInRubro = rubroFiltro ? new Set(prodsEnRubro.map(p => p.segmento).filter(Boolean)) : null;
 
             container.innerHTML = '';
@@ -1148,7 +1167,6 @@
             container.innerHTML = `<p class="text-red-500 text-center">Error al cargar la estructura.</p>`;
         }
     }
-
 
     function addDragAndDropHandlersHierarchy(container) {
         let draggedItem = null;
@@ -1226,13 +1244,6 @@
             draggedItem = null; draggedItemElement = null; draggedType = null; sourceList = null; placeholder = null;
         });
 
-        container.addEventListener('dragleave', e => {
-            if (!container.contains(e.relatedTarget) && placeholder) {
-                 placeholder.remove();
-                 placeholder = null;
-            }
-        });
-
         function getDragAfterElementHierarchy(listContainer, y, itemType) {
             const selector = itemType === 'segmento' ? '.segmento-container:not(.opacity-50)' : '.marca-item:not(.opacity-50)'; 
             const draggables = [...listContainer.children].filter(c => c.matches(selector) && c !== draggedItem && !c.matches('.segmento-placeholder') && !c.matches('.marca-placeholder'));
@@ -1307,22 +1318,20 @@
 
             if (marcaOrderChanged && window.adminModule?.propagateCategoryChange) {
                 for (const segCont of segConts) {
-                     const segId=segCont.dataset.segmentoId;
-                     const marcaItems=segCont.querySelectorAll('.marcas-sortable-list .marca-item');
-                     const newMarcaOrder=Array.from(marcaItems).map(item=>item.dataset.marcaName);
-                     try {
-                         const segRef=_doc(_db,`artifacts/${_appId}/users/${_userId}/segmentos`,segId);
-                         const segSnap=await _getDoc(segRef); 
-                         if(segSnap.exists()){
-                             const segDataCompleto = segSnap.data();
-                             await window.adminModule.propagateCategoryChange('segmentos', segId, segDataCompleto);
-                         }
-                    } catch (e) {
-                        propSuccess=false;
-                        console.error(`Error propagando orden marcas para segmento ${segId}:`, e);
-                    }
-                }
-            }
+                      const segId=segCont.dataset.segmentoId;
+                      try {
+                          const segRef=_doc(_db,`artifacts/${_appId}/users/${_userId}/segmentos`,segId);
+                          const segSnap=await _getDoc(segRef); 
+                          if(segSnap.exists()){
+                              const segDataCompleto = segSnap.data();
+                              await window.adminModule.propagateCategoryChange('segmentos', segId, segDataCompleto);
+                          }
+                     } catch (e) {
+                         propSuccess=false;
+                         console.error(`Error propagando orden marcas para segmento ${segId}:`, e);
+                     }
+                 }
+             }
             _showModal(propSuccess ? 'Éxito' : 'Advertencia', `Orden guardado localmente.${propSuccess ? ' Propagado correctamente.' : ' Ocurrieron errores al propagar.'}`, showInventarioSubMenu);
         } catch (error) {
             console.error("Error al guardar orden:", error);
