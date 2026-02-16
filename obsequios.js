@@ -14,6 +14,7 @@
     let _lastObsequiosSearch = []; 
 
     const TIPOS_VACIO = window.TIPOS_VACIO_GLOBAL || ["1/4 - 1/3", "ret 350 ml", "ret 1.25 Lts"];
+    const PUBLIC_DATA_ID = 'ventas-9a210'; // ID Público para Fase 2
     
     // Rutas dinámicas
     let OBSEQUIO_CONFIG_PATH;
@@ -45,9 +46,11 @@
         _where = dependencies.where;
         _deleteDoc = dependencies.deleteDoc;
 
-        // Rutas basadas en el nuevo appId (dist-castillo-sales)
-        OBSEQUIO_CONFIG_PATH = `artifacts/${_appId}/public/data/config/obsequio`;
-        CLIENTES_PUBLIC_PATH = `artifacts/${_appId}/public/data/clientes`;
+        // FASE 2: Usar ID público explícito para datos compartidos
+        OBSEQUIO_CONFIG_PATH = `artifacts/${PUBLIC_DATA_ID}/public/data/config/obsequio`;
+        CLIENTES_PUBLIC_PATH = `artifacts/${PUBLIC_DATA_ID}/public/data/clientes`;
+        
+        console.log("Módulo Obsequios inicializado (Fase 2).");
     };
 
     /**
@@ -118,47 +121,89 @@
             </div>
         `;
 
-        await Promise.all([_loadClientes(), _loadInventarioUsuario(), _loadObsequioProduct()]);
+        // FASE 2: Carga paralela de datos híbridos
+        await Promise.all([_loadClientes(), _loadInventarioHibrido(), _loadObsequioProduct()]);
 
         if (_obsequioConfig.productoData) {
             document.getElementById('obs-form-loader').classList.add('hidden');
             document.getElementById('obs-form-content').classList.remove('hidden');
             setupObsequioUI();
         } else {
-            document.getElementById('obs-form-loader').textContent = "Error: Configuración no disponible.";
+            document.getElementById('obs-form-loader').textContent = "Error: Producto obsequio no configurado en Admin.";
         }
     }
 
     async function _loadObsequioProduct() {
-        const snap = await _getDoc(_doc(_db, OBSEQUIO_CONFIG_PATH));
-        if (snap.exists()) {
-            _obsequioConfig.productoId = snap.data().productoId;
-            _obsequioConfig.productoData = _inventarioCache.find(p => p.id === _obsequioConfig.productoId);
+        try {
+            const snap = await _getDoc(_doc(_db, OBSEQUIO_CONFIG_PATH));
+            if (snap.exists()) {
+                _obsequioConfig.productoId = snap.data().productoId;
+                // Buscar en la caché híbrida ya cargada
+                _obsequioConfig.productoData = _inventarioCache.find(p => p.id === _obsequioConfig.productoId);
+            }
+        } catch (e) {
+            console.warn("Error cargando config obsequio:", e);
         }
     }
 
-    async function _loadInventarioUsuario() {
-        const snap = await _getDocs(_collection(_db, `artifacts/${_appId}/users/${_userId}/inventario`));
-        _inventarioCache = snap.docs.map(d => ({id: d.id, ...d.data()}));
+    // --- NUEVO: CARGA HÍBRIDA (Maestro + Stock Personal) ---
+    async function _loadInventarioHibrido() {
+        try {
+            // 1. Cargar Maestro
+            const masterSnap = await _getDocs(_collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/productos`));
+            const masterMap = {};
+            masterSnap.docs.forEach(d => masterMap[d.id] = { id: d.id, ...d.data() });
+
+            // 2. Cargar Stock Local
+            const stockSnap = await _getDocs(_collection(_db, `artifacts/${_appId}/users/${_userId}/inventario`));
+            const stockMap = {};
+            stockSnap.docs.forEach(d => stockMap[d.id] = { id: d.id, ...d.data() });
+
+            // 3. Fusionar
+            _inventarioCache = [];
+            const allIds = new Set([...Object.keys(masterMap), ...Object.keys(stockMap)]);
+            
+            allIds.forEach(id => {
+                const master = masterMap[id];
+                const stock = stockMap[id];
+                
+                if (master) {
+                    // Producto Moderno (Definición Maestra + Stock Local)
+                    _inventarioCache.push({
+                        ...master,
+                        cantidadUnidades: stock ? (stock.cantidadUnidades || 0) : 0,
+                        id: id
+                    });
+                } else if (stock) {
+                    // Producto Legacy (Solo Local)
+                    _inventarioCache.push({ ...stock, id: id });
+                }
+            });
+        } catch (e) {
+            console.error("Error carga híbrida obsequios:", e);
+        }
     }
 
     async function _loadClientes() {
-        const snap = await _getDocs(_collection(_db, CLIENTES_PUBLIC_PATH));
-        _clientesCache = snap.docs.map(d => ({id: d.id, ...d.data()}));
+        try {
+            const snap = await _getDocs(_collection(_db, CLIENTES_PUBLIC_PATH));
+            _clientesCache = snap.docs.map(d => ({id: d.id, ...d.data()}));
+        } catch (e) { console.error("Error cargando clientes:", e); }
     }
 
     function setupObsequioUI() {
         const p = _obsequioConfig.productoData;
         document.getElementById('prodName').textContent = p.presentacion;
-        document.getElementById('prodStock').textContent = Math.floor(p.cantidadUnidades / p.unidadesPorCaja);
-        document.getElementById('vacTipo').textContent = `Tipo: ${p.tipoVacio}`;
+        const uCaja = p.unidadesPorCaja || 1;
+        document.getElementById('prodStock').textContent = `${Math.floor((p.cantidadUnidades||0) / uCaja)} Cj`;
+        document.getElementById('vacTipo').textContent = `Tipo: ${p.tipoVacio || 'N/A'}`;
 
         const input = document.getElementById('cliSearch');
         const drop = document.getElementById('cliDrop');
 
         input.oninput = () => {
             const term = input.value.toUpperCase();
-            const list = _clientesCache.filter(c => c.nombreComercial.includes(term)).slice(0, 5);
+            const list = _clientesCache.filter(c => (c.nombreComercial||'').toUpperCase().includes(term) || (c.nombrePersonal||'').toUpperCase().includes(term)).slice(0, 5);
             drop.innerHTML = list.map(c => `<div class="p-2 border-b hover:bg-gray-100 cursor-pointer" onclick="selectClient('${c.id}')">${c.nombreComercial}</div>`).join('');
             drop.classList.toggle('hidden', list.length === 0);
         };
@@ -211,16 +256,23 @@
                 await _runTransaction(_db, async (t) => {
                     const cDoc = await t.get(cliRef);
                     const iDoc = await t.get(invRef);
-                    const newStock = (iDoc.data().cantidadUnidades || 0) - (cjs * p.unidadesPorCaja);
-                    const sv = cDoc.data().saldoVacios || {};
-                    sv[p.tipoVacio] = (sv[p.tipoVacio] || 0) + cjs - vRec;
                     
-                    t.update(invRef, { cantidadUnidades: newStock });
-                    t.update(cliRef, { saldoVacios: sv });
+                    // Robustez: Si el inventario local no existe (producto nuevo de maestro), inicializarlo
+                    const currentStock = iDoc.exists() ? (iDoc.data().cantidadUnidades || 0) : 0;
+                    const newStock = currentStock - (cjs * (p.unidadesPorCaja || 1));
+                    
+                    const sv = cDoc.exists() ? (cDoc.data().saldoVacios || {}) : {};
+                    if(p.tipoVacio) {
+                        sv[p.tipoVacio] = (sv[p.tipoVacio] || 0) + cjs - vRec;
+                        t.update(cliRef, { saldoVacios: sv });
+                    }
+                    
+                    // Usar set con merge para asegurar escritura incluso si no existe el doc local
+                    t.set(invRef, { cantidadUnidades: newStock }, { merge: true });
                     t.set(regRef, regData);
                 });
 
-                // GENERAR TICKET (FUNCIONALIDAD RECUPERADA)
+                // GENERAR TICKET (FUNCIONALIDAD RESTAURADA)
                 _showSharingOptionsObsequio(regData, p, window.showGestionObsequiosView);
             } catch (err) { _showModal('Error', err.message); }
         }, 'Confirmar', null, true);
@@ -256,7 +308,12 @@
             temp.innerHTML = ticketHTML; document.body.appendChild(temp);
             const canvas = await html2canvas(document.getElementById('ticket-ob'));
             canvas.toBlob(blob => {
-                navigator.share({ files: [new File([blob], "ticket.png", {type:"image/png"})] });
+                if (navigator.share && blob) {
+                    navigator.share({ files: [new File([blob], "ticket.png", {type:"image/png"})] });
+                } else {
+                    const url = URL.createObjectURL(blob);
+                    const link = document.createElement('a'); link.href=url; link.download="ticket_obsequio.png"; link.click();
+                }
                 document.body.removeChild(temp);
                 callback();
             });
@@ -307,13 +364,31 @@
         _showModal('Eliminar', '¿Borrar y revertir stock?', async () => {
             const iRef = _doc(_db, `artifacts/${_appId}/users/${_userId}/inventario`, r.productoId);
             const cRef = _doc(_db, CLIENTES_PUBLIC_PATH, r.clienteId);
+            
+            // FASE 2: Leer configuración del producto para obtener unidadesPorCaja actualizado
+            // (Si el producto fue borrado localmente, necesitamos la data del registro o fallback)
+            // Asumimos que r.productoNombre es útil para logs, pero necesitamos la data técnica del producto
+            // Intentamos buscarlo en la cache actual
+            const prodDef = _inventarioCache.find(p => p.id === r.productoId) || { unidadesPorCaja: 1 }; // Fallback peligroso pero necesario
+
             await _runTransaction(_db, async (t) => {
                 const i = await t.get(iRef);
                 const c = await t.get(cRef);
-                t.update(iRef, { cantidadUnidades: i.data().cantidadUnidades + (r.cantidadCajas * i.data().unidadesPorCaja) });
-                const sv = c.data().saldoVacios;
-                sv[r.tipoVacio] = (sv[r.tipoVacio] || 0) - r.cantidadCajas + r.vaciosRecibidos;
-                t.update(cRef, { saldoVacios: sv });
+                
+                // Si el doc de inventario no existe (raro pero posible), asumimos 0 y creamos
+                const currentStock = i.exists() ? (i.data().cantidadUnidades || 0) : 0;
+                const unidadesARestaurar = r.cantidadCajas * (prodDef.unidadesPorCaja || 1);
+                
+                t.set(iRef, { cantidadUnidades: currentStock + unidadesARestaurar }, { merge: true });
+                
+                if (c.exists()) {
+                    const sv = c.data().saldoVacios || {};
+                    if (r.tipoVacio) {
+                        sv[r.tipoVacio] = (sv[r.tipoVacio] || 0) - r.cantidadCajas + r.vaciosRecibidos;
+                        t.update(cRef, { saldoVacios: sv });
+                    }
+                }
+                
                 t.delete(_doc(_db, `artifacts/${_appId}/users/${_userId}/obsequios_entregados`, id));
             });
             handleSearchObsequios();
