@@ -37,8 +37,8 @@
         if (!_floatingControls) {
             console.warn("Admin Init Warning: floatingControls no encontrado.");
         }
-        if (typeof limit !== 'function' || typeof startAfter !== 'function') {
-            console.error("CRITICAL Admin Init Error: Funciones Firestore 'limit' o 'startAfter' no proveídas.");
+        if (typeof limit !== 'function') {
+            console.error("CRITICAL Admin Init Error: Función Firestore 'limit' no proveída.");
         }
         
         console.log("Módulo Admin inicializado.");
@@ -136,7 +136,7 @@
     }
 
     async function executeDeepClean() {
-        _showModal('Progreso', 'Iniciando limpieza profunda... Esto puede tardar.');
+        _showModal('Progreso', 'Iniciando limpieza profunda... Esto puede tardar varios segundos.');
         const cleanInv=document.getElementById('cleanInventario').checked;
         const cleanCli=document.getElementById('cleanClientes').checked;
         const cleanVen=document.getElementById('cleanVentas').checked;
@@ -161,8 +161,9 @@
             colsToDelPub.push({ path: `artifacts/${pubProjId}/public/data/sectores`, name: 'Sectores Públicos' }); 
         }
         if (cleanVen) { 
-            colsToDelPub.push({ path: `public_data/${_appId}/user_closings`, name: 'Cierres Vendedores Públicos' }); 
-            // NUEVO: Limpieza de CXC
+            // Ruta corregida: artifacts/{appId}/public/data/user_closings
+            colsToDelPub.push({ path: `artifacts/${_appId}/public/data/user_closings`, name: 'Cierres Vendedores Públicos' }); 
+            // Ruta CXC
             colsToDelPub.push({ path: `artifacts/${pubProjId}/public/data/cxc`, name: 'Cuentas por Cobrar (CXC)' });
         }
         if (cleanObs) { 
@@ -177,7 +178,7 @@
             privColsToClean.push({sub:'rubros',n:'Rubros'}); 
             privColsToClean.push({sub:'segmentos',n:'Segmentos'}); 
             privColsToClean.push({sub:'marcas',n:'Marcas'}); 
-            privColsToClean.push({sub:'historial_inventario',n:'Historial Inventario'}); // NUEVO
+            privColsToClean.push({sub:'historial_inventario',n:'Historial Inventario'}); 
             privColsToClean.push({sub:'config/productSortOrder',n:'Config Orden Catálogo',isDoc:true}); 
             privColsToClean.push({sub:'config/reporteCierreVentas',n:'Config Diseño Reporte',isDoc:true}); 
         } 
@@ -224,7 +225,7 @@
             } 
         }
         
-        // Limpiar cachés
+        // Limpiar cachés globales
         _rubroOrderCacheAdmin=null; _segmentoOrderCacheAdmin=null; 
         if(window.inventarioModule) window.inventarioModule.invalidateSegmentOrderCache(); 
         if(window.catalogoModule) window.catalogoModule.invalidateCache(); 
@@ -234,15 +235,19 @@
     }
 
     async function deleteCollection(collectionPath) {
-        if (typeof limit !== 'function' || typeof startAfter !== 'function') throw new Error("limit/startAfter no disponibles.");
+        if (typeof limit !== 'function') throw new Error("limit no disponible.");
         const batchSize = 400; 
         const colRef = _collection(_db, collectionPath); 
-        let queryCursor = _query(colRef, limit(batchSize)); 
+        
+        // CORREGIDO: No usar startAfter. Simplemente repetimos la query de "los primeros 400".
+        // Al borrar los primeros, los siguientes se mueven al principio.
+        // Reutilizamos la definición de la query.
+        const qDef = _query(colRef, limit(batchSize));
+        
         let deletedCount = 0; 
-        let lastVisible = null;
         
         while (true) { 
-            const snap = await _getDocs(queryCursor); 
+            const snap = await _getDocs(qDef); 
             if (snap.size === 0) break; 
             
             const batch = _writeBatch(_db); 
@@ -250,11 +255,9 @@
             await batch.commit(); 
             
             deletedCount += snap.size; 
-            if (snap.docs.length > 0) lastVisible = snap.docs[snap.docs.length - 1]; 
-            else break; 
             
-            // Importante: Crear nueva query para el siguiente lote
-            queryCursor = _query(colRef, startAfter(lastVisible), limit(batchSize)); 
+            // Pequeña pausa para estabilidad
+            await new Promise(r => setTimeout(r, 50));
         }
         return deletedCount;
     }
