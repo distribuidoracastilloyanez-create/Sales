@@ -41,7 +41,7 @@
             console.error("CRITICAL Admin Init Error: Función Firestore 'limit' no proveída.");
         }
         
-        console.log("Módulo Admin inicializado.");
+        console.log("Módulo Admin inicializado (Versión Fase 2: Escritura Doble).");
     };
 
     // --- ENRUTADOR PRINCIPAL ---
@@ -231,6 +231,10 @@
             const pubConfRef = _doc(_db,`artifacts/${pubProjId}/public/data/config/obsequio`); 
             try { await _deleteDoc(pubConfRef); } catch(e){ console.warn("Could not delete public obsequio config:", e.code); } 
         }
+        // NUEVO: Limpieza del Catálogo Maestro si se limpia inventario
+        if (cleanInv) {
+             colsToDelPub.push({ path: `artifacts/${_appId}/public/data/productos`, name: 'Catálogo Maestro' });
+        }
 
         // --- 2. DEFINICIÓN DE COLECCIONES PRIVADAS (POR USUARIO) ---
         const privColsToClean = []; 
@@ -366,7 +370,6 @@
             deletedCount += snap.size; 
             
             // Pausa de seguridad para permitir que el SDK de Firebase actualice su caché local
-            // Esto previene el error "BloomFilter Error" en operaciones masivas offline-enabled
             await new Promise(r => setTimeout(r, 200));
         }
         return deletedCount;
@@ -567,18 +570,118 @@
         catch (error) { _showModal('Error','Error al guardar.'); }
     }
 
-    // --- Propagación ---
+    // ==========================================
+    // SECCIÓN: PROPAGACIÓN (LÓGICA ACTUALIZADA)
+    // ==========================================
+
     async function _getAllOtherUserIds() {
         try { const uRef = _collection(_db, "users"); const snap = await _getDocs(uRef); return snap.docs.map(d => d.id); } catch (error) { return []; }
     }
-    async function propagateProductChange(productId, productData) {
-        if (!productId) return; const allUIds = await _getAllOtherUserIds(); const BATCH_LIMIT = 490; let batch = _writeBatch(_db); let ops = 0;
-        try { for (const tUserId of allUIds) { const tPRef = _doc(_db, `artifacts/${_appId}/users/${tUserId}/inventario`, productId); if (productData === null) { batch.delete(tPRef); } else { const { cantidadUnidades, ...defData } = productData; batch.set(tPRef, defData, { merge: true }); } ops++; if (ops >= BATCH_LIMIT) { await batch.commit(); batch = _writeBatch(_db); ops = 0; } } if (ops > 0) await batch.commit(); console.log("Propagado"); } catch (error) { console.error(error); }
+
+    // [NUEVO] Helper para escribir en el Catálogo Maestro (Centralizado)
+    async function _saveToMasterCatalog(productId, productData) {
+        if (!productId) return;
+        // NOTA: Usamos el ID público 'ventas-9a210' o _appId si coincide.
+        // Asumo _appId es dinámico pero la carpeta pública suele ser fija.
+        // Si tienes múltiples appIds, ajusta aquí. Por ahora uso _appId.
+        const masterPath = `artifacts/${_appId}/public/data/productos`;
+        const masterRef = _doc(_db, masterPath, productId);
+
+        try {
+            if (productData === null) {
+                // Si el dato es null, es un borrado
+                await _deleteDoc(masterRef);
+                console.log("🗑️ Eliminado del Catálogo Maestro");
+            } else {
+                // SEPARACIÓN DE RESPONSABILIDADES:
+                // El catálogo maestro guarda definiciones (Precio, Nombre, Marca), NO Stock.
+                // Extraemos cantidadUnidades para no guardarla en el maestro.
+                const { cantidadUnidades, ...masterData } = productData;
+                masterData.lastUpdated = new Date(); // Auditoría simple
+                
+                await _setDoc(masterRef, masterData, { merge: true });
+                console.log("✅ Sincronizado con Catálogo Maestro");
+            }
+        } catch (e) {
+            console.warn("⚠️ Advertencia: No se pudo escribir en Catálogo Maestro (¿Faltan permisos de admin?)", e);
+            // No lanzamos throw para no detener la propagación legacy (por seguridad operativa actual)
+        }
     }
-     async function propagateCategoryChange(collectionName, itemId, itemData) {
-         if (!collectionName || !itemId) return; const allUIds = await _getAllOtherUserIds(); const BATCH_LIMIT = 490; let batch = _writeBatch(_db); let ops = 0;
-         try { for (const tUserId of allUIds) { const tIRef = _doc(_db, `artifacts/${_appId}/users/${tUserId}/${collectionName}`, itemId); if (itemData === null) batch.delete(tIRef); else batch.set(tIRef, itemData); ops++; if (ops >= BATCH_LIMIT) { await batch.commit(); batch = _writeBatch(_db); ops = 0; } } if (ops > 0) await batch.commit(); console.log("Propagado"); } catch (error) { console.error(error); }
-     }
+
+    // [MODIFICADO] Propagación con Estrategia "Double Write"
+    async function propagateProductChange(productId, productData) {
+        if (!productId) return;
+
+        // 1. FASE NUEVA: Escribir en la base de datos centralizada
+        await _saveToMasterCatalog(productId, productData);
+
+        // 2. FASE LEGACY: Mantener el comportamiento antiguo (Fan-out)
+        // Esto asegura que los usuarios actuales sigan recibiendo actualizaciones 
+        // hasta que cambiemos 'ventas.js' para leer del maestro.
+        const allUIds = await _getAllOtherUserIds();
+        const BATCH_LIMIT = 490;
+        let batch = _writeBatch(_db);
+        let ops = 0;
+
+        try { 
+            console.log(`🔄 Iniciando propagación Legacy a ${allUIds.length} usuarios...`);
+            for (const tUserId of allUIds) { 
+                const tPRef = _doc(_db, `artifacts/${_appId}/users/${tUserId}/inventario`, productId); 
+                if (productData === null) { 
+                    batch.delete(tPRef); 
+                } else { 
+                    const { cantidadUnidades, ...defData } = productData; 
+                    batch.set(tPRef, defData, { merge: true }); 
+                } 
+                ops++; 
+                if (ops >= BATCH_LIMIT) { 
+                    await batch.commit(); 
+                    batch = _writeBatch(_db); 
+                    ops = 0; 
+                } 
+            } 
+            if (ops > 0) await batch.commit(); 
+            console.log("✅ Propagación Legacy completada"); 
+        } catch (error) { 
+            console.error("❌ Error en propagación Legacy:", error); 
+        }
+    }
+
+    // [MODIFICADO] Propagación de Categorías con lógica similar (Opcional, pero recomendada)
+    async function propagateCategoryChange(collectionName, itemId, itemData) {
+        if (!collectionName || !itemId) return;
+        
+        // 1. FASE NUEVA: Intentar guardar en carpeta pública también
+        try {
+            const publicPath = `artifacts/${_appId}/public/data/${collectionName}`;
+            const publicRef = _doc(_db, publicPath, itemId);
+            if (itemData === null) await _deleteDoc(publicRef);
+            else await _setDoc(publicRef, itemData, { merge: true });
+        } catch (e) {
+            console.warn(`No se pudo sincronizar ${collectionName} público`, e);
+        }
+
+        // 2. FASE LEGACY
+        const allUIds = await _getAllOtherUserIds();
+        const BATCH_LIMIT = 490;
+        let batch = _writeBatch(_db);
+        let ops = 0;
+        try { 
+            for (const tUserId of allUIds) { 
+                const tIRef = _doc(_db, `artifacts/${_appId}/users/${tUserId}/${collectionName}`, itemId); 
+                if (itemData === null) batch.delete(tIRef); 
+                else batch.set(tIRef, itemData); 
+                ops++; 
+                if (ops >= BATCH_LIMIT) { 
+                    await batch.commit(); 
+                    batch = _writeBatch(_db); 
+                    ops = 0; 
+                } 
+            } 
+            if (ops > 0) await batch.commit(); 
+            console.log("Propagado Categoría Legacy"); 
+        } catch (error) { console.error(error); }
+    }
 
     window.adminModule = {
         handleRoleChange,
