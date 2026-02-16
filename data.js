@@ -4,6 +4,7 @@
 
     let _consolidatedClientsCache = [];
     let _filteredClientsCache = [];
+    let _usersMapCache = new Map(); // NUEVO: Cache para nombres de vendedores
 
     let mapInstance = null;
     let mapMarkers = new Map();
@@ -179,15 +180,19 @@
         const allOption = document.createElement('option');
         allOption.value = "all";
         allOption.textContent = "Todos los Vendedores";
-        allOption.selected = true; // Por defecto seleccionado
+        allOption.selected = true; 
         userFilterSelect.appendChild(allOption);
 
         try {
             const usersRef = _collection(_db, "users");
             const snapshot = await _getDocs(usersRef);
             
+            _usersMapCache.clear(); // Limpiar y reconstruir caché de nombres
+
             snapshot.docs.forEach(doc => {
                 const user = doc.data();
+                _usersMapCache.set(doc.id, user); // Guardar en caché
+
                 const option = document.createElement('option');
                 option.value = doc.id;
                 option.textContent = `${user.nombre || ''} ${user.apellido || user.email} (${user.camion || 'N/A'})`;
@@ -195,7 +200,6 @@
             });
         } catch (error) { 
             console.error("Error cargando usuarios filtro:", error);
-            // Fallback: solo mostrar opción "Yo" si falla la lectura global
             const option = document.createElement('option');
             option.value = _userId;
             option.textContent = "Mis Datos (Actual)";
@@ -223,14 +227,10 @@
             let allClosings = [];
 
             if (selectedUserId === 'all') {
-                // Buscar para TODOS los vendedores
-                // Primero obtenemos la lista de IDs de usuarios (reutilizando la lógica de populateUserFilter o consultando)
-                // Para ser precisos, consultamos la colección users nuevamente
                 const usersRef = _collection(_db, "users");
                 const userSnapshot = await _getDocs(usersRef);
                 const userIds = userSnapshot.docs.map(d => d.id);
 
-                // Promesas en paralelo para cada usuario
                 const promises = userIds.map(async (uid) => {
                     const closingsRef = _collection(_db, `artifacts/${_appId}/users/${uid}/cierres`);
                     const q = _query(closingsRef, _where("fecha", ">=", fechaDesde), _where("fecha", "<=", fechaHasta));
@@ -239,12 +239,10 @@
                 });
 
                 const results = await Promise.all(promises);
-                // Aplanar el array de arrays
                 allClosings = results.flat();
 
             } else {
-                // Buscar para UN solo vendedor (código original)
-                if (!selectedUserId) selectedUserId = _userId; // Fallback
+                if (!selectedUserId) selectedUserId = _userId; 
                 const closingsRef = _collection(_db, `artifacts/${_appId}/users/${selectedUserId}/cierres`);
                 let q = _query(closingsRef, _where("fecha", ">=", fechaDesde), _where("fecha", "<=", fechaHasta));
                 const snapshot = await _getDocs(q);
@@ -265,7 +263,6 @@
         if (closings.length === 0) {
             container.innerHTML = `<p class="text-center text-gray-500">No se encontraron cierres en el rango seleccionado.</p>`; return;
         }
-        // Ordenar por fecha descendente
         closings.sort((a, b) => b.fecha.toDate() - a.fecha.toDate()); 
         
         let tableHTML = `
@@ -275,13 +272,35 @@
                     <th class="py-2 px-3 border-b text-left">Camión</th> <th class="py-2 px-3 border-b text-right">Total</th>
                     <th class="py-2 px-3 border-b text-center">Acciones</th>
                 </tr> </thead> <tbody>`;
+        
         closings.forEach(cierre => {
-            const vendedor = cierre.vendedorInfo || {};
+            // Lógica Mejorada para obtener nombre de Vendedor (Soporte Importación)
+            const vendedorSnapshot = cierre.vendedorInfo || {};
+            let vName = vendedorSnapshot.nombre;
+            let vLast = vendedorSnapshot.apellido;
+            let vCamion = vendedorSnapshot.camion;
+
+            // Si falta info en el snapshot (común en imports), buscar en caché global de usuarios
+            if (!vName && vendedorSnapshot.userId) {
+                const userFromCache = _usersMapCache.get(vendedorSnapshot.userId);
+                if (userFromCache) {
+                    vName = userFromCache.nombre || 'Usuario';
+                    vLast = userFromCache.apellido || '';
+                    vCamion = userFromCache.camion || 'N/A';
+                } else {
+                    vName = 'Desconocido';
+                }
+            }
+
+            // Detectar si es importado para mostrar badge
+            const isImported = cierre.source === 'excel_import' || (cierre.vendedorInfo && cierre.vendedorInfo.note && cierre.vendedorInfo.note.includes('Importado'));
+            const importedBadge = isImported ? `<span class="ml-1 px-1.5 py-0.5 rounded bg-yellow-100 text-yellow-800 text-[10px] border border-yellow-200">Importado</span>` : '';
+
             tableHTML += `
                 <tr class="hover:bg-gray-50">
                     <td class="py-2 px-3 border-b">${cierre.fecha.toDate().toLocaleDateString('es-ES')}</td>
-                    <td class="py-2 px-3 border-b">${vendedor.nombre || ''} ${vendedor.apellido || ''}</td>
-                    <td class="py-2 px-3 border-b">${vendedor.camion || 'N/A'}</td>
+                    <td class="py-2 px-3 border-b">${vName || ''} ${vLast || ''} ${importedBadge}</td>
+                    <td class="py-2 px-3 border-b">${vCamion || 'N/A'}</td>
                     <td class="py-2 px-3 border-b text-right font-semibold">$${(cierre.total || 0).toFixed(2)}</td>
                     <td class="py-2 px-3 border-b text-center space-x-2">
                         <button onclick="window.dataModule.showClosingDetail('${cierre.id}')" class="px-3 py-1 bg-blue-500 text-white text-xs rounded-lg hover:bg-blue-600">Ver</button>
@@ -302,13 +321,11 @@
         const TIPOS_VACIO_GLOBAL = window.TIPOS_VACIO_GLOBAL || ["1/4 - 1/3", "ret 350 ml", "ret 1.25 Lts"];
         
         console.log("_processSalesDataForModal: Fetching CURRENT inventory map...");
-        // Usar userId del vendedor si está disponible, sino el actual
         const targetUserId = userIdForInventario || _userId;
         const inventarioRef = _collection(_db, `artifacts/${_appId}/users/${targetUserId}/inventario`);
         const inventarioSnapshot = await _getDocs(inventarioRef);
         const inventarioMap = new Map(inventarioSnapshot.docs.map(doc => [doc.id, doc.data()]));
-        console.log(`_processSalesDataForModal: inventarioMap created with ${inventarioMap.size} current products.`);
-
+        
         const allData = [
             ...ventas.map(v => ({ tipo: 'venta', data: v })),
             ...(obsequios || []).map(o => ({ tipo: 'obsequio', data: o }))
@@ -330,9 +347,16 @@
                 for (const tipo in vaciosDev) { if (!vaciosMovementsPorTipo[clientName][tipo]) vaciosMovementsPorTipo[clientName][tipo] = { e: 0, d: 0 }; vaciosMovementsPorTipo[clientName][tipo].devueltos += (vaciosDev[tipo] || 0); }
                 
                 (venta.productos || []).forEach(p => {
-                    const prodComp = inventarioMap.get(p.id) || p;
+                    // FIX: Fallback crítico para productos Importados o Eliminados
+                    // Si no está en inventarioMap (actual), usamos 'p' que trae la data snapshot de la venta
+                    const prodComp = inventarioMap.get(p.id) || p; 
+                    
                     if (prodComp && prodComp.manejaVacios && prodComp.tipoVacio) { const tipoV = prodComp.tipoVacio; if (!vaciosMovementsPorTipo[clientName][tipoV]) vaciosMovementsPorTipo[clientName][tipoV] = { e: 0, d: 0 }; vaciosMovementsPorTipo[clientName][tipoV].entregados += p.cantidadVendida?.cj || 0; }
-                    const rubro = prodComp?.rubro || 'Sin Rubro', seg = prodComp?.segmento || 'Sin Segmento', marca = prodComp?.marca || 'Sin Marca';
+                    
+                    const rubro = prodComp?.rubro || 'SIN RUBRO'; 
+                    const seg = prodComp?.segmento || 'S/S';
+                    const marca = prodComp?.marca || 'S/M';
+                    
                     if (p.id && !allProductsMap.has(p.id)) allProductsMap.set(p.id, { ...prodComp, id: p.id, rubro: rubro, segmento: seg, marca: marca, presentacion: p.presentacion });
                     if (p.id && !clientData[clientName].products[p.id]) clientData[clientName].products[p.id] = 0;
                     
@@ -356,7 +380,7 @@
                 if (prodInventario) {
                     pComp = { ...prodInventario, id: obsequio.productoId }; 
                 } else {
-                    console.warn(`(Modal) Producto de obsequio ${obsequio.productoId} no encontrado. Usando fallback.`);
+                    // Fallback para obsequios eliminados
                     pComp = {
                         id: obsequio.productoId,
                         presentacion: obsequio.productoNombre || 'Producto Eliminado',
@@ -492,7 +516,13 @@
             }
             
             const vendedor = closingData.vendedorInfo || {};
-            const reportHTML = `<div class="text-left max-h-[80vh] overflow-auto"> <div class="mb-4"> <p><strong>Vendedor:</strong> ${vendedor.nombre||''} ${vendedor.apellido||''}</p> <p><strong>Camión:</strong> ${vendedor.camion||'N/A'}</p> <p><strong>Fecha:</strong> ${closingData.fecha.toDate().toLocaleString('es-ES')}</p> </div> <h3 class="text-xl mb-4">Reporte Cierre</h3> <div class="overflow-auto border" style="max-height: 40vh;"> <table class="min-w-full bg-white text-xs"> <thead class="bg-gray-200">${headerHTML}</thead> <tbody>${bodyHTML}</tbody> <tfoot>${footerHTML}</tfoot> </table> </div> ${vHTML} </div>`;
+            // Intento de fallback de nombre para el modal
+            let vNameModal = vendedor.nombre || 'Desconocido';
+            if(!vendedor.nombre && vendedor.userId && _usersMapCache.has(vendedor.userId)){
+                 vNameModal = _usersMapCache.get(vendedor.userId).nombre;
+            }
+
+            const reportHTML = `<div class="text-left max-h-[80vh] overflow-auto"> <div class="mb-4"> <p><strong>Vendedor:</strong> ${vNameModal} ${vendedor.apellido||''}</p> <p><strong>Camión:</strong> ${vendedor.camion||'N/A'}</p> <p><strong>Fecha:</strong> ${closingData.fecha.toDate().toLocaleString('es-ES')}</p> </div> <h3 class="text-xl mb-4">Reporte Cierre</h3> <div class="overflow-auto border" style="max-height: 40vh;"> <table class="min-w-full bg-white text-xs"> <thead class="bg-gray-200">${headerHTML}</thead> <tbody>${bodyHTML}</tbody> <tfoot>${footerHTML}</tfoot> </table> </div> ${vHTML} </div>`;
             _showModal(`Detalle Cierre`, reportHTML, null, 'Cerrar');
         } catch (error) { console.error("Error generando detalle:", error); _showModal('Error', `No se pudo generar: ${error.message}`); }
     }
@@ -513,14 +543,10 @@
         const inventarioRef = _collection(_db, `artifacts/${_appId}/users/${targetUserId}/inventario`); 
         const inventarioSnapshot = await _getDocs(inventarioRef); 
         inventarioMap = new Map(inventarioSnapshot.docs.map(doc => [doc.id, doc.data()]));
-        console.log(`processSalesDataForReport: inventarioMap created with ${inventarioMap.size} current products.`);
 
         let snapshotMap = new Map();
         if(hasSnapshot) {
-             console.log("processSalesDataForReport: Snapshot (Carga Inicial) found. Creating snapshotMap.");
              snapshotMap = new Map(cargaInicialInventario.map(doc => [doc.id, doc]));
-        } else {
-            console.warn("processSalesDataForReport: No se encontró snapshot (Carga Inicial).");
         }
 
         const userDoc = await _getDoc(_doc(_db, "users", targetUserId));
@@ -606,7 +632,6 @@
                     pComp = { ...prodInventario, id: obsequio.productoId }; 
                     pComp.precios = { und: 0, paq: 0, cj: 0 }; 
                 } else {
-                    console.warn(`(Reporte) Producto de obsequio ${obsequio.productoId} (${obsequio.productoNombre}) no encontrado. Usando fallback.`);
                     pComp = {
                         id: obsequio.productoId,
                         productoNombre: obsequio.productoNombre,
@@ -734,7 +759,7 @@
             
             const jsDate = (fechaObjeto && typeof fechaObjeto.toDate === 'function') 
                             ? fechaObjeto.toDate()  
-                            : fechaObjeto;          
+                            : fechaObjeto;           
 
             const fechaCierre = jsDate ? jsDate.toLocaleDateString('es-ES') : 'Fecha Inválida';
             
@@ -1474,21 +1499,20 @@
                 <h1 class="text-3xl font-bold text-gray-800 mb-4 text-center">Mapa Clientes</h1>
                 
                 <div class="mb-4 flex flex-col md:flex-row gap-4">
-                     <div class="relative w-full"> 
+                      <div class="relative w-full"> 
                         <input type="text" id="map-search-input" placeholder="Buscar cliente..." class="w-full px-4 py-2 border rounded-lg"> 
                         <div id="map-search-results" class="absolute z-[1000] w-full bg-white border rounded-lg mt-1 max-h-60 overflow-y-auto hidden shadow-lg"></div> 
-                     </div>
-                     <div class="w-full md:w-1/3">
+                      </div>
+                      <div class="w-full md:w-1/3">
                         <select id="map-mode-select" class="w-full px-4 py-2 border rounded-lg shadow-sm bg-white">
                             <option value="classic">Vista: Tipo Cliente (CEP)</option>
                             <option value="weekly">Vista: Asistencia Semanal</option>
                         </select>
-                     </div>
+                      </div>
                 </div>
 
                 <div id="map-legend" class="mb-4 p-2 bg-gray-100 border rounded-lg text-xs flex flex-wrap justify-center items-center gap-x-4 gap-y-1"> 
-                    <!-- Se llena dinámicamente según el modo -->
-                </div>
+                    </div>
                 
                 <div id="client-map" class="w-full rounded-lg shadow-inner" style="height:65vh; border:1px solid #ccc; background-color:#e5e7eb;"> <p class="text-center text-gray-500 pt-10">Cargando mapa...</p> </div>
                 <button id="backToDataMenuBtn" class="mt-6 w-full px-6 py-3 bg-gray-400 text-white rounded-lg shadow-md hover:bg-gray-500">Volver</button>
@@ -1602,7 +1626,7 @@
                 let mapCenter = [7.77, -72.22]; 
                 let zoom = 13; 
                 mapInstance = L.map('client-map').setView(mapCenter, zoom); 
-                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OSM', maxZoom: 19 }).addTo(mapInstance);
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OSM', maxZoom: 19 }).addTo(mapInstance);
             } else {
                 // Limpiar markers anteriores
                 if (mapMarkers.size > 0) {
