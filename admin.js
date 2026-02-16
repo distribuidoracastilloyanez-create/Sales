@@ -15,7 +15,7 @@
             return;
         }
         _db = dependencies.db;
-        _userId = dependencies.userId; // ID del Admin o Usuario actual
+        _userId = dependencies.userId;
         _userRole = dependencies.userRole;
         _appId = dependencies.appId;
         _mainContent = dependencies.mainContent;
@@ -68,9 +68,7 @@
                             <button id="userManagementBtn" class="w-full px-6 py-3 bg-blue-600 text-white rounded-lg shadow-md hover:bg-blue-700">Gestión Usuarios</button>
                             <button id="obsequioConfigBtn" class="w-full px-6 py-3 bg-purple-600 text-white rounded-lg shadow-md hover:bg-purple-700">Config Obsequio</button>
                             <button id="importExportInventarioBtn" class="w-full px-6 py-3 bg-teal-600 text-white rounded-lg shadow-md hover:bg-teal-700">Importar/Exportar Inventario</button>
-                            
                             <button id="fileManagementBtn" class="w-full px-6 py-3 bg-green-600 text-white rounded-lg shadow-md hover:bg-green-700">Importar/Exportar Cierres</button>
-                            
                             <button id="deepCleanBtn" class="w-full px-6 py-3 bg-red-700 text-white rounded-lg shadow-md hover:bg-red-800">Limpieza Profunda</button>
                             <button id="backToMenuBtn" class="w-full px-6 py-3 bg-gray-400 text-white rounded-lg shadow-md hover:bg-gray-500">Volver Menú</button>
                         </div>
@@ -235,7 +233,6 @@
 
             if (allCierres.length === 0) { _showModal('Aviso', 'No se encontraron cierres.'); return; }
 
-            // MODIFICACIÓN: Se reemplaza URI Data por Blob nativo para soportar backups grandes
             const jsonStr = JSON.stringify(allCierres, null, 2);
             const blob = new Blob([jsonStr], { type: 'application/json' });
             const url = URL.createObjectURL(blob);
@@ -246,7 +243,7 @@
             document.body.appendChild(downloadAnchorNode);
             downloadAnchorNode.click();
             downloadAnchorNode.remove();
-            URL.revokeObjectURL(url); // Limpieza de memoria
+            URL.revokeObjectURL(url);
             
             _showModal('Éxito', `Exportación completada. ${allCierres.length} registros.`);
         } catch (error) {
@@ -307,7 +304,6 @@
         });
     }
 
-    // MODIFICACIÓN CRÍTICA: Lógica de sanitización de Fechas para Firestore
     async function processJsonImport(file) {
         const text = await readFileAsText(file);
         let data;
@@ -323,36 +319,27 @@
         let batch = _writeBatch(_db);
         let ops = 0;
 
-        // Función recursiva poderosa para limpiar todo el objeto de fechas inválidas o TimeStamps desglosados
         function repairFirestoreData(obj) {
             if (obj === null || typeof obj !== 'object') return obj;
-            
-            // Procesar Arrays internos
             if (Array.isArray(obj)) {
                 return obj.map(repairFirestoreData);
             }
-            
-            // MAGIA: Detectar el patrón {seconds, nanoseconds} que Firebase escupió en el JSON y restaurarlo a Date
             if ('seconds' in obj && 'nanoseconds' in obj && typeof obj.seconds === 'number') {
                 return new Date(obj.seconds * 1000);
             }
-
             const repaired = {};
             for (const key in obj) {
                 let val = obj[key];
-                
-                // Tratar llaves conocidas de fechas en caso de que sean strings
                 if ((key === 'fecha' || key === 'fechaModificacion' || key === 'fechaRegistro') && typeof val === 'string') {
                     const d = new Date(val);
                     if (!isNaN(d.getTime())) {
                         val = d; 
                     } else {
-                        val = null; // Previene "Invalid Date" crash en batch.set()
+                        val = null;
                     }
                 } else {
-                    val = repairFirestoreData(val); // Bajar recursivamente para arreglar fechas en el array 'ventas'
+                    val = repairFirestoreData(val);
                 }
-                
                 if (val !== undefined) repaired[key] = val;
             }
             return repaired;
@@ -365,14 +352,14 @@
             delete item._id; 
             delete item._userId;
 
-            // Reparar todo el documento (incluyendo nested arrays) antes de inyectar
             item = repairFirestoreData(item);
 
             const docRef = _doc(_db, `artifacts/${_appId}/users/${uid}/cierres`, saveId);
             batch.set(docRef, item, { merge: true });
             ops++; count++;
 
-            if (ops >= 100) { await batch.commit(); batch = _writeBatch(_db); ops = 0; }
+            // FIX CRÍTICO: Reducimos de 100 a 15 para evitar error "Payload too large" de Firestore (10MB limit)
+            if (ops >= 15) { await batch.commit(); batch = _writeBatch(_db); ops = 0; }
         }
         if (ops > 0) await batch.commit();
         return count;
