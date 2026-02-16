@@ -136,7 +136,7 @@
                                 <input type="checkbox" id="cleanRecargas" class="h-5 w-5 rounded border-gray-300 text-yellow-600 focus:ring-yellow-500">
                                 <div>
                                     <span class="font-medium text-gray-800">Historial de Recargas/Correcciones</span>
-                                    <p class="text-xs text-gray-500">Borra los reportes de 'Edición Inventario'.</p>
+                                    <p class="text-xs text-gray-500">Borra logs de 'Edición Inventario' y 'Recargas'.</p>
                                 </div>
                             </label>
                         </div>
@@ -257,8 +257,10 @@
         }
 
         if(cleanRec) {
-            // Esta colección es donde 'edit-inventario.js' guarda los logs
-            privColsToClean.push({sub:'historial_inventario', n:'Historial Correcciones/Recargas'});
+            // Logs de Correcciones Manuales (edit-inventario.js)
+            privColsToClean.push({sub:'historial_inventario', n:'Historial Correcciones'});
+            // Logs de Recargas de Productos (inventario.js) - DETECTADO
+            privColsToClean.push({sub:'recargas', n:'Historial Recargas'});
         }
         
         let errorsOccurred = false; 
@@ -296,6 +298,13 @@
                     }
                 } 
             } 
+        }
+
+        // --- CORRECCIÓN CRÍTICA: BORRADO DE LOCALSTORAGE DE CXC ---
+        if (cleanVen) {
+            console.log("Limpiando caché local de CXC...");
+            localStorage.removeItem('cxc_local_data');
+            localStorage.removeItem('cxc_local_date');
         }
         
         // Limpiar cachés globales en memoria para que la UI se actualice
