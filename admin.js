@@ -68,7 +68,6 @@
                             <button id="userManagementBtn" class="w-full px-6 py-3 bg-blue-600 text-white rounded-lg shadow-md hover:bg-blue-700">Gestión Usuarios</button>
                             <button id="obsequioConfigBtn" class="w-full px-6 py-3 bg-purple-600 text-white rounded-lg shadow-md hover:bg-purple-700">Config Obsequio</button>
                             <button id="importExportInventarioBtn" class="w-full px-6 py-3 bg-teal-600 text-white rounded-lg shadow-md hover:bg-teal-700">Importar/Exportar Inventario</button>
-                            <!-- Botón de Cierres Eliminado -->
                             <button id="deepCleanBtn" class="w-full px-6 py-3 bg-red-700 text-white rounded-lg shadow-md hover:bg-red-800">Limpieza Profunda</button>
                             <button id="backToMenuBtn" class="w-full px-6 py-3 bg-gray-400 text-white rounded-lg shadow-md hover:bg-gray-500">Volver Menú</button>
                         </div>
@@ -94,22 +93,78 @@
                 <div class="container mx-auto max-w-lg">
                     <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl">
                         <h1 class="text-3xl font-bold text-red-600 mb-4 text-center">⚠️ Limpieza Profunda ⚠️</h1>
-                        <p class="text-center text-red-700 mb-6 font-semibold">¡ADVERTENCIA! Eliminará permanentemente datos de TODOS los usuarios. NO SE PUEDE DESHACER.</p>
+                        <p class="text-center text-red-700 mb-6 font-semibold">¡ADVERTENCIA! Eliminará permanentemente datos. NO SE PUEDE DESHACER.</p>
+                        
                         <div class="space-y-4 text-left mb-6 border p-4 rounded-lg bg-gray-50">
-                            <label class="flex items-center space-x-3"><input type="checkbox" id="cleanInventario" class="h-5 w-5 rounded border-gray-300 text-red-600 focus:ring-red-500"><span>Inventario, Historial y Categorías</span></label>
-                            <label class="flex items-center space-x-3"><input type="checkbox" id="cleanClientes" class="h-5 w-5 rounded border-gray-300 text-red-600 focus:ring-red-500"><span>Clientes y Sectores (Público)</span></label>
-                            <label class="flex items-center space-x-3"><input type="checkbox" id="cleanVentas" class="h-5 w-5 rounded border-gray-300 text-red-600 focus:ring-red-500"><span>Ventas, Cierres y CXC (Global)</span></label>
-                             <label class="flex items-center space-x-3"><input type="checkbox" id="cleanObsequios" class="h-5 w-5 rounded border-gray-300 text-red-600 focus:ring-red-500"><span>Config. y Registros Obsequios</span></label>
+                            <div class="font-bold text-gray-700 mb-2 border-b pb-1">Datos Operativos:</div>
+                            
+                            <label class="flex items-center space-x-3 cursor-pointer hover:bg-gray-100 p-2 rounded">
+                                <input type="checkbox" id="cleanInventario" class="h-5 w-5 rounded border-gray-300 text-red-600 focus:ring-red-500">
+                                <div>
+                                    <span class="font-medium text-gray-800">Inventario y Categorías</span>
+                                    <p class="text-xs text-gray-500">Borra productos, marcas, rubros de todos los usuarios.</p>
+                                </div>
+                            </label>
+
+                            <label class="flex items-center space-x-3 cursor-pointer hover:bg-gray-100 p-2 rounded">
+                                <input type="checkbox" id="cleanClientes" class="h-5 w-5 rounded border-gray-300 text-red-600 focus:ring-red-500">
+                                <div>
+                                    <span class="font-medium text-gray-800">Clientes y Sectores</span>
+                                    <p class="text-xs text-gray-500">Borra la base de datos pública de clientes.</p>
+                                </div>
+                            </label>
+
+                            <label class="flex items-center space-x-3 cursor-pointer hover:bg-gray-100 p-2 rounded">
+                                <input type="checkbox" id="cleanVentas" class="h-5 w-5 rounded border-gray-300 text-red-600 focus:ring-red-500">
+                                <div>
+                                    <span class="font-medium text-gray-800">Ventas, Cierres y CXC</span>
+                                    <p class="text-xs text-gray-500">Borra historiales de ventas y cuentas por cobrar.</p>
+                                </div>
+                            </label>
+                            
+                             <label class="flex items-center space-x-3 cursor-pointer hover:bg-gray-100 p-2 rounded">
+                                <input type="checkbox" id="cleanObsequios" class="h-5 w-5 rounded border-gray-300 text-red-600 focus:ring-red-500">
+                                <div>
+                                    <span class="font-medium text-gray-800">Obsequios</span>
+                                    <p class="text-xs text-gray-500">Borra configuración y registros de entrega.</p>
+                                </div>
+                            </label>
+
+                            <div class="font-bold text-gray-700 mt-4 mb-2 border-b pb-1">Reportes y Logs:</div>
+
+                            <label class="flex items-center space-x-3 cursor-pointer hover:bg-gray-100 p-2 rounded bg-yellow-50 border border-yellow-200">
+                                <input type="checkbox" id="cleanRecargas" class="h-5 w-5 rounded border-gray-300 text-yellow-600 focus:ring-yellow-500">
+                                <div>
+                                    <span class="font-medium text-gray-800">Historial de Recargas/Correcciones</span>
+                                    <p class="text-xs text-gray-500">Borra los reportes de 'Edición Inventario'.</p>
+                                </div>
+                            </label>
                         </div>
-                        <div class="mb-6"><label for="confirmCleanText" class="block text-sm font-medium text-gray-700 mb-1">Escribe "BORRAR DATOS":</label><input type="text" id="confirmCleanText" class="w-full px-4 py-2 border border-red-300 rounded-lg focus:ring-red-500 focus:border-red-500" placeholder="BORRAR DATOS"></div>
-                        <div class="space-y-4"><button id="executeCleanBtn" class="w-full px-6 py-3 bg-red-700 text-white font-semibold rounded-lg shadow-md hover:bg-red-800 disabled:opacity-50" disabled>Iniciar Limpieza...</button><button id="backToAdminMenuBtn" class="w-full px-6 py-3 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500">Cancelar</button></div>
+
+                        <div class="mb-6">
+                            <label for="confirmCleanText" class="block text-sm font-medium text-gray-700 mb-1">Escribe "BORRAR DATOS" para confirmar:</label>
+                            <input type="text" id="confirmCleanText" class="w-full px-4 py-2 border border-red-300 rounded-lg focus:ring-red-500 focus:border-red-500 font-mono text-center uppercase" placeholder="BORRAR DATOS">
+                        </div>
+
+                        <div class="space-y-4">
+                            <button id="executeCleanBtn" class="w-full px-6 py-3 bg-red-700 text-white font-semibold rounded-lg shadow-md hover:bg-red-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all" disabled>
+                                INICIAR LIMPIEZA
+                            </button>
+                            <button id="backToAdminMenuBtn" class="w-full px-6 py-3 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500">
+                                Cancelar
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
         `;
         const confirmInput = document.getElementById('confirmCleanText');
         const executeBtn = document.getElementById('executeCleanBtn');
-        confirmInput.addEventListener('input', () => { executeBtn.disabled = confirmInput.value !== 'BORRAR DATOS'; });
+        
+        confirmInput.addEventListener('input', () => { 
+            executeBtn.disabled = confirmInput.value !== 'BORRAR DATOS'; 
+        });
+
         document.getElementById('executeCleanBtn').addEventListener('click', handleDeepCleanConfirmation);
         document.getElementById('backToAdminMenuBtn').addEventListener('click', showAdminSubMenuView);
     }
@@ -122,21 +177,32 @@
         const cleanCli = document.getElementById('cleanClientes').checked;
         const cleanVen = document.getElementById('cleanVentas').checked;
         const cleanObs = document.getElementById('cleanObsequios').checked;
+        const cleanRec = document.getElementById('cleanRecargas').checked;
 
-        if (!cleanInv && !cleanCli && !cleanVen && !cleanObs) {
-            _showModal('Aviso', 'Selecciona al menos una opción.');
+        if (!cleanInv && !cleanCli && !cleanVen && !cleanObs && !cleanRec) {
+            _showModal('Aviso', 'Selecciona al menos una opción para limpiar.');
             return;
         }
 
-        _showModal('Confirmación Final', `<p class="text-red-600 font-bold">¡ÚLTIMA ADVERTENCIA!</p> Vas a borrar permanentemente las secciones seleccionadas para TODOS los usuarios. ¿Seguro?`, executeDeepClean, 'Sí, BORRAR DATOS'); 
+        _showModal('Confirmación Final', 
+            `<div class="text-center">
+                <p class="text-red-600 font-bold text-xl mb-2">¡ÚLTIMA ADVERTENCIA!</p>
+                <p class="mb-4">Vas a borrar permanentemente las secciones seleccionadas para <b>TODOS</b> los usuarios.</p>
+                <p class="text-sm text-gray-500">Esta acción no se puede deshacer y la app podría comportarse de manera inesperada si hay usuarios activos.</p>
+            </div>`, 
+            executeDeepClean, 
+            'Sí, BORRAR DATOS'
+        ); 
     }
 
     async function executeDeepClean() {
         _showModal('Progreso', 'Iniciando limpieza profunda... Esto puede tardar varios segundos.');
-        const cleanInv=document.getElementById('cleanInventario').checked;
-        const cleanCli=document.getElementById('cleanClientes').checked;
-        const cleanVen=document.getElementById('cleanVentas').checked;
-        const cleanObs=document.getElementById('cleanObsequios').checked;
+        
+        const cleanInv = document.getElementById('cleanInventario').checked;
+        const cleanCli = document.getElementById('cleanClientes').checked;
+        const cleanVen = document.getElementById('cleanVentas').checked;
+        const cleanObs = document.getElementById('cleanObsequios').checked;
+        const cleanRec = document.getElementById('cleanRecargas').checked;
         
         const colsToDelPub = []; 
         const pubProjId = 'ventas-9a210'; 
@@ -147,11 +213,11 @@
             allUserIds = uSnap.docs.map(d => d.id); 
         } catch (uErr) { 
             console.error("Error obteniendo usuarios:", uErr); 
-            _showModal('Error Crítico', `No se pudo obtener lista usuarios. Limpieza cancelada.`); 
+            _showModal('Error Crítico', `No se pudo obtener lista de usuarios. Limpieza cancelada.`); 
             return; 
         }
 
-        // --- DEFINICIÓN DE COLECCIONES PÚBLICAS A BORRAR ---
+        // --- 1. DEFINICIÓN DE COLECCIONES PÚBLICAS ---
         if (cleanCli) { 
             colsToDelPub.push({ path: `artifacts/${pubProjId}/public/data/clientes`, name: 'Clientes Públicos' }); 
             colsToDelPub.push({ path: `artifacts/${pubProjId}/public/data/sectores`, name: 'Sectores Públicos' }); 
@@ -161,46 +227,56 @@
             colsToDelPub.push({ path: `artifacts/${pubProjId}/public/data/cxc`, name: 'Cuentas por Cobrar (CXC)' });
         }
         if (cleanObs) { 
+            // Borrar config pública de obsequios (documento único)
             const pubConfRef = _doc(_db,`artifacts/${pubProjId}/public/data/config/obsequio`); 
             try { await _deleteDoc(pubConfRef); } catch(e){ console.warn("Could not delete public obsequio config:", e.code); } 
         }
 
-        // --- DEFINICIÓN DE COLECCIONES PRIVADAS (POR USUARIO) A BORRAR ---
+        // --- 2. DEFINICIÓN DE COLECCIONES PRIVADAS (POR USUARIO) ---
         const privColsToClean = []; 
+        
         if(cleanInv){ 
-            privColsToClean.push({sub:'inventario',n:'Inventario'}); 
-            privColsToClean.push({sub:'rubros',n:'Rubros'}); 
-            privColsToClean.push({sub:'segmentos',n:'Segmentos'}); 
-            privColsToClean.push({sub:'marcas',n:'Marcas'}); 
-            privColsToClean.push({sub:'historial_inventario',n:'Historial Inventario'}); 
-            privColsToClean.push({sub:'config/productSortOrder',n:'Config Orden Catálogo',isDoc:true}); 
-            privColsToClean.push({sub:'config/reporteCierreVentas',n:'Config Diseño Reporte',isDoc:true}); 
+            privColsToClean.push({sub:'inventario', n:'Inventario'}); 
+            privColsToClean.push({sub:'rubros', n:'Rubros'}); 
+            privColsToClean.push({sub:'segmentos', n:'Segmentos'}); 
+            privColsToClean.push({sub:'marcas', n:'Marcas'}); 
+            // Configuraciones de inventario
+            privColsToClean.push({sub:'config/productSortOrder', n:'Config Orden Catálogo', isDoc:true}); 
+            privColsToClean.push({sub:'config/reporteCierreVentas', n:'Config Diseño Reporte', isDoc:true}); 
         } 
+        
         if(cleanVen){ 
-            privColsToClean.push({sub:'ventas',n:'Ventas'}); 
-            privColsToClean.push({sub:'cierres',n:'Cierres'}); 
-            privColsToClean.push({sub:'config/cargaInicialSnapshot',n:'Snapshot Carga Inicial',isDoc:true}); 
+            privColsToClean.push({sub:'ventas', n:'Ventas'}); 
+            privColsToClean.push({sub:'cierres', n:'Cierres'}); 
+            privColsToClean.push({sub:'config/cargaInicialSnapshot', n:'Snapshot Carga Inicial', isDoc:true}); 
         } 
+        
         if(cleanObs){ 
-            privColsToClean.push({sub:'obsequios_entregados',n:'Obsequios Entregados'}); 
-            privColsToClean.push({sub:'config/obsequio',n:'Config Obsequio Privada',isDoc:true}); 
+            privColsToClean.push({sub:'obsequios_entregados', n:'Obsequios Entregados'}); 
+            privColsToClean.push({sub:'config/obsequio', n:'Config Obsequio Privada', isDoc:true}); 
+        }
+
+        if(cleanRec) {
+            // Esta colección es donde 'edit-inventario.js' guarda los logs
+            privColsToClean.push({sub:'historial_inventario', n:'Historial Correcciones/Recargas'});
         }
         
         let errorsOccurred = false; 
         let deletedDocCount = 0;
         
-        // 1. Borrar Públicas
+        // --- EJECUCIÓN: Borrar Públicas ---
         for (const colInfo of colsToDelPub) { 
             try { 
+                console.log(`Borrando pública: ${colInfo.name}`);
                 const count = await deleteCollection(colInfo.path); 
-                deletedDocCount+=count; 
+                deletedDocCount += count; 
             } catch (error) { 
                 console.error(`Error public ${colInfo.name}:`, error); 
-                errorsOccurred=true; 
+                errorsOccurred = true; 
             } 
         }
         
-        // 2. Borrar Privadas (Iterando Usuarios)
+        // --- EJECUCIÓN: Borrar Privadas (Iterando Usuarios) ---
         for (const targetUserId of allUserIds) {
             for (const privCol of privColsToClean) { 
                 const fullPath = `artifacts/${_appId}/users/${targetUserId}/${privCol.sub}`; 
@@ -211,26 +287,45 @@
                         deletedDocCount++; 
                     } else { 
                         const count = await deleteCollection(fullPath); 
-                        deletedDocCount+=count; 
+                        deletedDocCount += count; 
                     } 
                 } catch (error) { 
-                    if(error.code!=='not-found') errorsOccurred=true; 
+                    if(error.code !== 'not-found') {
+                        console.warn(`Error borrando ${fullPath}:`, error.message);
+                        errorsOccurred = true; 
+                    }
                 } 
             } 
         }
         
-        // Limpiar cachés globales
-        _rubroOrderCacheAdmin=null; _segmentoOrderCacheAdmin=null; 
-        if(window.inventarioModule) window.inventarioModule.invalidateSegmentOrderCache(); 
-        if(window.catalogoModule) window.catalogoModule.invalidateCache(); 
-        if(window.ventasModule) window.ventasModule.invalidateCache();
+        // Limpiar cachés globales en memoria para que la UI se actualice
+        _rubroOrderCacheAdmin = null; 
+        _segmentoOrderCacheAdmin = null; 
         
-        _showModal(errorsOccurred?'Limpieza Completada (con errores)':'Limpieza Completada', `Docs eliminados: ${deletedDocCount}.`, showAdminSubMenuView, 'OK');
+        if(window.inventarioModule) {
+            if (typeof window.inventarioModule.invalidateSegmentOrderCache === 'function') {
+                window.inventarioModule.invalidateSegmentOrderCache(); 
+            }
+        }
+        if(window.catalogoModule && typeof window.catalogoModule.invalidateCache === 'function') {
+            window.catalogoModule.invalidateCache(); 
+        }
+        if(window.ventasModule && typeof window.ventasModule.invalidateCache === 'function') {
+            window.ventasModule.invalidateCache();
+        }
+        
+        _showModal(
+            errorsOccurred ? 'Limpieza Completada (con advertencias)' : 'Limpieza Completada', 
+            `Se han eliminado ${deletedDocCount} documentos y registros.${errorsOccurred ? ' Revisa la consola para ver detalles de los errores.' : ''}`, 
+            showAdminSubMenuView, 
+            'OK'
+        );
     }
 
     async function deleteCollection(collectionPath) {
-        if (typeof limit !== 'function') throw new Error("limit no disponible.");
-        // FIX: Reducir batchSize para evitar sobrecargar la caché local y causar errores de BloomFilter
+        if (typeof limit !== 'function') throw new Error("Dependencia 'limit' no disponible.");
+        
+        // Usamos un tamaño de lote conservador para evitar saturar el índice local (BloomFilter error)
         const batchSize = 100; 
         const colRef = _collection(_db, collectionPath); 
         const qDef = _query(colRef, limit(batchSize));
@@ -243,9 +338,14 @@
                 // Intento de lectura con manejo de errores transitorios
                 snap = await _getDocs(qDef);
             } catch (e) {
-                console.warn("Error leyendo lote para borrar (reintentando...):", e);
-                await new Promise(r => setTimeout(r, 1000));
-                try { snap = await _getDocs(qDef); } catch(e2) { break; } 
+                console.warn(`Error leyendo lote en ${collectionPath} (reintentando...):`, e);
+                await new Promise(r => setTimeout(r, 1000)); // Esperar 1s antes de reintentar
+                try { 
+                    snap = await _getDocs(qDef); 
+                } catch(e2) { 
+                    console.error("Fallo definitivo leyendo colección:", e2);
+                    break; 
+                } 
             }
 
             if (!snap || snap.size === 0) break; 
@@ -256,8 +356,9 @@
             
             deletedCount += snap.size; 
             
-            // Pausa aumentada (300ms) para dar tiempo al SDK de Firebase de actualizar el BloomFilter y evitar el error
-            await new Promise(r => setTimeout(r, 300));
+            // Pausa de seguridad para permitir que el SDK de Firebase actualice su caché local
+            // Esto previene el error "BloomFilter Error" en operaciones masivas offline-enabled
+            await new Promise(r => setTimeout(r, 200));
         }
         return deletedCount;
     }
