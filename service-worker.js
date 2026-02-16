@@ -1,48 +1,64 @@
-const CACHE_NAME = 'ventas-app-cache-v9'; // Incrementa esto cada vez que subas cambios
+const CACHE_NAME = 'ventas-app-cache-v10'; // Incrementado a v10 para forzar actualización
 
+// Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
     './',
     './index.html',
+    './manifest.json',
+    // --- Módulos de Lógica ---
     './admin.js',
     './data.js',
     './inventario.js',
     './catalogo.js',
     './clientes.js',
     './ventas.js',
+    './ventas-ui.js',        // FALTABA
     './obsequios.js',
-    './manifest.json',
-    './css/tailwind.min.css', // Asegúrate de incluir CSS locales si los tienes
-    './css/inter.css',
+    './cxc.js',              // FALTABA
+    './edit-inventario.js',  // FALTABA
+    // --- Librerías Externas (Para que funcione sin internet y con estilo) ---
+    'https://cdn.tailwindcss.com',
+    'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js',
+    'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js',
+    'https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.3.0/exceljs.min.js',
+    // --- Imágenes (Solo las que seguro existen) ---
     './images/icons/icon-192x192.png',
-    './images/icons/icon-512x512.png',
-    './images/fondo.png',
-    './images/cervezayvinos.png',
-    './images/maltinypepsi.png',
-    './images/alimentospolar.png',
-    './images/p&g.png',
-    './images/no-image.png' // Añadido por si acaso
+    './images/icons/icon-512x512.png'
+    // NOTA: Si alguna de las imágenes de abajo no existe en tu carpeta, 
+    // el Service Worker fallará al instalarse. Coméntalas si no estás seguro.
+    // './images/fondo.png',
+    // './images/cervezayvinos.png',
+    // './images/maltinypepsi.png',
+    // './images/alimentospolar.png',
+    // './images/p&g.png',
+    // './images/no-image.png'
 ];
 
 self.addEventListener('install', event => {
-    console.log('[Service Worker] Instalando...');
+    console.log('[Service Worker] Instalando versión:', CACHE_NAME);
     self.skipWaiting(); // Forzar activación inmediata
-    
+
     event.waitUntil(
         caches.open(CACHE_NAME)
             .then(cache => {
-                console.log('[Service Worker] Cacheando archivos estáticos.');
-                return cache.addAll(urlsToCache);
-            })
-            .catch(error => {
-                console.error('[Service Worker] Falló el precaching:', error);
+                console.log('[Service Worker] Cacheando App Shell');
+                // Usamos addAll con manejo de errores para que un solo archivo faltante (ej. una imagen)
+                // no rompa toda la instalación de la app.
+                return Promise.all(
+                    urlsToCache.map(url => {
+                        return cache.add(url).catch(err => {
+                            console.warn(`[Service Worker] No se pudo cachear ${url}, se continuará sin él.`, err);
+                        });
+                    })
+                );
             })
     );
 });
 
 self.addEventListener('activate', event => {
-    console.log('[Service Worker] Activando...');
+    console.log('[Service Worker] Activando nueva versión...');
     const cacheWhitelist = [CACHE_NAME];
-    
+
     event.waitUntil(
         caches.keys().then(cacheNames => {
             return Promise.all(
@@ -55,7 +71,7 @@ self.addEventListener('activate', event => {
             );
         })
     );
-    return self.clients.claim(); // Tomar control de todos los clientes inmediatamente
+    return self.clients.claim(); // Tomar control inmediatamente
 });
 
 self.addEventListener('fetch', event => {
@@ -71,34 +87,26 @@ self.addEventListener('fetch', event => {
         return;
     }
 
-    // 2. Estrategia para archivos estáticos locales: Cache First, Network Fallback
-    // Busca en caché primero. Si está, devuélvelo. Si no, ve a la red.
+    // 2. Estrategia Stale-While-Revalidate para archivos estáticos
+    // (Devuelve rápido desde caché, pero actualiza en segundo plano)
     event.respondWith(
-        caches.match(event.request)
-            .then(cachedResponse => {
-                if (cachedResponse) {
-                    return cachedResponse;
-                }
-
-                // Si no está en caché, ir a la red
-                return fetch(event.request).then(networkResponse => {
-                    // Verificar respuesta válida
-                    if (!networkResponse || networkResponse.status !== 200 || networkResponse.type !== 'basic') {
-                        return networkResponse;
-                    }
-
-                    // Clonar respuesta para guardarla en caché
+        caches.match(event.request).then(cachedResponse => {
+            // Fetch de red para actualizar caché
+            const networkFetch = fetch(event.request).then(networkResponse => {
+                // Si la respuesta es válida, actualizamos la caché
+                if (networkResponse && networkResponse.status === 200 && networkResponse.type === 'basic') {
                     const responseToCache = networkResponse.clone();
-
                     caches.open(CACHE_NAME).then(cache => {
                         cache.put(event.request, responseToCache);
                     });
+                }
+                return networkResponse;
+            }).catch(() => {
+                // Si falla la red, no pasa nada, ya tenemos (o no) la caché
+            });
 
-                    return networkResponse;
-                }).catch(err => {
-                    console.log('[Service Worker] Fetch fallido (Offline):', err);
-                    // Opcional: Devolver una página offline.html si es una navegación
-                });
-            })
+            // Retornar caché si existe, sino esperar a la red
+            return cachedResponse || networkFetch;
+        })
     );
 });
