@@ -2,182 +2,180 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Gestión Dist. Castillo</title>
+    
+    <!-- PWA Meta Tags -->
+    <meta name="theme-color" content="#3b82f6">
+    <meta name="mobile-web-app-capable" content="yes">
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="images/icons/icon-192x192.png">
+
+    <!-- Estilos y Librerías -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     
-    <!-- LIBRERÍAS EXCEL (Esenciales para CXC y Data) -->
-    <!-- SheetJS (xlsx): Para LEER archivos (Importar CXC) -->
+    <!-- LIBRERÍAS EXCEL -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-    <!-- ExcelJS: Para ESCRIBIR archivos (Exportar Reportes) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.3.0/exceljs.min.js"></script>
-
+    
+    <!-- Fuente Inter -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 
+    <!-- Leaflet CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
 
-    <meta name="theme-color" content="#3b82f6"/>
-    <link rel="manifest" href="manifest.json">
-    <link rel="apple-touch-icon" href="images/icons/icon-192x192.png">
-
     <style>
-        body {
-            font-family: 'Inter', sans-serif;
-        }
-        body::before {
-            content: "";
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100vw;
-            height: 100vh;
-            z-index: -1;
-            background-image: url('images/fondo.png');
+        body { font-family: 'Inter', sans-serif; -webkit-tap-highlight-color: transparent; }
+        /* Animaciones para modales */
+        .modal-enter { opacity: 0; transform: scale(0.95); }
+        .modal-enter-active { opacity: 1; transform: scale(1); transition: opacity 200ms, transform 200ms; }
+        
+        /* Fondo dinámico para catálogo */
+        body.catalogo-active {
+            background-image: var(--catalogo-bg-image);
             background-size: cover;
             background-position: center;
-            filter: blur(3px) brightness(0.6);
-            transition: background-image 0.5s ease-in-out;
+            background-attachment: fixed;
         }
-        body.catalogo-active::before {
-            background-image: var(--catalogo-bg-image, url('images/fondo.png'));
-        }
-        .hidden {
-            display: none;
-        }
-        .animate-fade-in {
-            animation: fadeIn 0.5s ease-in-out;
-        }
-        @keyframes fadeIn {
-            from { opacity: 0; }
-            to { opacity: 1; }
-        }
-        .autocomplete-list {
-            position: absolute;
-            background-color: white;
-            border: 1px solid #e2e8f0;
-            max-height: 200px;
-            overflow-y: auto;
-            z-index: 10;
-            width: 100%;
-            border-radius: 0 0 0.5rem 0.5rem;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); 
-        }
-        .autocomplete-item {
-            padding: 0.5rem 1rem;
-            cursor: pointer;
-            transition: background-color 0.2s;
-            font-size: 0.875rem; 
-        }
-        .autocomplete-item:hover, .autocomplete-item.selected { 
-            background-color: #f1f5f9;
-        }
-        input[type="checkbox"]#offline-toggle {
-            height: 0;
-            width: 0;
-            visibility: hidden;
-        }
-        label[for="offline-toggle"] {
-            cursor: pointer;
-            text-indent: -9999px;
-            width: 50px; 
-            height: 25px; 
-            background: grey;
-            display: block;
-            border-radius: 100px;
-            position: relative;
-        }
-        label[for="offline-toggle"]:after {
-            content: '';
-            position: absolute;
-            top: 2px;
-            left: 2px;
-            width: 21px; 
-            height: 21px;
-            background: #fff;
-            border-radius: 90px;
-            transition: 0.3s;
-        }
-        input:checked + label[for="offline-toggle"] {
-            background: #dc2626; 
-        }
-        input:checked + label[for="offline-toggle"]:after {
-            left: calc(100% - 2px);
-            transform: translateX(-100%);
-        }
+        
+        /* Toggle Offline Personalizado */
+        input[type="checkbox"]#offline-toggle { height: 0; width: 0; visibility: hidden; position: absolute; }
+        label[for="offline-toggle"] { cursor: pointer; text-indent: -9999px; width: 44px; height: 24px; background: #4b5563; display: block; border-radius: 100px; position: relative; transition: background 0.3s; }
+        label[for="offline-toggle"]:after { content: ''; position: absolute; top: 2px; left: 2px; width: 20px; height: 20px; background: #fff; border-radius: 90px; transition: 0.3s; }
+        input:checked + label[for="offline-toggle"] { background: #dc2626; }
+        input:checked + label[for="offline-toggle"]:after { left: calc(100% - 2px); transform: translateX(-100%); }
     </style>
 </head>
-<body class="min-h-screen flex flex-col bg-gray-100"> 
-    <div id="app" class="flex flex-col min-h-screen">
-        <main id="mainContent" class="flex-grow hidden">
-        </main>
+<body class="bg-gray-100 text-gray-800 h-screen flex flex-col overflow-hidden">
 
-        <!-- Contenido de Login -->
-        <main id="loginContent" class="flex-grow flex items-center justify-center p-4">
-            <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl text-center max-w-sm w-full">
-                <h1 class="text-3xl font-bold text-gray-800 mb-6">Dist. Castillo</h1>
+    <!-- 1. LOGIN SCREEN -->
+    <div id="login-screen" class="fixed inset-0 z-50 bg-gray-100 flex items-center justify-center p-4">
+        <div class="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md">
+            <div class="text-center mb-8">
+                <div class="w-20 h-20 bg-blue-600 rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg">
+                    <svg class="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                </div>
+                <h1 class="text-2xl font-bold text-gray-800">Dist. Castillo</h1>
+                <p class="text-gray-500 text-sm">Sistema de Gestión Integral</p>
+            </div>
+
+            <!-- Login Form -->
+            <div id="login-content">
                 <form id="loginForm" class="space-y-4">
-                    <input type="email" id="emailInput" placeholder="Email" required
-                           class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    <input type="password" id="passwordInput" placeholder="Contraseña" required
-                           class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    <button type="submit" class="w-full px-6 py-3 bg-blue-500 text-white font-semibold rounded-lg shadow-md hover:bg-blue-600 transition duration-300 transform hover:scale-105">
-                        Ingresar
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Correo Electrónico</label>
+                        <input type="email" id="emailInput" class="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all outline-none" placeholder="usuario@ejemplo.com" required>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Contraseña</label>
+                        <input type="password" id="passwordInput" class="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all outline-none" placeholder="••••••••" required>
+                    </div>
+                    <div id="loginMessage" class="text-red-500 text-sm text-center h-5"></div>
+                    <button type="submit" id="loginBtn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg shadow-md transition-all transform active:scale-95">
+                        Iniciar Sesión
                     </button>
-                    <p id="authMessage" class="text-sm text-red-500 mt-2 h-4"></p> 
                 </form>
-                 <p class="mt-6 text-sm text-gray-800">
-                    ¿No tienes una cuenta?
-                    <button id="goToRegisterBtn" class="font-semibold text-blue-600 hover:underline">Regístrate aquí</button>
-                </p>
+                <div class="mt-6 text-center">
+                    <button id="goToRegisterBtn" class="text-sm text-blue-600 hover:underline">¿No tienes cuenta? Regístrate</button>
+                </div>
             </div>
-        </main>
 
-        <!-- Contenido de Registro -->
-        <main id="registerContent" class="flex-grow flex items-center justify-center p-4 hidden">
-            <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl text-center max-w-sm w-full">
-                <h1 class="text-3xl font-bold text-gray-800 mb-6">Crear Cuenta</h1>
+            <!-- Register Form (Oculto por defecto) -->
+            <div id="register-content" class="hidden">
                 <form id="registerForm" class="space-y-4">
-                    <input type="email" id="registerEmailInput" placeholder="Email" required
-                           class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    <input type="password" id="registerPasswordInput" placeholder="Contraseña (mín. 6)" required minlength="6"
-                           class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    <input type="password" id="confirmPasswordInput" placeholder="Confirmar Contraseña" required minlength="6"
-                           class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    <button type="submit" class="w-full px-6 py-3 bg-green-500 text-white font-semibold rounded-lg shadow-md hover:bg-green-600 transition duration-300 transform hover:scale-105">
-                        Registrar
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Correo Electrónico</label>
+                        <input type="email" id="registerEmailInput" class="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500" required>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Contraseña</label>
+                        <input type="password" id="registerPasswordInput" class="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500" required>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Confirmar Contraseña</label>
+                        <input type="password" id="confirmPasswordInput" class="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500" required>
+                    </div>
+                    <div id="registerMessage" class="text-red-500 text-sm text-center h-5"></div>
+                    <button type="submit" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-lg shadow-md transition-all">
+                        Registrarse
                     </button>
-                    <p id="registerMessage" class="text-sm text-red-500 mt-2 h-4"></p> 
                 </form>
-                <p class="mt-6 text-sm text-gray-800">
-                    ¿Ya tienes una cuenta?
-                    <button id="goToLoginBtn" class="font-semibold text-blue-600 hover:underline">Inicia sesión</button>
-                </p>
+                <div class="mt-6 text-center">
+                    <button id="goToLoginBtn" class="text-sm text-blue-600 hover:underline">Volver al Login</button>
+                </div>
             </div>
-        </main>
-
-        <!-- Modal Universal -->
-        <div id="modalContainer" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-60 hidden animate-fade-in p-4">
-            <div id="modalContent" class="bg-white p-6 md:p-8 rounded-lg shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
-            </div>
-        </div>
-
-        <!-- Controles Flotantes -->
-        <div id="floating-controls" class="fixed bottom-4 right-4 space-y-2 z-40 hidden">
-             <span id="connectionStatus" class="block text-xs font-bold px-3 py-2 rounded-full shadow-lg transition-colors duration-300"></span>
-            <button id="logoutBtn" class="w-12 h-12 bg-red-500 text-white font-semibold rounded-full shadow-lg hover:bg-red-600 transition duration-300 flex items-center justify-center transform hover:scale-110" title="Cerrar Sesión">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                </svg>
-            </button>
         </div>
     </div>
 
+    <!-- 2. MAIN APP LAYOUT (Oculto hasta login) -->
+    <div id="app-layout" class="hidden flex flex-col h-full">
+        <!-- Top Navbar -->
+        <header class="bg-blue-700 text-white shadow-md z-20 flex-shrink-0">
+            <div class="container mx-auto px-4 py-3 flex justify-between items-center">
+                <div class="flex items-center space-x-2" onclick="window.location.reload()"> 
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                    <span class="font-bold text-lg tracking-wide">Dist. Castillo</span>
+                </div>
+                
+                <div class="flex items-center space-x-3">
+                    <!-- Status Indicator (UNIFICADO) -->
+                    <div id="connectionStatus" class="px-2 py-1 bg-green-500 rounded-full text-xs font-bold shadow-sm flex items-center gap-1 text-white transition-colors duration-300">
+                        <span id="connectionDot" class="w-2 h-2 bg-white rounded-full animate-pulse"></span>
+                        <span id="connectionText">Online</span>
+                    </div>
+                    
+                    <!-- Role Badge -->
+                    <div id="userRoleBadge" class="hidden md:block px-2 py-1 bg-blue-800 rounded text-xs text-blue-200 uppercase tracking-wider font-semibold border border-blue-600">
+                        User
+                    </div>
+
+                    <!-- Logout -->
+                    <button id="logoutBtn" class="p-2 hover:bg-blue-600 rounded-full transition-colors">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content Area -->
+        <main id="main-content" class="flex-grow overflow-y-auto bg-gray-100 relative w-full">
+            <!-- Dynamic Content Injected Here -->
+            <div class="flex items-center justify-center h-full">
+                <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+            </div>
+        </main>
+
+        <!-- Floating Action Menu (Mobile/Desktop) -->
+        <div id="floating-controls" class="fixed bottom-6 right-6 flex flex-col gap-3 z-30 transition-transform duration-300 hidden">
+            <!-- Offline Toggle (Mejorado) -->
+            <div class="bg-white p-2 rounded-full shadow-lg flex items-center space-x-2 pr-4">
+                <input type="checkbox" id="offline-toggle"/>
+                <label for="offline-toggle" class="cursor-pointer" title="Modo Offline Manual">Toggle</label>
+                <span class="text-xs font-bold text-gray-600">Offline</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- 3. MODAL CONTAINER (Global) -->
+    <div id="modalContainer" class="fixed inset-0 z-50 hidden flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 transition-opacity duration-200">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden transform transition-all duration-200 scale-95 opacity-0" id="modalContentWrapper">
+            <div class="bg-blue-600 px-6 py-4 flex justify-between items-center">
+                <h3 id="modalTitle" class="text-lg font-bold text-white tracking-wide">Título</h3>
+                <button id="modalCloseTop" class="text-white hover:text-gray-200 focus:outline-none">✕</button>
+            </div>
+            <div id="modalBody" class="p-6 max-h-[70vh] overflow-y-auto text-gray-700"></div>
+            <div class="bg-gray-50 px-6 py-4 flex justify-end space-x-3 border-t">
+                <button id="modalCancelBtn" class="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 font-medium transition-colors hidden">Cancelar</button>
+                <button id="modalConfirmBtn" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium shadow-md transition-transform active:scale-95">Aceptar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- SCRIPTS MÓDULOS -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-    
-    <!-- Importar módulos locales -->
     <script src="data.js" defer></script>
     <script src="admin.js" defer></script>
     <script src="inventario.js" defer></script>
@@ -186,12 +184,12 @@
     <script src="ventas-ui.js" defer></script>
     <script src="ventas.js" defer></script>
     <script src="obsequios.js" defer></script>
-    <script src="edit-inventario.js" defer></script> <!-- NUEVO: Módulo Edición -->
     <script src="cxc.js" defer></script>
+    <script src="edit-inventario.js" defer></script>
 
-    <script type="module"> 
+    <!-- FIREBASE & MAIN LOGIC -->
+    <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAnalytics } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-analytics.js";
         import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, createUserWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, getDoc, addDoc, setDoc, deleteDoc, onSnapshot, collection, writeBatch, runTransaction, getDocs, enableIndexedDbPersistence, query, where, orderBy, limit, startAfter, enableNetwork, disableNetwork, increment } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
@@ -201,316 +199,305 @@
             projectId: "dist-castillo-sales",
             storageBucket: "dist-castillo-sales.firebasestorage.app",
             messagingSenderId: "719110919658",
-            appId: "1:719110919658:web:7830a013c8c685a2c08e93",
-            measurementId: "G-VJWMMH9FQC"
+            appId: "1:719110919658:web:7830a013c8c685a2c08e93"
         };
 
-        const appId = firebaseConfig.projectId;
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
 
-        let db, auth, userId;
-        window.userRole = 'user'; 
+        let userId, userRole = 'user';
         let activeListeners = [];
-        window.isLoggingOut = false; 
-        window.TIPOS_VACIO_GLOBAL = ["1/4 - 1/3", "ret 350 ml", "ret 1.25 Lts"];
+        let manualOffline = localStorage.getItem('manualOfflineMode') === 'true';
 
-        const mainContent = document.getElementById('mainContent');
-        const modalContainer = document.getElementById('modalContainer');
-        const modalContent = document.getElementById('modalContent');
-        const loginForm = document.getElementById('loginForm');
-        const authMessage = document.getElementById('authMessage');
-        const loginContent = document.getElementById('loginContent');
-        const registerContent = document.getElementById('registerContent');
-        const registerForm = document.getElementById('registerForm');
-        const registerMessage = document.getElementById('registerMessage');
-        const floatingControls = document.getElementById('floating-controls');
-        const connectionStatusEl = document.getElementById('connectionStatus');
+        // --- SISTEMA DE ESTADO DE CONEXIÓN UNIFICADO ---
+        // Esta función controla el UI de la barra superior.
+        // source: 'network' (navegador) o 'firestore' (base de datos)
+        function setConnectionState(isOnline, source = 'network') {
+            const statusDiv = document.getElementById('connectionStatus');
+            const statusText = document.getElementById('connectionText');
+            const dot = document.getElementById('connectionDot');
+            
+            // Si estamos en modo manual offline, forzar visualización roja
+            if (manualOffline) {
+                statusDiv.className = "px-2 py-1 bg-red-600 rounded-full text-xs font-bold shadow-sm flex items-center gap-1 text-white";
+                statusText.textContent = "Offline (Manual)";
+                dot.classList.remove('animate-pulse', 'bg-white');
+                dot.classList.add('bg-gray-300');
+                return;
+            }
 
-        // Función Modal Global
-        window.showModal = function(title, message, onConfirm = null, confirmText = 'Confirmar', onCancel = null, triggerConfirmLogic = false) {
-            modalContent.innerHTML = `
-                <div class="text-center">
-                    <h3 class="text-xl font-bold text-gray-800 mb-4">${title}</h3>
-                    <div class="text-gray-600 mb-6 text-sm md:text-base">${message}</div>
-                    <div class="flex flex-col sm:flex-row justify-center gap-3 mt-6">
-                        <button id="closeModalBtn" class="w-full sm:w-auto px-5 py-2.5 bg-gray-300 text-gray-800 rounded-lg hover:bg-gray-400 transition duration-200">Cerrar</button>
-                        ${onConfirm ? `<button id="confirmBtn" class="w-full sm:w-auto px-5 py-2.5 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition duration-200">${confirmText}</button>` : ''}
-                    </div>
-                </div>
-            `;
+            // Lógica normal
+            if (isOnline) {
+                statusDiv.className = "px-2 py-1 bg-green-500 rounded-full text-xs font-bold shadow-sm flex items-center gap-1 text-white";
+                statusText.textContent = "Online";
+                dot.className = "w-2 h-2 bg-white rounded-full animate-pulse";
+            } else {
+                statusDiv.className = "px-2 py-1 bg-yellow-500 rounded-full text-xs font-bold shadow-sm flex items-center gap-1 text-white";
+                statusText.textContent = source === 'firestore' ? "Sin Conexión (Cache)" : "Sin Internet";
+                dot.className = "w-2 h-2 bg-red-200 rounded-full";
+            }
+        }
 
-            const closeModal = () => {
-                modalContainer.classList.add('hidden');
-                if (onCancel) onCancel();
-            };
+        // Listeners Nativos
+        window.addEventListener('online', () => { 
+            if(!manualOffline) { enableNetwork(db); setConnectionState(true); } 
+        });
+        window.addEventListener('offline', () => setConnectionState(false));
+        
+        // Inicialización inmediata (Feedback rápido al usuario)
+        setConnectionState(navigator.onLine);
 
-            document.getElementById('closeModalBtn')?.addEventListener('click', closeModal);
+        // Persistencia
+        enableIndexedDbPersistence(db).catch(err => {
+            if (err.code == 'failed-precondition') console.warn('Persistencia falló: Múltiples pestañas.');
+            else if (err.code == 'unimplemented') console.warn('Navegador no soporta persistencia.');
+        });
 
-            if (onConfirm) {
-                const confirmBtn = document.getElementById('confirmBtn');
-                confirmBtn.addEventListener('click', async () => {
+        // Toggle Manual
+        const toggleBtn = document.getElementById('offline-toggle');
+        toggleBtn.checked = manualOffline;
+        toggleBtn.addEventListener('change', async () => {
+            manualOffline = toggleBtn.checked;
+            localStorage.setItem('manualOfflineMode', manualOffline);
+            if (manualOffline) {
+                await disableNetwork(db);
+                setConnectionState(false);
+                window.showModal('Modo Offline', 'Datos locales activados. No se sincronizará hasta desactivar.');
+            } else {
+                await enableNetwork(db);
+                setConnectionState(navigator.onLine);
+                window.showModal('Modo Online', 'Sincronizando...');
+            }
+        });
+
+        // --- SISTEMA DE MODALES ---
+        window.showModal = function(title, contentHTML, onConfirm = null, confirmText = 'Aceptar', onCancel = null, triggerConfirmLogic = false) {
+            const container = document.getElementById('modalContainer');
+            const wrapper = document.getElementById('modalContentWrapper');
+            const titleEl = document.getElementById('modalTitle');
+            const bodyEl = document.getElementById('modalBody');
+            const confirmBtn = document.getElementById('modalConfirmBtn');
+            const cancelBtn = document.getElementById('modalCancelBtn');
+            const closeTop = document.getElementById('modalCloseTop');
+
+            titleEl.textContent = title;
+            // Detectar si es texto plano o HTML
+            if (contentHTML.trim().startsWith('<')) bodyEl.innerHTML = contentHTML;
+            else bodyEl.textContent = contentHTML;
+
+            confirmBtn.textContent = confirmText;
+            
+            // Clonar botones para limpiar listeners viejos
+            const newConfirm = confirmBtn.cloneNode(true);
+            confirmBtn.parentNode.replaceChild(newConfirm, confirmBtn);
+            const newCancel = cancelBtn.cloneNode(true);
+            cancelBtn.parentNode.replaceChild(newCancel, cancelBtn);
+            const newCloseTop = closeTop.cloneNode(true);
+            closeTop.parentNode.replaceChild(newCloseTop, closeTop);
+
+            newConfirm.onclick = async () => {
+                if (onConfirm) {
                     if (triggerConfirmLogic) {
-                        confirmBtn.disabled = true;
-                        confirmBtn.textContent = 'Procesando...';
+                        newConfirm.disabled = true;
+                        newConfirm.textContent = '...';
                         await onConfirm();
                     } else {
                         onConfirm();
                     }
-                    closeModal();
-                });
-            }
-            modalContainer.classList.remove('hidden');
-        };
-
-        // Función para Agregar Items Rápidos
-        window.showAddItemModal = async function(collectionName, itemName) {
-            modalContent.innerHTML = `
-                <div class="text-center">
-                    <h3 class="text-xl font-bold text-gray-800 mb-4">Agregar Nuevo ${itemName}</h3>
-                    <form id="addItemForm" class="space-y-4">
-                        <input type="text" id="newItemInput" placeholder="Nombre del ${itemName}" class="w-full px-4 py-2 border rounded-lg" required>
-                        <button type="submit" class="w-full px-4 py-2 bg-blue-500 text-white rounded-lg">Agregar</button>
-                    </form>
-                    <p id="addItemMessage" class="text-sm mt-2 h-4"></p>
-                    <button id="closeItemBtn" class="mt-4 px-4 py-2 bg-gray-400 text-white rounded-lg">Cerrar</button>
-                </div>
-            `;
-            modalContainer.classList.remove('hidden');
-
-            document.getElementById('closeItemBtn').addEventListener('click', () => modalContainer.classList.add('hidden'));
-
-            document.getElementById('addItemForm').addEventListener('submit', async (e) => {
-                e.preventDefault();
-                const name = document.getElementById('newItemInput').value.trim().toUpperCase();
-                const msg = document.getElementById('addItemMessage');
-                try {
-                    const colRef = collection(db, `artifacts/${appId}/users/${userId}/${collectionName}`);
-                    await addDoc(colRef, { name });
-                    msg.textContent = "¡Agregado con éxito!";
-                    msg.className = "text-green-600 text-sm";
-                    setTimeout(() => modalContainer.classList.add('hidden'), 1000);
-                } catch (err) {
-                    msg.textContent = "Error al guardar.";
-                    msg.className = "text-red-600 text-sm";
                 }
-            });
-        };
+                closeModal();
+            };
 
-        // Poblado de Dropdowns Global
-        window.populateDropdown = async function(collectionPath, elementId, itemName, selectedValue = null) {
-            const select = document.getElementById(elementId);
-            if (!select) return;
-            select.innerHTML = `<option value="">Cargando...</option>`;
-            try {
-                const snap = await getDocs(collection(db, collectionPath));
-                const items = snap.docs.map(d => d.data().name).sort((a,b) => a.localeCompare(b));
-                select.innerHTML = `<option value="">Seleccione un ${itemName}</option>`;
-                items.forEach(name => {
-                    const opt = document.createElement('option');
-                    opt.value = name; opt.textContent = name;
-                    if (name === selectedValue) opt.selected = true;
-                    select.appendChild(opt);
-                });
-            } catch (err) {
-                select.innerHTML = `<option value="">Error al cargar</option>`;
+            if (onCancel || (confirmText !== 'Aceptar' && confirmText !== 'Cerrar')) {
+                newCancel.classList.remove('hidden');
+                newCancel.onclick = () => { if (onCancel) onCancel(); closeModal(); };
+            } else {
+                newCancel.classList.add('hidden');
             }
+            
+            newCloseTop.onclick = closeModal;
+
+            function closeModal() {
+                wrapper.classList.remove('scale-100', 'opacity-100');
+                wrapper.classList.add('scale-95', 'opacity-0');
+                setTimeout(() => container.classList.add('hidden'), 200);
+            }
+
+            container.classList.remove('hidden');
+            setTimeout(() => {
+                wrapper.classList.remove('scale-95', 'opacity-0');
+                wrapper.classList.add('scale-100', 'opacity-100');
+            }, 10);
         };
 
-        // Pre-carga de datos para optimizar offline
-        async function preloadAllData() {
-            const collectionsToPreload = [
-                { path: `artifacts/${appId}/users/${userId}/inventario` },
-                { path: `artifacts/${appId}/users/${userId}/rubros` },
-                { path: `artifacts/${appId}/users/${userId}/segmentos` },
-                { path: `artifacts/${appId}/public/data/clientes` },
-                { path: `artifacts/${appId}/public/data/sectores` },
-                { path: `artifacts/${appId}/public/data/config/obsequio` }
-            ];
-            await Promise.allSettled(collectionsToPreload.map(col => {
-                if (col.path.includes('/config/')) return getDoc(doc(db, col.path));
-                return getDocs(collection(db, col.path));
-            }));
-        }
+        // --- AUTH & APP FLOW ---
+        const loginScreen = document.getElementById('login-screen');
+        const appLayout = document.getElementById('app-layout');
+        const mainContent = document.getElementById('main-content');
+        const floatingControls = document.getElementById('floating-controls');
 
-        // Vista Principal del Menú
-        window.showMainMenu = function() {
-            cleanupListeners();
-            mainContent.classList.remove('hidden');
+        onAuthStateChanged(auth, async (user) => {
+            if (user) {
+                userId = user.uid;
+                loginScreen.classList.add('hidden');
+                appLayout.classList.remove('hidden');
+                
+                try {
+                    const userDoc = await getDoc(doc(db, "users", userId));
+                    userRole = userDoc.exists() ? userDoc.data().role : 'user';
+                    window.userRole = userRole;
+                    document.getElementById('userRoleBadge').textContent = userRole === 'admin' ? 'ADMIN' : 'VENDEDOR';
+                } catch (e) { console.error("Error fetching role (offline?)", e); }
+
+                // Listener de Conexión Firestore (La fuente de verdad definitiva)
+                const connectionUnsub = onSnapshot(doc(db, '.info/connected'), (snap) => {
+                    if (!manualOffline) {
+                        setConnectionState(snap.data()?.connected ?? false, 'firestore');
+                    }
+                });
+                activeListeners.push(connectionUnsub);
+
+                // Dependencias para módulos
+                const deps = {
+                    db, auth, userId, userRole, appId: "ventas-9a210",
+                    mainContent, floatingControls, activeListeners,
+                    showMainMenu, showModal: window.showModal,
+                    collection, doc, getDoc, getDocs, setDoc, addDoc, deleteDoc, 
+                    onSnapshot, query, where, orderBy, limit, startAfter, writeBatch, runTransaction, increment,
+                    populateDropdown: window.populateDropdown, showAddItemModal: window.showAddItemModal
+                };
+
+                // Inicializar Módulos
+                if(window.initAdmin) window.initAdmin(deps);
+                if(window.initData) window.initData(deps);
+                if(window.initInventario) window.initInventario(deps);
+                if(window.initCatalogo) window.initCatalogo(deps);
+                if(window.initClientes) window.initClientes(deps);
+                if(window.initVentas) window.initVentas(deps);
+                if(window.initObsequios) window.initObsequios(deps);
+                if(window.initCXC) window.initCXC(deps);
+                if(window.initEditInventario) window.initEditInventario(deps);
+
+                showMainMenu();
+            } else {
+                currentUser = null;
+                loginScreen.classList.remove('hidden');
+                appLayout.classList.add('hidden');
+                cleanupListeners();
+            }
+        });
+
+        function showMainMenu() {
             floatingControls.classList.remove('hidden');
-            const isAdmin = window.userRole === 'admin';
-
+            document.body.classList.remove('catalogo-active');
+            document.body.style.removeProperty('--catalogo-bg-image');
+            
             mainContent.innerHTML = `
-                <div class="p-4 pt-8 container mx-auto max-w-lg">
-                    <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl text-center">
-                        <h1 class="text-3xl font-bold text-gray-800 mb-6">Menú Principal</h1>
-                        <div class="space-y-4">
-                            <button id="inventarioBtn" class="w-full px-6 py-3 bg-blue-500 text-white rounded-lg shadow-md hover:bg-blue-600">Inventario</button>
-                            
-                            <!-- Botón Edición Inventario (Solo Admin) -->
-                            ${isAdmin ? `<button id="editInventarioBtn" class="w-full px-6 py-3 bg-amber-600 text-white rounded-lg shadow-md hover:bg-amber-700 font-bold">Edición de Inventario</button>` : ''}
-                            
-                            <button id="clientesBtn" class="w-full px-6 py-3 bg-indigo-500 text-white rounded-lg shadow-md hover:bg-indigo-600">Clientes</button>
-                            <button id="ventasBtn" class="w-full px-6 py-3 bg-green-500 text-white rounded-lg shadow-md hover:bg-green-600">Ventas</button>
-                            
-                            <button id="cxcBtn" class="w-full px-6 py-3 bg-orange-500 text-white rounded-lg shadow-md hover:bg-orange-600 font-bold">CXC</button>
-                            
-                            ${!isAdmin ? `<button id="obsequiosBtn" class="w-full px-6 py-3 bg-cyan-500 text-white rounded-lg shadow-md hover:bg-cyan-600">Obsequios</button>` : ''}
-                            <button id="catalogoBtn" class="w-full px-6 py-3 bg-purple-500 text-white rounded-lg shadow-md hover:bg-purple-600">Catálogo</button>
-                            <button id="profileAdminBtn" class="w-full px-6 py-3 bg-gray-700 text-white rounded-lg shadow-md hover:bg-gray-800">${isAdmin ? 'Admin Panel' : 'Mi Perfil'}</button>
-                            ${isAdmin ? `<button id="dataBtn" class="w-full px-6 py-3 bg-red-700 text-white rounded-lg shadow-md hover:bg-red-800">Data</button>` : ''}
-                        </div>
-                        <div class="mt-8 pt-4 border-t flex items-center justify-center space-x-3">
-                             <span id="offline-toggle-text" class="text-sm font-medium text-gray-700">Online (Manual)</span>
-                             <input type="checkbox" id="offline-toggle"/>
-                             <label for="offline-toggle" class="cursor-pointer">Toggle</label>
-                        </div>
-                    </div>
+                <div class="p-6 pt-8 max-w-4xl mx-auto grid grid-cols-2 md:grid-cols-3 gap-4 md:gap-6">
+                    ${getMenuCard('🛒', 'Ventas', 'Nueva venta y cierres', 'showVentasTotales', 'bg-blue-600')}
+                    ${getMenuCard('📦', 'Inventario', 'Productos y Stock', 'showInventarioMenu', 'bg-green-600')}
+                    ${getMenuCard('👥', 'Clientes', 'Cartera de clientes', 'showClientesMenu', 'bg-purple-600')}
+                    ${getMenuCard('📒', 'Catálogo', 'Generar imágenes', 'showCatalogoMenu', 'bg-orange-500')}
+                    ${getMenuCard('💰', 'CXC', 'Cuentas por Cobrar', 'showCXCMenu', 'bg-teal-600')}
+                    ${getMenuCard('🎁', 'Obsequios', 'Control de regalías', 'showObsequiosMenu', 'bg-pink-500')}
+                    ${getMenuCard('📊', 'Datos', 'Mapas y estadísticas', 'showDataMenu', 'bg-indigo-600')}
+                    ${getMenuCard('⚙️', 'Admin / Perfil', 'Configuración', 'showAdminMenu', 'bg-gray-700')}
                 </div>
             `;
 
-            // Listeners Seguros (Evita crashes si faltan módulos)
-            const safeNav = (fn, name) => {
-                if (typeof fn === 'function') {
-                    floatingControls.classList.add('hidden'); 
-                    fn();
+            // Enrutamiento seguro
+            const nav = (mod, fn) => {
+                if(mod && typeof mod[fn] === 'function' || typeof window[fn] === 'function') {
+                    if(window[fn]) window[fn](); else mod[fn]();
                 } else {
-                    console.error(`Error de Navegación: El módulo '${name}' no está cargado.`);
-                    window.showModal('Módulo no disponible', `La sección de ${name} no se ha podido cargar correctamente.`);
+                    window.showModal('Cargando...', 'El módulo aún se está inicializando.');
                 }
             };
 
-            document.getElementById('inventarioBtn')?.addEventListener('click', () => safeNav(window.showInventarioSubMenu, 'Inventario'));
-            
-            // Listener Edición
-            document.getElementById('editInventarioBtn')?.addEventListener('click', () => safeNav(window.showEditInventarioMenu, 'Edición Inventario'));
-            
-            document.getElementById('clientesBtn')?.addEventListener('click', () => safeNav(window.showClientesSubMenu, 'Clientes'));
-            document.getElementById('ventasBtn')?.addEventListener('click', () => safeNav(window.showVentasView, 'Ventas'));
-            
-            // Listener para CXC
-            document.getElementById('cxcBtn')?.addEventListener('click', () => safeNav(window.showCXCView, 'CXC'));
-            
-            document.getElementById('obsequiosBtn')?.addEventListener('click', () => safeNav(window.showGestionObsequiosView, 'Obsequios'));
-            document.getElementById('catalogoBtn')?.addEventListener('click', () => safeNav(window.showCatalogoSubMenu, 'Catálogo'));
-            document.getElementById('profileAdminBtn')?.addEventListener('click', () => safeNav(window.showAdminOrProfileView, 'Perfil/Admin'));
-            document.getElementById('dataBtn')?.addEventListener('click', () => safeNav(window.showDataView, 'Data'));
+            document.getElementById('card-Ventas').onclick = () => nav(window.ventasModule, 'showVentasTotalesView'); // Note: global function hook in UI file
+            document.getElementById('card-Inventario').onclick = () => nav(window.inventarioModule, 'showInventarioSubMenu');
+            document.getElementById('card-Clientes').onclick = () => nav(window.clientesModule, 'showClientesSubMenu');
+            document.getElementById('card-Catálogo').onclick = () => nav(window.catalogoModule, 'showCatalogoSubMenu');
+            document.getElementById('card-CXC').onclick = () => nav(window.cxcModule, 'showCXCView');
+            document.getElementById('card-Obsequios').onclick = () => nav(window.obsequiosModule, 'showGestionObsequiosView');
+            document.getElementById('card-Datos').onclick = () => nav(window.dataModule, 'showDataSubMenuView');
+            document.getElementById('card-Admin / Perfil').onclick = () => nav(window.adminModule, 'showAdminOrProfileView');
+        }
 
-            const toggle = document.getElementById('offline-toggle');
-            toggle.checked = localStorage.getItem('manualOfflineMode') === 'true';
-            toggle.addEventListener('change', async () => {
-                if (toggle.checked) {
-                    await disableNetwork(db);
-                    localStorage.setItem('manualOfflineMode', 'true');
-                } else {
-                    await enableNetwork(db);
-                    localStorage.removeItem('manualOfflineMode');
-                }
-                window.showMainMenu();
-            });
-
-            // Estado de conexión
-            const unsub = onSnapshot(collection(db, `artifacts/${appId}/users/${userId}/inventario`), (snap) => {
-                const isOffline = snap.metadata.fromCache || localStorage.getItem('manualOfflineMode') === 'true';
-                connectionStatusEl.textContent = isOffline ? "SIN CONEXIÓN" : "EN LÍNEA";
-                connectionStatusEl.className = `block text-xs font-bold px-3 py-2 rounded-full shadow-lg transition-colors duration-300 ${isOffline ? 'bg-yellow-400 text-yellow-900 animate-pulse' : 'bg-green-400 text-green-900'}`;
-            });
-            activeListeners.push(unsub);
-        };
-
-        async function initializeAppAndListeners() {
-            const app = initializeApp(firebaseConfig);
-            db = getFirestore(app);
-            auth = getAuth(app);
-
-            try { await enableIndexedDbPersistence(db); } catch (err) { console.warn("Persistence offline no disponible", err.code); }
-
-            onAuthStateChanged(auth, async (user) => {
-                cleanupListeners();
-                if (user) {
-                    userId = user.uid;
-                    const userDoc = await getDoc(doc(db, "users", userId));
-                    window.userRole = userDoc.exists() ? userDoc.data().role : 'user';
-                    
-                    document.getElementById('loginContent').classList.add('hidden');
-                    document.getElementById('registerContent').classList.add('hidden');
-                    mainContent.classList.remove('hidden');
-                    mainContent.innerHTML = `<div class="p-8 text-center text-white font-bold text-xl">Sincronizando Base de Datos...</div>`;
-                    
-                    await preloadAllData();
-                    
-                    const deps = { 
-                        db, userId, appId, mainContent, floatingControls, activeListeners, 
-                        userRole: window.userRole, showMainMenu, showModal: window.showModal, 
-                        showAddItemModal: window.showAddItemModal, populateDropdown: window.populateDropdown, 
-                        collection, onSnapshot, doc, getDoc, addDoc, setDoc, deleteDoc, getDocs, 
-                        writeBatch, runTransaction, query, where, orderBy, limit, startAfter, firebaseConfig,
-                        increment // AÑADIDO: Para soporte offline
-                    };
-                    
-                    // Init de módulos con chequeo de seguridad
-                    if (window.initData) window.initData(deps); else console.warn("Módulo Data no encontrado");
-                    if (window.initAdmin) window.initAdmin(deps); else console.warn("Módulo Admin no encontrado");
-                    if (window.initInventario) window.initInventario(deps); else console.warn("Módulo Inventario no encontrado");
-                    if (window.initCatalogo) window.initCatalogo(deps); else console.warn("Módulo Catálogo no encontrado");
-                    if (window.initClientes) window.initClientes(deps); else console.warn("Módulo Clientes no encontrado");
-                    if (window.initVentas) window.initVentas(deps); else console.warn("Módulo Ventas no encontrado");
-                    if (window.initObsequios) window.initObsequios(deps); else console.warn("Módulo Obsequios no encontrado");
-                    if (window.initCXC) window.initCXC(deps); else console.warn("Módulo CXC no encontrado");
-                    
-                    // INIT NUEVO MODULO DE EDICIÓN
-                    if (window.initEditInventario) window.initEditInventario(deps); else console.warn("Módulo Edit Inventario no encontrado");
-
-                    showMainMenu();
-                } else {
-                    document.getElementById('loginContent').classList.remove('hidden');
-                    mainContent.classList.add('hidden');
-                    floatingControls.classList.add('hidden');
-                }
-            });
+        function getMenuCard(icon, title, desc, action, color) {
+            return `
+                <div id="card-${title}" class="bg-white rounded-xl shadow-md p-4 flex flex-col items-center text-center cursor-pointer hover:shadow-xl hover:scale-105 transition-all border-b-4 ${color.replace('bg-', 'border-')} active:bg-gray-50">
+                    <div class="w-12 h-12 ${color} rounded-full flex items-center justify-center text-2xl mb-3 shadow-sm text-white">${icon}</div>
+                    <h3 class="font-bold text-gray-800 text-sm md:text-base">${title}</h3>
+                    <p class="text-xs text-gray-500 mt-1 hidden md:block">${desc}</p>
+                </div>
+            `;
         }
 
         function cleanupListeners() {
-            activeListeners.forEach(u => { if(typeof u === 'function') u(); });
+            activeListeners.forEach(u => u && u());
             activeListeners = [];
         }
 
-        // Manejo de Forms
-        loginForm?.addEventListener('submit', (e) => {
-            e.preventDefault();
-            const email = document.getElementById('emailInput').value;
-            const pass = document.getElementById('passwordInput').value;
-            signInWithEmailAndPassword(auth, email, pass).catch(err => {
-                authMessage.textContent = "Correo o contraseña incorrectos.";
-            });
-        });
-
-        registerForm?.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const email = document.getElementById('registerEmailInput').value;
-            const pass = document.getElementById('registerPasswordInput').value;
-            const confirm = document.getElementById('confirmPasswordInput').value;
-            if (pass !== confirm) { registerMessage.textContent = "Las contraseñas no coinciden."; return; }
+        // Helpers Globales para Módulos (AddItem, Dropdowns)
+        window.populateDropdown = async function(path, elId, label, selVal = null) {
+            const el = document.getElementById(elId); if (!el) return;
+            el.innerHTML = `<option value="">Cargando...</option>`;
             try {
-                const cred = await createUserWithEmailAndPassword(auth, email, pass);
-                await setDoc(doc(db, "users", cred.user.uid), { email, role: 'user', createdAt: new Date() });
-            } catch (err) { registerMessage.textContent = "Error al registrar."; }
-        });
+                const snap = await getDocs(collection(db, path));
+                const items = snap.docs.map(d => d.data().name).sort();
+                el.innerHTML = `<option value="">${label}</option>` + items.map(n => `<option value="${n}" ${n===selVal?'selected':''}>${n}</option>`).join('');
+            } catch(e) { el.innerHTML = `<option>Error</option>`; }
+        };
 
-        document.getElementById('logoutBtn')?.addEventListener('click', () => {
-            window.showModal('Cerrar Sesión', '¿Estás seguro?', () => signOut(auth));
-        });
+        window.showAddItemModal = function(colName, title) {
+            if (userRole !== 'admin') return window.showModal('Error', 'Solo administradores.');
+            window.showModal(`Agregar ${title}`, 
+                `<input type="text" id="newItemName" class="w-full border p-2 rounded uppercase" placeholder="Nombre">`,
+                async () => {
+                    const name = document.getElementById('newItemName').value.trim().toUpperCase();
+                    if(name) {
+                        try {
+                            await addDoc(collection(db, `artifacts/ventas-9a210/users/${userId}/${colName}`), { name, createdAt: new Date() });
+                            window.showModal('Éxito', 'Elemento agregado.');
+                            if(window.adminModule?.propagateCategoryChange) window.showModal('Info', 'Sincroniza en Admin > Limpieza.');
+                        } catch(e) { window.showModal('Error', e.message); }
+                    }
+                }, 'Guardar'
+            );
+        };
 
-        document.getElementById('goToRegisterBtn')?.addEventListener('click', () => {
-            loginContent.classList.add('hidden');
-            registerContent.classList.remove('hidden');
-        });
+        // Login Logic
+        document.getElementById('loginForm').onsubmit = async (e) => {
+            e.preventDefault();
+            try {
+                await signInWithEmailAndPassword(auth, document.getElementById('emailInput').value, document.getElementById('passwordInput').value);
+            } catch (e) { document.getElementById('loginMessage').textContent = "Error de credenciales"; }
+        };
+        
+        document.getElementById('registerForm').onsubmit = async (e) => {
+            e.preventDefault();
+            const p1 = document.getElementById('registerPasswordInput').value;
+            const p2 = document.getElementById('confirmPasswordInput').value;
+            if(p1!==p2) return document.getElementById('registerMessage').textContent = "Contraseñas no coinciden";
+            try {
+                const cred = await createUserWithEmailAndPassword(auth, document.getElementById('registerEmailInput').value, p1);
+                await setDoc(doc(db, "users", cred.user.uid), { email: cred.user.email, role: 'user', createdAt: new Date() });
+            } catch(e) { document.getElementById('registerMessage').textContent = "Error al registrar"; }
+        };
 
-        document.getElementById('goToLoginBtn')?.addEventListener('click', () => {
-            registerContent.classList.add('hidden');
-            loginContent.classList.remove('hidden');
-        });
+        document.getElementById('logoutBtn').onclick = () => window.showModal('Cerrar Sesión', '¿Salir?', () => signOut(auth));
+        
+        // Navegación Login/Registro
+        document.getElementById('goToRegisterBtn').onclick = () => { document.getElementById('loginContent').classList.add('hidden'); document.getElementById('registerContent').classList.remove('hidden'); };
+        document.getElementById('goToLoginBtn').onclick = () => { document.getElementById('registerContent').classList.add('hidden'); document.getElementById('loginContent').classList.remove('hidden'); };
 
-        document.addEventListener('DOMContentLoaded', initializeAppAndListeners);
+    </script>
 
+    <!-- PWA Register -->
+    <script>
+        if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.error);
     </script>
 </body>
 </html>
