@@ -4,8 +4,13 @@
     let _collection, _onSnapshot, _doc, _getDoc, _addDoc, _setDoc, _deleteDoc, _getDocs, _writeBatch, _runTransaction, _query, _where;
     let _increment; // NUEVO: Necesario para operaciones offline
 
+    // --- VARIABLES FASE 2 ---
+    const PUBLIC_DATA_ID = 'ventas-9a210'; // ID Fijo para datos públicos
+    let _masterCatalogCache = {}; // Cache del Catálogo Maestro
+    let _userStockCache = {};     // Cache del Stock Privado
+
     let _clientesCache = [];
-    let _inventarioCache = [];
+    let _inventarioCache = []; // Esta será la FUSIÓN de Maestro + Stock
     let _ventasGlobal = [];
     let _ventaActual = { cliente: null, productos: {}, vaciosDevueltosPorTipo: {} };
     let _originalVentaForEdit = null;
@@ -42,6 +47,8 @@
 
         if (!_runTransaction) console.error("Error Crítico: 'runTransaction' no disponible en initVentas.");
         if (!_increment) console.warn("Advertencia: 'increment' no disponible. Ventas offline limitadas.");
+        
+        console.log("Módulo Ventas inicializado (Modo Híbrido Fase 2).");
     };
 
     window.showVentasView = function() {
@@ -81,23 +88,70 @@
         loadDataForNewSale();
     }
 
+    // --- MODIFICADO: LECTURA HÍBRIDA (FASE 2) ---
     function loadDataForNewSale() {
-        const clientesRef = _collection(_db, `artifacts/ventas-9a210/public/data/clientes`);
-        const unsubClientes = _onSnapshot(clientesRef, snap => { _clientesCache = snap.docs.map(d => ({ id: d.id, ...d.data() })); }, err => { 
+        // 1. Clientes (Público)
+        const clientesRef = _collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/clientes`);
+        const unsubClientes = _onSnapshot(clientesRef, snap => { 
+            _clientesCache = snap.docs.map(d => ({ id: d.id, ...d.data() })); 
+        }, err => { 
             if (err.code === 'permission-denied' || err.code === 'unauthenticated') return;
             console.error("Error clientes:", err); 
         });
+
+        // 2. Catálogo Maestro (Definiciones Públicas)
+        const masterRef = _collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/productos`);
+        const unsubMaster = _onSnapshot(masterRef, snap => {
+            _masterCatalogCache = {};
+            snap.forEach(d => { _masterCatalogCache[d.id] = { id: d.id, ...d.data() }; });
+            mergeInventarioCache(); // Fusionar al recibir cambios del maestro
+        }, err => console.error("Error Maestro:", err));
+
+        // 3. Stock Privado (Inventario Usuario)
         const inventarioRef = _collection(_db, `artifacts/${_appId}/users/${_userId}/inventario`);
-        const unsubInventario = _onSnapshot(inventarioRef, snap => { 
-            _inventarioCache = snap.docs.map(d => ({ id: d.id, ...d.data() })); 
-            populateRubroFilter(); 
-            if (_ventaActual.cliente) renderVentasInventario(); 
+        const unsubStock = _onSnapshot(inventarioRef, snap => { 
+            _userStockCache = {};
+            snap.forEach(d => {
+                const data = d.data();
+                _userStockCache[d.id] = {
+                    cantidadUnidades: data.cantidadUnidades || 0,
+                    _legacyData: data // Guardamos todo por si acaso (backward compatibility)
+                };
+            });
+            mergeInventarioCache(); // Fusionar al recibir cambios de stock
         }, err => { 
             if (err.code === 'permission-denied' || err.code === 'unauthenticated') return;
-            console.error("Error inventario:", err); 
+            console.error("Error inventario stock:", err); 
             const b = document.getElementById('inventarioTableBody'); if(b) b.innerHTML = '<tr><td colspan="4" class="text-red-500">Error inventario</td></tr>'; 
         });
-        _activeListeners.push(unsubClientes, unsubInventario);
+
+        _activeListeners.push(unsubClientes, unsubMaster, unsubStock);
+    }
+
+    // --- NUEVO: FUNCIÓN DE FUSIÓN ---
+    function mergeInventarioCache() {
+        _inventarioCache = [];
+        const allIds = new Set([...Object.keys(_masterCatalogCache), ...Object.keys(_userStockCache)]);
+        
+        allIds.forEach(id => {
+            const master = _masterCatalogCache[id];
+            const stock = _userStockCache[id];
+
+            if (master) {
+                // Caso Ideal FASE 2: Definición del Maestro + Stock Privado
+                _inventarioCache.push({
+                    ...master,
+                    cantidadUnidades: stock ? stock.cantidadUnidades : 0,
+                    id: id
+                });
+            } else if (stock && stock._legacyData) {
+                // Caso Legacy: Producto solo existe en local (no migrado al maestro aún)
+                _inventarioCache.push({ ...stock._legacyData, id: id });
+            }
+        });
+
+        populateRubroFilter();
+        if (_ventaActual.cliente) renderVentasInventario();
     }
 
     function populateRubroFilter() {
@@ -270,7 +324,7 @@
         }
 
         const ventaRef = _doc(_collection(_db, `artifacts/${_appId}/users/${_userId}/ventas`));
-        const clientRef = _doc(_db, `artifacts/ventas-9a210/public/data/clientes`, _ventaActual.cliente.id);
+        const clientRef = _doc(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/clientes`, _ventaActual.cliente.id);
 
         // 3. Determinar Modo (Online vs Offline)
         const isOffline = !navigator.onLine || localStorage.getItem('manualOfflineMode') === 'true';
@@ -290,8 +344,6 @@
                 const qtyNeeded = p.totalUnidadesVendidas || 0;
                 
                 // Aunque la UI ya valida, hacemos doble check antes de escribir
-                // En modo offline asumimos riesgo de stock negativo si el caché está viejo, 
-                // pero prevenimos vender más de lo que la tablet "cree" que tiene.
                 if (qtyNeeded > 0) {
                     if (stockLocal < qtyNeeded) throw new Error(`Stock insuficiente localmente para: ${p.presentacion}`);
                     
@@ -325,12 +377,10 @@
                 if (dev > 0) vaciosChanges[tV] = (vaciosChanges[tV] || 0) - dev;
             }
 
-            // Aplicar cambios de vacíos usando increment y dot notation para campos anidados
-            // NOTA: Asumimos que el documento del cliente existe y tiene la estructura saldoVacios
+            // Aplicar cambios de vacíos usando increment
             for (const tV in vaciosChanges) {
                 const ch = vaciosChanges[tV];
                 if (ch !== 0) {
-                    // Usamos notación de punto para actualizar solo el campo específico dentro del mapa
                     const fieldPath = `saldoVacios.${tV}`;
                     batch.update(clientRef, { [fieldPath]: _increment(ch) });
                 }
@@ -345,7 +395,7 @@
                 total: totalVenta,
                 productos: itemsVenta,
                 vaciosDevueltosPorTipo: _ventaActual.vaciosDevueltosPorTipo,
-                origen: "offline" // Marcador útil para debug
+                origen: "offline"
             };
             batch.set(ventaRef, ventaDataToSave);
 
@@ -390,8 +440,10 @@
                         const sub = (precios.cj || 0) * (p.cantCj || 0) + (precios.paq || 0) * (p.cantPaq || 0) + (precios.und || 0) * (p.cantUnd || 0);
                         totalVenta += sub;
 
-                        if (invDoc.data().manejaVacios && invDoc.data().tipoVacio) {
-                            const tV = invDoc.data().tipoVacio;
+                        // CORRECCIÓN FASE 2: Usar datos de 'p' (caché fusionado) para metadatos, no invDoc
+                        // Esto asegura que si invDoc pierde datos (por limpieza futura), la venta sigue funcionando.
+                        if (p.manejaVacios && p.tipoVacio) {
+                            const tV = p.tipoVacio;
                             const cjV = p.cantCj || 0;
                             if (cjV > 0) vaciosChanges[tV] = (vaciosChanges[tV] || 0) + cjV;
                         }
@@ -750,8 +802,6 @@
                              const stockActual = invDoc.data().cantidadUnidades || 0;
                              dataToSet = { cantidadUnidades: stockActual + ajuste.cantidad };
                          } else {
-                             // Si el producto fue borrado, lo restauramos con la data guardada en la venta
-                             // para evitar inconsistencias de "stock fantasma"
                              const bk = ajuste.datosBackup;
                              dataToSet = {
                                  presentacion: bk.presentacion || 'Producto Restaurado',
@@ -841,16 +891,9 @@
 
                           const invDoc = invMap.get(pId);
                           
-                          // Manejo de producto borrado
                           if (!invDoc) { 
                               if (deltaU < 0) throw `Producto ${pId} no existe, imposible vender más.`; 
-                              // Si devolvemos stock (deltaU > 0) y el producto no existe, 
-                              // deberíamos recrearlo, pero runTransaction get() ya ocurrió.
-                              // En este flujo simplificado, si no existe el doc, lo saltamos o lanzamos error.
-                              // Para robustez, mejor lanzar error si intentamos devolver a un producto fantasma en EDIT.
-                              // Opcional: Recrear lógica similar a deleteVenta
                               if (deltaU > 0) {
-                                  // Intentamos restaurar "algo"
                                   const ref = invRefs.find(r=>r.id===pId).ref;
                                   transaction.set(ref, { 
                                       cantidadUnidades: deltaU,
