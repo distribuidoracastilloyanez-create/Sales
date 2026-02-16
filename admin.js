@@ -304,6 +304,9 @@
         });
     }
 
+    // --- FIX CRÍTICO: Delay para evitar Resource Exhausted ---
+    const delay = ms => new Promise(res => setTimeout(res, ms));
+
     async function processJsonImport(file) {
         const text = await readFileAsText(file);
         let data;
@@ -358,8 +361,13 @@
             batch.set(docRef, item, { merge: true });
             ops++; count++;
 
-            // FIX CRÍTICO: Reducimos de 100 a 15 para evitar error "Payload too large" de Firestore (10MB limit)
-            if (ops >= 15) { await batch.commit(); batch = _writeBatch(_db); ops = 0; }
+            // FIX: Lote de 20 y PAUSA de 300ms para no saturar el stream de escritura
+            if (ops >= 20) { 
+                await batch.commit(); 
+                await delay(300); // Pausa artificial para liberar el stream
+                batch = _writeBatch(_db); 
+                ops = 0; 
+            }
         }
         if (ops > 0) await batch.commit();
         return count;
