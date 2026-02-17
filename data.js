@@ -15,7 +15,8 @@
     const SORT_CONFIG_PATH = 'config/productSortOrder'; 
 
     // CONSTANTES DE RUTAS (Alineadas con clientes.js y ventas.js)
-    const PUBLIC_DATA_ID = 'ventas-9a210'; // ID específico para datos públicos compartidos
+    // CORRECCIÓN: Usar ID global desde config.js
+    const PUBLIC_DATA_ID = window.AppConfig.PUBLIC_DATA_ID;
     const CLIENTES_COLLECTION_PATH = `artifacts/${PUBLIC_DATA_ID}/public/data/clientes`;
     const REPORTE_DESIGN_CONFIG_PATH = `artifacts/${PUBLIC_DATA_ID}/public/data/config/reporteCierreVentas`;
     
@@ -123,7 +124,7 @@
         _getDoc = dependencies.getDoc;
         _doc = dependencies.doc;
         _setDoc = dependencies.setDoc; 
-        console.log("Módulo Data inicializado correctamente.");
+        console.log("Módulo Data inicializado correctamente. Public ID:", PUBLIC_DATA_ID);
     };
 
     window.showDataView = function() {
@@ -434,86 +435,43 @@
                     closingData.vendedorInfo.userId
                 );
             
-            let headerHTML = `
-                <tr class="sticky top-0 z-20 bg-gray-200">
-                    <th class="p-1 border sticky left-0 z-30 bg-gray-200">SEGMENTO</th>`;
-            finalProductOrder.forEach(p => { headerHTML += `<th class="p-1 border whitespace-nowrap text-xs">${p.segmento || 'S/S'}</th>`; });
-            headerHTML += `<th class="p-1 border sticky right-0 z-30 bg-gray-200"></th></tr>`;
+            let hHTML = `<tr class="sticky top-0 z-20 bg-gray-200"><th class="p-1 border sticky left-0 z-30 bg-gray-200">Cliente</th>`;
+            finalProductOrder.forEach(p => { hHTML += `<th class="p-1 border whitespace-nowrap text-xs" title="${p.marca||''} - ${p.segmento||''}">${p.presentacion}</th>`; });
+            hHTML += `<th class="p-1 border sticky right-0 z-30 bg-gray-200">Total Cliente</th></tr>`;
             
-            headerHTML += `<tr class="sticky top-0 z-20 bg-gray-200">
-                    <th class="p-1 border sticky left-0 z-30 bg-gray-200">MARCA</th>`;
-            finalProductOrder.forEach(p => { headerHTML += `<th class="p-1 border whitespace-nowrap text-xs">${p.marca || 'S/M'}</th>`; });
-            headerHTML += `<th class="p-1 border sticky right-0 z-30 bg-gray-200"></th></tr>`;
-
-            headerHTML += `<tr class="sticky top-0 z-20 bg-gray-200">
-                    <th class="p-1 border sticky left-0 z-30 bg-gray-200">PRESENTACION</th>`;
-            finalProductOrder.forEach(p => { headerHTML += `<th class="p-1 border whitespace-nowrap text-xs">${p.presentacion || 'S/P'}</th>`; });
-            headerHTML += `<th class="p-1 border sticky right-0 z-30 bg-gray-200">Sub Total</th></tr>`;
-            
-            headerHTML += `<tr class="sticky top-0 z-20 bg-gray-200">
-                    <th class="p-1 border sticky left-0 z-30 bg-gray-200">PRECIO</th>`;
-            finalProductOrder.forEach(p => { 
-                const precios = p.precios || { und: p.precioPorUnidad || 0 };
-                let displayPrecio = '$0.00';
-                if (p.ventaPor?.cj) displayPrecio = `$${(precios.cj || 0).toFixed(2)}`;
-                else if (p.ventaPor?.paq) displayPrecio = `$${(precios.paq || 0).toFixed(2)}`;
-                else displayPrecio = `$${(precios.und || 0).toFixed(2)}`;
-                headerHTML += `<th class="p-1 border whitespace-nowrap text-xs">${displayPrecio}</th>`; 
-            });
-            headerHTML += `<th class="p-1 border sticky right-0 z-30 bg-gray-200"></th></tr>`;
-
-
-            let bodyHTML = ''; 
-            sortedClients.forEach(cli => { 
-                const cCli = clientData[cli];
+            let bHTML=''; 
+            sortedClients.forEach(cli=>{
+                const cCli = clientData[cli]; 
                 const esSoloObsequio = !clientTotals.hasOwnProperty(cli) && cCli.totalValue === 0 && Object.values(cCli.products).some(q => q > 0);
                 const rowClass = esSoloObsequio ? 'bg-blue-100 hover:bg-blue-200' : 'hover:bg-blue-50';
                 const clientNameDisplay = esSoloObsequio ? `${cli} (OBSEQUIO)` : cli;
 
-                bodyHTML += `<tr class="${rowClass}"><td class="p-1 border font-medium bg-white sticky left-0 z-10">${clientNameDisplay}</td>`; 
-                finalProductOrder.forEach(p => { 
+                bHTML+=`<tr class="${rowClass}"><td class="p-1 border font-medium bg-white sticky left-0 z-10">${clientNameDisplay}</td>`; 
+                finalProductOrder.forEach(p=>{
                     const qU=cCli.products[p.id]||0; 
                     const qtyDisplay = getDisplayQty(qU, p);
-                    let dQ = (qU > 0) ? `${qtyDisplay.value}` : '0';
-                    const cellClass = (qU > 0 && esSoloObsequio) ? 'font-bold' : '';
-                    if (qU > 0 && esSoloObsequio) dQ += ` ${qtyDisplay.unit}`;
-
-                    bodyHTML+=`<td class="p-1 border text-center ${cellClass}">${dQ}</td>`; 
+                    let dQ = (qU > 0) ? `${qtyDisplay.value}` : '';
+                    let cellClass = '';
+                    if (qU > 0 && esSoloObsequio) {
+                        cellClass = 'font-bold';
+                        dQ += ` ${qtyDisplay.unit}`;
+                    }
+                    bHTML+=`<td class="p-1 border text-center ${cellClass}">${dQ}</td>`;
                 }); 
-                bodyHTML+=`<td class="p-1 border text-right font-semibold bg-white sticky right-0 z-10">$${cCli.totalValue.toFixed(2)}</td></tr>`; 
+                bHTML+=`<td class="p-1 border text-right font-semibold bg-white sticky right-0 z-10">$${cCli.totalValue.toFixed(2)}</td></tr>`;
             });
-            let footerHTML = '<tr class="bg-gray-200 font-bold"><td class="p-1 border sticky left-0 z-10">TOTALES</td>'; 
-            finalProductOrder.forEach(p => { 
+
+            let fHTML='<tr class="bg-gray-200 font-bold"><td class="p-1 border sticky left-0 z-10">TOTALES</td>'; 
+            finalProductOrder.forEach(p=>{
                 let tQ=0; 
-                sortedClients.forEach(cli => tQ+=clientData[cli].products[p.id]||0); 
+                sortedClients.forEach(cli=>tQ+=clientData[cli].products[p.id]||0); 
                 const qtyDisplay = getDisplayQty(tQ, p);
                 let dT = (tQ > 0) ? `${qtyDisplay.value} ${qtyDisplay.unit}` : '';
-                footerHTML+=`<td class="p-1 border text-center">${dT}</td>`; 
+                fHTML+=`<td class="p-1 border text-center">${dT}</td>`;
             }); 
-            footerHTML+=`<td class="p-1 border text-right sticky right-0 z-10">$${grandTotalValue.toFixed(2)}</td></tr>`;
+            fHTML+=`<td class="p-1 border text-right sticky right-0 z-10">$${grandTotalValue.toFixed(2)}</td></tr>`;
             
-            let vHTML = ''; 
-            const TIPOS_VACIO_GLOBAL = window.TIPOS_VACIO_GLOBAL || ["1/4 - 1/3", "ret 350 ml", "ret 1.25 Lts"]; 
-            const cliVacios = Object.keys(vaciosMovementsPorTipo).filter(cli => TIPOS_VACIO_GLOBAL.some(t => (vaciosMovementsPorTipo[cli][t]?.entregados || 0) > 0 || (vaciosMovementsPorTipo[cli][t]?.devueltos || 0) > 0)).sort(); 
-            
-            if(cliVacios.length > 0){ 
-                vHTML=`<h3 class="text-xl my-6">Reporte Vacíos</h3><div class="overflow-auto border"><table><thead><tr><th>Cliente</th><th>Tipo</th><th>Entregados</th><th>Devueltos</th><th>Neto</th></tr></thead><tbody>`; 
-                cliVacios.forEach(cli => {
-                    const movs = vaciosMovementsPorTipo[cli]; 
-                    const clienteTuvoVenta = clientTotals.hasOwnProperty(cli);
-                    const clientNameDisplay = clienteTuvoVenta ? cli : `${cli} (OBSEQUIO)`;
-                    
-                    TIPOS_VACIO_GLOBAL.forEach(t => {
-                        const mov = movs[t] || {entregados:0, devueltos:0}; 
-                        if(mov.entregados > 0 || mov.devueltos > 0){
-                            const neto = mov.entregados - mov.devueltos; 
-                            const nClass = neto > 0 ? 'text-red-600' : (neto < 0 ? 'text-green-600' : ''); 
-                            vHTML+=`<tr><td>${clientNameDisplay}</td><td>${t}</td><td>${mov.entregados}</td><td>${mov.devueltos}</td><td class="${nClass}">${neto > 0 ? `+${neto}` : neto}</td></tr>`;
-                        }
-                    });
-                }); 
-                vHTML+='</tbody></table></div>';
-            }
+            let vHTML=''; const cliVacios=Object.keys(vaciosMovementsPorTipo).filter(cli=>TIPOS_VACIO_GLOBAL.some(t=>(vaciosMovementsPorTipo[cli][t]?.entregados||0)>0||(vaciosMovementsPorTipo[cli][t]?.devueltos||0)>0)).sort(); if(cliVacios.length>0){ vHTML=`<h3 class="text-xl my-6">Reporte Vacíos</h3><div class="overflow-auto border"><table><thead><tr><th>Cliente</th><th>Tipo</th><th>Entregados</th><th>Devueltos</th><th>Neto</th></tr></thead><tbody>`; cliVacios.forEach(cli=>{const movs=vaciosMovementsPorTipo[cli]; TIPOS_VACIO_GLOBAL.forEach(t=>{const mov=movs[t]||{e:0,d:0}; if(mov.entregados>0||mov.devueltos>0){const neto=mov.entregados-mov.devueltos; const nClass=neto>0?'text-red-600':(neto<0?'text-green-600':''); vHTML+=`<tr><td>${cli}</td><td>${t}</td><td>${mov.entregados}</td><td>${mov.devueltos}</td><td class="${nClass}">${neto>0?`+${neto}`:neto}</td></tr>`;}});}); vHTML+='</tbody></table></div>';}
             
             const vendedor = closingData.vendedorInfo || {};
             // Intento de fallback de nombre para el modal
@@ -522,11 +480,11 @@
                  vNameModal = _usersMapCache.get(vendedor.userId).nombre;
             }
 
-            const reportHTML = `<div class="text-left max-h-[80vh] overflow-auto"> <div class="mb-4"> <p><strong>Vendedor:</strong> ${vNameModal} ${vendedor.apellido||''}</p> <p><strong>Camión:</strong> ${vendedor.camion||'N/A'}</p> <p><strong>Fecha:</strong> ${closingData.fecha.toDate().toLocaleString('es-ES')}</p> </div> <h3 class="text-xl mb-4">Reporte Cierre</h3> <div class="overflow-auto border" style="max-height: 40vh;"> <table class="min-w-full bg-white text-xs"> <thead class="bg-gray-200">${headerHTML}</thead> <tbody>${bodyHTML}</tbody> <tfoot>${footerHTML}</tfoot> </table> </div> ${vHTML} </div>`;
+            const reportHTML = `<div class="text-left max-h-[80vh] overflow-auto"> <div class="mb-4"> <p><strong>Vendedor:</strong> ${vNameModal} ${vendedor.apellido||''}</p> <p><strong>Camión:</strong> ${vendedor.camion||'N/A'}</p> <p><strong>Fecha:</strong> ${closingData.fecha.toDate().toLocaleString('es-ES')}</p> </div> <h3 class="text-xl mb-4">Reporte Cierre</h3> <div class="overflow-auto border" style="max-height: 40vh;"> <table class="min-w-full bg-white text-xs"> <thead class="bg-gray-200">${hHTML}</thead> <tbody>${bHTML}</tbody> <tfoot>${fHTML}</tfoot> </table> </div> ${vHTML} </div>`;
             _showModal(`Detalle Cierre`, reportHTML, null, 'Cerrar');
         } catch (error) { console.error("Error generando detalle:", error); _showModal('Error', `No se pudo generar: ${error.message}`); }
     }
-
+    
     async function processSalesDataForReport(ventas, obsequios, cargaInicialInventario, userIdForInventario) {
         const dataByRubro = {};
         const clientTotals = {}; 
@@ -759,7 +717,7 @@
             
             const jsDate = (fechaObjeto && typeof fechaObjeto.toDate === 'function') 
                             ? fechaObjeto.toDate()  
-                            : fechaObjeto;           
+                            : fechaObjeto;            
 
             const fechaCierre = jsDate ? jsDate.toLocaleDateString('es-ES') : 'Fecha Inválida';
             
@@ -1414,7 +1372,7 @@
     
     async function showConsolidatedClientsView() {
         _mainContent.innerHTML = `
-            <div class="p-4 pt-8"> <div class="container mx-auto"> <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl">
+            <div class="p-4 pt-8"> <div class="container mx-auto"> <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl text-center">
                 <h1 class="text-3xl font-bold text-gray-800 mb-6 text-center">Clientes Consolidados</h1>
                 <div id="consolidated-clients-filters"></div>
                 <div id="consolidated-clients-container" class="overflow-x-auto max-h-96"> <p class="text-center text-gray-500">Cargando...</p> </div>
