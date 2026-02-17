@@ -24,7 +24,6 @@
     let _marcaOrderCacheBySegment = {};
 
     // ID PÚBLICO FIJO (Para leer el maestro)
-    // CORRECCIÓN: Usar ID global desde config.js
     const PUBLIC_DATA_ID = window.AppConfig.PUBLIC_DATA_ID; 
 
     window.initInventario = function(dependencies) {
@@ -140,6 +139,38 @@
         console.log("Cachés de ordenamiento invalidadas (Inventario y Global).");
     }
 
+    // --- NUEVO: Función para poblar Rubros desde la caché real ---
+    function populateRubrosFromCache(selectId) {
+        const select = document.getElementById(selectId);
+        if (!select) return;
+        
+        const currentVal = select.value;
+        const rubros = new Set();
+        
+        // Extraer rubros únicos directamente de los productos cargados
+        _inventarioCache.forEach(p => {
+             if (p.rubro) rubros.add(p.rubro);
+        });
+        
+        const sorted = [...rubros].sort();
+        
+        // Reconstruir opciones manteniendo "Todos"
+        select.innerHTML = '<option value="">Todos</option>';
+        
+        sorted.forEach(r => {
+            const opt = document.createElement('option');
+            opt.value = r;
+            opt.textContent = r;
+            if (r === currentVal) opt.selected = true;
+            select.appendChild(opt);
+        });
+        
+        // Si el valor seleccionado ya no existe (raro), resetear
+        if (currentVal && !rubros.has(currentVal)) {
+            select.value = "";
+        }
+    }
+
     window.showInventarioSubMenu = function() {
         if (_floatingControls) _floatingControls.classList.add('hidden');
         
@@ -192,7 +223,7 @@
         document.getElementById('backToInventarioBtn').addEventListener('click', showInventarioSubMenu);
         if (isAdmin) document.getElementById('deleteAllProductosBtn')?.addEventListener('click', handleDeleteAllProductos);
 
-        await _populateDropdown(`artifacts/${_appId}/users/${_userId}/rubros`, 'modify-filter-rubro', 'Rubro');
+        // Eliminado: await _populateDropdown(...) porque usamos la caché ahora para garantizar consistencia con imports
 
         const baseRender = () => renderProductosList('productosListContainer', !isAdmin);
         const { updateDependentDropdowns } = setupFiltros('modify', baseRender);
@@ -203,6 +234,9 @@
         let isFirstLoad = true;
         const smartListenerCallback = async () => {
             await baseRender();
+            // CORRECCIÓN: Poblar filtro de Rubros basado en los productos cargados
+            populateRubrosFromCache('modify-filter-rubro');
+            
             if (isFirstLoad && _inventarioCache.length > 0) {
                 updateDependentDropdowns('init');
                 await baseRender();
@@ -812,7 +846,8 @@
         document.getElementById('backToInventarioBtn').addEventListener('click', showInventarioSubMenu);
         document.getElementById('saveRecargaBtn').addEventListener('click', handleGuardarRecarga);
 
-        await _populateDropdown(`artifacts/${_appId}/users/${_userId}/rubros`, 'recarga-filter-rubro', 'Rubro');
+        // CORRECCIÓN: No depender de _populateDropdown para rubros iniciales
+        // await _populateDropdown(...) // Se elimina
 
         const baseRender = () => renderRecargaList();
         const { updateDependentDropdowns } = setupFiltros('recarga', baseRender);
@@ -823,6 +858,9 @@
         let isFirstLoad = true;
         const smartListenerCallback = async () => {
             await baseRender();
+            // CORRECCIÓN: Poblar filtro de Rubros basado en los productos cargados
+            populateRubrosFromCache('recarga-filter-rubro');
+            
             if (isFirstLoad && _inventarioCache.length > 0) {
                 updateDependentDropdowns('init');
                 await baseRender();
