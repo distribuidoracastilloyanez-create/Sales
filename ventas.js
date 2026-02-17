@@ -5,7 +5,9 @@
     let _increment; // NUEVO: Necesario para operaciones offline
 
     // --- VARIABLES FASE 2 ---
-    const PUBLIC_DATA_ID = 'ventas-9a210'; // ID Fijo para datos públicos
+    // CORRECCIÓN: Usar ID global desde config.js
+    const PUBLIC_DATA_ID = window.AppConfig.PUBLIC_DATA_ID; 
+    
     let _masterCatalogCache = {}; // Cache del Catálogo Maestro
     let _userStockCache = {};     // Cache del Stock Privado
 
@@ -48,7 +50,7 @@
         if (!_runTransaction) console.error("Error Crítico: 'runTransaction' no disponible en initVentas.");
         if (!_increment) console.warn("Advertencia: 'increment' no disponible. Ventas offline limitadas.");
         
-        console.log("Módulo Ventas inicializado (Modo Híbrido Fase 2).");
+        console.log("Módulo Ventas inicializado (Modo Híbrido Fase 2). Public ID:", PUBLIC_DATA_ID);
     };
 
     window.showVentasView = function() {
@@ -741,7 +743,8 @@
             _showModal('Progreso', 'Eliminando venta y ajustando datos...');
             try {
                 const ventaRef = _doc(_db, `artifacts/${_appId}/users/${_userId}/ventas`, ventaId);
-                const clienteRef = _doc(_db, `artifacts/ventas-9a210/public/data/clientes`, venta.clienteId);
+                // CORRECCIÓN: Usar PUBLIC_DATA_ID
+                const clienteRef = _doc(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/clientes`, venta.clienteId);
 
                 if (!_runTransaction) throw new Error("Dependencia crítica 'runTransaction' no disponible.");
 
@@ -864,7 +867,8 @@
             _showModal('Progreso', 'Guardando y ajustando...');
             try {
                 const ventaRef = _doc(_db, `artifacts/${_appId}/users/${_userId}/ventas`, _originalVentaForEdit.id);
-                const clientRef = _doc(_db, `artifacts/ventas-9a210/public/data/clientes`, _originalVentaForEdit.clienteId);
+                // CORRECCIÓN: Usar PUBLIC_DATA_ID
+                const clientRef = _doc(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/clientes`, _originalVentaForEdit.clienteId);
 
                 if (!_runTransaction) throw new Error("Dependencia crítica 'runTransaction' no disponible.");
 
