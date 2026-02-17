@@ -4,13 +4,15 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Gestión Dist. Castillo</title>
-    <script src="tailwind.js"></script>
+    <!-- CORRECCIÓN CORS: Usar archivo local en lugar de CDN para soporte offline real -->
+    <script src="tailwind.js"></script> 
+    <!-- Si aún no has descargado tailwind.js, usa este fallback temporal: -->
+    <!-- <script src="https://cdn.tailwindcss.com"></script> -->
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     
     <!-- LIBRERÍAS EXCEL (Esenciales para CXC y Data) -->
-    <!-- SheetJS (xlsx): Para LEER archivos (Importar CXC) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-    <!-- ExcelJS: Para ESCRIBIR archivos (Exportar Reportes) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.3.0/exceljs.min.js"></script>
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -166,7 +168,6 @@
 
         <!-- Controles Flotantes -->
         <div id="floating-controls" class="fixed bottom-4 right-4 space-y-2 z-40 hidden">
-             <!-- CORRECCIÓN: ID único para el estado flotante -->
              <span id="connectionStatusFloating" class="block text-xs font-bold px-3 py-2 rounded-full shadow-lg transition-colors duration-300 bg-gray-200 text-gray-600">Conectando...</span>
             <button id="logoutBtn" class="w-12 h-12 bg-red-500 text-white font-semibold rounded-full shadow-lg hover:bg-red-600 transition duration-300 flex items-center justify-center transform hover:scale-110" title="Cerrar Sesión">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -190,7 +191,7 @@
     <script src="ventas-ui.js" defer></script>
     <script src="ventas.js" defer></script>
     <script src="obsequios.js" defer></script>
-    <script src="edit-inventario.js" defer></script> <!-- NUEVO: Módulo Edición -->
+    <script src="edit-inventario.js" defer></script>
     <script src="cxc.js" defer></script>
 
     <script type="module"> 
@@ -213,7 +214,7 @@
         let activeListeners = [];
         window.isLoggingOut = false; 
         window.TIPOS_VACIO_GLOBAL = ["1/4 - 1/3", "ret 350 ml", "ret 1.25 Lts"];
-        let manualOffline = localStorage.getItem('manualOfflineMode') === 'true'; // CORRECCIÓN: Inicializar variable
+        let manualOffline = localStorage.getItem('manualOfflineMode') === 'true';
 
         const mainContent = document.getElementById('mainContent');
         const modalContainer = document.getElementById('modalContainer');
@@ -225,10 +226,9 @@
         const registerForm = document.getElementById('registerForm');
         const registerMessage = document.getElementById('registerMessage');
         const floatingControls = document.getElementById('floating-controls');
-        // CORRECCIÓN: Referencia al ID único
         const connectionStatusEl = document.getElementById('connectionStatusFloating');
 
-        // --- NUEVA LÓGICA DE CONEXIÓN CENTRALIZADA ---
+        // --- LÓGICA DE CONEXIÓN CENTRALIZADA ---
         function updateConnectionDisplay(isOnline) {
             if (!connectionStatusEl) return;
             
@@ -291,7 +291,7 @@
         };
 
         // Función para Agregar Items Rápidos
-        window.showAddItemModal = async function(collectionName, itemName) {
+        window.showAddItemModal = async function(collectionName, itemName, dropDownIdToRefresh = null) {
             modalContent.innerHTML = `
                 <div class="text-center">
                     <h3 class="text-xl font-bold text-gray-800 mb-4">Agregar Nuevo ${itemName}</h3>
@@ -312,12 +312,21 @@
                 const name = document.getElementById('newItemInput').value.trim().toUpperCase();
                 const msg = document.getElementById('addItemMessage');
                 try {
-                    const colRef = collection(db, `artifacts/${appId}/users/${userId}/${collectionName}`);
+                    // Si la ruta comienza con 'artifacts', usarla tal cual (público), si no, construir ruta de usuario (privado)
+                    const colRef = collection(db, collectionName.startsWith('artifacts') ? collectionName : `artifacts/${appId}/users/${userId}/${collectionName}`);
+                    
                     await addDoc(colRef, { name });
                     msg.textContent = "¡Agregado con éxito!";
                     msg.className = "text-green-600 text-sm";
+                    
+                    // Refrescar el dropdown si se proporcionó ID
+                    if (dropDownIdToRefresh) {
+                        await window.populateDropdown(collectionName, dropDownIdToRefresh, itemName, name);
+                    }
+
                     setTimeout(() => modalContainer.classList.add('hidden'), 1000);
                 } catch (err) {
+                    console.error(err);
                     msg.textContent = "Error al guardar.";
                     msg.className = "text-red-600 text-sm";
                 }
@@ -330,7 +339,9 @@
             if (!select) return;
             select.innerHTML = `<option value="">Cargando...</option>`;
             try {
-                const snap = await getDocs(collection(db, collectionPath));
+                // Determinar ruta completa si es necesario
+                const fullPath = collectionPath.startsWith('artifacts') ? collectionPath : `artifacts/${appId}/users/${userId}/${collectionPath}`;
+                const snap = await getDocs(collection(db, fullPath));
                 const items = snap.docs.map(d => d.data().name).sort((a,b) => a.localeCompare(b));
                 select.innerHTML = `<option value="">Seleccione un ${itemName}</option>`;
                 items.forEach(name => {
@@ -340,7 +351,11 @@
                     select.appendChild(opt);
                 });
             } catch (err) {
-                select.innerHTML = `<option value="">Error al cargar</option>`;
+                // Ignorar error si es por desconexión/permisos al salir
+                if (err.code !== 'permission-denied') {
+                    console.warn(`Error cargando dropdown ${itemName}:`, err);
+                    select.innerHTML = `<option value="">Error al cargar</option>`;
+                }
             }
         };
 
@@ -410,16 +425,10 @@
             };
 
             document.getElementById('inventarioBtn')?.addEventListener('click', () => safeNav(window.showInventarioSubMenu, 'Inventario'));
-            
-            // Listener Edición
             document.getElementById('editInventarioBtn')?.addEventListener('click', () => safeNav(window.showEditInventarioMenu, 'Edición Inventario'));
-            
             document.getElementById('clientesBtn')?.addEventListener('click', () => safeNav(window.showClientesSubMenu, 'Clientes'));
             document.getElementById('ventasBtn')?.addEventListener('click', () => safeNav(window.showVentasView, 'Ventas'));
-            
-            // Listener para CXC
             document.getElementById('cxcBtn')?.addEventListener('click', () => safeNav(window.showCXCView, 'CXC'));
-            
             document.getElementById('obsequiosBtn')?.addEventListener('click', () => safeNav(window.showGestionObsequiosView, 'Obsequios'));
             document.getElementById('catalogoBtn')?.addEventListener('click', () => safeNav(window.showCatalogoSubMenu, 'Catálogo'));
             document.getElementById('profileAdminBtn')?.addEventListener('click', () => safeNav(window.showAdminOrProfileView, 'Perfil/Admin'));
@@ -428,26 +437,19 @@
             const toggle = document.getElementById('offline-toggle');
             toggle.checked = localStorage.getItem('manualOfflineMode') === 'true';
             toggle.addEventListener('change', async () => {
-                manualOffline = toggle.checked; // CORRECCIÓN: Actualizar variable global
+                manualOffline = toggle.checked;
                 if (toggle.checked) {
                     await disableNetwork(db);
                     localStorage.setItem('manualOfflineMode', 'true');
-                    updateConnectionDisplay(false); // CORRECCIÓN: Actualizar UI
+                    updateConnectionDisplay(false);
                 } else {
                     await enableNetwork(db);
-                    localStorage.setItem('manualOfflineMode', 'false'); // CORRECCIÓN: False, no remove
-                    updateConnectionDisplay(navigator.onLine); // CORRECCIÓN: Actualizar UI
+                    localStorage.setItem('manualOfflineMode', 'false');
+                    updateConnectionDisplay(navigator.onLine);
                 }
             });
 
-            // Estado de conexión (Listener de Firestore como segunda fuente de verdad)
-            // CORRECCIÓN: Usar .info/connected para mejor precisión
-            const unsub = onSnapshot(doc(db, '.info/connected'), (snap) => {
-                if(!manualOffline) {
-                    updateConnectionDisplay(snap.data()?.connected ?? false);
-                }
-            });
-            activeListeners.push(unsub);
+            // ELIMINADO: Listener a .info/connected que causaba el error de permisos en Firestore
         };
 
         async function initializeAppAndListeners() {
@@ -477,7 +479,7 @@
                         showAddItemModal: window.showAddItemModal, populateDropdown: window.populateDropdown, 
                         collection, onSnapshot, doc, getDoc, addDoc, setDoc, deleteDoc, getDocs, 
                         writeBatch, runTransaction, query, where, orderBy, limit, startAfter, firebaseConfig,
-                        increment // AÑADIDO: Para soporte offline
+                        increment 
                     };
                     
                     // Init de módulos con chequeo de seguridad
@@ -489,8 +491,6 @@
                     if (window.initVentas) window.initVentas(deps); else console.warn("Módulo Ventas no encontrado");
                     if (window.initObsequios) window.initObsequios(deps); else console.warn("Módulo Obsequios no encontrado");
                     if (window.initCXC) window.initCXC(deps); else console.warn("Módulo CXC no encontrado");
-                    
-                    // INIT NUEVO MODULO DE EDICIÓN
                     if (window.initEditInventario) window.initEditInventario(deps); else console.warn("Módulo Edit Inventario no encontrado");
 
                     showMainMenu();
@@ -547,10 +547,9 @@
 
     </script>
 
-    <!-- PWA REGISTER (CORREGIDO PARA EVITAR ERRORES EN BLOB) -->
+    <!-- PWA REGISTER -->
     <script>
         if ('serviceWorker' in navigator) {
-            // Solo registrar si estamos en HTTP/HTTPS (evita errores en preview)
             if (window.location.protocol.startsWith('http')) {
                 navigator.serviceWorker.register('./sw.js').catch(err => console.log('SW Error:', err));
             }
@@ -558,4 +557,3 @@
     </script>
 </body>
 </html>
-
