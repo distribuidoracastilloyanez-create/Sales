@@ -178,6 +178,9 @@
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
     
+    <!-- 1. IMPORTAR CONFIGURACIÓN GLOBAL (Debe ir antes de los módulos) -->
+    <script src="config.js"></script>
+
     <!-- Importar módulos locales -->
     <script src="data.js" defer></script>
     <script src="admin.js" defer></script>
@@ -196,16 +199,13 @@
         import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, createUserWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, getDoc, addDoc, setDoc, deleteDoc, onSnapshot, collection, writeBatch, runTransaction, getDocs, enableIndexedDbPersistence, query, where, orderBy, limit, startAfter, enableNetwork, disableNetwork, increment } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        const firebaseConfig = {
-            apiKey: "AIzaSyApyjf3NIjnGJp2sWyJccsR40-Q8UnU364",
-            authDomain: "dist-castillo-sales.firebaseapp.com",
-            projectId: "dist-castillo-sales",
-            storageBucket: "dist-castillo-sales.firebasestorage.app",
-            messagingSenderId: "719110919658",
-            appId: "1:719110919658:web:7830a013c8c685a2c08e93",
-            measurementId: "G-VJWMMH9FQC"
-        };
+        // 2. VERIFICACIÓN DE CONFIGURACIÓN Y CARGA CENTRALIZADA
+        if (!window.AppConfig) {
+            console.error("CRITICAL ERROR: config.js no se ha cargado.");
+            alert("Error de Sistema: No se pudo cargar la configuración. Verifique que 'config.js' existe y se carga correctamente.");
+        }
 
+        const firebaseConfig = window.AppConfig.firebaseConfig;
         const appId = firebaseConfig.projectId;
 
         let db, auth, userId;
