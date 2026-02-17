@@ -14,7 +14,9 @@
     let _lastObsequiosSearch = []; 
 
     const TIPOS_VACIO = window.TIPOS_VACIO_GLOBAL || ["1/4 - 1/3", "ret 350 ml", "ret 1.25 Lts"];
-    const PUBLIC_DATA_ID = 'ventas-9a210'; // ID Público para Fase 2
+    
+    // CORRECCIÓN: Usar ID global desde config.js
+    const PUBLIC_DATA_ID = window.AppConfig.PUBLIC_DATA_ID;
     
     // Rutas dinámicas
     let OBSEQUIO_CONFIG_PATH;
@@ -50,7 +52,7 @@
         OBSEQUIO_CONFIG_PATH = `artifacts/${PUBLIC_DATA_ID}/public/data/config/obsequio`;
         CLIENTES_PUBLIC_PATH = `artifacts/${PUBLIC_DATA_ID}/public/data/clientes`;
         
-        console.log("Módulo Obsequios inicializado (Fase 2).");
+        console.log("Módulo Obsequios inicializado (Fase 2). Public ID:", PUBLIC_DATA_ID);
     };
 
     /**
