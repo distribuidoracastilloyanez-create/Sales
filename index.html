@@ -198,7 +198,14 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAnalytics } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-analytics.js";
         import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, createUserWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, getDoc, addDoc, setDoc, deleteDoc, onSnapshot, collection, writeBatch, runTransaction, getDocs, enableIndexedDbPersistence, query, where, orderBy, limit, startAfter, enableNetwork, disableNetwork, increment } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        
+        // 1. IMPORTAR NUEVAS FUNCIONES DE PERSISTENCIA
+        import { 
+            getFirestore, 
+            doc, getDoc, addDoc, setDoc, deleteDoc, onSnapshot, collection, writeBatch, runTransaction, getDocs, 
+            query, where, orderBy, limit, startAfter, enableNetwork, disableNetwork, increment,
+            initializeFirestore, persistentLocalCache, indexedDbLocalPersistence // <--- AGREGADO
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // 2. VERIFICACIÓN DE CONFIGURACIÓN Y CARGA CENTRALIZADA
         if (!window.AppConfig) {
@@ -432,32 +439,32 @@
             document.getElementById('obsequiosBtn')?.addEventListener('click', () => safeNav(window.showGestionObsequiosView, 'Obsequios'));
             document.getElementById('catalogoBtn')?.addEventListener('click', () => safeNav(window.showCatalogoSubMenu, 'Catálogo'));
             document.getElementById('profileAdminBtn')?.addEventListener('click', () => safeNav(window.showAdminOrProfileView, 'Perfil/Admin'));
-            document.getElementById('dataBtn')?.addEventListener('click', () => safeNav(window.showDataView, 'Data'));
-
-            const toggle = document.getElementById('offline-toggle');
-            toggle.checked = localStorage.getItem('manualOfflineMode') === 'true';
-            toggle.addEventListener('change', async () => {
-                manualOffline = toggle.checked;
-                if (toggle.checked) {
-                    await disableNetwork(db);
-                    localStorage.setItem('manualOfflineMode', 'true');
-                    updateConnectionDisplay(false);
-                } else {
-                    await enableNetwork(db);
-                    localStorage.setItem('manualOfflineMode', 'false');
-                    updateConnectionDisplay(navigator.onLine);
-                }
-            });
-
-            // ELIMINADO: Listener a .info/connected que causaba el error de permisos en Firestore
+        // Estado de conexión (Listener de Firestore como segunda fuente de verdad)
+        // CORRECCIÓN: Usar .info/connected para mejor precisión
+        // NOTA: Si sigue dando error de permisos en .info/connected, comentar esta parte.
+        /* const unsub = onSnapshot(doc(db, '.info/connected'), (snap) => {
+            if(!manualOffline) {
+                updateConnectionDisplay(snap.data()?.connected ?? false);
+            }
+        });
+        activeListeners.push(unsub);
+        */
         };
 
         async function initializeAppAndListeners() {
             const app = initializeApp(firebaseConfig);
-            db = getFirestore(app);
+            
+            // 3. NUEVA INICIALIZACIÓN DE FIRESTORE CON PERSISTENCIA MODERNA
+            // Reemplaza a getFirestore(app) y enableIndexedDbPersistence(db)
+            db = initializeFirestore(app, {
+                localCache: persistentLocalCache({
+                    tabManager: persistentLocalCache.owner // Permite múltiples pestañas pero solo una es "dueña" del caché
+                })
+            });
+
             auth = getAuth(app);
 
-            try { await enableIndexedDbPersistence(db); } catch (err) { console.warn("Persistence offline no disponible", err.code); }
+            // ELIMINADO: try { await enableIndexedDbPersistence(db); } ... ya no es necesario
 
             onAuthStateChanged(auth, async (user) => {
                 cleanupListeners();
