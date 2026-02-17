@@ -18,7 +18,7 @@ const urlsToCache = [
     './cxc.js',
     './edit-inventario.js',
     // --- Librerías Externas (Para que funcione sin internet y con estilo) ---
-    'https://cdn.tailwindcss.com',
+    './tailwind.js',
     'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js',
     'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js',
     'https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.3.0/exceljs.min.js',
@@ -110,3 +110,4 @@ self.addEventListener('fetch', event => {
         })
     );
 });
+
