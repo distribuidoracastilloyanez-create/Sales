@@ -3,6 +3,9 @@
     let _showMainMenu, _showModal, _populateDropdown;
     let _collection, _doc, _getDocs, _getDoc, _query, _where, _runTransaction, _addDoc, _orderBy, _limit, _startAfter;
 
+    // --- CONFIGURACIÓN CENTRALIZADA ---
+    const PUBLIC_DATA_ID = window.AppConfig.PUBLIC_DATA_ID;
+
     let _usersCache = [];
     let _targetInventoryCache = [];
     let _correccionActualState = {}; 
@@ -34,6 +37,7 @@
         _startAfter = dependencies.startAfter;
 
         if (!_runTransaction) console.error("Error Crítico: 'runTransaction' no disponible en initEditInventario.");
+        console.log("Módulo Edit Inventario Inicializado. Public ID:", PUBLIC_DATA_ID);
     };
 
     window.showEditInventarioMenu = function() {
@@ -125,25 +129,61 @@
         }
     }
 
-    // --- LÓGICA DE CORRECCIÓN ---
+    // --- LÓGICA DE CORRECCIÓN (MODIFICADO PARA LECTURA HÍBRIDA) ---
     async function loadUserInventory(targetUser) {
         _showModal('Cargando', `Obteniendo inventario de ${targetUser.email}...`, null, '', null, false);
         _correccionActualState = {}; 
         _correctionFilters = { search: '', rubro: '', segmento: '', marca: '' }; // Reset filtros
 
         try {
-            const invRef = _collection(_db, `artifacts/${_appId}/users/${targetUser.id}/inventario`);
-            const snap = await _getDocs(invRef);
-            _targetInventoryCache = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+            // 1. Obtener Stock Privado del Usuario
+            const userInvRef = _collection(_db, `artifacts/${_appId}/users/${targetUser.id}/inventario`);
             
+            // 2. Obtener Catálogo Maestro Público (Para tener nombres, marcas, rubros)
+            const masterRef = _collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/productos`);
+
+            const [userSnap, masterSnap] = await Promise.all([
+                _getDocs(userInvRef),
+                _getDocs(masterRef)
+            ]);
+
+            // Crear mapa del maestro
+            const masterMap = {};
+            masterSnap.forEach(d => masterMap[d.id] = d.data());
+
+            // 3. Fusionar datos (Hybrid Merge)
+            // Solo mostramos productos que el usuario tiene en su colección (aunque sea stock 0),
+            // pero enriquecidos con la data del maestro.
+            _targetInventoryCache = userSnap.docs.map(d => {
+                const uData = d.data();
+                const mData = masterMap[d.id];
+
+                if (mData) {
+                    // Producto existe en maestro: Usar metadatos maestros + stock usuario
+                    return {
+                        id: d.id,
+                        ...mData, // presentacion, marca, rubro, etc.
+                        cantidadUnidades: uData.cantidadUnidades || 0,
+                        _legacyData: uData
+                    };
+                } else {
+                    // Producto huérfano/legacy (solo existe en usuario): Usar data usuario
+                    return {
+                        id: d.id,
+                        ...uData
+                    };
+                }
+            });
+            
+            // Ordenar por presentación
             _targetInventoryCache.sort((a, b) => (a.presentacion || '').localeCompare(b.presentacion || ''));
 
             renderCorrectionTable(targetUser);
             document.getElementById('modalContainer').classList.add('hidden');
 
         } catch (e) {
-            console.error(e);
-            _showModal('Error', 'No se pudo cargar el inventario.');
+            console.error("Error cargando inventario híbrido:", e);
+            _showModal('Error', `No se pudo cargar el inventario: ${e.message}`);
         }
     }
 
@@ -322,8 +362,8 @@
             return `
             <tr class="hover:bg-gray-50 transition-colors">
                 <td class="py-2 px-3">
-                    <div class="font-medium text-gray-800">${p.presentacion}</div>
-                    <div class="text-xs text-gray-500">${p.marca} - ${p.segmento || ''}</div>
+                    <div class="font-medium text-gray-800">${p.presentacion || 'Sin nombre'}</div>
+                    <div class="text-xs text-gray-500">${p.marca || ''} - ${p.segmento || ''}</div>
                 </td>
                 <td class="py-2 px-3 text-center bg-gray-50">
                     ${stockDisplay}
@@ -398,19 +438,20 @@
                     for (const item of changes) {
                         const invRef = _doc(_db, `artifacts/${_appId}/users/${targetUser.id}/inventario`, item.pid);
                         const invDoc = await transaction.get(invRef);
-                        if (!invDoc.exists()) throw new Error(`El producto ${item.prod.presentacion} ya no existe.`);
-
-                        const currentStock = invDoc.data().cantidadUnidades || 0;
+                        // Si no existe, permitimos crear si es una corrección positiva (ej: inicializar stock)
+                        // Si es negativa y no existe, es un error lógico, pero asumiremos 0.
+                        const currentStock = invDoc.exists() ? (invDoc.data().cantidadUnidades || 0) : 0;
                         const newStock = currentStock + item.ajuste;
 
                         if (newStock < 0) throw new Error(`El ajuste resulta en stock negativo para ${item.prod.presentacion}.`);
 
-                        transaction.update(invRef, { cantidadUnidades: newStock });
+                        // Escribir solo cantidad, preservando ID. La data maestra está en public.
+                        transaction.set(invRef, { cantidadUnidades: newStock }, { merge: true });
 
                         detallesLog.push({
                             productoId: item.pid,
-                            presentacion: item.prod.presentacion,
-                            marca: item.prod.marca,
+                            presentacion: item.prod.presentacion || 'Desconocido',
+                            marca: item.prod.marca || '',
                             stockAnterior: currentStock,
                             ajuste: item.ajuste,
                             stockNuevo: newStock,
