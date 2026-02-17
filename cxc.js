@@ -1,7 +1,9 @@
 (function() {
     let _db, _userId, _userRole, _appId, _mainContent, _floatingControls, _showMainMenu, _showModal, _collection, _getDocs, _doc, _setDoc, _getDoc, _query, _where, _limit;
 
-    const CXC_COLLECTION_PATH = 'artifacts/ventas-9a210/public/data/cxc';
+    // CORRECCIÓN: Usar ID global desde config.js para construir la ruta
+    const PUBLIC_DATA_ID = window.AppConfig.PUBLIC_DATA_ID;
+    const CXC_COLLECTION_PATH = `artifacts/${PUBLIC_DATA_ID}/public/data/cxc`;
     
     // Claves LocalStorage
     const LS_KEY_DATA = 'cxc_local_data';
@@ -27,6 +29,8 @@
         _query = dependencies.query;
         _where = dependencies.where;
         _limit = dependencies.limit;
+        
+        console.log("Módulo CXC inicializado. Public ID:", PUBLIC_DATA_ID);
     };
 
     window.showCXCView = async function() {
