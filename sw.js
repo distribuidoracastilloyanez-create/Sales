@@ -1,10 +1,11 @@
-const CACHE_NAME = 'ventas-app-cache-v10'; // Incrementado a v10 para forzar actualización
+const CACHE_NAME = 'ventas-app-cache-v11'; // Incrementado a v11 para incluir config.js
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
     './',
     './index.html',
     './manifest.json',
+    './config.js',           // CRÍTICO: Archivo de configuración central
     // --- Módulos de Lógica ---
     './admin.js',
     './data.js',
@@ -12,10 +13,10 @@ const urlsToCache = [
     './catalogo.js',
     './clientes.js',
     './ventas.js',
-    './ventas-ui.js',        // FALTABA
+    './ventas-ui.js',
     './obsequios.js',
-    './cxc.js',              // FALTABA
-    './edit-inventario.js',  // FALTABA
+    './cxc.js',
+    './edit-inventario.js',
     // --- Librerías Externas (Para que funcione sin internet y con estilo) ---
     'https://cdn.tailwindcss.com',
     'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js',
@@ -24,8 +25,7 @@ const urlsToCache = [
     // --- Imágenes (Solo las que seguro existen) ---
     './images/icons/icon-192x192.png',
     './images/icons/icon-512x512.png'
-    // NOTA: Si alguna de las imágenes de abajo no existe en tu carpeta, 
-    // el Service Worker fallará al instalarse. Coméntalas si no estás seguro.
+    // NOTA: Asegúrate de que estas imágenes existan realmente en tu servidor
     // './images/fondo.png',
     // './images/cervezayvinos.png',
     // './images/maltinypepsi.png',
@@ -82,7 +82,7 @@ self.addEventListener('fetch', event => {
 
     // 1. Ignorar peticiones a Firebase/Google APIs (Firebase SDK maneja su propia persistencia)
     if (url.origin.includes('firestore.googleapis.com') || 
-        url.origin.includes('googleapis.com') ||
+        url.origin.includes('googleapis.com') || 
         url.origin.includes('firebase')) {
         return;
     }
