@@ -24,7 +24,8 @@
     let _marcaOrderCacheBySegment = {};
 
     // ID PÚBLICO FIJO (Para leer el maestro)
-    const PUBLIC_DATA_ID = 'ventas-9a210'; 
+    // CORRECCIÓN: Usar ID global desde config.js
+    const PUBLIC_DATA_ID = window.AppConfig.PUBLIC_DATA_ID; 
 
     window.initInventario = function(dependencies) {
         _db = dependencies.db;
@@ -52,7 +53,7 @@
         _increment = dependencies.increment; 
         
         if (!_increment) console.warn("Advertencia: 'increment' no fue pasado a initInventario. Las recargas podrían no ser atómicas.");
-        console.log("Módulo Inventario FASE 2 (Híbrido) Inicializado.");
+        console.log("Módulo Inventario FASE 2 (Híbrido) Inicializado. Public ID:", PUBLIC_DATA_ID);
     };
 
     // --- NUEVO MOTOR DE LECTURA (LISTENER DOBLE) ---
