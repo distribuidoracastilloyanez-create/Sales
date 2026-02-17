@@ -10,9 +10,11 @@
     let _clientesCache = []; // Caché local para búsquedas y ediciones rápidas
     let _clientesParaImportar = []; // Caché para la data del Excel a importar
 
-    // Definir rutas usando el ID de proyecto hardcoded para datos públicos
-    const CLIENTES_COLLECTION_PATH = `artifacts/${'ventas-9a210'}/public/data/clientes`;
-    const SECTORES_COLLECTION_PATH = `artifacts/${'ventas-9a210'}/public/data/sectores`;
+    // Definir rutas usando la configuración global para datos públicos
+    // CORRECCIÓN: Usar ID global desde config.js
+    const PUBLIC_DATA_ID = window.AppConfig.PUBLIC_DATA_ID;
+    const CLIENTES_COLLECTION_PATH = `artifacts/${PUBLIC_DATA_ID}/public/data/clientes`;
+    const SECTORES_COLLECTION_PATH = `artifacts/${PUBLIC_DATA_ID}/public/data/sectores`;
 
     // --- CAMBIO: Tipos de Vacío ---
     const TIPOS_VACIO = ["1/4 - 1/3", "ret 350 ml", "ret 1.25 Lts"];
@@ -49,13 +51,10 @@
         _limit = dependencies.limit; // Añadido por si acaso para deleteSector
 
         // *** AÑADIR LOG DE CONFIRMACIÓN ***
-        // console.log("window.initClientes definido y ejecutado correctamente en clientes.js"); // Opcional
+        console.log("Módulo Clientes inicializado. Public ID:", PUBLIC_DATA_ID); 
     };
 
-    // ... (El resto del código de clientes.js permanece igual) ...
-    // ... showClientesSubMenu, showFuncionesAvanzadasView, etc. ...
-
-     /**
+    /**
      * Renderiza el menú de subopciones de clientes.
      */
     window.showClientesSubMenu = function() {
@@ -1405,8 +1404,8 @@
                     saldoVacios[tipoVacio] = nuevoSaldo;
                     transaction.update(clienteRef, { saldoVacios: saldoVacios });
                  } else {
-                     console.log(`Saldo for ${tipoVacio} already ${nuevoSaldo}, no update needed.`);
-                     // Optional: Throw an error or just skip if no change? Skipping for now.
+                      console.log(`Saldo for ${tipoVacio} already ${nuevoSaldo}, no update needed.`);
+                      // Optional: Throw an error or just skip if no change? Skipping for now.
                  }
 
                 // --- FIN CAMBIO ---
