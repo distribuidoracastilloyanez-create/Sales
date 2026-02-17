@@ -8,6 +8,9 @@
     let _segmentoOrderCacheAdmin = null;
     let _rubroOrderCacheAdmin = null;
 
+    // --- CONFIGURACIÓN CENTRALIZADA ---
+    const PUBLIC_DATA_ID = window.AppConfig.PUBLIC_DATA_ID;
+
     // --- INICIALIZACIÓN ---
     window.initAdmin = function(dependencies) {
         if (!dependencies.db || !dependencies.mainContent || !dependencies.showMainMenu || !dependencies.showModal) {
@@ -41,7 +44,7 @@
             console.error("CRITICAL Admin Init Error: Función Firestore 'limit' no proveída.");
         }
         
-        console.log("Módulo Admin inicializado (Versión Fase 2: Escritura Doble).");
+        console.log("Módulo Admin inicializado (Versión Fase 2: Escritura Doble). Public ID:", PUBLIC_DATA_ID);
     };
 
     // --- ENRUTADOR PRINCIPAL ---
@@ -205,7 +208,8 @@
         const cleanRec = document.getElementById('cleanRecargas').checked;
         
         const colsToDelPub = []; 
-        const pubProjId = 'ventas-9a210'; 
+        // CORRECCIÓN: Usar ID público centralizado
+        const pubProjId = PUBLIC_DATA_ID; 
         let allUserIds = [];
         
         try { 
@@ -233,7 +237,7 @@
         }
         // NUEVO: Limpieza del Catálogo Maestro si se limpia inventario
         if (cleanInv) {
-             colsToDelPub.push({ path: `artifacts/${_appId}/public/data/productos`, name: 'Catálogo Maestro' });
+             colsToDelPub.push({ path: `artifacts/${PUBLIC_DATA_ID}/public/data/productos`, name: 'Catálogo Maestro' });
         }
 
         // --- 2. DEFINICIÓN DE COLECCIONES PRIVADAS (POR USUARIO) ---
@@ -570,12 +574,20 @@
         try { const invRef = _collection(_db, `artifacts/${_appId}/users/${_userId}/inventario`); const snap = await _getDocs(invRef); const pVal = snap.docs.map(d=>({id: d.id,...d.data()})).filter(p=>p.manejaVacios&&p.ventaPor?.cj).sort((a,b)=>`${a.marca} ${a.segmento} ${a.presentacion}`.localeCompare(`${b.marca} ${b.segmento} ${b.presentacion}`));
             selEl.innerHTML='<option value="">-- Seleccione --</option>'; 
             pVal.forEach(p=>{selEl.innerHTML+=`<option value="${p.id}">${p.marca} - ${p.segmento} - ${p.presentacion}</option>`;});
-            const confRef = _doc(_db, `artifacts/ventas-9a210/public/data/config/obsequio`); const confSnap = await _getDoc(confRef); if (confSnap.exists()){ _obsequioProductId = confSnap.data().productoId; if (_obsequioProductId) selEl.value=_obsequioProductId; }
+            
+            // CORRECCIÓN: Usar PUBLIC_DATA_ID
+            const confRef = _doc(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/config/obsequio`); 
+            const confSnap = await _getDoc(confRef); 
+            if (confSnap.exists()){ _obsequioProductId = confSnap.data().productoId; if (_obsequioProductId) selEl.value=_obsequioProductId; }
         } catch (error) { selEl.innerHTML='<option value="">Error</option>'; }
     }
     async function handleSaveObsequioConfig() {
         const selPId = document.getElementById('obsequioProductSelect').value; if (!selPId) { _showModal('Error', 'Selecciona producto.'); return; } _showModal('Progreso','Guardando...');
-        try { const confRef = _doc(_db, `artifacts/ventas-9a210/public/data/config/obsequio`); await _setDoc(confRef, { productoId: selPId }); _obsequioProductId = selPId; _showModal('Éxito','Configuración guardada.'); showAdminSubMenuView(); }
+        try { 
+            // CORRECCIÓN: Usar PUBLIC_DATA_ID
+            const confRef = _doc(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/config/obsequio`); 
+            await _setDoc(confRef, { productoId: selPId }); _obsequioProductId = selPId; _showModal('Éxito','Configuración guardada.'); showAdminSubMenuView(); 
+        }
         catch (error) { _showModal('Error','Error al guardar.'); }
     }
 
@@ -590,8 +602,8 @@
     // [NUEVO] Helper para escribir en el Catálogo Maestro (Centralizado)
     async function _saveToMasterCatalog(productId, productData) {
         if (!productId) return;
-        // Usamos el ID público 'ventas-9a210' o _appId si coincide.
-        const masterPath = `artifacts/${_appId}/public/data/productos`;
+        // CORRECCIÓN: Usar PUBLIC_DATA_ID
+        const masterPath = `artifacts/${PUBLIC_DATA_ID}/public/data/productos`;
         const masterRef = _doc(_db, masterPath, productId);
 
         try {
@@ -657,7 +669,8 @@
         
         // 1. FASE NUEVA: Intentar guardar en carpeta pública también
         try {
-            const publicPath = `artifacts/${_appId}/public/data/${collectionName}`;
+            // CORRECCIÓN: Usar PUBLIC_DATA_ID
+            const publicPath = `artifacts/${PUBLIC_DATA_ID}/public/data/${collectionName}`;
             const publicRef = _doc(_db, publicPath, itemId);
             if (itemData === null) await _deleteDoc(publicRef);
             else await _setDoc(publicRef, itemData, { merge: true });
