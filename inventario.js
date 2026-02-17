@@ -223,8 +223,6 @@
         document.getElementById('backToInventarioBtn').addEventListener('click', showInventarioSubMenu);
         if (isAdmin) document.getElementById('deleteAllProductosBtn')?.addEventListener('click', handleDeleteAllProductos);
 
-        // Eliminado: await _populateDropdown(...) porque usamos la caché ahora para garantizar consistencia con imports
-
         const baseRender = () => renderProductosList('productosListContainer', !isAdmin);
         const { updateDependentDropdowns } = setupFiltros('modify', baseRender);
 
@@ -462,11 +460,54 @@
         
         _mainContent.innerHTML = `<div class="p-4 pt-8"> <div class="container mx-auto max-w-2xl"> <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl text-center"> <h2 class="text-2xl font-bold mb-6">Agregar Nuevo Producto</h2> <form id="addProductoForm" class="space-y-4 text-left"> <div class="grid grid-cols-1 md:grid-cols-2 gap-4"> <div> <label for="rubro">Rubro:</label> <div class="flex items-center space-x-2"> <select id="rubro" class="w-full px-4 py-2 border rounded-lg" required></select> <button type="button" onclick="window.inventarioModule.showAddCategoryModal('rubros','Rubro')" class="px-3 py-2 bg-blue-500 text-white rounded-lg text-xs hover:bg-blue-600">+</button> </div> </div> <div> <label for="segmento">Segmento:</label> <div class="flex items-center space-x-2"> <select id="segmento" class="w-full px-4 py-2 border rounded-lg" required></select> <button type="button" onclick="window.inventarioModule.showAddCategoryModal('segmentos','Segmento')" class="px-3 py-2 bg-blue-500 text-white rounded-lg text-xs hover:bg-blue-600">+</button> </div> </div> <div> <label for="marca">Marca:</label> <div class="flex items-center space-x-2"> <select id="marca" class="w-full px-4 py-2 border rounded-lg" required></select> <button type="button" onclick="window.inventarioModule.showAddCategoryModal('marcas','Marca')" class="px-3 py-2 bg-blue-500 text-white rounded-lg text-xs hover:bg-blue-600">+</button> </div> </div> <div> <label for="presentacion">Presentación:</label> <input type="text" id="presentacion" class="w-full px-4 py-2 border rounded-lg" required> </div> </div> <div class="border-t pt-4 mt-4"> <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4"> <div> <label class="block mb-2 font-medium">Venta por:</label> <div id="ventaPorContainer" class="flex space-x-4"> <label class="flex items-center"><input type="checkbox" id="ventaPorUnd" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> <span class="ml-2">Und.</span></label> <label class="flex items-center"><input type="checkbox" id="ventaPorPaq" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> <span class="ml-2">Paq.</span></label> <label class="flex items-center"><input type="checkbox" id="ventaPorCj" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> <span class="ml-2">Cj.</span></label> </div> </div> <div class="mt-4 md:mt-0"> <label class="flex items-center cursor-pointer"> <input type="checkbox" id="manejaVaciosCheck" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> <span class="ml-2 font-medium">Maneja Vacío</span> </label> <div id="tipoVacioContainer" class="mt-2 hidden"> <label for="tipoVacioSelect" class="block text-sm font-medium">Tipo:</label> <select id="tipoVacioSelect" class="w-full mt-1 px-2 py-1 border rounded-lg text-sm bg-gray-50"> <option value="">Seleccione...</option> <option value="1/4 - 1/3">1/4 - 1/3</option> <option value="ret 350 ml">Ret 350 ml</option> <option value="ret 1.25 Lts">Ret 1.25 Lts</option> </select> </div> </div> </div> <div id="empaquesContainer" class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4"></div> <div id="preciosContainer" class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4"></div> </div> <div class="border-t pt-4 mt-4"> <div class="grid grid-cols-1 md:grid-cols-2 gap-4"> <div> <label for="cantidadActual" class="block font-medium">Stock Inicial (Und. Base):</label> <input type="number" id="cantidadActual" value="0" min="0" class="w-full mt-1 px-4 py-2 border rounded-lg bg-white text-gray-700"> </div> <div> <label for="ivaTipo" class="block font-medium">IVA:</label> <select id="ivaTipo" class="w-full mt-1 px-4 py-2 border rounded-lg bg-white" required> <option value="16">16%</option> <option value="0">Exento 0%</option> </select> </div> </div> </div> <button type="submit" class="w-full px-6 py-3 bg-green-500 text-white font-semibold rounded-lg shadow-md hover:bg-green-600 transition duration-150">Agregar Producto</button> </form> <button id="backToMenuBtn" class="mt-4 w-full px-6 py-3 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500 transition duration-150">Volver</button> </div> </div> </div>`;
 
-        await Promise.all([
-            _populateDropdown(`artifacts/${_appId}/users/${_userId}/rubros`, 'rubro', 'Rubro'),
-            _populateDropdown(`artifacts/${_appId}/users/${_userId}/segmentos`, 'segmento', 'Segmento'),
-            _populateDropdown(`artifacts/${_appId}/users/${_userId}/marcas`, 'marca', 'Marca')
-        ]);
+        // 1. Iniciar listener para tener datos en caché
+        startMainInventarioListener(async () => {
+             // 2. Función interna para poblar combinando caché y DB
+             const populateMerged = async () => {
+                 const rubros = new Set();
+                 const segmentos = new Set();
+                 const marcas = new Set();
+
+                 // A. Desde Productos en Memoria
+                 _inventarioCache.forEach(p => {
+                     if(p.rubro) rubros.add(p.rubro);
+                     if(p.segmento) segmentos.add(p.segmento);
+                     if(p.marca) marcas.add(p.marca);
+                 });
+
+                 // B. Desde Colecciones DB (por si hay categorías vacías creadas con +)
+                 try {
+                     const [rSnap, sSnap, mSnap] = await Promise.all([
+                         _getDocs(_collection(_db, `artifacts/${_appId}/users/${_userId}/rubros`)),
+                         _getDocs(_collection(_db, `artifacts/${_appId}/users/${_userId}/segmentos`)),
+                         _getDocs(_collection(_db, `artifacts/${_appId}/users/${_userId}/marcas`))
+                     ]);
+                     rSnap.forEach(d => rubros.add(d.data().name));
+                     sSnap.forEach(d => segmentos.add(d.data().name));
+                     mSnap.forEach(d => marcas.add(d.data().name));
+                 } catch(e) { console.warn("Error fetching aux collections", e); }
+
+                 const fill = (id, set, label) => {
+                     const el = document.getElementById(id);
+                     if(!el) return;
+                     const current = el.value;
+                     el.innerHTML = `<option value="">-- Seleccione ${label} --</option>`;
+                     [...set].sort().forEach(val => {
+                         const opt = document.createElement('option');
+                         opt.value = val;
+                         opt.textContent = val;
+                         if(val === current) opt.selected = true;
+                         el.appendChild(opt);
+                     });
+                 };
+
+                 fill('rubro', rubros, 'Rubro');
+                 fill('segmento', segmentos, 'Segmento');
+                 fill('marca', marcas, 'Marca');
+             };
+             
+             await populateMerged();
+        });
 
         const ventaPorContainer=document.getElementById('ventaPorContainer');
         const preciosContainer=document.getElementById('preciosContainer');
@@ -634,11 +675,55 @@
         if (_userRole !== 'admin') { _showModal('Acceso Denegado', 'Solo administradores pueden editar definiciones.'); return; } const prod = _inventarioCache.find(p => p.id === productId); if (!prod) { _showModal('Error', 'Producto no encontrado en caché.'); return; } if (_floatingControls) _floatingControls.classList.add('hidden');
         _mainContent.innerHTML = `<div class="p-4 pt-8"> <div class="container mx-auto max-w-2xl"> <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl text-center"> <h2 class="text-2xl font-bold mb-6">Editar Producto</h2> <form id="editProductoForm" class="space-y-4 text-left"> <div class="grid grid-cols-1 md:grid-cols-2 gap-4"> <div> <label for="rubro">Rubro:</label> <div class="flex items-center space-x-2"> <select id="rubro" class="w-full px-4 py-2 border rounded-lg" required></select> <button type="button" onclick="window.inventarioModule.showAddCategoryModal('rubros','Rubro')" class="px-3 py-2 bg-blue-500 text-white rounded-lg text-xs hover:bg-blue-600">+</button> </div> </div> <div> <label for="segmento">Segmento:</label> <div class="flex items-center space-x-2"> <select id="segmento" class="w-full px-4 py-2 border rounded-lg" required></select> <button type="button" onclick="window.inventarioModule.showAddCategoryModal('segmentos','Segmento')" class="px-3 py-2 bg-blue-500 text-white rounded-lg text-xs hover:bg-blue-600">+</button> </div> </div> <div> <label for="marca">Marca:</label> <div class="flex items-center space-x-2"> <select id="marca" class="w-full px-4 py-2 border rounded-lg" required></select> <button type="button" onclick="window.inventarioModule.showAddCategoryModal('marcas','Marca')" class="px-3 py-2 bg-blue-500 text-white rounded-lg text-xs hover:bg-blue-600">+</button> </div> </div> <div> <label for="presentacion">Presentación:</label> <input type="text" id="presentacion" class="w-full px-4 py-2 border rounded-lg" required> </div> </div> <div class="border-t pt-4 mt-4"> <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4"> <div> <label class="block mb-2 font-medium">Venta por:</label> <div id="ventaPorContainer" class="flex space-x-4"> <label class="flex items-center"><input type="checkbox" id="ventaPorUnd" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> <span class="ml-2">Und.</span></label> <label class="flex items-center"><input type="checkbox" id="ventaPorPaq" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> <span class="ml-2">Paq.</span></label> <label class="flex items-center"><input type="checkbox" id="ventaPorCj" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> <span class="ml-2">Cj.</span></label> </div> </div> <div class="mt-4 md:mt-0"> <label class="flex items-center cursor-pointer"> <input type="checkbox" id="manejaVaciosCheck" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> <span class="ml-2 font-medium">Maneja Vacío</span> </label> <div id="tipoVacioContainer" class="mt-2 hidden"> <label for="tipoVacioSelect" class="block text-sm font-medium">Tipo:</label> <select id="tipoVacioSelect" class="w-full mt-1 px-2 py-1 border rounded-lg text-sm bg-gray-50"> <option value="">Seleccione...</option> <option value="1/4 - 1/3">1/4 - 1/3</option> <option value="ret 350 ml">Ret 350 ml</option> <option value="ret 1.25 Lts">Ret 1.25 Lts</option> </select> </div> </div> </div> <div id="empaquesContainer" class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4"></div> <div id="preciosContainer" class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4"></div> </div> <div class="border-t pt-4 mt-4"> <div class="grid grid-cols-1 md:grid-cols-2 gap-4"> <div> <label for="cantidadActual" class="block font-medium">Stock Actual (Und. Base):</label> <input type="number" id="cantidadActual" value="${prod.cantidadUnidades||0}" class="w-full mt-1 px-4 py-2 border rounded-lg bg-gray-100 text-gray-700" readonly title="La cantidad se modifica en 'Ajuste Masivo'"> <p class="text-xs text-gray-500 mt-1">Modificar en "Ajuste Masivo".</p> </div> <div> <label for="ivaTipo" class="block font-medium">IVA:</label> <select id="ivaTipo" class="w-full mt-1 px-4 py-2 border rounded-lg bg-white" required> <option value="16">16%</option> <option value="0">Exento 0%</option> </select> </div> </div> </div> <button type="submit" class="w-full px-6 py-3 bg-blue-500 text-white font-semibold rounded-lg shadow-md hover:bg-blue-600 transition duration-150">Guardar Cambios y Propagar</button> </form> <button id="backToModifyDeleteBtn" class="mt-4 w-full px-6 py-3 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500 transition duration-150">Volver</button> </div> </div> </div>`;
 
-        await Promise.all([
-             _populateDropdown(`artifacts/${_appId}/users/${_userId}/rubros`, 'rubro', 'Rubro', prod.rubro),
-             _populateDropdown(`artifacts/${_appId}/users/${_userId}/segmentos`, 'segmento', 'Segmento', prod.segmento),
-             _populateDropdown(`artifacts/${_appId}/users/${_userId}/marcas`, 'marca', 'Marca', prod.marca)
-        ]);
+        // 1. Iniciar listener para tener datos en caché
+        startMainInventarioListener(async () => {
+             // 2. Función interna para poblar combinando caché y DB
+             const populateMerged = async () => {
+                 const rubros = new Set();
+                 const segmentos = new Set();
+                 const marcas = new Set();
+
+                 // A. Desde Productos en Memoria
+                 _inventarioCache.forEach(p => {
+                     if(p.rubro) rubros.add(p.rubro);
+                     if(p.segmento) segmentos.add(p.segmento);
+                     if(p.marca) marcas.add(p.marca);
+                 });
+
+                 // B. Desde Colecciones DB (por si hay categorías vacías creadas con +)
+                 try {
+                     const [rSnap, sSnap, mSnap] = await Promise.all([
+                         _getDocs(_collection(_db, `artifacts/${_appId}/users/${_userId}/rubros`)),
+                         _getDocs(_collection(_db, `artifacts/${_appId}/users/${_userId}/segmentos`)),
+                         _getDocs(_collection(_db, `artifacts/${_appId}/users/${_userId}/marcas`))
+                     ]);
+                     rSnap.forEach(d => rubros.add(d.data().name));
+                     sSnap.forEach(d => segmentos.add(d.data().name));
+                     mSnap.forEach(d => marcas.add(d.data().name));
+                 } catch(e) { console.warn("Error fetching aux collections", e); }
+
+                 const fill = (id, set, label, currentVal) => {
+                     const el = document.getElementById(id);
+                     if(!el) return;
+                     // Only preserve value if passed, otherwise keep current selection if valid
+                     const valToKeep = currentVal || el.value;
+                     el.innerHTML = `<option value="">-- Seleccione ${label} --</option>`;
+                     [...set].sort().forEach(val => {
+                         const opt = document.createElement('option');
+                         opt.value = val;
+                         opt.textContent = val;
+                         if(val === valToKeep) opt.selected = true;
+                         el.appendChild(opt);
+                     });
+                 };
+
+                 fill('rubro', rubros, 'Rubro', prod.rubro);
+                 fill('segmento', segmentos, 'Segmento', prod.segmento);
+                 fill('marca', marcas, 'Marca', prod.marca);
+             };
+             
+             await populateMerged();
+        });
 
         const ventaPorContainer=document.getElementById('ventaPorContainer');
         const preciosContainer=document.getElementById('preciosContainer');
@@ -845,9 +930,6 @@
         `;
         document.getElementById('backToInventarioBtn').addEventListener('click', showInventarioSubMenu);
         document.getElementById('saveRecargaBtn').addEventListener('click', handleGuardarRecarga);
-
-        // CORRECCIÓN: No depender de _populateDropdown para rubros iniciales
-        // await _populateDropdown(...) // Se elimina
 
         const baseRender = () => renderRecargaList();
         const { updateDependentDropdowns } = setupFiltros('recarga', baseRender);
@@ -1085,10 +1167,23 @@
         `;
         document.getElementById('backToInventarioBtn').addEventListener('click', showInventarioSubMenu);
         document.getElementById('saveOrderBtn').addEventListener('click', handleGuardarOrdenJerarquia);
+        
+        // CORRECCIÓN: Poblar filtro de ordenar usando caché de productos
+        populateRubrosFromCache('ordenarRubroFilter');
+        
         const rubroFilter = document.getElementById('ordenarRubroFilter');
-        _populateDropdown(`artifacts/${_appId}/users/${_userId}/rubros`, 'ordenarRubroFilter', 'Rubro');
         rubroFilter.addEventListener('change', () => renderSortableHierarchy(rubroFilter.value));
-        renderSortableHierarchy('');
+        
+        // Carga inicial
+        // Aseguramos que la caché esté lista antes de renderizar
+        if (_inventarioCache.length > 0) {
+            renderSortableHierarchy('');
+        } else {
+             startMainInventarioListener(() => {
+                 populateRubrosFromCache('ordenarRubroFilter');
+                 renderSortableHierarchy('');
+             });
+        }
     }
 
     async function getAllMarcas() {
@@ -1105,26 +1200,39 @@
         const container = document.getElementById('segmentos-marcas-sortable-list');
         if (!container) return;
         container.innerHTML = `<p class="text-gray-500 text-center">Cargando...</p>`;
+        
         try {
+            // 1. Obtener segmentos definidos en DB (para orden y IDs persistentes)
             const segmentosRef = _collection(_db, `artifacts/${_appId}/users/${_userId}/segmentos`);
             let segSnapshot = await _getDocs(segmentosRef);
             let allSegments = segSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-            const segsSinOrden = allSegments.filter(s => s.orden === undefined || s.orden === null);
-            if (segsSinOrden.length > 0) {
-                 const segsConOrden = allSegments.filter(s => s.orden !== undefined && s.orden !== null);
-                 const maxOrden = segsConOrden.reduce((max, s) => Math.max(max, s.orden ?? -1), -1);
-                 const batch = _writeBatch(_db);
-                 segsSinOrden.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-                 segsSinOrden.forEach((seg, index) => {
-                    const dRef = _doc(segmentosRef, seg.id);
-                    const nOrden = maxOrden + 1 + index;
-                    batch.update(dRef, { orden: nOrden });
-                    seg.orden = nOrden;
-                 });
-                 await batch.commit();
-                 allSegments = [...segsConOrden, ...segsSinOrden];
-             }
+            // 2. Obtener segmentos presentes en el inventario actual
+            const inventorySegments = new Set();
+            _inventarioCache.forEach(p => {
+                if (p.segmento) inventorySegments.add(p.segmento);
+            });
+
+            // 3. Fusionar listas: Si está en inventario pero no en DB, crear placeholder temporal
+            // A. Agregar los de DB primero (tienen orden definido)
+            const segmentMap = new Map();
+            allSegments.forEach(seg => segmentMap.set(seg.name, seg));
+
+            // B. Agregar nuevos encontrados en inventario que no están en DB
+            inventorySegments.forEach(segName => {
+                if (!segmentMap.has(segName)) {
+                    const newSeg = {
+                        id: `temp_${segName.replace(/\s+/g, '_')}`, // ID temporal
+                        name: segName,
+                        orden: 9999, // Al final
+                        isNew: true
+                    };
+                    allSegments.push(newSeg);
+                    segmentMap.set(segName, newSeg);
+                }
+            });
+
+            // Ordenar
             allSegments.sort((a, b) => (a.orden ?? 9999) - (b.orden ?? 9999));
 
             const allMarcas = await getAllMarcas();
@@ -1139,32 +1247,34 @@
 
             container.innerHTML = '';
             if (allSegments.length === 0) {
-                container.innerHTML = `<p class="text-gray-500 text-center">No hay segmentos definidos.</p>`;
+                container.innerHTML = `<p class="text-gray-500 text-center">No hay segmentos definidos ni encontrados en productos.</p>`;
                 return;
             }
 
             allSegments.forEach(seg => {
-                const segCont = document.createElement('div');
-                segCont.className = 'segmento-container border border-gray-300 rounded-lg mb-3 bg-white shadow';
-                segCont.dataset.segmentoId = seg.id;
-                segCont.dataset.segmentoName = seg.name;
-                segCont.dataset.type = 'segmento';
-
+                // Si filtramos por rubro, ocultar segmentos que no tienen productos de ese rubro
                 const segmentHasProductsInRubro = !segmentsWithProductsInRubro || segmentsWithProductsInRubro.has(seg.name);
                 if (rubroFiltro && !segmentHasProductsInRubro) {
-                    segCont.classList.add('hidden'); 
+                    return; // Skip rendering
                 }
+
+                const segCont = document.createElement('div');
+                segCont.className = 'segmento-container border border-gray-300 rounded-lg mb-3 bg-white shadow';
+                segCont.dataset.segmentoId = seg.id; // Puede ser real o temp_
+                segCont.dataset.segmentoName = seg.name;
+                segCont.dataset.type = 'segmento';
 
                 const segTitle = document.createElement('div');
                 segTitle.className = 'segmento-title p-3 bg-gray-200 rounded-t-lg cursor-grab active:cursor-grabbing font-semibold flex justify-between items-center';
                 segTitle.draggable = true;
-                segTitle.textContent = seg.name;
+                segTitle.innerHTML = `<span>${seg.name}</span> ${seg.isNew ? '<span class="text-xs bg-yellow-200 px-2 rounded text-yellow-800">Nuevo</span>' : ''}`;
                 segCont.appendChild(segTitle);
 
                 const marcasList = document.createElement('ul');
                 marcasList.className = 'marcas-sortable-list p-3 space-y-1 bg-white rounded-b-lg';
                 marcasList.dataset.segmentoParent = seg.id;
 
+                // Obtener marcas para este segmento desde el inventario filtrado
                 const marcasEnSeg = [...new Set(prodsEnRubro
                     .filter(p => p.segmento === seg.name && p.marca)
                     .map(p => p.marca)
@@ -1203,7 +1313,7 @@
 
         } catch (error) {
             console.error("Error al renderizar jerarquía:", error);
-            container.innerHTML = `<p class="text-red-500 text-center">Error al cargar la estructura.</p>`;
+            container.innerHTML = `<p class="text-red-500 text-center">Error al cargar la estructura: ${error.message}</p>`;
         }
     }
 
@@ -1303,13 +1413,17 @@
         if (_userRole !== 'admin') return;
         const segConts = document.querySelectorAll('#segmentos-marcas-sortable-list .segmento-container'); 
         if (segConts.length === 0) { _showModal('Aviso', 'No hay elementos para ordenar.'); return; }
+        
         _showModal('Progreso', 'Guardando nuevo orden...');
+        
+        // Usar lote para actualizaciones eficientes
         const batch = _writeBatch(_db);
         let segOrderChanged = false, marcaOrderChanged = false;
         const orderedSegIds = []; 
         const currentSegmentDocs = {}; 
 
         try {
+            // Cargar estado actual de DB para comparar
             const segsRef = _collection(_db, `artifacts/${_appId}/users/${_userId}/segmentos`);
             const segsSnap = await _getDocs(segsRef);
             segsSnap.docs.forEach(doc => { currentSegmentDocs[doc.id] = doc.data(); });
@@ -1317,23 +1431,49 @@
             console.warn("No se pudieron precargar los datos de segmentos:", e);
         }
 
+        // Iterar sobre el DOM para capturar el nuevo orden
         segConts.forEach((segCont, index) => {
-            const segId = segCont.dataset.segmentoId;
-            orderedSegIds.push(segId); 
-            const segRef = _doc(_db, `artifacts/${_appId}/users/${_userId}/segmentos`, segId);
-            const currentSegData = currentSegmentDocs[segId] || {}; 
-
-            if (currentSegData.orden === undefined || currentSegData.orden !== index) {
-                batch.update(segRef, { orden: index });
+            let segId = segCont.dataset.segmentoId;
+            const segName = segCont.dataset.segmentoName;
+            
+            // Si es un segmento nuevo (temporal), crear referencia de documento nueva
+            let segRef;
+            if (segId.startsWith('temp_')) {
+                // Crear nuevo documento en 'segmentos'
+                segRef = _doc(_collection(_db, `artifacts/${_appId}/users/${_userId}/segmentos`));
+                segId = segRef.id; // Actualizar ID para la lista de ordenamiento global
+                
+                // Guardar como nuevo documento
+                batch.set(segRef, { name: segName, orden: index });
                 segOrderChanged = true;
+            } else {
+                segRef = _doc(_db, `artifacts/${_appId}/users/${_userId}/segmentos`, segId);
+                const currentSegData = currentSegmentDocs[segId] || {}; 
+                
+                if (currentSegData.orden === undefined || currentSegData.orden !== index) {
+                    batch.update(segRef, { orden: index });
+                    segOrderChanged = true;
+                }
             }
+            orderedSegIds.push(segId);
 
+            // Capturar orden de marcas dentro del segmento
             const marcaItems = segCont.querySelectorAll('.marcas-sortable-list .marca-item');
             const newMarcaOrder = Array.from(marcaItems).map(item => item.dataset.marcaName);
-            const currentMarcaOrder = currentSegData.marcaOrder || [];
+            
+            // Si el segmento era nuevo, no tiene marcaOrder previo
+            const currentMarcaOrder = currentSegmentDocs[segId] ? (currentSegmentDocs[segId].marcaOrder || []) : [];
 
             if (JSON.stringify(newMarcaOrder) !== JSON.stringify(currentMarcaOrder)) {
-                batch.update(segRef, { marcaOrder: newMarcaOrder });
+                // Si el segmento es nuevo, el set anterior ya incluyó marcaOrder? No, el set anterior solo puso name/orden.
+                // Si es nuevo, necesitamos un set o update que incluya marcaOrder.
+                
+                if (segCont.dataset.segmentoId.startsWith('temp_')) {
+                     // Era nuevo, reescribimos el set con marcaOrder
+                     batch.set(segRef, { name: segName, orden: index, marcaOrder: newMarcaOrder });
+                } else {
+                     batch.update(segRef, { marcaOrder: newMarcaOrder });
+                }
                 marcaOrderChanged = true;
             }
         });
@@ -1346,18 +1486,21 @@
         try {
             await batch.commit(); 
             invalidateSegmentOrderCache(); 
+            
             _showModal('Progreso', 'Orden guardado localmente. Propagando a usuarios...');
             let propSuccess = true;
 
+            // Propagación
             if (segOrderChanged && window.adminModule?.propagateCategoryOrderChange) {
                 try {
                     await window.adminModule.propagateCategoryOrderChange('segmentos', orderedSegIds);
                 } catch (e) { propSuccess = false; console.error("Error propagando orden segmentos:", e); }
             }
 
-            if (marcaOrderChanged && window.adminModule?.propagateCategoryChange) {
-                for (const segCont of segConts) {
-                      const segId=segCont.dataset.segmentoId;
+            if ((marcaOrderChanged || segOrderChanged) && window.adminModule?.propagateCategoryChange) {
+                 // Si hubo segmentos nuevos, hay que propagar su creación completa también
+                 // Recorremos los IDs finales
+                 for (const segId of orderedSegIds) {
                       try {
                           const segRef=_doc(_db,`artifacts/${_appId}/users/${_userId}/segmentos`,segId);
                           const segSnap=await _getDoc(segRef); 
