@@ -2,7 +2,9 @@
     let _db, _userId, _userRole, _appId, _mainContent, _showMainMenu, _collection, _getDocs, _floatingControls, _doc, _setDoc, _getDoc, _showModal, _onSnapshot;
     
     // --- VARIABLES FASE 2 ---
-    const PUBLIC_DATA_ID = 'ventas-9a210'; 
+    // CORRECCIÓN: Usar ID global desde config.js
+    const PUBLIC_DATA_ID = window.AppConfig.PUBLIC_DATA_ID;
+    
     let _masterCatalogCache = {}; 
     let _userStockCache = {};     
     let _inventarioCache = []; // Cache fusionada (Vista)
@@ -43,7 +45,7 @@
         if (!_doc || !_setDoc || !_getDoc || !_showModal || !_onSnapshot) {
             console.error("Catalogo Init Error: Faltan dependencias críticas.");
         }
-        console.log("Módulo Catálogo (Fase 2 Híbrido) inicializado.");
+        console.log("Módulo Catálogo (Fase 2 Híbrido) inicializado. Public ID:", PUBLIC_DATA_ID);
     };
 
     window.showCatalogoSubMenu = function() {
@@ -302,7 +304,7 @@
                             <tbody>`;
                 const prodsMarca = pAgrupados[marca] || []; 
                 prodsMarca.forEach(p => { 
-                    const vPor=p.ventaPor||{und:true}; const precios=p.precios||{und:p.precioPorUnidad||0}; let pBaseUSD=0, dPres=`${p.presentacion||'N/A'}`, uInfo=''; 
+                    const vPor=p.ventaPor||{und:true}, precios=p.precios||{und:p.precioPorUnidad||0}; let pBaseUSD=0, dPres=`${p.presentacion||'N/A'}`, uInfo=''; 
                     if(vPor.cj&&precios.cj>0){pBaseUSD=precios.cj;uInfo=`(Cj/${p.unidadesPorCaja||1} und)`;}
                     else if(vPor.paq&&precios.paq>0){pBaseUSD=precios.paq;uInfo=`(Paq/${p.unidadesPorPaquete||1} und)`;}
                     else{pBaseUSD=precios.und||0;uInfo=`(Und)`;} 
@@ -312,12 +314,12 @@
                     const sDisp=p.segmento?`<span class="text-xs text-gray-500 ml-1">(${p.segmento})</span>`:''; 
                     
                     html+=`<tr class="border-b last:border-b-0">
-                                <td class="py-0.5 px-2 align-top">
-                                    ${dPres} ${sDisp} 
-                                    ${uInfo?`<span class="inline-block ml-2 text-xs text-gray-500">${uInfo}</span>`:''}
-                                </td>
-                                <td class="py-0.5 px-2 text-right font-semibold align-top">${pMostrado}</td>
-                           </tr>`; 
+                                    <td class="py-0.5 px-2 align-top">
+                                        ${dPres} ${sDisp} 
+                                        ${uInfo?`<span class="inline-block ml-2 text-xs text-gray-500">${uInfo}</span>`:''}
+                                    </td>
+                                    <td class="py-0.5 px-2 text-right font-semibold align-top">${pMostrado}</td>
+                               </tr>`; 
                 }); 
                 html += `</tbody></table>`; 
             }); 
