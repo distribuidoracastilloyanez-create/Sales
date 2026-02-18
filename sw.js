@@ -1,11 +1,11 @@
-const CACHE_NAME = 'ventas-app-cache-v11'; // Incrementado a v11 para incluir config.js
+const CACHE_NAME = 'ventas-app-cache-v12'; // ACTUALIZADO A v12 PARA FORZAR DESCARGA DE NUEVOS ARCHIVOS
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
     './',
     './index.html',
     './manifest.json',
-    './config.js',           // CRÍTICO: Archivo de configuración central
+    './config.js',            // CRÍTICO: Archivo de configuración central
     // --- Módulos de Lógica ---
     './admin.js',
     './data.js',
@@ -25,13 +25,6 @@ const urlsToCache = [
     // --- Imágenes (Solo las que seguro existen) ---
     './images/icons/icon-192x192.png',
     './images/icons/icon-512x512.png'
-    // NOTA: Asegúrate de que estas imágenes existan realmente en tu servidor
-    // './images/fondo.png',
-    // './images/cervezayvinos.png',
-    // './images/maltinypepsi.png',
-    // './images/alimentospolar.png',
-    // './images/p&g.png',
-    // './images/no-image.png'
 ];
 
 self.addEventListener('install', event => {
@@ -110,4 +103,3 @@ self.addEventListener('fetch', event => {
         })
     );
 });
-
