@@ -4,26 +4,30 @@
     let _collection, _onSnapshot, _doc, _addDoc, _setDoc, _deleteDoc, _query, _where, _getDocs, _writeBatch, _getDoc;
     let _increment; 
 
-    // --- SISTEMA DE CACHÉ DOBLE (FASE 2) ---
-    let _masterCatalogCache = {}; // Datos públicos
-    let _userStockCache = {};     // Datos privados
-    let _inventarioCache = [];    // Fusión
+    // --- NUEVO: SISTEMA DE CACHÉ DOBLE (FASE 2) ---
+    let _masterCatalogCache = {}; // Datos públicos (Nombre, Precio, Marca) - Key: ID
+    let _userStockCache = {};     // Datos privados (Stock) - Key: ID
+    // _inventarioCache ahora será el resultado de la fusión de ambos
+    let _inventarioCache = [];
     
+    // Control de Listeners Múltiples
     let _listenersUnsubscribes = []; 
 
     let _lastFilters = { searchTerm: '', rubro: '', segmento: '', marca: '' };
     let _marcasCache = null;
+    
+    // Variable para persistir las cantidades ingresadas en la recarga
     let _recargaTempState = {}; 
 
-    // --- CACHÉ DE ORDENAMIENTO GLOBAL ---
-    // Aquí se almacena la información traída de Firebase para ordenar
+    // --- CACHÉ DE ORDENAMIENTO GLOBAL AVANZADO ---
     let _globalSortCache = {
-        preference: null, // Ej: ['segmento', 'marca', 'presentacion']
-        rubros: null,     // Mapa de orden de rubros
-        segmentos: null,  // Mapa de orden de segmentos + orden de marcas dentro
-        marcas: null      // Mapa de orden de productos dentro de marcas
+        preference: null,
+        rubros: null,
+        segmentos: null,
+        marcas: null
     };
 
+    // ID PÚBLICO FIJO (Para leer el maestro)
     const PUBLIC_DATA_ID = window.AppConfig.PUBLIC_DATA_ID; 
 
     window.initInventario = function(dependencies) {
@@ -51,15 +55,19 @@
         _getDoc = dependencies.getDoc;
         _increment = dependencies.increment; 
         
-        if (!_increment) console.warn("Advertencia: 'increment' faltante.");
-        console.log("Módulo Inventario FASE 2 Inicializado.");
+        if (!_increment) console.warn("Advertencia: 'increment' no fue pasado a initInventario. Las recargas podrían no ser atómicas.");
+        console.log("Módulo Inventario FASE 2 (Híbrido) Inicializado. Public ID:", PUBLIC_DATA_ID);
     };
 
-    // --- MOTOR DE LECTURA ---
+    // --- NUEVO MOTOR DE LECTURA (LISTENER DOBLE) ---
     function startMainInventarioListener(callback) {
-        _listenersUnsubscribes.forEach(unsub => { try { unsub(); } catch(e) {} });
+        // Limpiar listeners anteriores
+        _listenersUnsubscribes.forEach(unsub => {
+            try { unsub(); } catch(e) { console.warn("Error limpiando listener:", e); }
+        });
         _listenersUnsubscribes = [];
 
+        // Función interna de fusión y renderizado
         const combineAndNotify = () => {
             _inventarioCache = [];
             const allIds = new Set([...Object.keys(_masterCatalogCache), ...Object.keys(_userStockCache)]);
@@ -69,51 +77,71 @@
                 const stockData = _userStockCache[id];
                 
                 if (master) {
-                    _inventarioCache.push({ ...master, cantidadUnidades: stockData ? (stockData.cantidadUnidades || 0) : 0, id: id });
+                    // Producto existe en maestro -> Usamos definición maestra + stock privado
+                    _inventarioCache.push({
+                        ...master, 
+                        cantidadUnidades: stockData ? (stockData.cantidadUnidades || 0) : 0,
+                        id: id // Asegurar ID
+                    });
                 } else if (stockData) {
+                    // Producto existe SOLO en privado (Legacy/Huerfano) -> Lo mostramos tal cual
                     _inventarioCache.push({ ...stockData, id: id });
                 }
             });
 
             if (callback && typeof callback === 'function') {
-                Promise.resolve(callback()).catch(cbError => console.error("Callback Error:", cbError));
+                Promise.resolve(callback()).catch(cbError => {
+                    console.error("Listener callback error (Render/Sort):", cbError);
+                });
             }
         };
 
+        // 1. LISTENER MAESTRO (Público)
         const masterRef = _collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/productos`);
-        const unsubMaster = _onSnapshot(masterRef, (snap) => {
+        const unsubMaster = _onSnapshot(masterRef, (snapshot) => {
             _masterCatalogCache = {};
-            snap.forEach(d => { _masterCatalogCache[d.id] = { id: d.id, ...d.data() }; });
+            snapshot.forEach(doc => { _masterCatalogCache[doc.id] = { id: doc.id, ...doc.data() }; });
             combineAndNotify();
-        }, (err) => handleListenerError(err, "Maestro"));
+        }, (error) => handleListenerError(error, "Maestro"));
         _listenersUnsubscribes.push(unsubMaster);
 
+        // 2. LISTENER PRIVADO (Stock)
         const stockRef = _collection(_db, `artifacts/${_appId}/users/${_userId}/inventario`);
-        const unsubStock = _onSnapshot(stockRef, (snap) => {
+        const unsubStock = _onSnapshot(stockRef, (snapshot) => {
             _userStockCache = {};
-            snap.forEach(d => { _userStockCache[d.id] = { id: d.id, ...d.data() }; });
+            snapshot.forEach(doc => { _userStockCache[doc.id] = { id: doc.id, ...doc.data() }; });
             combineAndNotify();
-        }, (err) => handleListenerError(err, "Stock"));
+        }, (error) => handleListenerError(error, "Stock Privado"));
         _listenersUnsubscribes.push(unsubStock);
 
+        // Registramos en activeListeners global para limpieza al salir del módulo
         _activeListeners.push(..._listenersUnsubscribes);
     }
 
     function handleListenerError(error, source) {
-        if (error.code === 'permission-denied' || error.code === 'unauthenticated') return;
-        if (error.code !== 'cancelled' && source === "Stock") _showModal('Error', 'Fallo de conexión inventario.');
+        if (error.code === 'permission-denied' || error.code === 'unauthenticated') { 
+            console.log(`Listener error (${source}) ignored: ${error.code}`); 
+            return; 
+        }
+        console.error(`Error en listener (${source}):`, error);
+        if (error.code !== 'cancelled') { 
+            // Solo mostramos alerta si falla el Stock, el maestro puede fallar si no existe la colección aún
+            if(source === "Stock Privado") _showModal('Error de Conexión', 'No se pudo actualizar el inventario.');
+        }
     }
 
-    // --- FUNCIÓN GLOBAL DE ORDENAMIENTO (CRÍTICA) ---
-    // Esta función determina el orden de TODOS los productos en la app.
+    // --- FUNCIÓN GLOBAL DE ORDENAMIENTO (Propagada a toda la App) ---
+    // Esta función se define en window para que Ventas, Catálogo y Data la usen.
     window.getGlobalProductSortFunction = async () => {
-        // Si no hay caché, descargar configuración de Firestore
+        // 1. Cargar Preferencias y Datos Maestros si no están en caché
         if (!_globalSortCache.preference || !_globalSortCache.rubros) {
             try {
+                // Cargar preferencia de campos (ej: primero Segmento, luego Marca...)
                 const prefRef = _doc(_db, `artifacts/${_appId}/users/${_userId}/config/productSortOrder`);
                 const prefSnap = await _getDoc(prefRef);
                 _globalSortCache.preference = prefSnap.exists() ? prefSnap.data().order : ['segmento', 'marca', 'presentacion'];
 
+                // Cargar datos jerárquicos para saber el orden específico
                 const [rSnap, sSnap, mSnap] = await Promise.all([
                     _getDocs(_collection(_db, `artifacts/${_appId}/users/${_userId}/rubros`)),
                     _getDocs(_collection(_db, `artifacts/${_appId}/users/${_userId}/segmentos`)),
@@ -126,22 +154,25 @@
                 _globalSortCache.segmentos = {};
                 sSnap.forEach(d => _globalSortCache.segmentos[d.data().name] = { 
                     orden: d.data().orden ?? 9999, 
-                    marcaOrder: d.data().marcaOrder || [] 
+                    marcaOrder: d.data().marcaOrder || [] // Array de nombres de marcas ordenadas
                 });
 
                 _globalSortCache.marcas = {};
-                // AQUÍ SE TOMA EL ORDEN DE PRODUCTOS: campo 'productOrder'
                 mSnap.forEach(d => _globalSortCache.marcas[d.data().name] = { 
-                    productOrder: d.data().productOrder || [] 
+                    productOrder: d.data().productOrder || [] // Array de IDs de productos ordenados
                 });
+                
+                console.log("Sort Cache Loaded:", _globalSortCache); // DEBUG
 
             } catch (e) { 
-                console.warn("Error cargando orden:", e);
+                console.warn("Error cargando datos de ordenamiento:", e);
+                // Fallback básico
                 _globalSortCache.preference = ['segmento', 'marca', 'presentacion'];
                 _globalSortCache.rubros = {}; _globalSortCache.segmentos = {}; _globalSortCache.marcas = {};
             }
         }
 
+        // 2. Retornar función comparadora
         return (a, b) => {
             const safeA = a || {}; const safeB = b || {};
             
@@ -157,30 +188,38 @@
                 else if (key === 'segmento') {
                     const sA = _globalSortCache.segmentos[safeA.segmento];
                     const sB = _globalSortCache.segmentos[safeB.segmento];
+                    // Ordenar por índice numérico del segmento
                     res = (sA?.orden ?? 9999) - (sB?.orden ?? 9999);
                     if (res === 0) res = (safeA.segmento || '').localeCompare(safeB.segmento || '');
                 } 
                 else if (key === 'marca') {
+                    // Ordenar Marcas dentro de su Segmento (si comparten segmento)
                     if (safeA.segmento === safeB.segmento) {
                         const segData = _globalSortCache.segmentos[safeA.segmento];
                         if (segData && segData.marcaOrder) {
                             const idxA = segData.marcaOrder.indexOf(safeA.marca);
                             const idxB = segData.marcaOrder.indexOf(safeB.marca);
+                            // Si ambos están en la lista personalizada, usar índice
                             if (idxA !== -1 && idxB !== -1) res = idxA - idxB;
+                            // Si solo A está, va antes
                             else if (idxA !== -1) res = -1;
+                            // Si solo B está, va antes
                             else if (idxB !== -1) res = 1;
                         }
                     }
                     if (res === 0) res = (safeA.marca || '').localeCompare(safeB.marca || '');
                 } 
                 else if (key === 'presentacion') {
-                    // LÓGICA DE ORDEN DE PRODUCTOS
+                    // Ordenar Productos dentro de su Marca (si comparten marca)
                     if (safeA.marca === safeB.marca) {
                         const marcaData = _globalSortCache.marcas[safeA.marca];
-                        // Se busca el ID del producto en el array 'productOrder' de la marca
                         if (marcaData && marcaData.productOrder) {
                             const idxA = marcaData.productOrder.indexOf(safeA.id);
                             const idxB = marcaData.productOrder.indexOf(safeB.id);
+                            
+                            // Debug log for checking why items are not sorting correctly
+                            // if (safeA.marca === 'POLAR') console.log(`Sorting ${safeA.presentacion} vs ${safeB.presentacion}: ${idxA} vs ${idxB}`);
+
                             if (idxA !== -1 && idxB !== -1) res = idxA - idxB;
                             else if (idxA !== -1) res = -1;
                             else if (idxB !== -1) res = 1;
@@ -191,39 +230,57 @@
 
                 if (res !== 0) return res;
             }
-            return 0;
+            return 0; // Son iguales
         };
     };
 
     function invalidateSegmentOrderCache() {
+        // Limpiar caché local y forzar recarga en otros módulos
         _globalSortCache = { preference: null, rubros: null, segmentos: null, marcas: null };
         if (window.catalogoModule?.invalidateCache) window.catalogoModule.invalidateCache();
         if (window.ventasModule?.invalidateCache) window.ventasModule.invalidateCache();
         console.log("Cachés de ordenamiento invalidadas (Inventario y Global).");
     }
 
+    // --- NUEVO: Función para poblar Rubros desde la caché real ---
     function populateRubrosFromCache(selectId) {
         const select = document.getElementById(selectId);
         if (!select) return;
+        
         const currentVal = select.value;
         const rubros = new Set();
-        _inventarioCache.forEach(p => { if (p.rubro) rubros.add(p.rubro); });
+        
+        // Extraer rubros únicos directamente de los productos cargados
+        _inventarioCache.forEach(p => {
+             if (p.rubro) rubros.add(p.rubro);
+        });
+        
         const sorted = [...rubros].sort();
+        
+        // Reconstruir opciones manteniendo "Todos"
         select.innerHTML = '<option value="">Todos</option>';
+        
         sorted.forEach(r => {
             const opt = document.createElement('option');
-            opt.value = r; opt.textContent = r;
+            opt.value = r;
+            opt.textContent = r;
             if (r === currentVal) opt.selected = true;
             select.appendChild(opt);
         });
-        if (currentVal && !rubros.has(currentVal)) select.value = "";
+        
+        // Si el valor seleccionado ya no existe (raro), resetear
+        if (currentVal && !rubros.has(currentVal)) {
+            select.value = "";
+        }
     }
-
-    // --- VISTAS ---
 
     window.showInventarioSubMenu = function() {
         if (_floatingControls) _floatingControls.classList.add('hidden');
-        _listenersUnsubscribes.forEach(u => u()); _listenersUnsubscribes = [];
+        
+        // Limpieza de listeners al volver al menú principal del módulo
+        _listenersUnsubscribes.forEach(u => u()); 
+        _listenersUnsubscribes = [];
+
         const isAdmin = _userRole === 'admin';
         _mainContent.innerHTML = `
             <div class="p-4 pt-8">
@@ -254,6 +311,7 @@
         }
         document.getElementById('recargaProductosBtn').addEventListener('click', showRecargaProductosView);
         document.getElementById('backToMenuBtn').addEventListener('click', () => {
+             // Limpiar listeners al salir totalmente
             _listenersUnsubscribes.forEach(u => u());
             _showMainMenu();
         });
@@ -277,13 +335,16 @@
         let isFirstLoad = true;
         const smartListenerCallback = async () => {
             await baseRender();
-            populateRubrosFromCache('modify-filter-rubro'); 
+            // CORRECCIÓN: Poblar filtro de Rubros basado en los productos cargados
+            populateRubrosFromCache('modify-filter-rubro');
+            
             if (isFirstLoad && _inventarioCache.length > 0) {
                 updateDependentDropdowns('init');
                 await baseRender();
                 isFirstLoad = false;
             }
         };
+
         startMainInventarioListener(smartListenerCallback);
     }
 
@@ -294,15 +355,21 @@
                 <input type="text" id="${prefix}-search-input" placeholder="Buscar por Presentación, Marca o Segmento..." class="md:col-span-4 w-full px-4 py-2 border rounded-lg text-sm" value="${currentSearch}">
                 <div>
                     <label for="${prefix}-filter-rubro" class="text-xs font-medium text-gray-700">Rubro</label>
-                    <select id="${prefix}-filter-rubro" class="w-full mt-1 px-2 py-1 border rounded-lg text-sm bg-white focus:ring-blue-500 focus:border-blue-500"><option value="">Todos</option></select>
+                    <select id="${prefix}-filter-rubro" class="w-full mt-1 px-2 py-1 border rounded-lg text-sm bg-white focus:ring-blue-500 focus:border-blue-500">
+                        <option value="">Todos</option>
+                    </select>
                 </div>
                 <div>
                     <label for="${prefix}-filter-segmento" class="text-xs font-medium text-gray-700">Segmento</label>
-                    <select id="${prefix}-filter-segmento" class="w-full mt-1 px-2 py-1 border rounded-lg text-sm bg-white focus:ring-blue-500 focus:border-blue-500" disabled><option value="">Todos</option></select>
+                    <select id="${prefix}-filter-segmento" class="w-full mt-1 px-2 py-1 border rounded-lg text-sm bg-white focus:ring-blue-500 focus:border-blue-500" disabled>
+                        <option value="">Todos</option>
+                    </select>
                 </div>
                 <div>
                     <label for="${prefix}-filter-marca" class="text-xs font-medium text-gray-700">Marca</label>
-                    <select id="${prefix}-filter-marca" class="w-full mt-1 px-2 py-1 border rounded-lg text-sm bg-white focus:ring-blue-500 focus:border-blue-500" disabled><option value="">Todos</option></select>
+                    <select id="${prefix}-filter-marca" class="w-full mt-1 px-2 py-1 border rounded-lg text-sm bg-white focus:ring-blue-500 focus:border-blue-500" disabled>
+                        <option value="">Todos</option>
+                    </select>
                 </div>
                 <button id="${prefix}-clear-filters-btn" class="bg-gray-300 text-xs font-semibold text-gray-700 rounded-lg self-end py-1.5 px-3 hover:bg-gray-400 transition duration-150">Limpiar</button>
             </div>
@@ -315,6 +382,7 @@
         const segmentoFilter=document.getElementById(`${prefix}-filter-segmento`);
         const marcaFilter=document.getElementById(`${prefix}-filter-marca`);
         const clearBtn=document.getElementById(`${prefix}-clear-filters-btn`);
+
         if(!searchInput || !rubroFilter || !segmentoFilter || !marcaFilter || !clearBtn) return {};
 
         function updateDependentDropdowns(trigger) {
@@ -322,22 +390,46 @@
             const currentSegmentoValue = (trigger === 'init' || trigger === 'rubro') ? _lastFilters.segmento : segmentoFilter.value;
             const currentMarcaValue = (trigger === 'init' || trigger === 'rubro' || trigger === 'segmento') ? _lastFilters.marca : marcaFilter.value;
 
-            segmentoFilter.innerHTML = '<option value="">Todos</option>'; segmentoFilter.disabled = true; segmentoFilter.value = "";
+            segmentoFilter.innerHTML = '<option value="">Todos</option>';
+            segmentoFilter.disabled = true;
+            segmentoFilter.value = "";
+
             if (selectedRubro) {
-                const segmentos = [...new Set(_inventarioCache.filter(p => p.rubro === selectedRubro && p.segmento).map(p => p.segmento))].sort();
+                const segmentos = [...new Set(_inventarioCache
+                    .filter(p => p.rubro === selectedRubro && p.segmento)
+                    .map(p => p.segmento))]
+                    .sort();
                 if (segmentos.length > 0) {
-                    segmentos.forEach(s => { const option = document.createElement('option'); option.value = s; option.textContent = s; if (s === currentSegmentoValue) { option.selected = true; } segmentoFilter.appendChild(option); });
-                    segmentoFilter.disabled = false; segmentoFilter.value = currentSegmentoValue; 
+                    segmentos.forEach(s => {
+                        const option = document.createElement('option');
+                        option.value = s; option.textContent = s;
+                        if (s === currentSegmentoValue) { option.selected = true; }
+                        segmentoFilter.appendChild(option);
+                    });
+                    segmentoFilter.disabled = false;
+                    segmentoFilter.value = currentSegmentoValue; 
                 }
             }
             if (segmentoFilter.value !== currentSegmentoValue) { _lastFilters.segmento = ''; }
 
-            marcaFilter.innerHTML = '<option value="">Todos</option>'; marcaFilter.disabled = true; marcaFilter.value = "";
+            marcaFilter.innerHTML = '<option value="">Todos</option>';
+            marcaFilter.disabled = true;
+             marcaFilter.value = "";
+
             if (selectedRubro) {
-                const marcas = [...new Set(_inventarioCache.filter(p => p.rubro === selectedRubro && (!segmentoFilter.value || p.segmento === segmentoFilter.value) && p.marca).map(p => p.marca))].sort();
+                const marcas = [...new Set(_inventarioCache
+                    .filter(p => p.rubro === selectedRubro && (!segmentoFilter.value || p.segmento === segmentoFilter.value) && p.marca)
+                    .map(p => p.marca))]
+                    .sort();
                 if (marcas.length > 0) {
-                    marcas.forEach(m => { const option = document.createElement('option'); option.value = m; option.textContent = m; if (m === currentMarcaValue) { option.selected = true; } marcaFilter.appendChild(option); });
-                    marcaFilter.disabled = false; marcaFilter.value = currentMarcaValue;
+                    marcas.forEach(m => {
+                         const option = document.createElement('option');
+                         option.value = m; option.textContent = m;
+                         if (m === currentMarcaValue) { option.selected = true; }
+                         marcaFilter.appendChild(option);
+                    });
+                    marcaFilter.disabled = false;
+                    marcaFilter.value = currentMarcaValue;
                 }
             }
             if (marcaFilter.value !== currentMarcaValue) { _lastFilters.marca = ''; }
@@ -352,10 +444,24 @@
         };
 
         searchInput.addEventListener('input', applyAndSaveChanges);
-        rubroFilter.addEventListener('change', () => { _lastFilters.segmento = ''; _lastFilters.marca = ''; updateDependentDropdowns('rubro'); applyAndSaveChanges(); });
-        segmentoFilter.addEventListener('change', () => { _lastFilters.marca = ''; updateDependentDropdowns('segmento'); applyAndSaveChanges(); });
+        rubroFilter.addEventListener('change', () => {
+             _lastFilters.segmento = ''; _lastFilters.marca = ''; 
+            updateDependentDropdowns('rubro');
+            applyAndSaveChanges();
+        });
+        segmentoFilter.addEventListener('change', () => {
+            _lastFilters.marca = ''; 
+            updateDependentDropdowns('segmento');
+            applyAndSaveChanges();
+        });
         marcaFilter.addEventListener('change', applyAndSaveChanges);
-        clearBtn.addEventListener('click', () => { searchInput.value = ''; rubroFilter.value = ''; _lastFilters.segmento = ''; _lastFilters.marca = ''; updateDependentDropdowns('rubro'); applyAndSaveChanges(); });
+        clearBtn.addEventListener('click', () => {
+            searchInput.value = '';
+            rubroFilter.value = '';
+            _lastFilters.segmento = ''; _lastFilters.marca = '';
+            updateDependentDropdowns('rubro');
+            applyAndSaveChanges();
+        });
         
         return { updateDependentDropdowns };
     }
@@ -380,11 +486,25 @@
         const sortFunction = await window.getGlobalProductSortFunction();
         productosFiltrados.sort(sortFunction);
 
-        if (productosFiltrados.length === 0) { container.innerHTML = `<p class="text-center text-gray-500 p-4">No hay productos que coincidan con los filtros seleccionados.</p>`; return; }
+        if (productosFiltrados.length === 0) {
+            container.innerHTML = `<p class="text-center text-gray-500 p-4">No hay productos que coincidan con los filtros seleccionados.</p>`;
+            return;
+        }
 
         const cols = readOnly ? 4 : 5;
-        let tableHTML = `<table class="min-w-full bg-white text-sm"> <thead class="bg-gray-200 sticky top-0 z-10"> <tr> <th class="py-2 px-3 text-left font-semibold text-gray-600 uppercase tracking-wider">Presentación</th> <th class="py-2 px-3 text-left font-semibold text-gray-600 uppercase tracking-wider">Marca</th> <th class="py-2 px-3 text-right font-semibold text-gray-600 uppercase tracking-wider">Precio</th> <th class="py-2 px-3 text-center font-semibold text-gray-600 uppercase tracking-wider">Stock</th> ${!readOnly ? `<th class="py-2 px-3 text-center font-semibold text-gray-600 uppercase tracking-wider">Acciones</th>` : ''} </tr> </thead> <tbody>`;
-        
+        let tableHTML = `
+            <table class="min-w-full bg-white text-sm">
+                <thead class="bg-gray-200 sticky top-0 z-10">
+                    <tr>
+                        <th class="py-2 px-3 text-left font-semibold text-gray-600 uppercase tracking-wider">Presentación</th>
+                        <th class="py-2 px-3 text-left font-semibold text-gray-600 uppercase tracking-wider">Marca</th>
+                        <th class="py-2 px-3 text-right font-semibold text-gray-600 uppercase tracking-wider">Precio</th>
+                        <th class="py-2 px-3 text-center font-semibold text-gray-600 uppercase tracking-wider">Stock</th>
+                        ${!readOnly ? `<th class="py-2 px-3 text-center font-semibold text-gray-600 uppercase tracking-wider">Acciones</th>` : ''}
+                    </tr>
+                </thead>
+                <tbody>`;
+
         let lastHeaderKey = null;
         // CORRECCIÓN: Usar la preferencia de la caché global, no una variable fantasma
         const firstSortKey = _globalSortCache.preference ? _globalSortCache.preference[0] : 'segmento';
@@ -395,6 +515,7 @@
                 lastHeaderKey = currentHeaderValue;
                 tableHTML += `<tr><td colspan="${cols}" class="py-2 px-4 bg-gray-300 font-bold text-gray-800 sticky top-[calc(theme(height.10))] z-[9]">${lastHeaderKey}</td></tr>`;
             }
+
             const ventaPor = p.ventaPor || {und:true};
             const precios = p.precios || {und: p.precioPorUnidad || 0};
             let displayPresentacion = p.presentacion || 'N/A';
@@ -419,8 +540,20 @@
             displayStock = `${Math.floor((p.cantidadUnidades || 0) / conversionFactorStock)} ${stockUnitType}`;
             const stockUnidadesBaseTitle = `${p.cantidadUnidades || 0} Und. Base`;
 
-            tableHTML += `<tr class="hover:bg-gray-50 border-b"> <td class="py-2 px-3 text-gray-800">${displayPresentacion}</td> <td class="py-2 px-3 text-gray-700">${p.marca || 'S/M'}</td> <td class="py-2 px-3 text-right font-medium text-gray-900">${displayPrecio}</td> <td class="py-2 px-3 text-center font-medium text-gray-900" title="${stockUnidadesBaseTitle}">${displayStock}</td> ${!readOnly ? `<td class="py-2 px-3 text-center space-x-1"> <button onclick="window.inventarioModule.editProducto('${p.id}')" class="px-2 py-1 bg-yellow-500 text-white text-xs rounded hover:bg-yellow-600 focus:outline-none focus:ring-2 focus:ring-yellow-400 focus:ring-opacity-50" title="Editar Definición">Edt</button> <button onclick="window.inventarioModule.deleteProducto('${p.id}')" class="px-2 py-1 bg-red-500 text-white text-xs rounded hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-400 focus:ring-opacity-50" title="Eliminar Producto">Del</button> </td>` : ''} </tr>`;
+            tableHTML += `
+                <tr class="hover:bg-gray-50 border-b">
+                    <td class="py-2 px-3 text-gray-800">${displayPresentacion}</td>
+                    <td class="py-2 px-3 text-gray-700">${p.marca || 'S/M'}</td>
+                    <td class="py-2 px-3 text-right font-medium text-gray-900">${displayPrecio}</td>
+                    <td class="py-2 px-3 text-center font-medium text-gray-900" title="${stockUnidadesBaseTitle}">${displayStock}</td>
+                    ${!readOnly ? `
+                    <td class="py-2 px-3 text-center space-x-1">
+                        <button onclick="window.inventarioModule.editProducto('${p.id}')" class="px-2 py-1 bg-yellow-500 text-white text-xs rounded hover:bg-yellow-600 focus:outline-none focus:ring-2 focus:ring-yellow-400 focus:ring-opacity-50" title="Editar Definición">Edt</button>
+                        <button onclick="window.inventarioModule.deleteProducto('${p.id}')" class="px-2 py-1 bg-red-500 text-white text-xs rounded hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-400 focus:ring-opacity-50" title="Eliminar Producto">Del</button>
+                    </td>` : ''}
+                </tr>`;
         });
+
         tableHTML += `</tbody></table>`;
         container.innerHTML = tableHTML;
     }
@@ -434,6 +567,7 @@
         await Promise.all([
             populateRubrosFromCache('rubro'), 
             populateRubrosFromCache('segmento'),
+            // Para "Agregar Producto", TAMBIÉN necesitamos las colecciones reales para que el Admin seleccione
             _populateDropdown(`artifacts/${_appId}/users/${_userId}/rubros`, 'rubro', 'Rubro'),
             _populateDropdown(`artifacts/${_appId}/users/${_userId}/segmentos`, 'segmento', 'Segmento'),
             _populateDropdown(`artifacts/${_appId}/users/${_userId}/marcas`, 'marca', 'Marca')
@@ -486,6 +620,7 @@
         document.getElementById('backToMenuBtn').addEventListener('click', showInventarioSubMenu);
     }
 
+    // --- MODIFICADO: USA ADMIN.JS PARA PROPAGAR ---
     async function handleAddProducto(e) {
         e.preventDefault();
         const data = getProductoDataFromForm(false); 
@@ -807,7 +942,7 @@
                         </div>
                         <div class="mt-6 flex flex-col sm:flex-row gap-4">
                             <button id="backToInventarioBtn" class="w-full px-6 py-3 bg-gray-400 text-white rounded-lg shadow-md hover:bg-gray-500">Volver</button>
-                            <button id="saveRecargaBtn" class="w-full px-6 py-3 bg-green-600 text-white font-bold rounded-lg shadow-md hover:bg-green-700">Confirmar Recarga</button>
+                            <button id="saveRecargaBtn" class="w-full px-6 py-3 bg-green-600 text-white font-bold rounded-lg shadow-md hover:bg-green-600">Confirmar Recarga</button>
                         </div>
                     </div>
                 </div>
@@ -1522,3 +1657,4 @@
     };
 
 })();
+¨
