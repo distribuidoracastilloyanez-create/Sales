@@ -4,14 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Gestión Dist. Castillo</title>
-    <!-- CORRECCIÓN CORS: Usar archivo local en lugar de CDN para soporte offline real -->
     <script src="tailwind.js"></script> 
-    <!-- Fallback si no tienes el archivo local aún -->
-    <!-- <script src="https://cdn.tailwindcss.com"></script> -->
-
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     
-    <!-- LIBRERÍAS EXCEL (Esenciales para CXC y Data) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.3.0/exceljs.min.js"></script>
 
@@ -116,7 +111,6 @@
         <main id="mainContent" class="flex-grow hidden">
         </main>
 
-        <!-- Contenido de Login -->
         <main id="loginContent" class="flex-grow flex items-center justify-center p-4">
             <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl text-center max-w-sm w-full">
                 <h1 class="text-3xl font-bold text-gray-800 mb-6">Dist. Castillo</h1>
@@ -137,7 +131,6 @@
             </div>
         </main>
 
-        <!-- Contenido de Registro -->
         <main id="registerContent" class="flex-grow flex items-center justify-center p-4 hidden">
             <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl text-center max-w-sm w-full">
                 <h1 class="text-3xl font-bold text-gray-800 mb-6">Crear Cuenta</h1>
@@ -160,13 +153,11 @@
             </div>
         </main>
 
-        <!-- Modal Universal -->
         <div id="modalContainer" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-60 hidden animate-fade-in p-4">
             <div id="modalContent" class="bg-white p-6 md:p-8 rounded-lg shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
             </div>
         </div>
 
-        <!-- Controles Flotantes -->
         <div id="floating-controls" class="fixed bottom-4 right-4 space-y-2 z-40 hidden">
              <span id="connectionStatusFloating" class="block text-xs font-bold px-3 py-2 rounded-full shadow-lg transition-colors duration-300 bg-gray-200 text-gray-600">Conectando...</span>
             <button id="logoutBtn" class="w-12 h-12 bg-red-500 text-white font-semibold rounded-full shadow-lg hover:bg-red-600 transition duration-300 flex items-center justify-center transform hover:scale-110" title="Cerrar Sesión">
@@ -179,10 +170,8 @@
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
     
-    <!-- 1. IMPORTAR CONFIGURACIÓN GLOBAL (Debe ir antes de los módulos) -->
     <script src="config.js"></script>
 
-    <!-- Importar módulos locales -->
     <script src="data.js" defer></script>
     <script src="admin.js" defer></script>
     <script src="inventario.js" defer></script>
@@ -215,6 +204,7 @@
 
         const firebaseConfig = window.AppConfig.firebaseConfig;
         const appId = firebaseConfig.projectId;
+        const PUBLIC_DATA_ID = window.AppConfig.PUBLIC_DATA_ID; // Usar ID centralizado
 
         let db, auth, userId;
         window.userRole = 'user'; 
@@ -360,16 +350,25 @@
             }
         };
 
-        // Pre-carga de datos para optimizar offline
+        // Pre-carga de datos para optimizar offline (ACTUALIZADO: FASE 2)
         async function preloadAllData() {
             const collectionsToPreload = [
+                // Datos Privados
                 { path: `artifacts/${appId}/users/${userId}/inventario` },
-                { path: `artifacts/${appId}/users/${userId}/rubros` },
-                { path: `artifacts/${appId}/users/${userId}/segmentos` },
-                { path: `artifacts/${appId}/public/data/clientes` },
-                { path: `artifacts/${appId}/public/data/sectores` },
-                { path: `artifacts/${appId}/public/data/config/obsequio` }
+                
+                // Datos Públicos (Maestros) - Esencial para que el ordenamiento funcione offline
+                { path: `artifacts/${PUBLIC_DATA_ID}/public/data/rubros` },
+                { path: `artifacts/${PUBLIC_DATA_ID}/public/data/segmentos` },
+                { path: `artifacts/${PUBLIC_DATA_ID}/public/data/marcas` },
+                { path: `artifacts/${PUBLIC_DATA_ID}/public/data/productos` }, // Catálogo maestro
+                
+                // Otros Públicos
+                { path: `artifacts/${PUBLIC_DATA_ID}/public/data/clientes` },
+                { path: `artifacts/${PUBLIC_DATA_ID}/public/data/sectores` },
+                { path: `artifacts/${PUBLIC_DATA_ID}/public/data/config/obsequio` }
             ];
+            
+            // Lanzar todas las peticiones (Settled permite que algunas fallen sin detener el login)
             await Promise.allSettled(collectionsToPreload.map(col => {
                 if (col.path.includes('/config/')) return getDoc(doc(db, col.path));
                 return getDocs(collection(db, col.path));
@@ -392,7 +391,6 @@
                         <div class="space-y-4">
                             <button id="inventarioBtn" class="w-full px-6 py-3 bg-blue-500 text-white rounded-lg shadow-md hover:bg-blue-600">Inventario</button>
                             
-                            <!-- Botón Edición Inventario (Solo Admin) -->
                             ${isAdmin ? `<button id="editInventarioBtn" class="w-full px-6 py-3 bg-amber-600 text-white rounded-lg shadow-md hover:bg-amber-700 font-bold">Edición de Inventario</button>` : ''}
                             
                             <button id="clientesBtn" class="w-full px-6 py-3 bg-indigo-500 text-white rounded-lg shadow-md hover:bg-indigo-600">Clientes</button>
@@ -551,7 +549,6 @@
 
     </script>
 
-    <!-- PWA REGISTER -->
     <script>
         if ('serviceWorker' in navigator) {
             // Solo registrar si estamos en HTTP/HTTPS (evita errores en preview)
