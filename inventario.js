@@ -20,12 +20,8 @@
     let _recargaTempState = {}; 
 
     // --- CACHÉ DE ORDENAMIENTO GLOBAL AVANZADO ---
-    let _globalSortCache = {
-        preference: null,
-        rubros: null,
-        segmentos: null,
-        marcas: null
-    };
+    // Se inicializa en null para forzar la primera carga
+    let _globalSortCache = null;
 
     // ID PÚBLICO FIJO (Para leer el maestro y las configuraciones globales)
     const PUBLIC_DATA_ID = window.AppConfig.PUBLIC_DATA_ID; 
@@ -61,13 +57,11 @@
 
     // --- NUEVO MOTOR DE LECTURA (LISTENER DOBLE) ---
     function startMainInventarioListener(callback) {
-        // Limpiar listeners anteriores
         _listenersUnsubscribes.forEach(unsub => {
             try { unsub(); } catch(e) { console.warn("Error limpiando listener:", e); }
         });
         _listenersUnsubscribes = [];
 
-        // Función interna de fusión y renderizado
         const combineAndNotify = () => {
             _inventarioCache = [];
             const allIds = new Set([...Object.keys(_masterCatalogCache), ...Object.keys(_userStockCache)]);
@@ -77,14 +71,12 @@
                 const stockData = _userStockCache[id];
                 
                 if (master) {
-                    // Producto existe en maestro -> Usamos definición maestra + stock privado
                     _inventarioCache.push({
                         ...master, 
                         cantidadUnidades: stockData ? (stockData.cantidadUnidades || 0) : 0,
-                        id: id // Asegurar ID
+                        id: id 
                     });
                 } else if (stockData) {
-                    // Producto existe SOLO en privado (Legacy/Huerfano) -> Lo mostramos tal cual
                     _inventarioCache.push({ ...stockData, id: id });
                 }
             });
@@ -96,7 +88,6 @@
             }
         };
 
-        // 1. LISTENER MAESTRO (Público)
         const masterRef = _collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/productos`);
         const unsubMaster = _onSnapshot(masterRef, (snapshot) => {
             _masterCatalogCache = {};
@@ -105,7 +96,6 @@
         }, (error) => handleListenerError(error, "Maestro"));
         _listenersUnsubscribes.push(unsubMaster);
 
-        // 2. LISTENER PRIVADO (Stock)
         const stockRef = _collection(_db, `artifacts/${_appId}/users/${_userId}/inventario`);
         const unsubStock = _onSnapshot(stockRef, (snapshot) => {
             _userStockCache = {};
@@ -114,7 +104,6 @@
         }, (error) => handleListenerError(error, "Stock Privado"));
         _listenersUnsubscribes.push(unsubStock);
 
-        // Registramos en activeListeners global para limpieza al salir del módulo
         _activeListeners.push(..._listenersUnsubscribes);
     }
 
@@ -125,54 +114,73 @@
         }
         console.error(`Error en listener (${source}):`, error);
         if (error.code !== 'cancelled') { 
-            // Solo mostramos alerta si falla el Stock, el maestro puede fallar si no existe la colección aún
             if(source === "Stock Privado") _showModal('Error de Conexión', 'No se pudo actualizar el inventario.');
         }
     }
 
-    // --- FUNCIÓN GLOBAL DE ORDENAMIENTO (CORREGIDA: LEE DE PÚBLICO) ---
-    // Esta función se define en window para que Ventas, Catálogo y Data la usen.
+    // --- FUNCIÓN GLOBAL DE ORDENAMIENTO (CORREGIDA Y ROBUSTA) ---
     window.getGlobalProductSortFunction = async () => {
-        // 1. Cargar Preferencias y Datos Maestros si no están en caché
-        if (!_globalSortCache.preference || !_globalSortCache.rubros) {
+        // Si la caché está vacía o invalidada, cargar datos PÚBLICOS
+        if (!_globalSortCache || !_globalSortCache.marcas) {
             try {
-                // CORRECCIÓN CRÍTICA: Leer configuración desde la ruta PÚBLICA
+                // Reinicializar contenedor
+                _globalSortCache = { preference: null, rubros: {}, segmentos: {}, marcas: {} };
+                
                 const publicBasePath = `artifacts/${PUBLIC_DATA_ID}/public/data`;
 
-                // Cargar preferencia de campos (esto puede seguir siendo config de usuario o global, usaremos usuario por ahora para la preferencia de columnas, pero datos maestros globales)
+                // Preferencia de columnas (puede seguir siendo usuario o default)
                 const prefRef = _doc(_db, `artifacts/${_appId}/users/${_userId}/config/productSortOrder`);
                 const prefSnap = await _getDoc(prefRef);
                 _globalSortCache.preference = prefSnap.exists() ? prefSnap.data().order : ['segmento', 'marca', 'presentacion'];
 
-                // Cargar datos jerárquicos desde PÚBLICO
+                // Cargar datos jerárquicos PÚBLICOS
                 const [rSnap, sSnap, mSnap] = await Promise.all([
                     _getDocs(_collection(_db, `${publicBasePath}/rubros`)),
                     _getDocs(_collection(_db, `${publicBasePath}/segmentos`)),
                     _getDocs(_collection(_db, `${publicBasePath}/marcas`))
                 ]);
 
-                _globalSortCache.rubros = {};
-                rSnap.forEach(d => _globalSortCache.rubros[d.data().name] = d.data().orden ?? 9999);
+                // Normalizar keys a mayúsculas y sin espacios para evitar errores de coincidencia
+                const normalizeKey = (str) => (str || '').trim().toUpperCase();
 
-                _globalSortCache.segmentos = {};
-                sSnap.forEach(d => _globalSortCache.segmentos[d.data().name] = { 
-                    orden: d.data().orden ?? 9999, 
-                    marcaOrder: d.data().marcaOrder || [] 
+                rSnap.forEach(d => {
+                    const data = d.data();
+                    if(data.name) _globalSortCache.rubros[normalizeKey(data.name)] = data.orden ?? 9999;
                 });
 
-                _globalSortCache.marcas = {};
-                mSnap.forEach(d => _globalSortCache.marcas[d.data().name] = { 
-                    productOrder: d.data().productOrder || [] 
+                sSnap.forEach(d => {
+                    const data = d.data();
+                    if(data.name) {
+                        _globalSortCache.segmentos[normalizeKey(data.name)] = { 
+                            orden: data.orden ?? 9999, 
+                            marcaOrder: (data.marcaOrder || []).map(m => normalizeKey(m)) // Normalizar lista interna también
+                        };
+                    }
                 });
+
+                mSnap.forEach(d => {
+                    const data = d.data();
+                    if(data.name) {
+                        _globalSortCache.marcas[normalizeKey(data.name)] = { 
+                            productOrder: data.productOrder || [] 
+                        };
+                    }
+                });
+                
+                console.log(`Ordenando: Cargados ${Object.keys(_globalSortCache.segmentos).length} segmentos y ${Object.keys(_globalSortCache.marcas).length} marcas.`);
 
             } catch (e) { 
-                console.warn("Error cargando datos de ordenamiento (Intentando defaults):", e);
-                _globalSortCache.preference = ['segmento', 'marca', 'presentacion'];
-                _globalSortCache.rubros = {}; _globalSortCache.segmentos = {}; _globalSortCache.marcas = {};
+                console.warn("Error cargando datos de ordenamiento:", e);
+                _globalSortCache = {
+                    preference: ['segmento', 'marca', 'presentacion'],
+                    rubros: {}, segmentos: {}, marcas: {}
+                };
             }
         }
 
-        // 2. Retornar función comparadora
+        const normalizeKey = (str) => (str || '').trim().toUpperCase();
+
+        // Retornar función comparadora
         return (a, b) => {
             const safeA = a || {}; const safeB = b || {};
             
@@ -180,38 +188,52 @@
                 let res = 0;
                 
                 if (key === 'rubro') {
-                    const oA = _globalSortCache.rubros[safeA.rubro] ?? 9999;
-                    const oB = _globalSortCache.rubros[safeB.rubro] ?? 9999;
+                    const keyA = normalizeKey(safeA.rubro);
+                    const keyB = normalizeKey(safeB.rubro);
+                    const oA = _globalSortCache.rubros[keyA] ?? 9999;
+                    const oB = _globalSortCache.rubros[keyB] ?? 9999;
                     res = oA - oB;
                     if (res === 0) res = (safeA.rubro || '').localeCompare(safeB.rubro || '');
                 } 
                 else if (key === 'segmento') {
-                    const sA = _globalSortCache.segmentos[safeA.segmento];
-                    const sB = _globalSortCache.segmentos[safeB.segmento];
+                    const keyA = normalizeKey(safeA.segmento);
+                    const keyB = normalizeKey(safeB.segmento);
+                    const sA = _globalSortCache.segmentos[keyA];
+                    const sB = _globalSortCache.segmentos[keyB];
                     res = (sA?.orden ?? 9999) - (sB?.orden ?? 9999);
                     if (res === 0) res = (safeA.segmento || '').localeCompare(safeB.segmento || '');
                 } 
                 else if (key === 'marca') {
                     // Ordenar Marcas dentro de su Segmento
-                    if (safeA.segmento === safeB.segmento) {
-                        const segData = _globalSortCache.segmentos[safeA.segmento];
+                    // Solo si estamos en el mismo segmento tiene sentido mirar el orden manual de marcas
+                    if (normalizeKey(safeA.segmento) === normalizeKey(safeB.segmento)) {
+                        const segKey = normalizeKey(safeA.segmento);
+                        const segData = _globalSortCache.segmentos[segKey];
+                        
                         if (segData && segData.marcaOrder) {
-                            const idxA = segData.marcaOrder.indexOf(safeA.marca);
-                            const idxB = segData.marcaOrder.indexOf(safeB.marca);
+                            const mKeyA = normalizeKey(safeA.marca);
+                            const mKeyB = normalizeKey(safeB.marca);
+                            
+                            const idxA = segData.marcaOrder.indexOf(mKeyA);
+                            const idxB = segData.marcaOrder.indexOf(mKeyB);
+                            
                             if (idxA !== -1 && idxB !== -1) res = idxA - idxB;
-                            else if (idxA !== -1) res = -1;
-                            else if (idxB !== -1) res = 1;
+                            else if (idxA !== -1) res = -1; // A está en la lista, B no -> A primero
+                            else if (idxB !== -1) res = 1;  // B está en la lista, A no -> B primero
                         }
                     }
                     if (res === 0) res = (safeA.marca || '').localeCompare(safeB.marca || '');
                 } 
                 else if (key === 'presentacion') {
-                    // Ordenar Productos dentro de su Marca
-                    if (safeA.marca === safeB.marca) {
-                        const marcaData = _globalSortCache.marcas[safeA.marca];
+                    // Ordenar Productos dentro de su Marca (por ID)
+                    if (normalizeKey(safeA.marca) === normalizeKey(safeB.marca)) {
+                        const marcaKey = normalizeKey(safeA.marca);
+                        const marcaData = _globalSortCache.marcas[marcaKey];
+                        
                         if (marcaData && marcaData.productOrder) {
                             const idxA = marcaData.productOrder.indexOf(safeA.id);
                             const idxB = marcaData.productOrder.indexOf(safeB.id);
+                            
                             if (idxA !== -1 && idxB !== -1) res = idxA - idxB;
                             else if (idxA !== -1) res = -1;
                             else if (idxB !== -1) res = 1;
@@ -227,14 +249,13 @@
     };
 
     function invalidateSegmentOrderCache() {
-        // Limpiar caché local y forzar recarga en otros módulos
-        _globalSortCache = { preference: null, rubros: null, segmentos: null, marcas: null };
+        // Limpiar caché local COMPLETA para forzar recarga
+        _globalSortCache = null; 
         if (window.catalogoModule?.invalidateCache) window.catalogoModule.invalidateCache();
         if (window.ventasModule?.invalidateCache) window.ventasModule.invalidateCache();
         console.log("Cachés de ordenamiento invalidadas (Inventario y Global).");
     }
 
-    // --- NUEVO: Función para poblar Rubros desde la caché real ---
     function populateRubrosFromCache(selectId) {
         const select = document.getElementById(selectId);
         if (!select) return;
@@ -242,16 +263,12 @@
         const currentVal = select.value;
         const rubros = new Set();
         
-        // Extraer rubros únicos directamente de los productos cargados
         _inventarioCache.forEach(p => {
              if (p.rubro) rubros.add(p.rubro);
         });
         
         const sorted = [...rubros].sort();
-        
-        // Reconstruir opciones manteniendo "Todos"
         select.innerHTML = '<option value="">Todos</option>';
-        
         sorted.forEach(r => {
             const opt = document.createElement('option');
             opt.value = r;
@@ -260,7 +277,6 @@
             select.appendChild(opt);
         });
         
-        // Si el valor seleccionado ya no existe (raro), resetear
         if (currentVal && !rubros.has(currentVal)) {
             select.value = "";
         }
@@ -269,7 +285,6 @@
     window.showInventarioSubMenu = function() {
         if (_floatingControls) _floatingControls.classList.add('hidden');
         
-        // Limpieza de listeners al volver al menú principal del módulo
         _listenersUnsubscribes.forEach(u => u()); 
         _listenersUnsubscribes = [];
 
@@ -303,7 +318,6 @@
         }
         document.getElementById('recargaProductosBtn').addEventListener('click', showRecargaProductosView);
         document.getElementById('backToMenuBtn').addEventListener('click', () => {
-             // Limpiar listeners al salir totalmente
             _listenersUnsubscribes.forEach(u => u());
             _showMainMenu();
         });
@@ -327,7 +341,6 @@
         let isFirstLoad = true;
         const smartListenerCallback = async () => {
             await baseRender();
-            // CORRECCIÓN: Poblar filtro de Rubros basado en los productos cargados
             populateRubrosFromCache('modify-filter-rubro');
             
             if (isFirstLoad && _inventarioCache.length > 0) {
@@ -954,7 +967,6 @@
         let isFirstLoad = true;
         const smartListenerCallback = async () => {
             await baseRender();
-            // CORRECCIÓN: Poblar filtro de Rubros basado en los productos cargados
             populateRubrosFromCache('recarga-filter-rubro');
             
             if (isFirstLoad && _inventarioCache.length > 0) {
