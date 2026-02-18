@@ -130,17 +130,16 @@
     }
 
     // --- FUNCIÓN GLOBAL DE ORDENAMIENTO (Propagada a toda la App) ---
-    // Esta función se define en window para que Ventas, Catálogo y Data la usen.
     window.getGlobalProductSortFunction = async () => {
         // 1. Cargar Preferencias y Datos Maestros si no están en caché
         if (!_globalSortCache.preference || !_globalSortCache.rubros) {
             try {
-                // Cargar preferencia de campos (ej: primero Segmento, luego Marca...)
+                // Cargar preferencia de campos
                 const prefRef = _doc(_db, `artifacts/${_appId}/users/${_userId}/config/productSortOrder`);
                 const prefSnap = await _getDoc(prefRef);
                 _globalSortCache.preference = prefSnap.exists() ? prefSnap.data().order : ['segmento', 'marca', 'presentacion'];
 
-                // Cargar datos jerárquicos para saber el orden específico
+                // Cargar datos jerárquicos
                 const [rSnap, sSnap, mSnap] = await Promise.all([
                     _getDocs(_collection(_db, `artifacts/${_appId}/users/${_userId}/rubros`)),
                     _getDocs(_collection(_db, `artifacts/${_appId}/users/${_userId}/segmentos`)),
@@ -153,17 +152,16 @@
                 _globalSortCache.segmentos = {};
                 sSnap.forEach(d => _globalSortCache.segmentos[d.data().name] = { 
                     orden: d.data().orden ?? 9999, 
-                    marcaOrder: d.data().marcaOrder || [] // Array de nombres de marcas ordenadas
+                    marcaOrder: d.data().marcaOrder || [] 
                 });
 
                 _globalSortCache.marcas = {};
                 mSnap.forEach(d => _globalSortCache.marcas[d.data().name] = { 
-                    productOrder: d.data().productOrder || [] // Array de IDs de productos ordenados
+                    productOrder: d.data().productOrder || [] 
                 });
 
             } catch (e) { 
                 console.warn("Error cargando datos de ordenamiento:", e);
-                // Fallback básico
                 _globalSortCache.preference = ['segmento', 'marca', 'presentacion'];
                 _globalSortCache.rubros = {}; _globalSortCache.segmentos = {}; _globalSortCache.marcas = {};
             }
@@ -185,29 +183,25 @@
                 else if (key === 'segmento') {
                     const sA = _globalSortCache.segmentos[safeA.segmento];
                     const sB = _globalSortCache.segmentos[safeB.segmento];
-                    // Ordenar por índice numérico del segmento
                     res = (sA?.orden ?? 9999) - (sB?.orden ?? 9999);
                     if (res === 0) res = (safeA.segmento || '').localeCompare(safeB.segmento || '');
                 } 
                 else if (key === 'marca') {
-                    // Ordenar Marcas dentro de su Segmento (si comparten segmento)
+                    // Ordenar Marcas dentro de su Segmento
                     if (safeA.segmento === safeB.segmento) {
                         const segData = _globalSortCache.segmentos[safeA.segmento];
                         if (segData && segData.marcaOrder) {
                             const idxA = segData.marcaOrder.indexOf(safeA.marca);
                             const idxB = segData.marcaOrder.indexOf(safeB.marca);
-                            // Si ambos están en la lista personalizada, usar índice
                             if (idxA !== -1 && idxB !== -1) res = idxA - idxB;
-                            // Si solo A está, va antes
                             else if (idxA !== -1) res = -1;
-                            // Si solo B está, va antes
                             else if (idxB !== -1) res = 1;
                         }
                     }
                     if (res === 0) res = (safeA.marca || '').localeCompare(safeB.marca || '');
                 } 
                 else if (key === 'presentacion') {
-                    // Ordenar Productos dentro de su Marca (si comparten marca)
+                    // Ordenar Productos dentro de su Marca
                     if (safeA.marca === safeB.marca) {
                         const marcaData = _globalSortCache.marcas[safeA.marca];
                         if (marcaData && marcaData.productOrder) {
@@ -223,7 +217,7 @@
 
                 if (res !== 0) return res;
             }
-            return 0; // Son iguales
+            return 0;
         };
     };
 
@@ -239,25 +233,17 @@
     function populateRubrosFromCache(selectId) {
         const select = document.getElementById(selectId);
         if (!select) return;
-        
         const currentVal = select.value;
         const rubros = new Set();
-        
-        // Extraer rubros únicos directamente de los productos cargados
-        _inventarioCache.forEach(p => {
-             if (p.rubro) rubros.add(p.rubro);
-        });
-        
+        _inventarioCache.forEach(p => { if (p.rubro) rubros.add(p.rubro); });
         const sorted = [...rubros].sort();
         select.innerHTML = '<option value="">Todos</option>';
-        
         sorted.forEach(r => {
             const opt = document.createElement('option');
             opt.value = r; opt.textContent = r;
             if (r === currentVal) opt.selected = true;
             select.appendChild(opt);
         });
-        
         if (currentVal && !rubros.has(currentVal)) select.value = "";
     }
 
@@ -274,7 +260,7 @@
                             <button id="verModificarBtn" class="w-full px-6 py-3 bg-blue-500 text-white font-semibold rounded-lg shadow-md hover:bg-blue-600">Ver Productos / ${isAdmin ? 'Modificar Def.' : 'Consultar Stock'}</button>
                             ${isAdmin ? `<button id="agregarProductoBtn" class="w-full px-6 py-3 bg-blue-500 text-white font-semibold rounded-lg shadow-md hover:bg-blue-600">Agregar Producto</button>` : ''}
                             <button id="recargaProductosBtn" class="w-full px-6 py-3 bg-teal-500 text-white font-semibold rounded-lg shadow-md hover:bg-teal-600">Recarga de Productos</button>
-                            ${isAdmin ? `<button id="ordenarSegmentosBtn" class="w-full px-6 py-3 bg-purple-500 text-white font-semibold rounded-lg shadow-md hover:bg-purple-600">Ordenar Segmentos y Marcas</button>` : ''}
+                            ${isAdmin ? `<button id="ordenarSegmentosBtn" class="w-full px-6 py-3 bg-purple-500 text-white font-semibold rounded-lg shadow-md hover:bg-purple-600">Ordenar Segmentos, Marcas y Presentaciones</button>` : ''}
                             ${isAdmin ? `<button id="modificarDatosBtn" class="w-full px-6 py-3 bg-yellow-500 text-gray-800 font-semibold rounded-lg shadow-md hover:bg-yellow-600">Modificar Datos Maestros</button>` : ''}
                             <button id="backToMenuBtn" class="w-full px-6 py-3 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500">Volver al Menú Principal</button>
                         </div>
@@ -295,7 +281,6 @@
     async function showModifyDeleteView() {
          if (_floatingControls) _floatingControls.classList.add('hidden'); 
          const isAdmin = _userRole === 'admin';
-        
         _mainContent.innerHTML = `<div class="p-4 pt-8"> <div class="container mx-auto"> <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl"> <h2 class="text-2xl font-bold mb-6 text-center">Ver Productos / ${isAdmin?'Modificar Def.':'Consultar Stock'}</h2> ${getFiltrosHTML('modify')} <div id="productosListContainer" class="overflow-x-auto max-h-96 border rounded-lg"> <p class="text-gray-500 text-center p-4">Cargando...</p> </div> <div class="mt-6 flex flex-col sm:flex-row gap-4"> <button id="backToInventarioBtn" class="w-full px-6 py-3 bg-gray-400 text-white rounded-lg shadow-md hover:bg-gray-500">Volver</button> ${isAdmin?`<button id="deleteAllProductosBtn" class="w-full px-6 py-3 bg-red-600 text-white rounded-lg shadow-md hover:bg-red-700">Eliminar Todos</button>`:''} </div> </div> </div> </div>`;
 
         document.getElementById('backToInventarioBtn').addEventListener('click', showInventarioSubMenu);
@@ -310,7 +295,7 @@
         let isFirstLoad = true;
         const smartListenerCallback = async () => {
             await baseRender();
-            populateRubrosFromCache('modify-filter-rubro'); // Poblar filtro
+            populateRubrosFromCache('modify-filter-rubro'); 
             if (isFirstLoad && _inventarioCache.length > 0) {
                 updateDependentDropdowns('init');
                 await baseRender();
@@ -400,7 +385,10 @@
         let productosFiltrados = [..._inventarioCache];
         productosFiltrados = productosFiltrados.filter(p => {
             const searchTermLower = (_lastFilters.searchTerm || '').toLowerCase();
-            const textMatch = !searchTermLower || (p.presentacion && p.presentacion.toLowerCase().includes(searchTermLower)) || (p.marca && p.marca.toLowerCase().includes(searchTermLower)) || (p.segmento && p.segmento.toLowerCase().includes(searchTermLower));
+            const textMatch = !searchTermLower ||
+                (p.presentacion && p.presentacion.toLowerCase().includes(searchTermLower)) ||
+                (p.marca && p.marca.toLowerCase().includes(searchTermLower)) ||
+                (p.segmento && p.segmento.toLowerCase().includes(searchTermLower));
             const rubroMatch = !_lastFilters.rubro || p.rubro === _lastFilters.rubro;
             const segmentoMatch = !_lastFilters.segmento || p.segmento === _lastFilters.segmento;
             const marcaMatch = !_lastFilters.marca || p.marca === _lastFilters.marca;
@@ -462,7 +450,6 @@
         await Promise.all([
             populateRubrosFromCache('rubro'), 
             populateRubrosFromCache('segmento'),
-            // Para "Agregar Producto", TAMBIÉN necesitamos las colecciones reales para que el Admin seleccione
             _populateDropdown(`artifacts/${_appId}/users/${_userId}/rubros`, 'rubro', 'Rubro'),
             _populateDropdown(`artifacts/${_appId}/users/${_userId}/segmentos`, 'segmento', 'Segmento'),
             _populateDropdown(`artifacts/${_appId}/users/${_userId}/marcas`, 'marca', 'Marca')
@@ -617,9 +604,11 @@
         _mainContent.innerHTML = `<div class="p-4 pt-8"> <div class="container mx-auto max-w-2xl"> <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl text-center"> <h2 class="text-2xl font-bold mb-6">Editar Producto</h2> <form id="editProductoForm" class="space-y-4 text-left"> <div class="grid grid-cols-1 md:grid-cols-2 gap-4"> <div> <label for="rubro">Rubro:</label> <div class="flex items-center space-x-2"> <select id="rubro" class="w-full px-4 py-2 border rounded-lg" required></select> <button type="button" onclick="window.inventarioModule.showAddCategoryModal('rubros','Rubro')" class="px-3 py-2 bg-blue-500 text-white rounded-lg text-xs hover:bg-blue-600">+</button> </div> </div> <div> <label for="segmento">Segmento:</label> <div class="flex items-center space-x-2"> <select id="segmento" class="w-full px-4 py-2 border rounded-lg" required></select> <button type="button" onclick="window.inventarioModule.showAddCategoryModal('segmentos','Segmento')" class="px-3 py-2 bg-blue-500 text-white rounded-lg text-xs hover:bg-blue-600">+</button> </div> </div> <div> <label for="marca">Marca:</label> <div class="flex items-center space-x-2"> <select id="marca" class="w-full px-4 py-2 border rounded-lg" required></select> <button type="button" onclick="window.inventarioModule.showAddCategoryModal('marcas','Marca')" class="px-3 py-2 bg-blue-500 text-white rounded-lg text-xs hover:bg-blue-600">+</button> </div> </div> <div> <label for="presentacion">Presentación:</label> <input type="text" id="presentacion" class="w-full px-4 py-2 border rounded-lg" required> </div> </div> <div class="border-t pt-4 mt-4"> <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4"> <div> <label class="block mb-2 font-medium">Venta por:</label> <div id="ventaPorContainer" class="flex space-x-4"> <label class="flex items-center"><input type="checkbox" id="ventaPorUnd" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> <span class="ml-2">Und.</span></label> <label class="flex items-center"><input type="checkbox" id="ventaPorPaq" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> <span class="ml-2">Paq.</span></label> <label class="flex items-center"><input type="checkbox" id="ventaPorCj" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> <span class="ml-2">Cj.</span></label> </div> </div> <div class="mt-4 md:mt-0"> <label class="flex items-center cursor-pointer"> <input type="checkbox" id="manejaVaciosCheck" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> <span class="ml-2 font-medium">Maneja Vacío</span> </label> <div id="tipoVacioContainer" class="mt-2 hidden"> <label for="tipoVacioSelect" class="block text-sm font-medium">Tipo:</label> <select id="tipoVacioSelect" class="w-full mt-1 px-2 py-1 border rounded-lg text-sm bg-gray-50"> <option value="">Seleccione...</option> <option value="1/4 - 1/3">1/4 - 1/3</option> <option value="ret 350 ml">Ret 350 ml</option> <option value="ret 1.25 Lts">Ret 1.25 Lts</option> </select> </div> </div> </div> <div id="empaquesContainer" class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4"></div> <div id="preciosContainer" class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4"></div> </div> <div class="border-t pt-4 mt-4"> <div class="grid grid-cols-1 md:grid-cols-2 gap-4"> <div> <label for="cantidadActual" class="block font-medium">Stock Actual (Und. Base):</label> <input type="number" id="cantidadActual" value="${prod.cantidadUnidades||0}" class="w-full mt-1 px-4 py-2 border rounded-lg bg-gray-100 text-gray-700" readonly title="La cantidad se modifica en 'Ajuste Masivo'"> <p class="text-xs text-gray-500 mt-1">Modificar en "Ajuste Masivo".</p> </div> <div> <label for="ivaTipo" class="block font-medium">IVA:</label> <select id="ivaTipo" class="w-full mt-1 px-4 py-2 border rounded-lg bg-white" required> <option value="16">16%</option> <option value="0">Exento 0%</option> </select> </div> </div> </div> <button type="submit" class="w-full px-6 py-3 bg-blue-500 text-white font-semibold rounded-lg shadow-md hover:bg-blue-600 transition duration-150">Guardar Cambios y Propagar</button> </form> <button id="backToModifyDeleteBtn" class="mt-4 w-full px-6 py-3 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500 transition duration-150">Volver</button> </div> </div> </div>`;
 
         await Promise.all([
-             _populateDropdown(`artifacts/${_appId}/users/${_userId}/rubros`, 'rubro', 'Rubro', prod.rubro),
-             _populateDropdown(`artifacts/${_appId}/users/${_userId}/segmentos`, 'segmento', 'Segmento', prod.segmento),
-             _populateDropdown(`artifacts/${_appId}/users/${_userId}/marcas`, 'marca', 'Marca', prod.marca)
+            populateRubrosFromCache('rubro'), 
+            populateRubrosFromCache('segmento'),
+            _populateDropdown(`artifacts/${_appId}/users/${_userId}/rubros`, 'rubro', 'Rubro', prod.rubro),
+            _populateDropdown(`artifacts/${_appId}/users/${_userId}/segmentos`, 'segmento', 'Segmento', prod.segmento),
+            _populateDropdown(`artifacts/${_appId}/users/${_userId}/marcas`, 'marca', 'Marca', prod.marca)
         ]);
 
         const ventaPorContainer=document.getElementById('ventaPorContainer');
@@ -1453,42 +1442,46 @@
             _showModal('Progreso', 'Orden guardado localmente. Propagando...');
             let propSuccess = true;
 
-            if (segOrderChanged && window.adminModule?.propagateCategoryOrderChange) {
-                try {
-                    await window.adminModule.propagateCategoryOrderChange('segmentos', orderedSegIds);
-                } catch (e) { propSuccess = false; console.error("Error propagando orden segmentos:", e); }
-            }
-
-            if (marcaOrderChanged && window.adminModule?.propagateCategoryChange) {
+            // --- UNIFIED PROPAGATION LOGIC ---
+            // If any change happened (Segment, Brand or Product order), propagate Segments and Brands to ensure consistency.
+            // Using existing propagateCategoryChange which handles 'name', 'orden', 'marcaOrder', 'productOrder' implicitly via document data.
+            
+            if ((segOrderChanged || marcaOrderChanged || productOrderChanged) && window.adminModule?.propagateCategoryChange) {
+                 
+                 // 1. Propagate Segments (Contains 'orden' and 'marcaOrder')
                  for (const segId of orderedSegIds) {
                       try {
                           const segRef=_doc(_db,`artifacts/${_appId}/users/${_userId}/segmentos`,segId);
                           const segSnap=await _getDoc(segRef); 
                           if(segSnap.exists()){
+                              // This call propagates the ENTIRE segment document (including new order) to all users
                               await window.adminModule.propagateCategoryChange('segmentos', segId, segSnap.data());
                           }
-                     } catch (e) { propSuccess=false; console.error(`Error propagando marcas:`, e); }
+                     } catch (e) { 
+                         propSuccess=false; 
+                         console.error(`Error propagando segmento ${segId}:`, e); 
+                     }
                  }
-             }
 
-             // Propagate Product Order in Marcas
-             if (productOrderChanged && window.adminModule?.propagateCategoryChange) {
-                // This might be heavy if many brands changed.
-                // We will rely on invalidate cache for local view, and propagation for others.
-                // Iterating DOM again to get IDs for propagation
+                 // 2. Propagate Brands (Contains 'productOrder')
+                 // Only need to propagate brands that were touched or existed
                  const allMarcaItems = document.querySelectorAll('.marca-container');
-                 for (const mItem of allMarcaItems) {
-                     let mId = mItem.dataset.marcaId;
-                     if (mId.startsWith('temp_')) continue; // Skip newly created ones for now or handle them better
+                 const uniqueBrandIds = new Set(Array.from(allMarcaItems).map(m => m.dataset.marcaId));
+                 
+                 for (const mId of uniqueBrandIds) {
+                     if (mId.startsWith('temp_')) continue; // Already handled by segment creation or skipped safely
                      try {
                          const mRef=_doc(_db,`artifacts/${_appId}/users/${_userId}/marcas`,mId);
                          const mSnap=await _getDoc(mRef);
                          if(mSnap.exists()) {
                              await window.adminModule.propagateCategoryChange('marcas', mId, mSnap.data());
                          }
-                     } catch(e) { propSuccess=false; console.error("Error prop product order:", e); }
+                     } catch(e) { 
+                         propSuccess=false; 
+                         console.error("Error propagando marca:", e); 
+                     }
                  }
-             }
+            }
 
             _showModal(propSuccess ? 'Éxito' : 'Advertencia', `Orden guardado.${propSuccess ? ' Propagado.' : ' Errores al propagar.'}`, showInventarioSubMenu);
         } catch (error) {
