@@ -4,7 +4,7 @@
     let _collection, _onSnapshot, _doc, _addDoc, _setDoc, _deleteDoc, _query, _where, _getDocs, _writeBatch, _getDoc;
     let _increment; 
 
-    // --- NUEVO: SISTEMA DE CACHÉ DOBLE (FASE 2) ---
+    // --- SISTEMA DE CACHÉ DOBLE (FASE 2) ---
     let _masterCatalogCache = {}; // Datos públicos (Nombre, Precio, Marca) - Key: ID
     let _userStockCache = {};     // Datos privados (Stock) - Key: ID
     // _inventarioCache ahora será el resultado de la fusión de ambos
@@ -27,7 +27,7 @@
         marcas: null
     };
 
-    // ID PÚBLICO FIJO (Para leer el maestro)
+    // ID PÚBLICO FIJO (Para leer el maestro y las configuraciones globales)
     const PUBLIC_DATA_ID = window.AppConfig.PUBLIC_DATA_ID; 
 
     window.initInventario = function(dependencies) {
@@ -130,22 +130,25 @@
         }
     }
 
-    // --- FUNCIÓN GLOBAL DE ORDENAMIENTO (Propagada a toda la App) ---
+    // --- FUNCIÓN GLOBAL DE ORDENAMIENTO (CORREGIDA: LEE DE PÚBLICO) ---
     // Esta función se define en window para que Ventas, Catálogo y Data la usen.
     window.getGlobalProductSortFunction = async () => {
         // 1. Cargar Preferencias y Datos Maestros si no están en caché
         if (!_globalSortCache.preference || !_globalSortCache.rubros) {
             try {
-                // Cargar preferencia de campos
+                // CORRECCIÓN CRÍTICA: Leer configuración desde la ruta PÚBLICA
+                const publicBasePath = `artifacts/${PUBLIC_DATA_ID}/public/data`;
+
+                // Cargar preferencia de campos (esto puede seguir siendo config de usuario o global, usaremos usuario por ahora para la preferencia de columnas, pero datos maestros globales)
                 const prefRef = _doc(_db, `artifacts/${_appId}/users/${_userId}/config/productSortOrder`);
                 const prefSnap = await _getDoc(prefRef);
                 _globalSortCache.preference = prefSnap.exists() ? prefSnap.data().order : ['segmento', 'marca', 'presentacion'];
 
-                // Cargar datos jerárquicos
+                // Cargar datos jerárquicos desde PÚBLICO
                 const [rSnap, sSnap, mSnap] = await Promise.all([
-                    _getDocs(_collection(_db, `artifacts/${_appId}/users/${_userId}/rubros`)),
-                    _getDocs(_collection(_db, `artifacts/${_appId}/users/${_userId}/segmentos`)),
-                    _getDocs(_collection(_db, `artifacts/${_appId}/users/${_userId}/marcas`))
+                    _getDocs(_collection(_db, `${publicBasePath}/rubros`)),
+                    _getDocs(_collection(_db, `${publicBasePath}/segmentos`)),
+                    _getDocs(_collection(_db, `${publicBasePath}/marcas`))
                 ]);
 
                 _globalSortCache.rubros = {};
@@ -163,7 +166,7 @@
                 });
 
             } catch (e) { 
-                console.warn("Error cargando datos de ordenamiento:", e);
+                console.warn("Error cargando datos de ordenamiento (Intentando defaults):", e);
                 _globalSortCache.preference = ['segmento', 'marca', 'presentacion'];
                 _globalSortCache.rubros = {}; _globalSortCache.segmentos = {}; _globalSortCache.marcas = {};
             }
@@ -552,13 +555,14 @@
         
         _mainContent.innerHTML = `<div class="p-4 pt-8"> <div class="container mx-auto max-w-2xl"> <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl text-center"> <h2 class="text-2xl font-bold mb-6">Agregar Nuevo Producto</h2> <form id="addProductoForm" class="space-y-4 text-left"> <div class="grid grid-cols-1 md:grid-cols-2 gap-4"> <div> <label for="rubro">Rubro:</label> <div class="flex items-center space-x-2"> <select id="rubro" class="w-full px-4 py-2 border rounded-lg" required></select> <button type="button" onclick="window.inventarioModule.showAddCategoryModal('rubros','Rubro')" class="px-3 py-2 bg-blue-500 text-white rounded-lg text-xs hover:bg-blue-600">+</button> </div> </div> <div> <label for="segmento">Segmento:</label> <div class="flex items-center space-x-2"> <select id="segmento" class="w-full px-4 py-2 border rounded-lg" required></select> <button type="button" onclick="window.inventarioModule.showAddCategoryModal('segmentos','Segmento')" class="px-3 py-2 bg-blue-500 text-white rounded-lg text-xs hover:bg-blue-600">+</button> </div> </div> <div> <label for="marca">Marca:</label> <div class="flex items-center space-x-2"> <select id="marca" class="w-full px-4 py-2 border rounded-lg" required></select> <button type="button" onclick="window.inventarioModule.showAddCategoryModal('marcas','Marca')" class="px-3 py-2 bg-blue-500 text-white rounded-lg text-xs hover:bg-blue-600">+</button> </div> </div> <div> <label for="presentacion">Presentación:</label> <input type="text" id="presentacion" class="w-full px-4 py-2 border rounded-lg" required> </div> </div> <div class="border-t pt-4 mt-4"> <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4"> <div> <label class="block mb-2 font-medium">Venta por:</label> <div id="ventaPorContainer" class="flex space-x-4"> <label class="flex items-center"><input type="checkbox" id="ventaPorUnd" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> <span class="ml-2">Und.</span></label> <label class="flex items-center"><input type="checkbox" id="ventaPorPaq" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> <span class="ml-2">Paq.</span></label> <label class="flex items-center"><input type="checkbox" id="ventaPorCj" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> <span class="ml-2">Cj.</span></label> </div> </div> <div class="mt-4 md:mt-0"> <label class="flex items-center cursor-pointer"> <input type="checkbox" id="manejaVaciosCheck" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> <span class="ml-2 font-medium">Maneja Vacío</span> </label> <div id="tipoVacioContainer" class="mt-2 hidden"> <label for="tipoVacioSelect" class="block text-sm font-medium">Tipo:</label> <select id="tipoVacioSelect" class="w-full mt-1 px-2 py-1 border rounded-lg text-sm bg-gray-50"> <option value="">Seleccione...</option> <option value="1/4 - 1/3">1/4 - 1/3</option> <option value="ret 350 ml">Ret 350 ml</option> <option value="ret 1.25 Lts">Ret 1.25 Lts</option> </select> </div> </div> </div> <div id="empaquesContainer" class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4"></div> <div id="preciosContainer" class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4"></div> </div> <div class="border-t pt-4 mt-4"> <div class="grid grid-cols-1 md:grid-cols-2 gap-4"> <div> <label for="cantidadActual" class="block font-medium">Stock Inicial (Und. Base):</label> <input type="number" id="cantidadActual" value="0" min="0" class="w-full mt-1 px-4 py-2 border rounded-lg bg-white text-gray-700"> </div> <div> <label for="ivaTipo" class="block font-medium">IVA:</label> <select id="ivaTipo" class="w-full mt-1 px-4 py-2 border rounded-lg bg-white" required> <option value="16">16%</option> <option value="0">Exento 0%</option> </select> </div> </div> </div> <button type="submit" class="w-full px-6 py-3 bg-green-500 text-white font-semibold rounded-lg shadow-md hover:bg-green-600 transition duration-150">Agregar Producto</button> </form> <button id="backToMenuBtn" class="mt-4 w-full px-6 py-3 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500 transition duration-150">Volver</button> </div> </div> </div>`;
 
+        // CORRECCIÓN: Los dropdowns de creación deben leer de la ruta PÚBLICA para que el admin use categorías globales
+        const publicPath = `artifacts/${PUBLIC_DATA_ID}/public/data`;
         await Promise.all([
             populateRubrosFromCache('rubro'), 
             populateRubrosFromCache('segmento'),
-            // Para "Agregar Producto", TAMBIÉN necesitamos las colecciones reales para que el Admin seleccione
-            _populateDropdown(`artifacts/${_appId}/users/${_userId}/rubros`, 'rubro', 'Rubro'),
-            _populateDropdown(`artifacts/${_appId}/users/${_userId}/segmentos`, 'segmento', 'Segmento'),
-            _populateDropdown(`artifacts/${_appId}/users/${_userId}/marcas`, 'marca', 'Marca')
+            _populateDropdown(`${publicPath}/rubros`, 'rubro', 'Rubro'),
+            _populateDropdown(`${publicPath}/segmentos`, 'segmento', 'Segmento'),
+            _populateDropdown(`${publicPath}/marcas`, 'marca', 'Marca')
         ]);
 
         const ventaPorContainer=document.getElementById('ventaPorContainer');
@@ -673,7 +677,9 @@
 
     async function handleDeleteDataItem(collectionName, id) {
         try {
-            await _deleteDoc(_doc(_db, `artifacts/${_appId}/users/${_userId}/${collectionName}`, id));
+            // CORRECCIÓN: Eliminar de la ruta PÚBLICA si es dato maestro
+            const publicPath = `artifacts/${PUBLIC_DATA_ID}/public/data/${collectionName}`;
+            await _deleteDoc(_doc(_db, publicPath, id));
             return true;
         } catch(e) {
             console.error("Error eliminando item de datos:", e);
@@ -723,10 +729,12 @@
         if (_userRole !== 'admin') { _showModal('Acceso Denegado', 'Solo administradores pueden editar definiciones.'); return; } const prod = _inventarioCache.find(p => p.id === productId); if (!prod) { _showModal('Error', 'Producto no encontrado en caché.'); return; } if (_floatingControls) _floatingControls.classList.add('hidden');
         _mainContent.innerHTML = `<div class="p-4 pt-8"> <div class="container mx-auto max-w-2xl"> <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl text-center"> <h2 class="text-2xl font-bold mb-6">Editar Producto</h2> <form id="editProductoForm" class="space-y-4 text-left"> <div class="grid grid-cols-1 md:grid-cols-2 gap-4"> <div> <label for="rubro">Rubro:</label> <div class="flex items-center space-x-2"> <select id="rubro" class="w-full px-4 py-2 border rounded-lg" required></select> <button type="button" onclick="window.inventarioModule.showAddCategoryModal('rubros','Rubro')" class="px-3 py-2 bg-blue-500 text-white rounded-lg text-xs hover:bg-blue-600">+</button> </div> </div> <div> <label for="segmento">Segmento:</label> <div class="flex items-center space-x-2"> <select id="segmento" class="w-full px-4 py-2 border rounded-lg" required></select> <button type="button" onclick="window.inventarioModule.showAddCategoryModal('segmentos','Segmento')" class="px-3 py-2 bg-blue-500 text-white rounded-lg text-xs hover:bg-blue-600">+</button> </div> </div> <div> <label for="marca">Marca:</label> <div class="flex items-center space-x-2"> <select id="marca" class="w-full px-4 py-2 border rounded-lg" required></select> <button type="button" onclick="window.inventarioModule.showAddCategoryModal('marcas','Marca')" class="px-3 py-2 bg-blue-500 text-white rounded-lg text-xs hover:bg-blue-600">+</button> </div> </div> <div> <label for="presentacion">Presentación:</label> <input type="text" id="presentacion" class="w-full px-4 py-2 border rounded-lg" required> </div> </div> <div class="border-t pt-4 mt-4"> <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4"> <div> <label class="block mb-2 font-medium">Venta por:</label> <div id="ventaPorContainer" class="flex space-x-4"> <label class="flex items-center"><input type="checkbox" id="ventaPorUnd" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> <span class="ml-2">Und.</span></label> <label class="flex items-center"><input type="checkbox" id="ventaPorPaq" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> <span class="ml-2">Paq.</span></label> <label class="flex items-center"><input type="checkbox" id="ventaPorCj" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> <span class="ml-2">Cj.</span></label> </div> </div> <div class="mt-4 md:mt-0"> <label class="flex items-center cursor-pointer"> <input type="checkbox" id="manejaVaciosCheck" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> <span class="ml-2 font-medium">Maneja Vacío</span> </label> <div id="tipoVacioContainer" class="mt-2 hidden"> <label for="tipoVacioSelect" class="block text-sm font-medium">Tipo:</label> <select id="tipoVacioSelect" class="w-full mt-1 px-2 py-1 border rounded-lg text-sm bg-gray-50"> <option value="">Seleccione...</option> <option value="1/4 - 1/3">1/4 - 1/3</option> <option value="ret 350 ml">Ret 350 ml</option> <option value="ret 1.25 Lts">Ret 1.25 Lts</option> </select> </div> </div> </div> <div id="empaquesContainer" class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4"></div> <div id="preciosContainer" class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4"></div> </div> <div class="border-t pt-4 mt-4"> <div class="grid grid-cols-1 md:grid-cols-2 gap-4"> <div> <label for="cantidadActual" class="block font-medium">Stock Actual (Und. Base):</label> <input type="number" id="cantidadActual" value="${prod.cantidadUnidades||0}" class="w-full mt-1 px-4 py-2 border rounded-lg bg-gray-100 text-gray-700" readonly title="La cantidad se modifica en 'Ajuste Masivo'"> <p class="text-xs text-gray-500 mt-1">Modificar en "Ajuste Masivo".</p> </div> <div> <label for="ivaTipo" class="block font-medium">IVA:</label> <select id="ivaTipo" class="w-full mt-1 px-4 py-2 border rounded-lg bg-white" required> <option value="16">16%</option> <option value="0">Exento 0%</option> </select> </div> </div> </div> <button type="submit" class="w-full px-6 py-3 bg-blue-500 text-white font-semibold rounded-lg shadow-md hover:bg-blue-600 transition duration-150">Guardar Cambios y Propagar</button> </form> <button id="backToModifyDeleteBtn" class="mt-4 w-full px-6 py-3 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500 transition duration-150">Volver</button> </div> </div> </div>`;
 
+        // CORRECCIÓN: Poblar dropdowns desde rutas PÚBLICAS
+        const publicPath = `artifacts/${PUBLIC_DATA_ID}/public/data`;
         await Promise.all([
-             _populateDropdown(`artifacts/${_appId}/users/${_userId}/rubros`, 'rubro', 'Rubro', prod.rubro),
-             _populateDropdown(`artifacts/${_appId}/users/${_userId}/segmentos`, 'segmento', 'Segmento', prod.segmento),
-             _populateDropdown(`artifacts/${_appId}/users/${_userId}/marcas`, 'marca', 'Marca', prod.marca)
+             _populateDropdown(`${publicPath}/rubros`, 'rubro', 'Rubro', prod.rubro),
+             _populateDropdown(`${publicPath}/segmentos`, 'segmento', 'Segmento', prod.segmento),
+             _populateDropdown(`${publicPath}/marcas`, 'marca', 'Marca', prod.marca)
         ]);
 
         const ventaPorContainer=document.getElementById('ventaPorContainer');
@@ -802,7 +810,6 @@
         document.getElementById('backToModifyDeleteBtn').addEventListener('click', showModifyDeleteView);
     }
 
-    // --- MODIFICADO: USA ADMIN.JS PARA PROPAGAR ---
     async function handleUpdateProducto(e, productId) {
         e.preventDefault(); if (_userRole !== 'admin') return; 
         const updatedData = getProductoDataFromForm(true); // true = isUpdate
@@ -858,8 +865,11 @@
                     if (data.marca) itemsInUse.marcas.add(data.marca);
                 });
 
+                // CORRECCIÓN: Verificar en la ruta PÚBLICA, que es donde están los maestros ahora
+                const publicPath = `artifacts/${PUBLIC_DATA_ID}/public/data`;
+
                 for (const colName of collectionsToClean) {
-                    const categorySnap = await _getDocs(_collection(_db, `artifacts/${_appId}/users/${_userId}/${colName}`));
+                    const categorySnap = await _getDocs(_collection(_db, `${publicPath}/${colName}`));
                     categorySnap.docs.forEach(doc => {
                         const name = doc.data().name;
                         totalFound++;
@@ -1190,7 +1200,9 @@
     async function getAllMarcas() {
         if (_marcasCache) return _marcasCache;
         try {
-            const marcasRef = _collection(_db, `artifacts/${_appId}/users/${_userId}/marcas`);
+            // CORRECCIÓN: Leer marcas desde la ruta PÚBLICA
+            const publicPath = `artifacts/${PUBLIC_DATA_ID}/public/data/marcas`;
+            const marcasRef = _collection(_db, publicPath);
             const snapshot = await _getDocs(marcasRef);
             // Fetch productOrder as well
             _marcasCache = snapshot.docs.map(doc => ({ id: doc.id, name: doc.data().name, productOrder: doc.data().productOrder || [] }));
@@ -1204,8 +1216,9 @@
         container.innerHTML = `<p class="text-gray-500 text-center">Cargando...</p>`;
         
         try {
-            // 1. Obtener segmentos definidos en DB (para orden y IDs persistentes)
-            const segmentosRef = _collection(_db, `artifacts/${_appId}/users/${_userId}/segmentos`);
+            // CORRECCIÓN: Leer Segmentos desde la ruta PÚBLICA
+            const publicPath = `artifacts/${PUBLIC_DATA_ID}/public/data/segmentos`;
+            const segmentosRef = _collection(_db, publicPath);
             let segSnapshot = await _getDocs(segmentosRef);
             let allSegments = segSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
@@ -1482,18 +1495,20 @@
         const segConts = document.querySelectorAll('#segmentos-marcas-sortable-list .segmento-container'); 
         if (segConts.length === 0) { _showModal('Aviso', 'No hay elementos para ordenar.'); return; }
         
-        _showModal('Progreso', 'Guardando nuevo orden...');
+        _showModal('Progreso', 'Guardando nuevo orden GLOBAL...');
         
         const batch = _writeBatch(_db);
         let segOrderChanged = false, marcaOrderChanged = false, productOrderChanged = false;
         const orderedSegIds = []; 
         const currentSegmentDocs = {}; 
         
-        // --- FIX: Map to track temp IDs to real IDs for propagation ---
         const tempToRealIdMap = {};
 
+        // CORRECCIÓN: Escribir en la ruta PÚBLICA
+        const publicPath = `artifacts/${PUBLIC_DATA_ID}/public/data`;
+
         try {
-            const segsRef = _collection(_db, `artifacts/${_appId}/users/${_userId}/segmentos`);
+            const segsRef = _collection(_db, `${publicPath}/segmentos`);
             const segsSnap = await _getDocs(segsRef);
             segsSnap.docs.forEach(doc => { currentSegmentDocs[doc.id] = doc.data(); });
         } catch (e) {
@@ -1507,15 +1522,15 @@
             
             let segRef;
             if (segId.startsWith('temp_')) {
-                segRef = _doc(_collection(_db, `artifacts/${_appId}/users/${_userId}/segmentos`));
+                segRef = _doc(_collection(_db, `${publicPath}/segmentos`));
                 const newId = segRef.id;
-                tempToRealIdMap[segId] = newId; // Track mapping
+                tempToRealIdMap[segId] = newId; 
                 segId = newId;
                 
                 batch.set(segRef, { name: segName, orden: index });
                 segOrderChanged = true;
             } else {
-                segRef = _doc(_db, `artifacts/${_appId}/users/${_userId}/segmentos`, segId);
+                segRef = _doc(_db, `${publicPath}/segmentos`, segId);
                 const currentSegData = currentSegmentDocs[segId] || {}; 
                 if (currentSegData.orden === undefined || currentSegData.orden !== index) {
                     batch.update(segRef, { orden: index });
@@ -1530,7 +1545,6 @@
             const currentMarcaOrder = currentSegmentDocs[segCont.dataset.segmentoId] ? (currentSegmentDocs[segCont.dataset.segmentoId].marcaOrder || []) : [];
 
             if (JSON.stringify(newMarcaOrder) !== JSON.stringify(currentMarcaOrder)) {
-                // Check if segment was new (using original DOM ID for check)
                 if (segCont.dataset.segmentoId.startsWith('temp_')) {
                      batch.set(segRef, { name: segName, orden: index, marcaOrder: newMarcaOrder });
                 } else {
@@ -1548,15 +1562,15 @@
                 
                 let mRef;
                 if (mId.startsWith('temp_')) {
-                    mRef = _doc(_collection(_db, `artifacts/${_appId}/users/${_userId}/marcas`));
+                    mRef = _doc(_collection(_db, `${publicPath}/marcas`));
                     const newMId = mRef.id;
-                    tempToRealIdMap[mId] = newMId; // Track mapping
+                    tempToRealIdMap[mId] = newMId; 
                     mId = newMId;
 
                     batch.set(mRef, { name: mName, productOrder: newProdOrder });
                     productOrderChanged = true;
                 } else {
-                    mRef = _doc(_db, `artifacts/${_appId}/users/${_userId}/marcas`, mId);
+                    mRef = _doc(_db, `${publicPath}/marcas`, mId);
                     batch.update(mRef, { productOrder: newProdOrder });
                     productOrderChanged = true;
                 }
@@ -1573,60 +1587,13 @@
             invalidateSegmentOrderCache(); 
             if (window.catalogoModule?.invalidateCache) window.catalogoModule.invalidateCache();
 
-            _showModal('Progreso', 'Orden guardado localmente. Propagando...');
-            let propSuccess = true;
-
-            // --- UNIFIED PROPAGATION LOGIC ---
+            _showModal('Éxito', 'Orden guardado exitosamente en el servidor PÚBLICO. Todos los usuarios verán este cambio.', showInventarioSubMenu);
             
-            if ((segOrderChanged || marcaOrderChanged || productOrderChanged) && window.adminModule?.propagateCategoryChange) {
-                 
-                 // 1. Propagate Segments
-                 for (const segId of orderedSegIds) {
-                      // Note: orderedSegIds already has real IDs because we pushed the real ID in the loop above
-                      try {
-                          const segRef=_doc(_db,`artifacts/${_appId}/users/${_userId}/segmentos`,segId);
-                          const segSnap=await _getDoc(segRef); 
-                          if(segSnap.exists()){
-                              await window.adminModule.propagateCategoryChange('segmentos', segId, segSnap.data());
-                          }
-                     } catch (e) { 
-                         propSuccess=false; 
-                         console.error(`Error propagando segmento ${segId}:`, e); 
-                     }
-                 }
-
-                 // 2. Propagate Brands
-                 const allMarcaItems = document.querySelectorAll('.marca-container');
-                 const uniqueBrandIdsToPropagate = new Set();
-
-                 for (const mItem of allMarcaItems) {
-                     const domId = mItem.dataset.marcaId;
-                     // Resolve ID using map if it was temp, otherwise use existing
-                     const realId = tempToRealIdMap[domId] || domId;
-                     uniqueBrandIdsToPropagate.add(realId);
-                 }
-                 
-                 for (const mId of uniqueBrandIdsToPropagate) {
-                     try {
-                         const mRef=_doc(_db,`artifacts/${_appId}/users/${_userId}/marcas`,mId);
-                         const mSnap=await _getDoc(mRef);
-                         if(mSnap.exists()) {
-                             await window.adminModule.propagateCategoryChange('marcas', mId, mSnap.data());
-                         }
-                     } catch(e) { 
-                         propSuccess=false; 
-                         console.error("Error propagando marca:", e); 
-                     }
-                 }
-            }
-
-            _showModal(propSuccess ? 'Éxito' : 'Advertencia', `Orden guardado.${propSuccess ? ' Propagado.' : ' Errores al propagar.'}`, showInventarioSubMenu);
         } catch (error) {
             console.error("Error al guardar orden:", error);
             _showModal('Error', `Ocurrió un error al guardar: ${error.message}`);
         }
     }
-
 
     // Exponer funciones públicas necesarias
     window.inventarioModule = {
