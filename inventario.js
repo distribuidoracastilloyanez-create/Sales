@@ -136,12 +136,12 @@
         // 1. Cargar Preferencias y Datos Maestros si no están en caché
         if (!_globalSortCache.preference || !_globalSortCache.rubros) {
             try {
-                // Cargar preferencia de campos (ej: primero Segmento, luego Marca...)
+                // Cargar preferencia de campos
                 const prefRef = _doc(_db, `artifacts/${_appId}/users/${_userId}/config/productSortOrder`);
                 const prefSnap = await _getDoc(prefRef);
                 _globalSortCache.preference = prefSnap.exists() ? prefSnap.data().order : ['segmento', 'marca', 'presentacion'];
 
-                // Cargar datos jerárquicos para saber el orden específico
+                // Cargar datos jerárquicos
                 const [rSnap, sSnap, mSnap] = await Promise.all([
                     _getDocs(_collection(_db, `artifacts/${_appId}/users/${_userId}/rubros`)),
                     _getDocs(_collection(_db, `artifacts/${_appId}/users/${_userId}/segmentos`)),
@@ -154,17 +154,16 @@
                 _globalSortCache.segmentos = {};
                 sSnap.forEach(d => _globalSortCache.segmentos[d.data().name] = { 
                     orden: d.data().orden ?? 9999, 
-                    marcaOrder: d.data().marcaOrder || [] // Array de nombres de marcas ordenadas
+                    marcaOrder: d.data().marcaOrder || [] 
                 });
 
                 _globalSortCache.marcas = {};
                 mSnap.forEach(d => _globalSortCache.marcas[d.data().name] = { 
-                    productOrder: d.data().productOrder || [] // Array de IDs de productos ordenados
+                    productOrder: d.data().productOrder || [] 
                 });
 
             } catch (e) { 
                 console.warn("Error cargando datos de ordenamiento:", e);
-                // Fallback básico
                 _globalSortCache.preference = ['segmento', 'marca', 'presentacion'];
                 _globalSortCache.rubros = {}; _globalSortCache.segmentos = {}; _globalSortCache.marcas = {};
             }
@@ -186,29 +185,25 @@
                 else if (key === 'segmento') {
                     const sA = _globalSortCache.segmentos[safeA.segmento];
                     const sB = _globalSortCache.segmentos[safeB.segmento];
-                    // Ordenar por índice numérico del segmento
                     res = (sA?.orden ?? 9999) - (sB?.orden ?? 9999);
                     if (res === 0) res = (safeA.segmento || '').localeCompare(safeB.segmento || '');
                 } 
                 else if (key === 'marca') {
-                    // Ordenar Marcas dentro de su Segmento (si comparten segmento)
+                    // Ordenar Marcas dentro de su Segmento
                     if (safeA.segmento === safeB.segmento) {
                         const segData = _globalSortCache.segmentos[safeA.segmento];
                         if (segData && segData.marcaOrder) {
                             const idxA = segData.marcaOrder.indexOf(safeA.marca);
                             const idxB = segData.marcaOrder.indexOf(safeB.marca);
-                            // Si ambos están en la lista personalizada, usar índice
                             if (idxA !== -1 && idxB !== -1) res = idxA - idxB;
-                            // Si solo A está, va antes
                             else if (idxA !== -1) res = -1;
-                            // Si solo B está, va antes
                             else if (idxB !== -1) res = 1;
                         }
                     }
                     if (res === 0) res = (safeA.marca || '').localeCompare(safeB.marca || '');
                 } 
                 else if (key === 'presentacion') {
-                    // Ordenar Productos dentro de su Marca (si comparten marca)
+                    // Ordenar Productos dentro de su Marca
                     if (safeA.marca === safeB.marca) {
                         const marcaData = _globalSortCache.marcas[safeA.marca];
                         if (marcaData && marcaData.productOrder) {
@@ -224,7 +219,7 @@
 
                 if (res !== 0) return res;
             }
-            return 0; // Son iguales
+            return 0;
         };
     };
 
@@ -1493,7 +1488,9 @@
         let segOrderChanged = false, marcaOrderChanged = false, productOrderChanged = false;
         const orderedSegIds = []; 
         const currentSegmentDocs = {}; 
-        const marcaUpdates = new Map(); // Store updates for marcas to avoid duplicates
+        
+        // --- FIX: Map to track temp IDs to real IDs for propagation ---
+        const tempToRealIdMap = {};
 
         try {
             const segsRef = _collection(_db, `artifacts/${_appId}/users/${_userId}/segmentos`);
@@ -1511,7 +1508,10 @@
             let segRef;
             if (segId.startsWith('temp_')) {
                 segRef = _doc(_collection(_db, `artifacts/${_appId}/users/${_userId}/segmentos`));
-                segId = segRef.id;
+                const newId = segRef.id;
+                tempToRealIdMap[segId] = newId; // Track mapping
+                segId = newId;
+                
                 batch.set(segRef, { name: segName, orden: index });
                 segOrderChanged = true;
             } else {
@@ -1527,9 +1527,10 @@
             // 2. Order Brands within Segment
             const marcaItems = segCont.querySelectorAll('.marcas-sortable-list > .marca-container');
             const newMarcaOrder = Array.from(marcaItems).map(item => item.dataset.marcaName);
-            const currentMarcaOrder = currentSegmentDocs[segId] ? (currentSegmentDocs[segId].marcaOrder || []) : [];
+            const currentMarcaOrder = currentSegmentDocs[segCont.dataset.segmentoId] ? (currentSegmentDocs[segCont.dataset.segmentoId].marcaOrder || []) : [];
 
             if (JSON.stringify(newMarcaOrder) !== JSON.stringify(currentMarcaOrder)) {
+                // Check if segment was new (using original DOM ID for check)
                 if (segCont.dataset.segmentoId.startsWith('temp_')) {
                      batch.set(segRef, { name: segName, orden: index, marcaOrder: newMarcaOrder });
                 } else {
@@ -1540,21 +1541,20 @@
 
             // 3. Order Products within Brands
             marcaItems.forEach(mItem => {
-                const mId = mItem.dataset.marcaId;
+                let mId = mItem.dataset.marcaId;
                 const mName = mItem.dataset.marcaName;
                 const prodItems = mItem.querySelectorAll('.productos-sortable-list .producto-item');
                 const newProdOrder = Array.from(prodItems).map(pi => pi.dataset.productId);
                 
-                // For existing brands, we don't have the old list in memory easily to compare, 
-                // but updating it is safe.
-                // If brand is new (temp_), create doc.
                 let mRef;
                 if (mId.startsWith('temp_')) {
                     mRef = _doc(_collection(_db, `artifacts/${_appId}/users/${_userId}/marcas`));
+                    const newMId = mRef.id;
+                    tempToRealIdMap[mId] = newMId; // Track mapping
+                    mId = newMId;
+
                     batch.set(mRef, { name: mName, productOrder: newProdOrder });
                     productOrderChanged = true;
-                    // Note: If we create a new brand doc, we can't update it again in same batch easily if logic was complex,
-                    // but here we just set it once.
                 } else {
                     mRef = _doc(_db, `artifacts/${_appId}/users/${_userId}/marcas`, mId);
                     batch.update(mRef, { productOrder: newProdOrder });
@@ -1571,25 +1571,22 @@
         try {
             await batch.commit(); 
             invalidateSegmentOrderCache(); 
-            // Also invalidate global sort cache if products were reordered
             if (window.catalogoModule?.invalidateCache) window.catalogoModule.invalidateCache();
 
             _showModal('Progreso', 'Orden guardado localmente. Propagando...');
             let propSuccess = true;
 
             // --- UNIFIED PROPAGATION LOGIC ---
-            // If any change happened (Segment, Brand or Product order), propagate Segments and Brands to ensure consistency.
-            // Using existing propagateCategoryChange which handles 'name', 'orden', 'marcaOrder', 'productOrder' implicitly via document data.
             
             if ((segOrderChanged || marcaOrderChanged || productOrderChanged) && window.adminModule?.propagateCategoryChange) {
                  
-                 // 1. Propagate Segments (Contains 'orden' and 'marcaOrder')
+                 // 1. Propagate Segments
                  for (const segId of orderedSegIds) {
+                      // Note: orderedSegIds already has real IDs because we pushed the real ID in the loop above
                       try {
                           const segRef=_doc(_db,`artifacts/${_appId}/users/${_userId}/segmentos`,segId);
                           const segSnap=await _getDoc(segRef); 
                           if(segSnap.exists()){
-                              // This call propagates the ENTIRE segment document (including new order) to all users
                               await window.adminModule.propagateCategoryChange('segmentos', segId, segSnap.data());
                           }
                      } catch (e) { 
@@ -1598,13 +1595,18 @@
                      }
                  }
 
-                 // 2. Propagate Brands (Contains 'productOrder')
-                 // Only need to propagate brands that were touched or existed
+                 // 2. Propagate Brands
                  const allMarcaItems = document.querySelectorAll('.marca-container');
-                 const uniqueBrandIds = new Set(Array.from(allMarcaItems).map(m => m.dataset.marcaId));
+                 const uniqueBrandIdsToPropagate = new Set();
+
+                 for (const mItem of allMarcaItems) {
+                     const domId = mItem.dataset.marcaId;
+                     // Resolve ID using map if it was temp, otherwise use existing
+                     const realId = tempToRealIdMap[domId] || domId;
+                     uniqueBrandIdsToPropagate.add(realId);
+                 }
                  
-                 for (const mId of uniqueBrandIds) {
-                     if (mId.startsWith('temp_')) continue; // Already handled by segment creation or skipped safely
+                 for (const mId of uniqueBrandIdsToPropagate) {
                      try {
                          const mRef=_doc(_db,`artifacts/${_appId}/users/${_userId}/marcas`,mId);
                          const mSnap=await _getDoc(mRef);
