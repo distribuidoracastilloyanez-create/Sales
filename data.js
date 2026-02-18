@@ -9,13 +9,15 @@
     let mapInstance = null;
     let mapMarkers = new Map();
 
+    // Cachés de ordenamiento
     let _sortPreferenceCache = null;
     let _rubroOrderMapCache = null;
     let _segmentoOrderMapCache = null;
+    let _marcasOrderMapCache = null; // Agregado para consistencia con inventario.js
+
     const SORT_CONFIG_PATH = 'config/productSortOrder'; 
 
     // CONSTANTES DE RUTAS (Alineadas con clientes.js y ventas.js)
-    // CORRECCIÓN: Usar ID global desde config.js
     const PUBLIC_DATA_ID = window.AppConfig.PUBLIC_DATA_ID;
     const CLIENTES_COLLECTION_PATH = `artifacts/${PUBLIC_DATA_ID}/public/data/clientes`;
     const REPORTE_DESIGN_CONFIG_PATH = `artifacts/${PUBLIC_DATA_ID}/public/data/config/reporteCierreVentas`;
@@ -1664,30 +1666,110 @@
         document.addEventListener('click', (ev)=>{ if(!resCont.contains(ev.target)&&ev.target!==sInp) resCont.classList.add('hidden'); });
     }
 
+    // --- FUNCIÓN GLOBAL DE ORDENAMIENTO REESCRITA (VERSIÓN DATA.JS) ---
+    // Esta función lee los datos PÚBLICOS y normaliza las claves para coincidir con inventario.js
     async function getGlobalProductSortFunction() {
-        if (!_sortPreferenceCache) {
+        if (!_sortPreferenceCache || !_rubroOrderMapCache) {
             try { 
+                // 1. Preferencias (se mantiene por usuario o default)
                 const dRef=_doc(_db, `artifacts/${_appId}/users/${_userId}/${SORT_CONFIG_PATH}`); 
                 const dSnap=await _getDoc(dRef); 
                 if(dSnap.exists()&&dSnap.data().order){ 
                     _sortPreferenceCache=dSnap.data().order; 
-                    const expKeys=new Set(['rubro','segmento','marca','presentacion']); 
-                    if(_sortPreferenceCache.length!==expKeys.size||!_sortPreferenceCache.every(k=>expKeys.has(k))){_sortPreferenceCache=['segmento','marca','presentacion','rubro'];} 
-                } else {_sortPreferenceCache=['segmento','marca','presentacion','rubro'];} 
+                } else {
+                    _sortPreferenceCache=['segmento','marca','presentacion','rubro'];
+                } 
+
+                // 2. Cargar maestros desde RUTA PÚBLICA (Corrección Crítica)
+                const publicPath = `artifacts/${PUBLIC_DATA_ID}/public/data`;
+                _rubroOrderMapCache = {};
+                _segmentoOrderMapCache = {};
+                _marcasOrderMapCache = {}; // Inicializar
+
+                const [rSnap, sSnap, mSnap] = await Promise.all([
+                    _getDocs(_collection(_db, `${publicPath}/rubros`)),
+                    _getDocs(_collection(_db, `${publicPath}/segmentos`)),
+                    _getDocs(_collection(_db, `${publicPath}/marcas`))
+                ]);
+
+                const norm = (s) => (s||'').trim().toUpperCase();
+
+                rSnap.forEach(d => { const dat=d.data(); if(dat.name) _rubroOrderMapCache[norm(dat.name)] = dat.orden ?? 9999; });
+                sSnap.forEach(d => { 
+                    const dat=d.data(); 
+                    if(dat.name) _segmentoOrderMapCache[norm(dat.name)] = {
+                        orden: dat.orden ?? 9999,
+                        marcaOrder: (dat.marcaOrder || []).map(m => norm(m))
+                    };
+                });
+                mSnap.forEach(d => {
+                    const dat=d.data();
+                    if(dat.name) _marcasOrderMapCache[norm(dat.name)] = {
+                        productOrder: dat.productOrder || []
+                    };
+                });
+
+            } catch (error) { 
+                console.error("Error cargando pref orden (Data):", error); 
+                _sortPreferenceCache=['segmento','marca','presentacion','rubro']; 
+                // Fallback objects
+                _rubroOrderMapCache={}; _segmentoOrderMapCache={}; _marcasOrderMapCache={};
             }
-            catch (error) { console.error("Error cargando pref orden:", error); _sortPreferenceCache=['segmento','marca','presentacion','rubro']; }
         }
-        if (!_rubroOrderMapCache) { _rubroOrderMapCache={}; try { const rRef=_collection(_db, `artifacts/${_appId}/users/${_userId}/rubros`); const snap=await _getDocs(rRef); snap.docs.forEach(d=>{const data=d.data(); _rubroOrderMapCache[data.name]=data.orden??9999;}); } catch (e) { console.warn("No se pudo obtener orden rubros.", e); } }
-        if (!_segmentoOrderMapCache) { _segmentoOrderMapCache={}; try { const sRef=_collection(_db, `artifacts/${_appId}/users/${_userId}/segmentos`); const snap=await _getDocs(sRef); snap.docs.forEach(d=>{const data=d.data(); _segmentoOrderMapCache[data.name]=data.orden??9999;}); } catch (e) { console.warn("No se pudo obtener orden segmentos.", e); } }
+
+        const norm = (s) => (s||'').trim().toUpperCase();
+
         return (a, b) => {
-            for (const key of _sortPreferenceCache) { let valA, valB, compRes = 0;
-                switch (key) {
-                    case 'rubro': valA=_rubroOrderMapCache[a.rubro]??9999; valB=_rubroOrderMapCache[b.rubro]??9999; compRes=valA-valB; if(compRes===0)compRes=(a.rubro||'').localeCompare(b.rubro||''); break;
-                    case 'segmento': valA=_segmentoOrderMapCache[a.segmento]??9999; valB=_segmentoOrderMapCache[b.segmento]??9999; compRes=valA-valB; if(compRes===0)compRes=(a.segmento||'').localeCompare(b.segmento||''); break;
-                    case 'marca': valA=a.marca||''; valB=b.marca||''; compRes=valA.localeCompare(valB); break;
-                    case 'presentacion': valA=a.presentacion||''; valB=b.presentacion||''; compRes=valA.localeCompare(valB); break;
-                } if (compRes !== 0) return compRes;
-            } return 0;
+            const safeA = a || {}; const safeB = b || {};
+
+            for (const key of _sortPreferenceCache) { 
+                let res = 0;
+                if (key === 'rubro') {
+                    const kA = norm(safeA.rubro); const kB = norm(safeB.rubro);
+                    const oA = _rubroOrderMapCache[kA] ?? 9999; 
+                    const oB = _rubroOrderMapCache[kB] ?? 9999; 
+                    res = oA - oB; 
+                    if (res === 0) res = kA.localeCompare(kB); 
+                }
+                else if (key === 'segmento') { 
+                    const kA = norm(safeA.segmento); const kB = norm(safeB.segmento);
+                    const sA = _segmentoOrderMapCache[kA];
+                    const sB = _segmentoOrderMapCache[kB];
+                    res = (sA?.orden ?? 9999) - (sB?.orden ?? 9999); 
+                    if (res === 0) res = kA.localeCompare(kB); 
+                }
+                else if (key === 'marca') { 
+                    // Ordenar Marcas dentro de su Segmento
+                    if (norm(safeA.segmento) === norm(safeB.segmento)) {
+                        const segData = _segmentoOrderMapCache[norm(safeA.segmento)];
+                        if (segData && segData.marcaOrder) {
+                            const iA = segData.marcaOrder.indexOf(norm(safeA.marca));
+                            const iB = segData.marcaOrder.indexOf(norm(safeB.marca));
+                            if (iA !== -1 && iB !== -1) res = iA - iB;
+                            else if (iA !== -1) res = -1;
+                            else if (iB !== -1) res = 1;
+                        }
+                    }
+                    if (res === 0) res = (safeA.marca||'').localeCompare(safeB.marca||''); 
+                }
+                else if (key === 'presentacion') { 
+                    // Ordenar Productos dentro de su Marca
+                    if (norm(safeA.marca) === norm(safeB.marca)) {
+                        const mData = _marcasOrderMapCache?.[norm(safeA.marca)];
+                        if (mData && mData.productOrder) {
+                            const iA = mData.productOrder.indexOf(safeA.id);
+                            const iB = mData.productOrder.indexOf(safeB.id);
+                            if (iA !== -1 && iB !== -1) res = iA - iB;
+                            else if (iA !== -1) res = -1;
+                            else if (iB !== -1) res = 1;
+                        }
+                    }
+                    if (res === 0) res = (safeA.presentacion||'').localeCompare(safeB.presentacion||''); 
+                }
+                
+                if (res !== 0) return res;
+            } 
+            return 0;
         };
     };
 
