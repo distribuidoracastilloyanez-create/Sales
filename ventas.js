@@ -20,6 +20,9 @@
     let _tasaBs = 0;
     let _monedaActual = 'USD';
 
+    // Cache local para la preferencia de ordenamiento
+    let _localSortPreference = null;
+
     // Usaremos window.TIPOS_VACIO_GLOBAL si existe, o un default
     const TIPOS_VACIO = window.TIPOS_VACIO_GLOBAL || ["1/4 - 1/3", "ret 350 ml", "ret 1.25 Lts"];
     
@@ -184,10 +187,26 @@
         const body = document.getElementById('inventarioTableBody'), rF = document.getElementById('rubroFilter'); if (!body || !rF) return; body.innerHTML = `<tr><td colspan="4" class="text-center text-gray-500">Cargando...</td></tr>`;
         const selRubro = rF.value; const invFilt = _inventarioCache.filter(p => (p.cantidadUnidades || 0) > 0 || _ventaActual.productos[p.id]); let filtInv = selRubro ? invFilt.filter(p => p.rubro === selRubro) : invFilt;
         
+        // 1. Obtener función de ordenamiento global (inventario.js)
         const sortFunc = await window.getGlobalProductSortFunction();
         filtInv.sort(sortFunc);
         
-        const sortKey = window._sortPreferenceCache ? window._sortPreferenceCache[0] : 'segmento';
+        // 2. Determinar la clave de agrupación (Encabezados Grises)
+        // Corregido: Leer directamente de Firestore si no está en caché local, en lugar de confiar en window._sortPreferenceCache
+        let sortKey = 'segmento';
+        if (!_localSortPreference) {
+            try {
+                const prefRef = _doc(_db, `artifacts/${_appId}/users/${_userId}/config/productSortOrder`);
+                const prefSnap = await _getDoc(prefRef);
+                if (prefSnap.exists() && prefSnap.data().order && prefSnap.data().order.length > 0) {
+                    _localSortPreference = prefSnap.data().order;
+                    sortKey = _localSortPreference[0];
+                }
+            } catch (e) { console.warn("Error cargando pref orden ventas:", e); }
+        } else {
+            sortKey = _localSortPreference[0];
+        }
+
         body.innerHTML = window.ventasUI.getInventoryTableRows(filtInv, _ventaActual.productos, _monedaActual, _tasaCOP, _tasaBs, sortKey);
         
         updateVentaTotal();
@@ -212,7 +231,12 @@
              return copy;
         });
 
-        const sortKey = window._sortPreferenceCache ? window._sortPreferenceCache[0] : 'segmento';
+        // Corregido: Usar la misma lógica de sortKey
+        let sortKey = 'segmento';
+        if (_localSortPreference && _localSortPreference.length > 0) {
+            sortKey = _localSortPreference[0];
+        }
+
         body.innerHTML = window.ventasUI.getInventoryTableRows(mappedInv, _ventaActual.productos, _monedaActual, _tasaCOP, _tasaBs, sortKey);
 
         updateVentaTotal();
