@@ -118,7 +118,7 @@
         }
     }
 
-    // --- FUNCIÓN GLOBAL DE ORDENAMIENTO ---
+    // --- FUNCIÓN GLOBAL DE ORDENAMIENTO (CORREGIDA Y ROBUSTA) ---
     window.getGlobalProductSortFunction = async () => {
         // Si la caché está vacía o invalidada, cargar datos PÚBLICOS
         if (!_globalSortCache || !_globalSortCache.marcas) {
@@ -513,7 +513,6 @@
         let lastHeaderKey = null;
         
         // CORRECCIÓN CRÍTICA: Usar la preferencia real cargada en _globalSortCache
-        // Si _globalSortCache es null (no debería), usar 'segmento' como fallback
         const firstSortKey = (_globalSortCache && _globalSortCache.preference) ? _globalSortCache.preference[0] : 'segmento';
 
         productosFiltrados.forEach(p => {
@@ -796,7 +795,6 @@
         let isFirstLoad = true;
         const smartListenerCallback = async () => {
             await baseRender();
-            // CORRECCIÓN: Poblar filtro de Rubros basado en los productos cargados
             populateRubrosFromCache('recarga-filter-rubro');
             
             if (isFirstLoad && _inventarioCache.length > 0) {
@@ -843,7 +841,7 @@
                 <tbody>`;
         
         let lastHeaderKey = null; 
-        const firstSortKey = window._sortPreferenceCache ? window._sortPreferenceCache[0] : 'segmento';
+        const firstSortKey = (_globalSortCache && _globalSortCache.preference) ? _globalSortCache.preference[0] : 'segmento';
         
         productos.forEach(p => {
             const currentHeaderValue = p[firstSortKey] || `Sin ${firstSortKey}`;
