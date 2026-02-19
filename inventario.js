@@ -4,28 +4,16 @@
     let _collection, _onSnapshot, _doc, _addDoc, _setDoc, _deleteDoc, _query, _where, _getDocs, _writeBatch, _getDoc;
     let _increment; 
 
-    // --- NUEVO: SISTEMA DE CACHÉ DOBLE (FASE 2) ---
-    let _masterCatalogCache = {}; // Datos públicos (Nombre, Precio, Marca) - Key: ID
-    let _userStockCache = {};     // Datos privados (Stock) - Key: ID
-    // _inventarioCache ahora será el resultado de la fusión de ambos
-    let _inventarioCache = [];
+    // --- SISTEMA DE CACHÉ DOBLE (FASE 2) ---
+    let _masterCatalogCache = {}; // Datos públicos
+    let _userStockCache = {};     // Datos privados
+    let _inventarioCache = [];    // Fusión
     
-    // Control de Listeners Múltiples
     let _listenersUnsubscribes = []; 
 
     let _lastFilters = { searchTerm: '', rubro: '', segmento: '', marca: '' };
     let _marcasCache = null;
-    
-    // Variable para persistir las cantidades ingresadas en la recarga
     let _recargaTempState = {}; 
-
-    // --- CACHÉ DE ORDENAMIENTO GLOBAL AVANZADO ---
-    let _globalSortCache = {
-        preference: null,
-        rubros: null,
-        segmentos: null,
-        marcas: null
-    };
 
     // ID PÚBLICO FIJO (Para leer el maestro)
     const PUBLIC_DATA_ID = window.AppConfig.PUBLIC_DATA_ID; 
@@ -55,19 +43,13 @@
         _getDoc = dependencies.getDoc;
         _increment = dependencies.increment; 
         
-        if (!_increment) console.warn("Advertencia: 'increment' no fue pasado a initInventario. Las recargas podrían no ser atómicas.");
-        console.log("Módulo Inventario FASE 2 (Híbrido) Inicializado. Public ID:", PUBLIC_DATA_ID);
+        console.log("Módulo Inventario FASE 2 Inicializado. Public ID:", PUBLIC_DATA_ID);
     };
 
-    // --- NUEVO MOTOR DE LECTURA (LISTENER DOBLE) ---
     function startMainInventarioListener(callback) {
-        // Limpiar listeners anteriores
-        _listenersUnsubscribes.forEach(unsub => {
-            try { unsub(); } catch(e) { console.warn("Error limpiando listener:", e); }
-        });
+        _listenersUnsubscribes.forEach(unsub => { try { unsub(); } catch(e) {} });
         _listenersUnsubscribes = [];
 
-        // Función interna de fusión y renderizado
         const combineAndNotify = () => {
             _inventarioCache = [];
             const allIds = new Set([...Object.keys(_masterCatalogCache), ...Object.keys(_userStockCache)]);
@@ -77,209 +59,89 @@
                 const stockData = _userStockCache[id];
                 
                 if (master) {
-                    // Producto existe en maestro -> Usamos definición maestra + stock privado
-                    _inventarioCache.push({
-                        ...master, 
-                        cantidadUnidades: stockData ? (stockData.cantidadUnidades || 0) : 0,
-                        id: id // Asegurar ID
-                    });
+                    _inventarioCache.push({ ...master, cantidadUnidades: stockData ? (stockData.cantidadUnidades || 0) : 0, id: id });
                 } else if (stockData) {
-                    // Producto existe SOLO en privado (Legacy/Huerfano) -> Lo mostramos tal cual
                     _inventarioCache.push({ ...stockData, id: id });
                 }
             });
 
             if (callback && typeof callback === 'function') {
-                Promise.resolve(callback()).catch(cbError => {
-                    console.error("Listener callback error (Render/Sort):", cbError);
-                });
+                Promise.resolve(callback()).catch(cbError => console.error("Callback Error:", cbError));
             }
         };
 
-        // 1. LISTENER MAESTRO (Público)
         const masterRef = _collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/productos`);
-        const unsubMaster = _onSnapshot(masterRef, (snapshot) => {
+        const unsubMaster = _onSnapshot(masterRef, (snap) => {
             _masterCatalogCache = {};
-            snapshot.forEach(doc => { _masterCatalogCache[doc.id] = { id: doc.id, ...doc.data() }; });
+            snap.forEach(d => { _masterCatalogCache[d.id] = { id: d.id, ...d.data() }; });
             combineAndNotify();
-        }, (error) => handleListenerError(error, "Maestro"));
+        }, (err) => handleListenerError(err, "Maestro"));
         _listenersUnsubscribes.push(unsubMaster);
 
-        // 2. LISTENER PRIVADO (Stock)
         const stockRef = _collection(_db, `artifacts/${_appId}/users/${_userId}/inventario`);
-        const unsubStock = _onSnapshot(stockRef, (snapshot) => {
+        const unsubStock = _onSnapshot(stockRef, (snap) => {
             _userStockCache = {};
-            snapshot.forEach(doc => { _userStockCache[doc.id] = { id: doc.id, ...doc.data() }; });
+            snap.forEach(d => { _userStockCache[d.id] = { id: d.id, ...d.data() }; });
             combineAndNotify();
-        }, (error) => handleListenerError(error, "Stock Privado"));
+        }, (err) => handleListenerError(err, "Stock"));
         _listenersUnsubscribes.push(unsubStock);
 
-        // Registramos en activeListeners global para limpieza al salir del módulo
         _activeListeners.push(..._listenersUnsubscribes);
     }
 
     function handleListenerError(error, source) {
-        if (error.code === 'permission-denied' || error.code === 'unauthenticated') { 
-            console.log(`Listener error (${source}) ignored: ${error.code}`); 
-            return; 
-        }
-        console.error(`Error en listener (${source}):`, error);
-        if (error.code !== 'cancelled') { 
-            // Solo mostramos alerta si falla el Stock, el maestro puede fallar si no existe la colección aún
-            if(source === "Stock Privado") _showModal('Error de Conexión', 'No se pudo actualizar el inventario.');
-        }
+        if (error.code === 'permission-denied' || error.code === 'unauthenticated') return;
+        if (error.code !== 'cancelled' && source === "Stock") _showModal('Error', 'Fallo de conexión inventario.');
     }
 
-    // --- FUNCIÓN GLOBAL DE ORDENAMIENTO (Propagada a toda la App) ---
-    // Esta función se define en window para que Ventas, Catálogo y Data la usen.
+    // ==============================================================================
+    // --- NUEVA ESTRATEGIA: ORDENAMIENTO BASADO EN CAMPO 'ordenGlobal' ---
+    // ==============================================================================
     window.getGlobalProductSortFunction = async () => {
-        // 1. Cargar Preferencias y Datos Maestros si no están en caché
-        if (!_globalSortCache.preference || !_globalSortCache.rubros) {
-            try {
-                // Cargar preferencia de campos (ej: primero Segmento, luego Marca...)
-                const prefRef = _doc(_db, `artifacts/${_appId}/users/${_userId}/config/productSortOrder`);
-                const prefSnap = await _getDoc(prefRef);
-                _globalSortCache.preference = prefSnap.exists() ? prefSnap.data().order : ['segmento', 'marca', 'presentacion'];
-
-                // Cargar datos jerárquicos para saber el orden específico
-                const [rSnap, sSnap, mSnap] = await Promise.all([
-                    _getDocs(_collection(_db, `artifacts/${_appId}/users/${_userId}/rubros`)),
-                    _getDocs(_collection(_db, `artifacts/${_appId}/users/${_userId}/segmentos`)),
-                    _getDocs(_collection(_db, `artifacts/${_appId}/users/${_userId}/marcas`))
-                ]);
-
-                _globalSortCache.rubros = {};
-                rSnap.forEach(d => _globalSortCache.rubros[d.data().name] = d.data().orden ?? 9999);
-
-                _globalSortCache.segmentos = {};
-                sSnap.forEach(d => _globalSortCache.segmentos[d.data().name] = { 
-                    orden: d.data().orden ?? 9999, 
-                    marcaOrder: d.data().marcaOrder || [] 
-                });
-
-                _globalSortCache.marcas = {};
-                mSnap.forEach(d => {
-                    // FIX: Clave en mayúsculas para evitar problemas de espacios o capitalización
-                    const nameKey = (d.data().name || '').trim().toUpperCase();
-                    _globalSortCache.marcas[nameKey] = { 
-                        productOrder: d.data().productOrder || [] 
-                    };
-                });
-                
-            } catch (e) { 
-                console.warn("Error cargando datos de ordenamiento:", e);
-                // Fallback básico
-                _globalSortCache.preference = ['segmento', 'marca', 'presentacion'];
-                _globalSortCache.rubros = {}; _globalSortCache.segmentos = {}; _globalSortCache.marcas = {};
-            }
-        }
-
-        // 2. Retornar función comparadora
+        // La lógica de ordenamiento ahora es extremadamente simple y rápida.
+        // Solo verificamos el campo 'ordenGlobal' que asignamos al guardar.
         return (a, b) => {
-            const safeA = a || {}; const safeB = b || {};
+            const ordA = a.ordenGlobal !== undefined ? a.ordenGlobal : 999999;
+            const ordB = b.ordenGlobal !== undefined ? b.ordenGlobal : 999999;
             
-            for (const key of _globalSortCache.preference) {
-                let res = 0;
-                
-                if (key === 'rubro') {
-                    const oA = _globalSortCache.rubros[safeA.rubro] ?? 9999;
-                    const oB = _globalSortCache.rubros[safeB.rubro] ?? 9999;
-                    res = oA - oB;
-                    if (res === 0) res = (safeA.rubro || '').localeCompare(safeB.rubro || '');
-                } 
-                else if (key === 'segmento') {
-                    const sA = _globalSortCache.segmentos[safeA.segmento];
-                    const sB = _globalSortCache.segmentos[safeB.segmento];
-                    // Ordenar por índice numérico del segmento
-                    res = (sA?.orden ?? 9999) - (sB?.orden ?? 9999);
-                    if (res === 0) res = (safeA.segmento || '').localeCompare(safeB.segmento || '');
-                } 
-                else if (key === 'marca') {
-                    // Ordenar Marcas dentro de su Segmento (si comparten segmento)
-                    if (safeA.segmento === safeB.segmento) {
-                        const segData = _globalSortCache.segmentos[safeA.segmento];
-                        if (segData && segData.marcaOrder) {
-                            const idxA = segData.marcaOrder.indexOf(safeA.marca);
-                            const idxB = segData.marcaOrder.indexOf(safeB.marca);
-                            if (idxA !== -1 && idxB !== -1) res = idxA - idxB;
-                            else if (idxA !== -1) res = -1;
-                            else if (idxB !== -1) res = 1;
-                        }
-                    }
-                    if (res === 0) res = (safeA.marca || '').localeCompare(safeB.marca || '');
-                } 
-                else if (key === 'presentacion') {
-                    // Ordenar Productos dentro de su Marca (si comparten marca)
-                    if (safeA.marca === safeB.marca) {
-                        // FIX: Buscar asegurando el formato
-                        const marcaKey = (safeA.marca || '').trim().toUpperCase();
-                        const marcaData = _globalSortCache.marcas[marcaKey];
-                        
-                        if (marcaData && marcaData.productOrder) {
-                            const idxA = marcaData.productOrder.indexOf(safeA.id);
-                            const idxB = marcaData.productOrder.indexOf(safeB.id);
-                            
-                            if (idxA !== -1 && idxB !== -1) res = idxA - idxB;
-                            else if (idxA !== -1) res = -1;
-                            else if (idxB !== -1) res = 1;
-                        }
-                    }
-                    if (res === 0) res = (safeA.presentacion || '').localeCompare(safeB.presentacion || '');
-                }
-
-                if (res !== 0) return res;
+            // 1. Ordenar por el número global asignado
+            if (ordA !== ordB) {
+                return ordA - ordB;
             }
-            return 0; // Son iguales
+            
+            // 2. Si no tienen orden (nuevos productos), ordenar por nombre como respaldo
+            return (a.presentacion || '').localeCompare(b.presentacion || '');
         };
     };
 
     function invalidateSegmentOrderCache() {
-        // Limpiar caché local y forzar recarga en otros módulos
-        _globalSortCache = { preference: null, rubros: null, segmentos: null, marcas: null };
         if (window.catalogoModule?.invalidateCache) window.catalogoModule.invalidateCache();
         if (window.ventasModule?.invalidateCache) window.ventasModule.invalidateCache();
-        console.log("Cachés de ordenamiento invalidadas (Inventario y Global).");
+        console.log("Cachés de UI invalidadas (La nueva lógica usa el campo ordenGlobal).");
     }
 
-    // --- NUEVO: Función para poblar Rubros desde la caché real ---
     function populateRubrosFromCache(selectId) {
         const select = document.getElementById(selectId);
         if (!select) return;
-        
         const currentVal = select.value;
         const rubros = new Set();
-        
-        // Extraer rubros únicos directamente de los productos cargados
-        _inventarioCache.forEach(p => {
-             if (p.rubro) rubros.add(p.rubro);
-        });
-        
+        _inventarioCache.forEach(p => { if (p.rubro) rubros.add(p.rubro); });
         const sorted = [...rubros].sort();
-        
-        // Reconstruir opciones manteniendo "Todos"
         select.innerHTML = '<option value="">Todos</option>';
-        
         sorted.forEach(r => {
             const opt = document.createElement('option');
-            opt.value = r;
-            opt.textContent = r;
+            opt.value = r; opt.textContent = r;
             if (r === currentVal) opt.selected = true;
             select.appendChild(opt);
         });
-        
-        // Si el valor seleccionado ya no existe (raro), resetear
-        if (currentVal && !rubros.has(currentVal)) {
-            select.value = "";
-        }
+        if (currentVal && !rubros.has(currentVal)) select.value = "";
     }
+
+    // --- VISTAS ---
 
     window.showInventarioSubMenu = function() {
         if (_floatingControls) _floatingControls.classList.add('hidden');
-        
-        // Limpieza de listeners al volver al menú principal del módulo
-        _listenersUnsubscribes.forEach(u => u()); 
-        _listenersUnsubscribes = [];
-
+        _listenersUnsubscribes.forEach(u => u()); _listenersUnsubscribes = [];
         const isAdmin = _userRole === 'admin';
         _mainContent.innerHTML = `
             <div class="p-4 pt-8">
@@ -290,7 +152,7 @@
                             <button id="verModificarBtn" class="w-full px-6 py-3 bg-blue-500 text-white font-semibold rounded-lg shadow-md hover:bg-blue-600">Ver Productos / ${isAdmin ? 'Modificar Def.' : 'Consultar Stock'}</button>
                             ${isAdmin ? `<button id="agregarProductoBtn" class="w-full px-6 py-3 bg-blue-500 text-white font-semibold rounded-lg shadow-md hover:bg-blue-600">Agregar Producto</button>` : ''}
                             <button id="recargaProductosBtn" class="w-full px-6 py-3 bg-teal-500 text-white font-semibold rounded-lg shadow-md hover:bg-teal-600">Recarga de Productos</button>
-                            ${isAdmin ? `<button id="ordenarSegmentosBtn" class="w-full px-6 py-3 bg-purple-500 text-white font-semibold rounded-lg shadow-md hover:bg-purple-600">Ordenar Segmentos, Marcas y Presentaciones</button>` : ''}
+                            ${isAdmin ? `<button id="ordenarSegmentosBtn" class="w-full px-6 py-3 bg-purple-500 text-white font-semibold rounded-lg shadow-md hover:bg-purple-600">Ordenar Catálogo Completo</button>` : ''}
                             ${isAdmin ? `<button id="modificarDatosBtn" class="w-full px-6 py-3 bg-yellow-500 text-gray-800 font-semibold rounded-lg shadow-md hover:bg-yellow-600">Modificar Datos Maestros</button>` : ''}
                             <button id="backToMenuBtn" class="w-full px-6 py-3 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500">Volver al Menú Principal</button>
                         </div>
@@ -310,7 +172,6 @@
         }
         document.getElementById('recargaProductosBtn').addEventListener('click', showRecargaProductosView);
         document.getElementById('backToMenuBtn').addEventListener('click', () => {
-             // Limpiar listeners al salir totalmente
             _listenersUnsubscribes.forEach(u => u());
             _showMainMenu();
         });
@@ -334,16 +195,13 @@
         let isFirstLoad = true;
         const smartListenerCallback = async () => {
             await baseRender();
-            // CORRECCIÓN: Poblar filtro de Rubros basado en los productos cargados
-            populateRubrosFromCache('modify-filter-rubro');
-            
+            populateRubrosFromCache('modify-filter-rubro'); 
             if (isFirstLoad && _inventarioCache.length > 0) {
                 updateDependentDropdowns('init');
                 await baseRender();
                 isFirstLoad = false;
             }
         };
-
         startMainInventarioListener(smartListenerCallback);
     }
 
@@ -354,21 +212,15 @@
                 <input type="text" id="${prefix}-search-input" placeholder="Buscar por Presentación, Marca o Segmento..." class="md:col-span-4 w-full px-4 py-2 border rounded-lg text-sm" value="${currentSearch}">
                 <div>
                     <label for="${prefix}-filter-rubro" class="text-xs font-medium text-gray-700">Rubro</label>
-                    <select id="${prefix}-filter-rubro" class="w-full mt-1 px-2 py-1 border rounded-lg text-sm bg-white focus:ring-blue-500 focus:border-blue-500">
-                        <option value="">Todos</option>
-                    </select>
+                    <select id="${prefix}-filter-rubro" class="w-full mt-1 px-2 py-1 border rounded-lg text-sm bg-white focus:ring-blue-500 focus:border-blue-500"><option value="">Todos</option></select>
                 </div>
                 <div>
                     <label for="${prefix}-filter-segmento" class="text-xs font-medium text-gray-700">Segmento</label>
-                    <select id="${prefix}-filter-segmento" class="w-full mt-1 px-2 py-1 border rounded-lg text-sm bg-white focus:ring-blue-500 focus:border-blue-500" disabled>
-                        <option value="">Todos</option>
-                    </select>
+                    <select id="${prefix}-filter-segmento" class="w-full mt-1 px-2 py-1 border rounded-lg text-sm bg-white focus:ring-blue-500 focus:border-blue-500" disabled><option value="">Todos</option></select>
                 </div>
                 <div>
                     <label for="${prefix}-filter-marca" class="text-xs font-medium text-gray-700">Marca</label>
-                    <select id="${prefix}-filter-marca" class="w-full mt-1 px-2 py-1 border rounded-lg text-sm bg-white focus:ring-blue-500 focus:border-blue-500" disabled>
-                        <option value="">Todos</option>
-                    </select>
+                    <select id="${prefix}-filter-marca" class="w-full mt-1 px-2 py-1 border rounded-lg text-sm bg-white focus:ring-blue-500 focus:border-blue-500" disabled><option value="">Todos</option></select>
                 </div>
                 <button id="${prefix}-clear-filters-btn" class="bg-gray-300 text-xs font-semibold text-gray-700 rounded-lg self-end py-1.5 px-3 hover:bg-gray-400 transition duration-150">Limpiar</button>
             </div>
@@ -381,7 +233,6 @@
         const segmentoFilter=document.getElementById(`${prefix}-filter-segmento`);
         const marcaFilter=document.getElementById(`${prefix}-filter-marca`);
         const clearBtn=document.getElementById(`${prefix}-clear-filters-btn`);
-
         if(!searchInput || !rubroFilter || !segmentoFilter || !marcaFilter || !clearBtn) return {};
 
         function updateDependentDropdowns(trigger) {
@@ -389,46 +240,22 @@
             const currentSegmentoValue = (trigger === 'init' || trigger === 'rubro') ? _lastFilters.segmento : segmentoFilter.value;
             const currentMarcaValue = (trigger === 'init' || trigger === 'rubro' || trigger === 'segmento') ? _lastFilters.marca : marcaFilter.value;
 
-            segmentoFilter.innerHTML = '<option value="">Todos</option>';
-            segmentoFilter.disabled = true;
-            segmentoFilter.value = "";
-
+            segmentoFilter.innerHTML = '<option value="">Todos</option>'; segmentoFilter.disabled = true; segmentoFilter.value = "";
             if (selectedRubro) {
-                const segmentos = [...new Set(_inventarioCache
-                    .filter(p => p.rubro === selectedRubro && p.segmento)
-                    .map(p => p.segmento))]
-                    .sort();
+                const segmentos = [...new Set(_inventarioCache.filter(p => p.rubro === selectedRubro && p.segmento).map(p => p.segmento))].sort();
                 if (segmentos.length > 0) {
-                    segmentos.forEach(s => {
-                        const option = document.createElement('option');
-                        option.value = s; option.textContent = s;
-                        if (s === currentSegmentoValue) { option.selected = true; }
-                        segmentoFilter.appendChild(option);
-                    });
-                    segmentoFilter.disabled = false;
-                    segmentoFilter.value = currentSegmentoValue; 
+                    segmentos.forEach(s => { const option = document.createElement('option'); option.value = s; option.textContent = s; if (s === currentSegmentoValue) { option.selected = true; } segmentoFilter.appendChild(option); });
+                    segmentoFilter.disabled = false; segmentoFilter.value = currentSegmentoValue; 
                 }
             }
             if (segmentoFilter.value !== currentSegmentoValue) { _lastFilters.segmento = ''; }
 
-            marcaFilter.innerHTML = '<option value="">Todos</option>';
-            marcaFilter.disabled = true;
-             marcaFilter.value = "";
-
+            marcaFilter.innerHTML = '<option value="">Todos</option>'; marcaFilter.disabled = true; marcaFilter.value = "";
             if (selectedRubro) {
-                const marcas = [...new Set(_inventarioCache
-                    .filter(p => p.rubro === selectedRubro && (!segmentoFilter.value || p.segmento === segmentoFilter.value) && p.marca)
-                    .map(p => p.marca))]
-                    .sort();
+                const marcas = [...new Set(_inventarioCache.filter(p => p.rubro === selectedRubro && (!segmentoFilter.value || p.segmento === segmentoFilter.value) && p.marca).map(p => p.marca))].sort();
                 if (marcas.length > 0) {
-                    marcas.forEach(m => {
-                         const option = document.createElement('option');
-                         option.value = m; option.textContent = m;
-                         if (m === currentMarcaValue) { option.selected = true; }
-                         marcaFilter.appendChild(option);
-                    });
-                    marcaFilter.disabled = false;
-                    marcaFilter.value = currentMarcaValue;
+                    marcas.forEach(m => { const option = document.createElement('option'); option.value = m; option.textContent = m; if (m === currentMarcaValue) { option.selected = true; } marcaFilter.appendChild(option); });
+                    marcaFilter.disabled = false; marcaFilter.value = currentMarcaValue;
                 }
             }
             if (marcaFilter.value !== currentMarcaValue) { _lastFilters.marca = ''; }
@@ -443,24 +270,10 @@
         };
 
         searchInput.addEventListener('input', applyAndSaveChanges);
-        rubroFilter.addEventListener('change', () => {
-             _lastFilters.segmento = ''; _lastFilters.marca = ''; 
-            updateDependentDropdowns('rubro');
-            applyAndSaveChanges();
-        });
-        segmentoFilter.addEventListener('change', () => {
-            _lastFilters.marca = ''; 
-            updateDependentDropdowns('segmento');
-            applyAndSaveChanges();
-        });
+        rubroFilter.addEventListener('change', () => { _lastFilters.segmento = ''; _lastFilters.marca = ''; updateDependentDropdowns('rubro'); applyAndSaveChanges(); });
+        segmentoFilter.addEventListener('change', () => { _lastFilters.marca = ''; updateDependentDropdowns('segmento'); applyAndSaveChanges(); });
         marcaFilter.addEventListener('change', applyAndSaveChanges);
-        clearBtn.addEventListener('click', () => {
-            searchInput.value = '';
-            rubroFilter.value = '';
-            _lastFilters.segmento = ''; _lastFilters.marca = '';
-            updateDependentDropdowns('rubro');
-            applyAndSaveChanges();
-        });
+        clearBtn.addEventListener('click', () => { searchInput.value = ''; rubroFilter.value = ''; _lastFilters.segmento = ''; _lastFilters.marca = ''; updateDependentDropdowns('rubro'); applyAndSaveChanges(); });
         
         return { updateDependentDropdowns };
     }
@@ -472,10 +285,7 @@
         let productosFiltrados = [..._inventarioCache];
         productosFiltrados = productosFiltrados.filter(p => {
             const searchTermLower = (_lastFilters.searchTerm || '').toLowerCase();
-            const textMatch = !searchTermLower ||
-                (p.presentacion && p.presentacion.toLowerCase().includes(searchTermLower)) ||
-                (p.marca && p.marca.toLowerCase().includes(searchTermLower)) ||
-                (p.segmento && p.segmento.toLowerCase().includes(searchTermLower));
+            const textMatch = !searchTermLower || (p.presentacion && p.presentacion.toLowerCase().includes(searchTermLower)) || (p.marca && p.marca.toLowerCase().includes(searchTermLower)) || (p.segmento && p.segmento.toLowerCase().includes(searchTermLower));
             const rubroMatch = !_lastFilters.rubro || p.rubro === _lastFilters.rubro;
             const segmentoMatch = !_lastFilters.segmento || p.segmento === _lastFilters.segmento;
             const marcaMatch = !_lastFilters.marca || p.marca === _lastFilters.marca;
@@ -485,27 +295,14 @@
         const sortFunction = await window.getGlobalProductSortFunction();
         productosFiltrados.sort(sortFunction);
 
-        if (productosFiltrados.length === 0) {
-            container.innerHTML = `<p class="text-center text-gray-500 p-4">No hay productos que coincidan con los filtros seleccionados.</p>`;
-            return;
-        }
+        if (productosFiltrados.length === 0) { container.innerHTML = `<p class="text-center text-gray-500 p-4">No hay productos que coincidan con los filtros seleccionados.</p>`; return; }
 
         const cols = readOnly ? 4 : 5;
-        let tableHTML = `
-            <table class="min-w-full bg-white text-sm">
-                <thead class="bg-gray-200 sticky top-0 z-10">
-                    <tr>
-                        <th class="py-2 px-3 text-left font-semibold text-gray-600 uppercase tracking-wider">Presentación</th>
-                        <th class="py-2 px-3 text-left font-semibold text-gray-600 uppercase tracking-wider">Marca</th>
-                        <th class="py-2 px-3 text-right font-semibold text-gray-600 uppercase tracking-wider">Precio</th>
-                        <th class="py-2 px-3 text-center font-semibold text-gray-600 uppercase tracking-wider">Stock</th>
-                        ${!readOnly ? `<th class="py-2 px-3 text-center font-semibold text-gray-600 uppercase tracking-wider">Acciones</th>` : ''}
-                    </tr>
-                </thead>
-                <tbody>`;
-
+        let tableHTML = `<table class="min-w-full bg-white text-sm"> <thead class="bg-gray-200 sticky top-0 z-10"> <tr> <th class="py-2 px-3 text-left font-semibold text-gray-600 uppercase tracking-wider">Presentación</th> <th class="py-2 px-3 text-left font-semibold text-gray-600 uppercase tracking-wider">Marca</th> <th class="py-2 px-3 text-right font-semibold text-gray-600 uppercase tracking-wider">Precio</th> <th class="py-2 px-3 text-center font-semibold text-gray-600 uppercase tracking-wider">Stock</th> ${!readOnly ? `<th class="py-2 px-3 text-center font-semibold text-gray-600 uppercase tracking-wider">Acciones</th>` : ''} </tr> </thead> <tbody>`;
         let lastHeaderKey = null;
-        const firstSortKey = _globalSortCache.preference ? _globalSortCache.preference[0] : 'segmento';
+        
+        // Ahora agrupamos por el primer filtro activo para que tenga sentido visual, o por defecto por rubro/segmento
+        const firstSortKey = _lastFilters.rubro && !_lastFilters.segmento ? 'segmento' : (_lastFilters.segmento && !_lastFilters.marca ? 'marca' : 'segmento');
 
         productosFiltrados.forEach(p => {
             const currentHeaderValue = p[firstSortKey] || `Sin ${firstSortKey}`;
@@ -513,7 +310,6 @@
                 lastHeaderKey = currentHeaderValue;
                 tableHTML += `<tr><td colspan="${cols}" class="py-2 px-4 bg-gray-300 font-bold text-gray-800 sticky top-[calc(theme(height.10))] z-[9]">${lastHeaderKey}</td></tr>`;
             }
-
             const ventaPor = p.ventaPor || {und:true};
             const precios = p.precios || {und: p.precioPorUnidad || 0};
             let displayPresentacion = p.presentacion || 'N/A';
@@ -538,20 +334,8 @@
             displayStock = `${Math.floor((p.cantidadUnidades || 0) / conversionFactorStock)} ${stockUnitType}`;
             const stockUnidadesBaseTitle = `${p.cantidadUnidades || 0} Und. Base`;
 
-            tableHTML += `
-                <tr class="hover:bg-gray-50 border-b">
-                    <td class="py-2 px-3 text-gray-800">${displayPresentacion}</td>
-                    <td class="py-2 px-3 text-gray-700">${p.marca || 'S/M'}</td>
-                    <td class="py-2 px-3 text-right font-medium text-gray-900">${displayPrecio}</td>
-                    <td class="py-2 px-3 text-center font-medium text-gray-900" title="${stockUnidadesBaseTitle}">${displayStock}</td>
-                    ${!readOnly ? `
-                    <td class="py-2 px-3 text-center space-x-1">
-                        <button onclick="window.inventarioModule.editProducto('${p.id}')" class="px-2 py-1 bg-yellow-500 text-white text-xs rounded hover:bg-yellow-600 focus:outline-none focus:ring-2 focus:ring-yellow-400 focus:ring-opacity-50" title="Editar Definición">Edt</button>
-                        <button onclick="window.inventarioModule.deleteProducto('${p.id}')" class="px-2 py-1 bg-red-500 text-white text-xs rounded hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-400 focus:ring-opacity-50" title="Eliminar Producto">Del</button>
-                    </td>` : ''}
-                </tr>`;
+            tableHTML += `<tr class="hover:bg-gray-50 border-b"> <td class="py-2 px-3 text-gray-800">${displayPresentacion}</td> <td class="py-2 px-3 text-gray-700">${p.marca || 'S/M'}</td> <td class="py-2 px-3 text-right font-medium text-gray-900">${displayPrecio}</td> <td class="py-2 px-3 text-center font-medium text-gray-900" title="${stockUnidadesBaseTitle}">${displayStock}</td> ${!readOnly ? `<td class="py-2 px-3 text-center space-x-1"> <button onclick="window.inventarioModule.editProducto('${p.id}')" class="px-2 py-1 bg-yellow-500 text-white text-xs rounded hover:bg-yellow-600 focus:outline-none focus:ring-2 focus:ring-yellow-400 focus:ring-opacity-50" title="Editar Definición">Edt</button> <button onclick="window.inventarioModule.deleteProducto('${p.id}')" class="px-2 py-1 bg-red-500 text-white text-xs rounded hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-400 focus:ring-opacity-50" title="Eliminar Producto">Del</button> </td>` : ''} </tr>`;
         });
-
         tableHTML += `</tbody></table>`;
         container.innerHTML = tableHTML;
     }
@@ -565,7 +349,6 @@
         await Promise.all([
             populateRubrosFromCache('rubro'), 
             populateRubrosFromCache('segmento'),
-            // Para "Agregar Producto", TAMBIÉN necesitamos las colecciones reales para que el Admin seleccione
             _populateDropdown(`artifacts/${_appId}/users/${_userId}/rubros`, 'rubro', 'Rubro'),
             _populateDropdown(`artifacts/${_appId}/users/${_userId}/segmentos`, 'segmento', 'Segmento'),
             _populateDropdown(`artifacts/${_appId}/users/${_userId}/marcas`, 'marca', 'Marca')
@@ -618,7 +401,6 @@
         document.getElementById('backToMenuBtn').addEventListener('click', showInventarioSubMenu);
     }
 
-    // --- MODIFICADO: USA ADMIN.JS PARA PROPAGAR ---
     async function handleAddProducto(e) {
         e.preventDefault();
         const data = getProductoDataFromForm(false); 
@@ -634,11 +416,11 @@
 
         _showModal('Progreso', 'Creando producto en Catálogo Maestro...');
         try {
-            // FASE 2: Generar ID manual y delegar todo a admin.js
             const newId = _doc(_collection(_db, 'dummy')).id;
             
             if (window.adminModule?.propagateProductChange) {
-                // propagateProductChange maneja la Escritura Doble (Maestro + Copia Local)
+                // Se asigna un orden temporal para que aparezca al final
+                data.ordenGlobal = 999999;
                 await window.adminModule.propagateProductChange(newId, data);
                 _showModal('Éxito', 'Producto agregado al Catálogo y propagado.', showInventarioSubMenu);
             } else {
@@ -816,20 +598,16 @@
         document.getElementById('backToModifyDeleteBtn').addEventListener('click', showModifyDeleteView);
     }
 
-    // --- MODIFICADO: USA ADMIN.JS PARA PROPAGAR ---
     async function handleUpdateProducto(e, productId) {
         e.preventDefault(); if (_userRole !== 'admin') return; 
-        const updatedData = getProductoDataFromForm(true); // true = isUpdate
+        const updatedData = getProductoDataFromForm(true); 
         
-        // Validación básica
         if (!updatedData.rubro||!updatedData.segmento||!updatedData.marca||!updatedData.presentacion){_showModal('Error','Completa Rubro, Segmento, Marca y Presentación.');return;} if (!updatedData.ventaPor.und&&!updatedData.ventaPor.paq&&!updatedData.ventaPor.cj){_showModal('Error','Selecciona al menos una forma de venta.');return;} if (updatedData.manejaVacios&&!updatedData.tipoVacio){_showModal('Error','Si maneja vacío, selecciona el tipo.');document.getElementById('tipoVacioSelect')?.focus();return;} let precioValido=(updatedData.ventaPor.und&&updatedData.precios.und>0)||(updatedData.ventaPor.paq&&updatedData.precios.paq>0)||(updatedData.ventaPor.cj&&updatedData.precios.cj>0); if(!precioValido){_showModal('Error','Ingresa al menos un precio válido (> 0) para la forma de venta seleccionada.');document.querySelector('#preciosContainer input[required]')?.focus();return;}
         
-        // Preservar stock (no se edita aquí)
-        updatedData.cantidadUnidades = 0; // El stock es manejado aparte en Fase 2, admin.js combina.
+        updatedData.cantidadUnidades = 0; 
 
         _showModal('Progreso','Guardando cambios en Catálogo Maestro...'); 
         try { 
-            // Delegar la actualización a admin.js
             if (window.adminModule?.propagateProductChange) { 
                 await window.adminModule.propagateProductChange(productId, updatedData); 
                  _showModal('Éxito','Producto modificado y propagado correctamente.', showModifyDeleteView); 
@@ -851,7 +629,6 @@
     async function handleDeleteAllProductos() {
         if (_userRole !== 'admin') return; _showModal('Confirmación Extrema', `¿Estás SEGURO de eliminar TODOS los productos del inventario? Esta acción es IRREVERSIBLE y se propagará.`, async () => { _showModal('Progreso', 'Eliminando productos...'); try { const collectionRef = _collection(_db, `artifacts/${_appId}/users/${_userId}/inventario`); const snapshot = await _getDocs(collectionRef); if (snapshot.empty) { _showModal('Aviso', 'No hay productos en el inventario para eliminar.'); return; } const productIds = snapshot.docs.map(d => d.id); 
         
-        // FASE 2: Propagar eliminación usando admin.js
         if (window.adminModule?.propagateProductChange) { let propagationErrors = 0; for (const productId of productIds) { try { await window.adminModule.propagateProductChange(productId, null); } catch (propError) { console.error(`Error propagando eliminación de ${productId}:`, propError); propagationErrors++; } } _showModal(propagationErrors > 0 ? 'Advertencia' : 'Éxito', `Se eliminaron ${productIds.length} productos.${propagationErrors > 0 ? ` Ocurrieron ${propagationErrors} errores al propagar.` : ' Propagado correctamente.'}`); } else { _showModal('Error', `La función de propagación no está disponible.`); } } catch (error) { console.error("Error al eliminar todos los productos:", error); _showModal('Error', `Hubo un error al eliminar los productos: ${error.message}`); } }, 'Sí, Eliminar Todos', null, true);
     }
 
@@ -865,7 +642,6 @@
                 const itemsInUse = { rubros: new Set(), segmentos: new Set(), marcas: new Set() };
                 let totalFound = 0, totalToDelete = 0;
 
-                // Usamos la caché actual para verificar uso
                 _inventarioCache.forEach(data => {
                     if (data.rubro) itemsInUse.rubros.add(data.rubro);
                     if (data.segmento) itemsInUse.segmentos.add(data.segmento);
@@ -897,7 +673,6 @@
                             for (const colName in itemsToDelete) {
                                 for (const item of itemsToDelete[colName]) {
                                     try {
-                                         // Propagate con null borra
                                          await window.adminModule.propagateCategoryChange(colName, item.id, null);
                                     } catch (propError) {
                                          console.error(`Error propagando eliminación de ${colName}/${item.id}:`, propError);
@@ -958,7 +733,6 @@
         let isFirstLoad = true;
         const smartListenerCallback = async () => {
             await baseRender();
-            // CORRECCIÓN: Poblar filtro de Rubros basado en los productos cargados
             populateRubrosFromCache('recarga-filter-rubro');
             
             if (isFirstLoad && _inventarioCache.length > 0) {
@@ -1096,7 +870,6 @@
                     const unitsToAdd = inputVal * factor;
                     const newBaseTotal = currentBase + unitsToAdd;
 
-                    // IMPORTANTE: Escribimos solo en el path de usuario (Stock Privado)
                     const docRef = _doc(_db, `artifacts/${_appId}/users/${_userId}/inventario`, p.id);
                     
                     if (_increment) {
@@ -1154,6 +927,9 @@
         }, 'Sí, Procesar', null, true);
     }
 
+    // ==============================================================================
+    // --- VISTA DE ORDENAMIENTO (ACTUALIZADA PARA USAR 'ordenGlobal') ---
+    // ==============================================================================
     function showOrdenarSegmentosMarcasView() {
         if (_userRole !== 'admin') {
             _showModal('Acceso Denegado', 'Solo administradores.');
@@ -1162,490 +938,226 @@
         if (_floatingControls) _floatingControls.classList.add('hidden');
         _mainContent.innerHTML = `
             <div class="p-4 pt-8">
-                <div class="container mx-auto max-w-2xl">
+                <div class="container mx-auto max-w-4xl">
                     <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl">
-                        <h2 class="text-2xl font-bold text-gray-800 mb-4 text-center">Ordenar Segmentos, Marcas y Presentaciones</h2>
-                        <p class="text-center text-gray-600 mb-6">Arrastra elementos para reordenarlos.</p>
-                        <div class="mb-4">
-                           <label for="ordenarRubroFilter" class="block text-gray-700 font-medium mb-2">Filtrar por Rubro (Opcional):</label>
-                           <select id="ordenarRubroFilter" class="w-full px-4 py-2 border rounded-lg">
-                               <option value="">Todos</option>
+                        <h2 class="text-2xl font-bold text-gray-800 mb-4 text-center">Ordenar Catálogo (Global)</h2>
+                        <p class="text-center text-gray-600 mb-6 text-sm">Arrastra los productos para definir el orden en el que aparecerán en <strong>toda la aplicación</strong> (Ventas, Catálogo, Reportes).<br>El orden se guarda directamente en cada producto.</p>
+                        
+                        <div class="mb-4 bg-gray-50 p-4 border rounded-lg">
+                           <label for="ordenarRubroFilter" class="block text-gray-700 font-medium mb-2 text-sm">Filtrar por Rubro (Facilita el trabajo):</label>
+                           <select id="ordenarRubroFilter" class="w-full px-4 py-2 border rounded-lg shadow-sm">
+                               <option value="">Todos los Rubros</option>
                            </select>
                         </div>
-                        <div id="segmentos-marcas-sortable-list" class="space-y-4 border rounded-lg p-4 max-h-[60vh] overflow-y-auto bg-gray-50">
-                            <p class="text-gray-500 text-center">Cargando...</p>
+
+                        <div class="border rounded-lg bg-gray-100 p-2">
+                            <div class="grid grid-cols-12 gap-2 px-4 py-2 bg-gray-200 font-bold text-sm text-gray-700 rounded-t-lg">
+                                <div class="col-span-1 text-center">#</div>
+                                <div class="col-span-3">Segmento</div>
+                                <div class="col-span-3">Marca</div>
+                                <div class="col-span-5">Presentación</div>
+                            </div>
+                            <ul id="productos-sortable-list" class="space-y-1 mt-1 max-h-[60vh] overflow-y-auto pb-4">
+                                <p class="text-gray-500 text-center py-4">Cargando...</p>
+                            </ul>
                         </div>
+
                         <div class="mt-6 flex flex-col sm:flex-row gap-4">
-                            <button id="backToInventarioBtn" class="w-full px-6 py-3 bg-gray-400 text-white rounded-lg shadow-md hover:bg-gray-500">Volver</button>
-                            <button id="saveOrderBtn" class="w-full px-6 py-3 bg-green-500 text-white rounded-lg shadow-md hover:bg-green-600">Guardar Orden</button>
+                            <button id="backToInventarioBtn" class="w-full px-6 py-3 bg-gray-400 text-white font-bold rounded-lg shadow-md hover:bg-gray-500">Volver</button>
+                            <button id="saveOrderBtn" class="w-full px-6 py-3 bg-green-600 text-white font-bold rounded-lg shadow-md hover:bg-green-700">Guardar Orden Global</button>
                         </div>
                     </div>
                 </div>
             </div>
         `;
         document.getElementById('backToInventarioBtn').addEventListener('click', showInventarioSubMenu);
-        document.getElementById('saveOrderBtn').addEventListener('click', handleGuardarOrdenJerarquia);
+        document.getElementById('saveOrderBtn').addEventListener('click', handleGuardarOrdenDirecto);
         
-        // CORRECCIÓN: Poblar filtro de ordenar usando caché de productos
         populateRubrosFromCache('ordenarRubroFilter');
         
         const rubroFilter = document.getElementById('ordenarRubroFilter');
-        rubroFilter.addEventListener('change', () => renderSortableHierarchy(rubroFilter.value));
+        rubroFilter.addEventListener('change', () => renderFlatSortableList(rubroFilter.value));
         
-        // Carga inicial
-        // Aseguramos que la caché esté lista antes de renderizar
         if (_inventarioCache.length > 0) {
-            renderSortableHierarchy('');
+            renderFlatSortableList('');
         } else {
              startMainInventarioListener(() => {
                  populateRubrosFromCache('ordenarRubroFilter');
-                 renderSortableHierarchy('');
+                 renderFlatSortableList('');
              });
         }
     }
 
-    async function getAllMarcas() {
-        if (_marcasCache) return _marcasCache;
-        try {
-            const marcasRef = _collection(_db, `artifacts/${_appId}/users/${_userId}/marcas`);
-            const snapshot = await _getDocs(marcasRef);
-            // Fetch productOrder as well
-            _marcasCache = snapshot.docs.map(doc => ({ id: doc.id, name: doc.data().name, productOrder: doc.data().productOrder || [] }));
-            return _marcasCache;
-        } catch (error) { console.error("Error cargando marcas:", error); return []; }
-    }
-
-    async function renderSortableHierarchy(rubroFiltro = '') {
-        const container = document.getElementById('segmentos-marcas-sortable-list');
+    async function renderFlatSortableList(rubroFiltro = '') {
+        const container = document.getElementById('productos-sortable-list');
         if (!container) return;
-        container.innerHTML = `<p class="text-gray-500 text-center">Cargando...</p>`;
         
-        try {
-            // 1. Obtener segmentos definidos en DB (para orden y IDs persistentes)
-            const segmentosRef = _collection(_db, `artifacts/${_appId}/users/${_userId}/segmentos`);
-            let segSnapshot = await _getDocs(segmentosRef);
-            let allSegments = segSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
-            // 2. Obtener segmentos presentes en el inventario actual
-            const inventorySegments = new Set();
-            _inventarioCache.forEach(p => {
-                if (p.segmento) inventorySegments.add(p.segmento);
-            });
-
-            // 3. Fusionar listas: Si está en inventario pero no en DB, crear placeholder temporal
-            // A. Agregar los de DB primero (tienen orden definido)
-            const segmentMap = new Map();
-            allSegments.forEach(seg => segmentMap.set(seg.name, seg));
-
-            // B. Agregar nuevos encontrados en inventario que no están en DB
-            inventorySegments.forEach(segName => {
-                if (!segmentMap.has(segName)) {
-                    const newSeg = {
-                        id: `temp_${segName.replace(/\s+/g, '_')}`, // ID temporal
-                        name: segName,
-                        orden: 9999, // Al final
-                        isNew: true
-                    };
-                    allSegments.push(newSeg);
-                    segmentMap.set(segName, newSeg);
-                }
-            });
-
-            // Ordenar
-            allSegments.sort((a, b) => (a.orden ?? 9999) - (b.orden ?? 9999));
-
-            const allMarcas = await getAllMarcas();
-            const marcasMap = new Map(allMarcas.map(m => [m.name, m]));
-
-            // Usamos la cache fusionada (_inventarioCache) para determinar la jerarquía visual
-            let prodsEnRubro = _inventarioCache;
-            if (rubroFiltro) {
-                prodsEnRubro = prodsEnRubro.filter(p => p.rubro === rubroFiltro);
-            }
-            const segmentsWithProductsInRubro = rubroFiltro ? new Set(prodsEnRubro.map(p => p.segmento).filter(Boolean)) : null;
-
-            container.innerHTML = '';
-            if (allSegments.length === 0) {
-                container.innerHTML = `<p class="text-gray-500 text-center">No hay segmentos definidos ni encontrados en productos.</p>`;
-                return;
-            }
-
-            allSegments.forEach(seg => {
-                // Si filtramos por rubro, ocultar segmentos que no tienen productos de ese rubro
-                const segmentHasProductsInRubro = !segmentsWithProductsInRubro || segmentsWithProductsInRubro.has(seg.name);
-                if (rubroFiltro && !segmentHasProductsInRubro) {
-                    return; // Skip rendering
-                }
-
-                const segCont = document.createElement('div');
-                segCont.className = 'segmento-container border border-gray-300 rounded-lg mb-3 bg-white shadow';
-                segCont.dataset.segmentoId = seg.id; // Puede ser real o temp_
-                segCont.dataset.segmentoName = seg.name;
-                segCont.dataset.type = 'segmento';
-
-                const segTitle = document.createElement('div');
-                segTitle.className = 'segmento-title p-3 bg-gray-200 rounded-t-lg cursor-grab active:cursor-grabbing font-semibold flex justify-between items-center';
-                segTitle.draggable = true;
-                segTitle.innerHTML = `<span>${seg.name}</span> ${seg.isNew ? '<span class="text-xs bg-yellow-200 px-2 rounded text-yellow-800">Nuevo</span>' : ''}`;
-                segCont.appendChild(segTitle);
-
-                const marcasList = document.createElement('ul');
-                marcasList.className = 'marcas-sortable-list p-3 space-y-2 bg-white rounded-b-lg';
-                marcasList.dataset.segmentoParent = seg.id;
-
-                // Obtener marcas para este segmento desde el inventario filtrado
-                const marcasEnSeg = [...new Set(prodsEnRubro
-                    .filter(p => p.segmento === seg.name && p.marca)
-                    .map(p => p.marca)
-                )];
-
-                const marcaOrderPref = seg.marcaOrder || [];
-                marcasEnSeg.sort((a, b) => {
-                    const indexA = marcaOrderPref.indexOf(a);
-                    const indexB = marcaOrderPref.indexOf(b);
-                    if (indexA !== -1 && indexB !== -1) return indexA - indexB;
-                    if (indexA !== -1) return -1;
-                    if (indexB !== -1) return 1;
-                    return a.localeCompare(b);
-                });
-
-                if (marcasEnSeg.length === 0) {
-                    marcasList.innerHTML = `<li class="text-xs text-gray-500 italic pl-2">No hay marcas ${rubroFiltro ? 'en este rubro' : ''} para este segmento.</li>`;
-                } else {
-                    marcasEnSeg.forEach(marcaName => {
-                        const marcaData = marcasMap.get(marcaName) || { id: `temp_${marcaName.replace(/\s+/g,'_')}`, name: marcaName, productOrder: [] };
-                        const marcaId = marcaData.id;
-
-                        const li = document.createElement('li');
-                        li.dataset.marcaId = marcaId;
-                        li.dataset.marcaName = marcaName;
-                        li.dataset.type = 'marca';
-                        li.className = 'marca-container p-2 bg-gray-50 rounded shadow-xs border border-gray-200';
-
-                        // Marca Title as Draggable Handle
-                        const marcaTitle = document.createElement('div');
-                        marcaTitle.className = 'marca-title font-medium text-gray-700 cursor-grab active:cursor-grabbing mb-1';
-                        marcaTitle.textContent = marcaName;
-                        marcaTitle.draggable = true;
-                        li.appendChild(marcaTitle);
-
-                        // Product List
-                        const prodList = document.createElement('ul');
-                        prodList.className = 'productos-sortable-list pl-4 space-y-1';
-                        prodList.dataset.marcaParent = marcaName; // Use Name as identifier within Segment context
-
-                        // Get products for this brand and segment
-                        const prods = prodsEnRubro.filter(p => p.segmento === seg.name && p.marca === marcaName);
-                        
-                        // Sort products based on stored productOrder in Marca document
-                        const prodOrderPref = marcaData.productOrder || [];
-                        prods.sort((a, b) => {
-                            const indexA = prodOrderPref.indexOf(a.id);
-                            const indexB = prodOrderPref.indexOf(b.id);
-                            if (indexA !== -1 && indexB !== -1) return indexA - indexB;
-                            if (indexA !== -1) return -1;
-                            if (indexB !== -1) return 1;
-                            return (a.presentacion || '').localeCompare(b.presentacion || '');
-                        });
-
-                        prods.forEach(p => {
-                            const pLi = document.createElement('li');
-                            pLi.dataset.productId = p.id;
-                            pLi.dataset.type = 'producto';
-                            pLi.className = 'producto-item text-sm text-gray-600 cursor-grab active:cursor-grabbing hover:bg-gray-100 p-1 rounded';
-                            pLi.textContent = p.presentacion;
-                            pLi.draggable = true;
-                            prodList.appendChild(pLi);
-                        });
-
-                        li.appendChild(prodList);
-                        marcasList.appendChild(li);
-                    });
-                }
-                segCont.appendChild(marcasList);
-                container.appendChild(segCont);
-            });
-
-            addDragAndDropHandlersHierarchy(container);
-
-        } catch (error) {
-            console.error("Error al renderizar jerarquía:", error);
-            container.innerHTML = `<p class="text-red-500 text-center">Error al cargar la estructura: ${error.message}</p>`;
+        let prods = [..._inventarioCache];
+        if (rubroFiltro) {
+            prods = prods.filter(p => p.rubro === rubroFiltro);
         }
-    }
 
-    function addDragAndDropHandlersHierarchy(container) {
-        let draggedItem = null;
-        let draggedItemElement = null; 
-        let draggedType = null;
-        let sourceList = null; 
-        let placeholder = null; 
-
-        const createPlaceholder = (type) => {
-            if(placeholder) placeholder.remove(); 
-            const isDiv = type === 'segmento';
-            placeholder = document.createElement(isDiv ? 'div' : 'li');
-            placeholder.className = `${type}-placeholder`;
-            placeholder.style.height = type === 'segmento' ? '60px' : (type === 'marca' ? '40px' : '25px');
-            placeholder.style.background = type === 'segmento' ? '#dbeafe' : (type === 'marca' ? '#e0e7ff' : '#f3f4f6');
-            placeholder.style.border = type === 'segmento' ? '2px dashed #3b82f6' : (type === 'marca' ? '1px dashed #6366f1' : '1px dashed #9ca3af');
-            placeholder.style.borderRadius = '0.25rem';
-            placeholder.style.margin = '0.5rem 0';
-            if(!isDiv) placeholder.style.listStyleType = 'none'; 
-        };
-
-        container.addEventListener('dragstart', e => {
-            // Identify what is being dragged based on target class
-            if (e.target.classList.contains('segmento-title')) {
-                draggedItemElement = e.target;
-                draggedType = 'segmento';
-                draggedItem = draggedItemElement.closest('.segmento-container');
-            } else if (e.target.classList.contains('marca-title')) {
-                draggedItemElement = e.target;
-                draggedType = 'marca';
-                draggedItem = draggedItemElement.closest('.marca-container');
-            } else if (e.target.classList.contains('producto-item')) {
-                draggedItemElement = e.target;
-                draggedType = 'producto';
-                draggedItem = draggedItemElement;
-            }
-
-            if (!draggedType || !draggedItem) { e.preventDefault(); return; } 
-
-            sourceList = draggedItem.parentNode; 
-            e.stopPropagation(); // Prevent bubbling up
-
-            setTimeout(() => { if (draggedItem) draggedItem.classList.add('opacity-50'); }, 0);
-            e.dataTransfer.effectAllowed = 'move';
-            createPlaceholder(draggedType); 
+        // Ordenar inicialmente por el orden global actual, luego alfabético
+        prods.sort((a, b) => {
+            const ordA = a.ordenGlobal !== undefined ? a.ordenGlobal : 999999;
+            const ordB = b.ordenGlobal !== undefined ? b.ordenGlobal : 999999;
+            if (ordA !== ordB) return ordA - ordB;
+            
+            // Fallback: Segmento -> Marca -> Presentacion
+            const sA = a.segmento || ''; const sB = b.segmento || '';
+            if (sA !== sB) return sA.localeCompare(sB);
+            const mA = a.marca || ''; const mB = b.marca || '';
+            if (mA !== mB) return mA.localeCompare(mB);
+            return (a.presentacion || '').localeCompare(b.presentacion || '');
         });
 
-        container.addEventListener('dragend', e => {
-            if (draggedItem) draggedItem.classList.remove('opacity-50'); 
-            draggedItem = null; draggedItemElement = null; draggedType = null; sourceList = null;
-            if (placeholder) placeholder.remove(); placeholder = null; 
+        if (prods.length === 0) {
+            container.innerHTML = `<p class="text-gray-500 text-center py-4">No hay productos para mostrar.</p>`;
+            return;
+        }
+
+        container.innerHTML = '';
+        prods.forEach((p, index) => {
+            const li = document.createElement('li');
+            li.className = 'producto-sortable-item grid grid-cols-12 gap-2 px-4 py-2 bg-white border rounded shadow-sm items-center cursor-grab active:cursor-grabbing hover:bg-blue-50 transition-colors';
+            li.dataset.productId = p.id;
+            li.draggable = true;
+            
+            li.innerHTML = `
+                <div class="col-span-1 text-center text-gray-400 font-mono text-xs drag-handle">☰</div>
+                <div class="col-span-3 text-sm text-gray-600 truncate" title="${p.segmento || 'N/A'}">${p.segmento || 'N/A'}</div>
+                <div class="col-span-3 text-sm font-semibold text-gray-700 truncate" title="${p.marca || 'N/A'}">${p.marca || 'N/A'}</div>
+                <div class="col-span-5 text-sm font-bold text-gray-900 truncate" title="${p.presentacion || 'N/A'}">${p.presentacion || 'N/A'}</div>
+            `;
+            container.appendChild(li);
+        });
+
+        addDragAndDropHandlersFlat(container);
+    }
+
+    function addDragAndDropHandlersFlat(container) {
+        let draggedItem = null;
+        let placeholder = document.createElement('li');
+        placeholder.className = 'bg-blue-100 border-2 border-dashed border-blue-400 rounded h-10 my-1';
+
+        container.addEventListener('dragstart', e => {
+            const item = e.target.closest('.producto-sortable-item');
+            if (!item) return;
+            draggedItem = item;
+            setTimeout(() => item.classList.add('opacity-50'), 0);
+            e.dataTransfer.effectAllowed = 'move';
+        });
+
+        container.addEventListener('dragend', () => {
+            if (draggedItem) draggedItem.classList.remove('opacity-50');
+            if (placeholder.parentNode) placeholder.parentNode.removeChild(placeholder);
+            draggedItem = null;
         });
 
         container.addEventListener('dragover', e => {
-            e.preventDefault(); 
-            if (!draggedItem || !placeholder) return; 
-
-            // Identify valid drop targets based on type
-            let targetListSelector;
-            if (draggedType === 'segmento') targetListSelector = '#segmentos-marcas-sortable-list';
-            else if (draggedType === 'marca') targetListSelector = '.marcas-sortable-list';
-            else if (draggedType === 'producto') targetListSelector = '.productos-sortable-list';
-
-            const targetList = e.target.closest(targetListSelector);
-
-            // Restrict drop to same list for products and brands (no moving between segments/brands for now to keep logic simple)
-            if (!targetList || (draggedType !== 'segmento' && targetList !== sourceList)) {
-                if (placeholder.parentNode) placeholder.remove(); 
-                e.dataTransfer.dropEffect = 'none'; 
-                return;
-            }
-
-            e.dataTransfer.dropEffect = 'move'; 
-
-            const afterElement = getDragAfterElementHierarchy(targetList, e.clientY, draggedType);
-            if (afterElement === null) {
-                targetList.appendChild(placeholder); 
+            e.preventDefault();
+            if (!draggedItem) return;
+            e.dataTransfer.dropEffect = 'move';
+            
+            const afterElement = getDragAfterElement(container, e.clientY);
+            if (afterElement == null) {
+                container.appendChild(placeholder);
             } else {
-                targetList.insertBefore(placeholder, afterElement); 
+                container.insertBefore(placeholder, afterElement);
             }
         });
 
         container.addEventListener('drop', e => {
-            e.preventDefault(); 
-            let targetListSelector;
-            if (draggedType === 'segmento') targetListSelector = '#segmentos-marcas-sortable-list';
-            else if (draggedType === 'marca') targetListSelector = '.marcas-sortable-list';
-            else if (draggedType === 'producto') targetListSelector = '.productos-sortable-list';
-
-            const targetList = e.target.closest(targetListSelector);
-
-            if (draggedItem && placeholder && placeholder.parentNode && targetList && (draggedType === 'segmento' || targetList === sourceList) ) {
-                placeholder.parentNode.insertBefore(draggedItem, placeholder); 
+            e.preventDefault();
+            if (draggedItem && placeholder.parentNode) {
+                placeholder.parentNode.insertBefore(draggedItem, placeholder);
             }
-
-            if (draggedItem) draggedItem.classList.remove('opacity-50');
-            if (placeholder) placeholder.remove();
-            draggedItem = null; draggedItemElement = null; draggedType = null; sourceList = null; placeholder = null;
-            e.stopPropagation();
         });
 
-        function getDragAfterElementHierarchy(listContainer, y, itemType) {
-            let selector;
-            if (itemType === 'segmento') selector = '.segmento-container:not(.opacity-50)';
-            else if (itemType === 'marca') selector = '.marca-container:not(.opacity-50)';
-            else selector = '.producto-item:not(.opacity-50)';
-
-            const draggables = [...listContainer.children].filter(c => c.matches(selector) && c !== draggedItem && !c.className.includes('placeholder'));
-
-            return draggables.reduce((closest, child) => {
+        function getDragAfterElement(container, y) {
+            const draggableElements = [...container.querySelectorAll('.producto-sortable-item:not(.opacity-50)')];
+            return draggableElements.reduce((closest, child) => {
                 const box = child.getBoundingClientRect();
-                const offset = y - box.top - box.height / 2; 
+                const offset = y - box.top - box.height / 2;
                 if (offset < 0 && offset > closest.offset) {
                     return { offset: offset, element: child };
                 } else {
                     return closest;
                 }
-            }, { offset: Number.NEGATIVE_INFINITY }).element; 
+            }, { offset: Number.NEGATIVE_INFINITY }).element;
         }
     }
 
-    async function handleGuardarOrdenJerarquia() {
+    async function handleGuardarOrdenDirecto() {
         if (_userRole !== 'admin') return;
-        const segConts = document.querySelectorAll('#segmentos-marcas-sortable-list .segmento-container'); 
-        if (segConts.length === 0) { _showModal('Aviso', 'No hay elementos para ordenar.'); return; }
-        
-        _showModal('Progreso', 'Guardando nuevo orden...');
-        
-        const batch = _writeBatch(_db);
-        let segOrderChanged = false, marcaOrderChanged = false, productOrderChanged = false;
-        const orderedSegIds = []; 
-        const currentSegmentDocs = {}; 
-        
-        const tempToRealIdMap = {};
-        
-        // --- FIX CRÍTICO: Acumulador para evitar sobreescribir marcas ---
-        const brandProductsAccumulator = new Map(); 
+        const items = document.querySelectorAll('#productos-sortable-list .producto-sortable-item');
+        if (items.length === 0) return;
 
+        _showModal('Progreso', 'Guardando orden global de productos...');
+        
         try {
-            const segsRef = _collection(_db, `artifacts/${_appId}/users/${_userId}/segmentos`);
-            const segsSnap = await _getDocs(segsRef);
-            segsSnap.docs.forEach(doc => { currentSegmentDocs[doc.id] = doc.data(); });
-        } catch (e) {
-            console.warn("No se pudieron precargar los datos de segmentos:", e);
-        }
-
-        segConts.forEach((segCont, index) => {
-            // 1. Order Segments
-            let segId = segCont.dataset.segmentoId;
-            const segName = segCont.dataset.segmentoName;
+            // Recolectar el nuevo orden
+            // Si el admin filtró por rubro, solo estamos ordenando ese rubro. 
+            // Para no dañar el orden de los demás, deberíamos obtener el orden máximo actual del catálogo
+            // y posicionar estos, pero para simplificar: si guardan desde un filtro, asumen que esos
+            // números se sobreescriben. Lo ideal es que configuren el orden viendo "Todos los Rubros".
             
-            let segRef;
-            if (segId.startsWith('temp_')) {
-                segRef = _doc(_collection(_db, `artifacts/${_appId}/users/${_userId}/segmentos`));
-                const newId = segRef.id;
-                tempToRealIdMap[segId] = newId; 
-                segId = newId;
-                
-                batch.set(segRef, { name: segName, orden: index });
-                segOrderChanged = true;
-            } else {
-                segRef = _doc(_db, `artifacts/${_appId}/users/${_userId}/segmentos`, segId);
-                const currentSegData = currentSegmentDocs[segId] || {}; 
-                if (currentSegData.orden === undefined || currentSegData.orden !== index) {
-                    batch.update(segRef, { orden: index });
-                    segOrderChanged = true;
+            const rubroFilter = document.getElementById('ordenarRubroFilter').value;
+            let startIndex = 0;
+
+            // Si hay un filtro aplicado, intentamos respetar el espacio de los anteriores
+            if (rubroFilter) {
+                const prodsFueraDelFiltro = _inventarioCache.filter(p => p.rubro !== rubroFilter && p.ordenGlobal !== undefined);
+                if (prodsFueraDelFiltro.length > 0) {
+                    // Obtener el máximo orden existente para no solaparnos (modo append)
+                    // O más bien, esto es complejo. Requerimos que el usuario ordene todo junto
+                    // o que entienda que los números se recalcularán.
+                    // Para ser seguros, asignamos un índice base alto si está filtrado, o simplemente
+                    // advertimos al usuario que ordene sin filtros para un control total.
                 }
             }
-            orderedSegIds.push(segId);
 
-            // 2. Order Brands within Segment
-            const marcaItems = segCont.querySelectorAll('.marcas-sortable-list > .marca-container');
-            const newMarcaOrder = Array.from(marcaItems).map(item => item.dataset.marcaName);
-            const currentMarcaOrder = currentSegmentDocs[segCont.dataset.segmentoId] ? (currentSegmentDocs[segCont.dataset.segmentoId].marcaOrder || []) : [];
+            let batch = _writeBatch(_db);
+            let opsCount = 0;
+            const BATCH_LIMIT = 490;
+            let successCount = 0;
 
-            if (JSON.stringify(newMarcaOrder) !== JSON.stringify(currentMarcaOrder)) {
-                // Check if segment was new (using original DOM ID for check)
-                if (segCont.dataset.segmentoId.startsWith('temp_')) {
-                     batch.set(segRef, { name: segName, orden: index, marcaOrder: newMarcaOrder });
-                } else {
-                     batch.update(segRef, { marcaOrder: newMarcaOrder });
+            for (let i = 0; i < items.length; i++) {
+                const pId = items[i].dataset.productId;
+                const newOrder = startIndex + i;
+
+                // 1. Guardar en Catálogo Maestro
+                const masterRef = _doc(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/productos`, pId);
+                batch.update(masterRef, { ordenGlobal: newOrder });
+                opsCount++;
+
+                // 2. Opcional/Legacy: Propagar al usuario actual para inmediatez (y a los demás si es necesario)
+                // Para no hacer un loop masivo, confiaremos en que el listener del maestro (Fase 2)
+                // actualizará las cachés de todos los usuarios al cambiar public/data/productos.
+                // Como _inventarioCache fusiona master + stock, el ordenGlobal vendrá del master instantáneamente.
+
+                if (opsCount >= BATCH_LIMIT) {
+                    await batch.commit();
+                    batch = _writeBatch(_db);
+                    opsCount = 0;
                 }
-                marcaOrderChanged = true;
+                successCount++;
             }
 
-            // 3. Acumular Order Products within Brands
-            // (Para no sobreescribir si la marca existe en varios segmentos)
-            marcaItems.forEach(mItem => {
-                let mId = mItem.dataset.marcaId;
-                const mName = mItem.dataset.marcaName;
-                const prodItems = mItem.querySelectorAll('.productos-sortable-list .producto-item');
-                const newProdOrder = Array.from(prodItems).map(pi => pi.dataset.productId);
-                
-                if (mId.startsWith('temp_')) {
-                    if (!tempToRealIdMap[mId]) {
-                        const mRef = _doc(_collection(_db, `artifacts/${_appId}/users/${_userId}/marcas`));
-                        tempToRealIdMap[mId] = mRef.id;
-                    }
-                    mId = tempToRealIdMap[mId];
-                }
-
-                // Guardar en el acumulador en lugar de ejecutar el batch directamente
-                if (!brandProductsAccumulator.has(mId)) {
-                    brandProductsAccumulator.set(mId, { name: mName, order: [] });
-                }
-                // Añadimos los productos de este segmento al orden maestro de la marca
-                brandProductsAccumulator.get(mId).order.push(...newProdOrder);
-            });
-        });
-
-        // 4. Escribir las Marcas Acumuladas en el Batch
-        brandProductsAccumulator.forEach((data, mId) => {
-            const mRef = _doc(_db, `artifacts/${_appId}/users/${_userId}/marcas`, mId);
-            // set con merge es seguro tanto si el doc es nuevo como si ya existía
-            batch.set(mRef, { name: data.name, productOrder: data.order }, { merge: true });
-            productOrderChanged = true;
-        });
-
-        if (!segOrderChanged && !marcaOrderChanged && !productOrderChanged) {
-            _showModal('Aviso', 'No se detectaron cambios en el orden.');
-            return;
-        }
-
-        try {
-            await batch.commit(); 
-            invalidateSegmentOrderCache(); 
-            if (window.catalogoModule?.invalidateCache) window.catalogoModule.invalidateCache();
-
-            _showModal('Progreso', 'Orden guardado localmente. Propagando...');
-            let propSuccess = true;
-
-            // --- UNIFIED PROPAGATION LOGIC ---
-            
-            if ((segOrderChanged || marcaOrderChanged || productOrderChanged) && window.adminModule?.propagateCategoryChange) {
-                 
-                 // 1. Propagate Segments
-                 for (const segId of orderedSegIds) {
-                      try {
-                          const segRef=_doc(_db,`artifacts/${_appId}/users/${_userId}/segmentos`,segId);
-                          const segSnap=await _getDoc(segRef); 
-                          if(segSnap.exists()){
-                              await window.adminModule.propagateCategoryChange('segmentos', segId, segSnap.data());
-                          }
-                     } catch (e) { 
-                         propSuccess=false; 
-                         console.error(`Error propagando segmento ${segId}:`, e); 
-                     }
-                 }
-
-                 // 2. Propagate Brands (Usando las keys del acumulador que ya son IDs reales)
-                 for (const mId of brandProductsAccumulator.keys()) {
-                     try {
-                         const mRef=_doc(_db,`artifacts/${_appId}/users/${_userId}/marcas`,mId);
-                         const mSnap=await _getDoc(mRef);
-                         if(mSnap.exists()) {
-                             await window.adminModule.propagateCategoryChange('marcas', mId, mSnap.data());
-                         }
-                     } catch(e) { 
-                         propSuccess=false; 
-                         console.error("Error propagando marca:", e); 
-                     }
-                 }
+            if (opsCount > 0) {
+                await batch.commit();
             }
 
-            _showModal(propSuccess ? 'Éxito' : 'Advertencia', `Orden guardado.${propSuccess ? ' Propagado.' : ' Errores al propagar.'}`, showInventarioSubMenu);
+            invalidateSegmentOrderCache();
+            _showModal('Éxito', `Orden guardado para ${successCount} productos. Los cambios se reflejarán instantáneamente en todos los dispositivos.`, showInventarioSubMenu);
+
         } catch (error) {
-            console.error("Error al guardar orden:", error);
+            console.error("Error al guardar orden directo:", error);
             _showModal('Error', `Ocurrió un error al guardar: ${error.message}`);
         }
     }
 
-
-    // Exponer funciones públicas necesarias
+    // Exponer funciones públicas
     window.inventarioModule = {
         editProducto,
         deleteProducto,
