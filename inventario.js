@@ -105,6 +105,9 @@
     // --- LÓGICA MAESTRA DE ORDENAMIENTO (CORREGIDA LA SENSIBILIDAD A MAYÚSCULAS) ---
     // ==============================================================================
     window.getGlobalProductSortFunction = async () => {
+        // Normalizador global para evitar fallos por mayúsculas/minúsculas o espacios extra
+        const norm = s => (s || '').trim().toUpperCase();
+
         if (!_globalSortCache.rubros || !_globalSortCache.segmentos || !_globalSortCache.marcas || !_globalSortCache.preference) {
             try {
                 const prefRef = _doc(_db, `artifacts/${_appId}/users/${_userId}/config/productSortOrder`);
@@ -117,19 +120,20 @@
                     _getDocs(_collection(_db, `artifacts/${_appId}/users/${_userId}/marcas`))
                 ]);
 
+                // Guardar llaves normalizadas
                 _globalSortCache.rubros = {};
-                rSnap.forEach(d => _globalSortCache.rubros[d.data().name] = d.data().orden ?? 9999);
+                rSnap.forEach(d => _globalSortCache.rubros[norm(d.data().name)] = d.data().orden ?? 9999);
 
                 _globalSortCache.segmentos = {};
-                sSnap.forEach(d => _globalSortCache.segmentos[d.data().name] = { 
+                sSnap.forEach(d => _globalSortCache.segmentos[norm(d.data().name)] = { 
                     orden: d.data().orden ?? 9999, 
-                    marcaOrder: d.data().marcaOrder || [] 
+                    marcaOrder: (d.data().marcaOrder || []).map(norm) // Normalizar array de orden
                 });
 
                 _globalSortCache.marcas = {};
                 
                 mSnap.forEach(d => {
-                    const nameKey = (d.data().name || '').trim().toUpperCase();
+                    const nameKey = norm(d.data().name);
                     if (!_globalSortCache.marcas[nameKey]) {
                         _globalSortCache.marcas[nameKey] = { productOrder: [] };
                     }
@@ -146,28 +150,26 @@
 
         return (a, b) => {
             const safeA = a || {}; const safeB = b || {};
-            // FUNCIÓN NORMALIZADORA: Elimina problemas si el usuario escribió con minúsculas/mayúsculas mixtas
-            const norm = s => (s || '').trim().toUpperCase();
             let res = 0;
 
             for (const key of _globalSortCache.preference) {
                 if (key === 'rubro') {
-                    const rA = _globalSortCache.rubros[safeA.rubro] ?? 9999;
-                    const rB = _globalSortCache.rubros[safeB.rubro] ?? 9999;
+                    const rA = _globalSortCache.rubros[norm(safeA.rubro)] ?? 9999;
+                    const rB = _globalSortCache.rubros[norm(safeB.rubro)] ?? 9999;
                     res = rA - rB;
                     if (res === 0) res = norm(safeA.rubro).localeCompare(norm(safeB.rubro));
                 } 
                 else if (key === 'segmento') {
-                    const sA = _globalSortCache.segmentos[safeA.segmento]?.orden ?? 9999;
-                    const sB = _globalSortCache.segmentos[safeB.segmento]?.orden ?? 9999;
+                    const sA = _globalSortCache.segmentos[norm(safeA.segmento)]?.orden ?? 9999;
+                    const sB = _globalSortCache.segmentos[norm(safeB.segmento)]?.orden ?? 9999;
                     res = sA - sB;
                     if (res === 0) res = norm(safeA.segmento).localeCompare(norm(safeB.segmento));
                 } 
                 else if (key === 'marca') {
-                    if (safeA.segmento === safeB.segmento) {
-                        const segData = _globalSortCache.segmentos[safeA.segmento];
+                    // CORRECCIÓN CRÍTICA: Validar normalizado para no saltarse la comparación manual
+                    if (norm(safeA.segmento) === norm(safeB.segmento)) {
+                        const segData = _globalSortCache.segmentos[norm(safeA.segmento)];
                         if (segData && segData.marcaOrder) {
-                            // AQUÍ ESTABA EL ERROR: Evaluar usando el normalizador
                             const idxA = segData.marcaOrder.indexOf(norm(safeA.marca));
                             const idxB = segData.marcaOrder.indexOf(norm(safeB.marca));
                             
@@ -179,7 +181,7 @@
                     if (res === 0) res = norm(safeA.marca).localeCompare(norm(safeB.marca));
                 } 
                 else if (key === 'presentacion') {
-                    // AQUÍ TAMBIÉN: Garantizar que la marca sea evaluada por su forma estandarizada
+                    // CORRECCIÓN CRÍTICA: Validar normalizado para no saltarse la comparación de productos
                     if (norm(safeA.marca) === norm(safeB.marca)) {
                         const marcaData = _globalSortCache.marcas[norm(safeA.marca)];
                         
