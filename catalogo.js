@@ -2,7 +2,6 @@
     let _db, _userId, _userRole, _appId, _mainContent, _showMainMenu, _collection, _getDocs, _floatingControls, _doc, _setDoc, _getDoc, _showModal, _onSnapshot;
     
     // --- VARIABLES FASE 2 ---
-    // CORRECCIÓN: Usar ID global desde config.js
     const PUBLIC_DATA_ID = window.AppConfig.PUBLIC_DATA_ID;
     
     let _masterCatalogCache = {}; 
@@ -20,11 +19,6 @@
     // Control de listeners
     let _listenersUnsubscribes = [];
 
-    let _sortPreferenceCache = null;
-    let _rubroOrderMapCache = null;
-    let _segmentoOrderMapCache = null;
-    const SORT_CONFIG_PATH = 'config/productSortOrder';
-
     window.initCatalogo = function(dependencies) {
         _db = dependencies.db;
         _userId = dependencies.userId;
@@ -39,13 +33,13 @@
         _setDoc = dependencies.setDoc;
         _getDoc = dependencies.getDoc;
         _showModal = dependencies.showModal;
-        _onSnapshot = dependencies.onSnapshot; // NUEVO: Necesario para Fase 2
+        _onSnapshot = dependencies.onSnapshot;
 
         if (!_floatingControls) console.warn("Catalogo Init Warning: floatingControls no encontrado.");
         if (!_doc || !_setDoc || !_getDoc || !_showModal || !_onSnapshot) {
             console.error("Catalogo Init Error: Faltan dependencias críticas.");
         }
-        console.log("Módulo Catálogo (Fase 2 Híbrido) inicializado. Public ID:", PUBLIC_DATA_ID);
+        console.log("Módulo Catálogo (Alineado con Coordenadas) inicializado. Public ID:", PUBLIC_DATA_ID);
     };
 
     window.showCatalogoSubMenu = function() {
@@ -57,6 +51,8 @@
         _listenersUnsubscribes.forEach(u => u());
         _listenersUnsubscribes = [];
 
+        // NOTA ARQUITECTÓNICA: Se eliminó el botón "Configurar Orden" ya que ahora
+        // el orden se maneja de forma absoluta visualmente desde el menú de Inventario.
         _mainContent.innerHTML = `
             <div class="p-4 pt-8">
                 <div class="container mx-auto max-w-lg">
@@ -69,9 +65,6 @@
                             <button data-rubros='["P&G"]' data-bg="images/p&g.png" class="catalogo-btn w-full px-6 py-3 bg-sky-500 text-white font-semibold rounded-lg shadow-md hover:bg-sky-600 transition duration-200">Procter & Gamble</button>
                             <button data-rubros='[]' data-bg="" class="catalogo-btn md:col-span-2 w-full px-6 py-3 bg-gray-700 text-white font-semibold rounded-lg shadow-md hover:bg-gray-800 transition duration-200">Unificado (Todos)</button>
                         </div>
-                        ${_userRole === 'admin' ? `
-                        <button id="configSortBtn" class="mt-4 w-full px-6 py-3 bg-purple-500 text-white font-semibold rounded-lg shadow-md hover:bg-purple-600 transition duration-200">Configurar Orden Productos</button>
-                        ` : ''}
                         <button id="backToMenuBtn" class="mt-6 w-full px-6 py-3 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500 transition duration-200">Volver al Menú</button>
                     </div>
                 </div>
@@ -85,112 +78,44 @@
                 showCatalogoView(title, bgImage);
             });
         });
-        if (_userRole === 'admin') {
-            document.getElementById('configSortBtn')?.addEventListener('click', showProductSortConfigView);
-        }
         document.getElementById('backToMenuBtn').addEventListener('click', _showMainMenu);
     }
 
-    async function showProductSortConfigView() {
-        if (_userRole !== 'admin') { _showModal('Acceso Denegado', 'Esta función es solo para administradores.'); _showMainMenu(); return; }
-        if (_floatingControls) _floatingControls.classList.add('hidden');
-        document.body.classList.remove('catalogo-active');
-
-        const availableCriteria = { rubro: 'Rubro', segmento: 'Segmento', marca: 'Marca', presentacion: 'Presentación' };
-
-        _mainContent.innerHTML = `
-            <div class="p-4 pt-8">
-                <div class="container mx-auto max-w-lg">
-                    <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl">
-                        <h2 class="text-2xl font-bold text-gray-800 mb-4 text-center">Configurar Orden de Productos</h2>
-                        <p class="text-center text-gray-600 mb-6">Arrastra criterios para definir prioridad (Catálogo, Inventario, Ventas).</p>
-                        <ul id="sort-criteria-list" class="space-y-2 border rounded-lg p-4 mb-6 bg-gray-50">
-                            <p class="text-gray-500 text-center">Cargando...</p>
-                        </ul>
-                        <div class="space-y-4">
-                            <button id="saveSortBtn" class="w-full px-6 py-3 bg-green-500 text-white font-semibold rounded-lg shadow-md hover:bg-green-600">Guardar Orden</button>
-                            <button id="backToCatalogoMenuBtn" class="w-full px-6 py-3 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500">Volver al Catálogo</button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        `;
-
-        document.getElementById('saveSortBtn').addEventListener('click', handleSaveSortPreference);
-        document.getElementById('backToCatalogoMenuBtn').addEventListener('click', showCatalogoSubMenu);
-
-        const sortListContainer = document.getElementById('sort-criteria-list');
-        try {
-            const docRef = _doc(_db, `artifacts/${_appId}/users/${_userId}/${SORT_CONFIG_PATH}`);
-            const docSnap = await _getDoc(docRef);
-            let currentOrder = ['segmento', 'marca', 'presentacion', 'rubro'];
-            if (docSnap.exists() && docSnap.data().order) {
-                currentOrder = docSnap.data().order;
-                const savedCriteriaSet = new Set(currentOrder); const availableKeys = Object.keys(availableCriteria);
-                if (currentOrder.length !== availableKeys.length || !availableKeys.every(key => savedCriteriaSet.has(key))) {
-                     console.warn("Orden guardado inválido, usando default.");
-                     currentOrder = ['segmento', 'marca', 'presentacion', 'rubro'];
-                }
-            } else { console.log("No sort preference found, using default."); }
-
-            sortListContainer.innerHTML = '';
-            currentOrder.forEach(key => { if (availableCriteria[key]) { const li=document.createElement('li'); li.dataset.key=key; li.className='p-3 bg-gray-100 rounded shadow-sm cursor-grab active:cursor-grabbing hover:bg-gray-200'; li.textContent=availableCriteria[key]; li.draggable=true; sortListContainer.appendChild(li); } });
-            Object.keys(availableCriteria).forEach(key => { if (!currentOrder.includes(key)) { const li=document.createElement('li'); li.dataset.key=key; li.className='p-3 bg-gray-100 rounded shadow-sm cursor-grab active:cursor-grabbing hover:bg-gray-200'; li.textContent=availableCriteria[key]; li.draggable=true; sortListContainer.appendChild(li); } });
-
-            addDragAndDropHandlersSort(sortListContainer);
-        } catch (error) { console.error("Error cargando orden:", error); sortListContainer.innerHTML = `<p class="text-red-500">Error al cargar.</p>`; }
-    }
-
-    async function handleSaveSortPreference() {
-        const listItems = document.querySelectorAll('#sort-criteria-list li');
-        if (listItems.length === 0) { _showModal('Error', 'No se pudieron leer criterios.'); return; }
-        const newOrder = Array.from(listItems).map(li => li.dataset.key);
-
-        _showModal('Progreso', 'Guardando preferencia...');
-        try {
-            const docRef = _doc(_db, `artifacts/${_appId}/users/${_userId}/${SORT_CONFIG_PATH}`);
-            await _setDoc(docRef, { order: newOrder });
-            _sortPreferenceCache = null; _rubroOrderMapCache = null; _segmentoOrderMapCache = null;
-            _showModal('Éxito', 'Preferencia guardada.');
-            showCatalogoSubMenu();
-        } catch (error) { console.error("Error guardando:", error); _showModal('Error', `No se pudo guardar: ${error.message}`); }
-    }
-
-    function addDragAndDropHandlersSort(container) {
-        let draggedItem = null; let placeholder = null;
-        const createPlaceholder = () => { if (!placeholder) { placeholder=document.createElement('li'); placeholder.style.height='40px'; placeholder.style.background='#e0e7ff'; placeholder.style.border='2px dashed #6366f1'; placeholder.style.borderRadius='0.375rem'; placeholder.style.margin='0.5rem 0'; placeholder.style.listStyleType='none'; } }; createPlaceholder();
-        container.addEventListener('dragstart', e => { if (e.target.tagName==='LI'){ draggedItem=e.target; setTimeout(()=>{if(draggedItem)draggedItem.style.opacity='0.5';}, 0);} });
-        container.addEventListener('dragend', e => { if(draggedItem)draggedItem.style.opacity='1'; draggedItem=null; if(placeholder&&placeholder.parentNode)placeholder.parentNode.removeChild(placeholder); });
-        container.addEventListener('dragover', e => { e.preventDefault(); const after=getDragAfterElementSort(container,e.clientY); if(draggedItem){ if(!placeholder)createPlaceholder(); if(after==null)container.appendChild(placeholder); else container.insertBefore(placeholder, after);} });
-        container.addEventListener('drop', e => { e.preventDefault(); if(draggedItem&&placeholder&&placeholder.parentNode){ container.insertBefore(draggedItem, placeholder); draggedItem.style.opacity='1'; } if(placeholder&&placeholder.parentNode)placeholder.parentNode.removeChild(placeholder); draggedItem=null; });
-        container.addEventListener('dragleave', e => { if (!container.contains(e.relatedTarget) && placeholder && placeholder.parentNode) placeholder.parentNode.removeChild(placeholder); });
-        function getDragAfterElementSort(cont, y) { const draggables=[...cont.querySelectorAll('li:not([style*="height: 40px"])')].filter(el=>el!==draggedItem); return draggables.reduce((closest, child)=>{ const box=child.getBoundingClientRect(), offset=y-box.top-box.height/2; if(offset<0&&offset>closest.offset)return {offset:offset,element:child}; else return closest; },{offset:Number.NEGATIVE_INFINITY}).element; }
-    }
-
+    // ==============================================================================
+    // --- MOTOR DE ORDENAMIENTO (SINCRONIZADO CON INVENTARIO.JS) ---
+    // ==============================================================================
     window.getGlobalProductSortFunction = async () => {
-        if (!_sortPreferenceCache) {
-            try { const dRef=_doc(_db, `artifacts/${_appId}/users/${_userId}/${SORT_CONFIG_PATH}`); const dSnap=await _getDoc(dRef); if(dSnap.exists()&&dSnap.data().order){ _sortPreferenceCache=dSnap.data().order; const expKeys=new Set(['rubro','segmento','marca','presentacion']); if(_sortPreferenceCache.length!==expKeys.size||!_sortPreferenceCache.every(k=>expKeys.has(k))){console.warn("Orden inválido, usando default."); _sortPreferenceCache=['segmento','marca','presentacion','rubro'];} } else {_sortPreferenceCache=['segmento','marca','presentacion','rubro'];} }
-            catch (error) { console.error("Error cargando pref orden:", error); _sortPreferenceCache=['segmento','marca','presentacion','rubro']; }
-        }
-        if (!_rubroOrderMapCache) { _rubroOrderMapCache={}; try { const rRef=_collection(_db, `artifacts/${_appId}/users/${_userId}/rubros`); const snap=await _getDocs(rRef); snap.docs.forEach(d=>{const data=d.data(); _rubroOrderMapCache[data.name]=data.orden??9999;}); } catch (e) { console.warn("No se pudo obtener orden rubros.", e); } }
-        if (!_segmentoOrderMapCache) { _segmentoOrderMapCache={}; try { const sRef=_collection(_db, `artifacts/${_appId}/users/${_userId}/segmentos`); const snap=await _getDocs(sRef); snap.docs.forEach(d=>{const data=d.data(); _segmentoOrderMapCache[data.name]=data.orden??9999;}); } catch (e) { console.warn("No se pudo obtener orden segmentos.", e); } }
-
         return (a, b) => {
-            for (const key of _sortPreferenceCache) { let valA, valB, compRes = 0;
-                switch (key) {
-                    case 'rubro': valA=_rubroOrderMapCache[a.rubro]??9999; valB=_rubroOrderMapCache[b.rubro]??9999; compRes=valA-valB; if(compRes===0)compRes=(a.rubro||'').localeCompare(b.rubro||''); break;
-                    case 'segmento': valA=_segmentoOrderMapCache[a.segmento]??9999; valB=_segmentoOrderMapCache[b.segmento]??9999; compRes=valA-valB; if(compRes===0)compRes=(a.segmento||'').localeCompare(b.segmento||''); break;
-                    case 'marca': valA=a.marca||''; valB=b.marca||''; compRes=valA.localeCompare(valB); break;
-                    case 'presentacion': valA=a.presentacion||''; valB=b.presentacion||''; compRes=valA.localeCompare(valB); break;
-                } if (compRes !== 0) return compRes;
-            } return 0;
+            // 1. Nivel Rubro: Siempre alfabético para que los rubros no se mezclen.
+            const rStrA = (a.rubro || 'SIN RUBRO').toUpperCase();
+            const rStrB = (b.rubro || 'SIN RUBRO').toUpperCase();
+            if (rStrA !== rStrB) return rStrA.localeCompare(rStrB);
+
+            // 2. Nivel Segmento: Por Coordenada visual, si no existe (9999), por orden alfabético estricto.
+            const sOrdA = a.ordenSegmento ?? 9999;
+            const sOrdB = b.ordenSegmento ?? 9999;
+            if (sOrdA !== sOrdB) return sOrdA - sOrdB;
+            const sStrA = (a.segmento || 'SIN SEGMENTO').toUpperCase();
+            const sStrB = (b.segmento || 'SIN SEGMENTO').toUpperCase();
+            if (sStrA !== sStrB) return sStrA.localeCompare(sStrB);
+
+            // 3. Nivel Marca: Por Coordenada visual, luego alfabético.
+            const mOrdA = a.ordenMarca ?? 9999;
+            const mOrdB = b.ordenMarca ?? 9999;
+            if (mOrdA !== mOrdB) return mOrdA - mOrdB;
+            const mStrA = (a.marca || 'S/M').toUpperCase();
+            const mStrB = (b.marca || 'S/M').toUpperCase();
+            if (mStrA !== mStrB) return mStrA.localeCompare(mStrB);
+
+            // 4. Nivel Producto: Por Coordenada visual, luego por nombre.
+            const pOrdA = a.ordenProducto ?? 9999;
+            const pOrdB = b.ordenProducto ?? 9999;
+            if (pOrdA !== pOrdB) return pOrdA - pOrdB;
+            const pStrA = (a.presentacion || '').toUpperCase();
+            const pStrB = (b.presentacion || '').toUpperCase();
+            return pStrA.localeCompare(pStrB);
         };
     };
-
-    function invalidateGlobalSortCache() {
-        _sortPreferenceCache = null; _rubroOrderMapCache = null; _segmentoOrderMapCache = null;
-        console.log("Cachés de ordenamiento global invalidadas.");
-    }
 
     function showCatalogoView(title, bgImage) {
         _currentBgImage = bgImage; if (bgImage) { document.body.style.setProperty('--catalogo-bg-image', `url('${bgImage}')`); document.body.classList.add('catalogo-active'); } else { document.body.classList.remove('catalogo-active'); document.body.style.removeProperty('--catalogo-bg-image'); } _catalogoMonedaActual = 'USD';
@@ -210,7 +135,6 @@
         _catalogoMonedaActual = _catalogoMonedaActual === 'USD' ? 'COP' : 'USD'; renderCatalogo();
     };
 
-    // --- NUEVO: LISTENER HÍBRIDO (Reemplaza loadAndRenderCatalogo) ---
     async function startHybridCatalogListener() {
         const cont = document.getElementById('catalogo-content'); if (cont) cont.innerHTML = `<p class="text-center text-gray-500 p-4">Sincronizando datos...</p>`;
         
@@ -250,7 +174,6 @@
 
             if (master) {
                 // Producto Fase 2: Definición Maestra + Stock Local
-                // Importante: Si stock es undefined, cantidad es 0.
                 item = { 
                     ...master, 
                     cantidadUnidades: stock ? (stock.cantidadUnidades || 0) : 0, 
@@ -288,7 +211,6 @@
             
             _marcasCache = mOrdenadas; _productosAgrupadosCache = pAgrupados;
             
-            // --- UI OPTIMIZADA (Tu versión actual) ---
             let html = '<div class="space-y-2">'; 
             const monLabel = _catalogoMonedaActual === 'COP' ? 'PRECIO (COP)' : 'PRECIO (USD)';
             
@@ -440,7 +362,7 @@
     }
     
     window.catalogoModule = {
-        invalidateCache: invalidateGlobalSortCache
+        invalidateCache: () => {} 
     };
 
 })();
