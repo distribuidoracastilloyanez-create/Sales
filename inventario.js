@@ -93,16 +93,21 @@
     }
 
     // ==============================================================================
-    // --- NUEVO MOTOR: ÍNDICE ABSOLUTO (Cero dependencias cruzadas) ---
+    // --- NUEVO MOTOR INQUEBRANTABLE: FIRMA LEXICOGRÁFICA (SORT KEY) ---
     // ==============================================================================
     window.getGlobalProductSortFunction = async () => {
         return (a, b) => {
-            const indexA = (a.ordenVisibilidad !== undefined && a.ordenVisibilidad !== null) ? Number(a.ordenVisibilidad) : 999999;
-            const indexB = (b.ordenVisibilidad !== undefined && b.ordenVisibilidad !== null) ? Number(b.ordenVisibilidad) : 999999;
+            const norm = s => (s || '').trim().toUpperCase();
             
-            let res = indexA - indexB;
-            if (res === 0) res = (a.presentacion || '').localeCompare(b.presentacion || '');
-            return res;
+            // Construimos la firma de comparación dinámica: Rubro + FirmaGuardada
+            const prefixA = norm(a.rubro) || 'Z_OTROS';
+            const prefixB = norm(b.rubro) || 'Z_OTROS';
+            
+            // Si no tiene sortKey (producto nuevo), se le asigna un valor muy alto '9999' para que caiga al final de su rubro
+            const keyA = `${prefixA}_${a.sortKey || `9999_9999_9999_${norm(a.presentacion)}`}`;
+            const keyB = `${prefixB}_${b.sortKey || `9999_9999_9999_${norm(b.presentacion)}`}`;
+            
+            return keyA.localeCompare(keyB);
         };
     };
 
@@ -315,7 +320,7 @@
         let lastHeader = null;
 
         productosFiltrados.forEach(p => {
-            let currentHeaderValue = `${p.rubro || 'Sin Rubro'} > ${p.segmento || 'Sin Segmento'}`;
+            let currentHeaderValue = `${(p.rubro || 'Sin Rubro').toUpperCase()} > ${(p.segmento || 'Sin Segmento').toUpperCase()}`;
 
             if (currentHeaderValue !== lastHeader) {
                 lastHeader = currentHeaderValue;
@@ -435,6 +440,8 @@
         _showModal('Progreso', 'Creando producto en Catálogo Maestro...');
         try {
             const newId = _doc(_collection(_db, 'dummy')).id;
+            // Quitamos la llave para obligar al usuario a reordenarlo luego en la vista de Ordenar
+            data.sortKey = null; 
             if (window.adminModule?.propagateProductChange) {
                 await window.adminModule.propagateProductChange(newId, data);
                 _showModal('Éxito', 'Producto agregado al Catálogo y propagado.', showInventarioSubMenu);
@@ -619,12 +626,14 @@
         if (!updatedData.rubro||!updatedData.segmento||!updatedData.marca||!updatedData.presentacion){_showModal('Error','Completa Rubro, Segmento, Marca y Presentación.');return;} if (!updatedData.ventaPor.und&&!updatedData.ventaPor.paq&&!updatedData.ventaPor.cj){_showModal('Error','Selecciona al menos una forma de venta.');return;} if (updatedData.manejaVacios&&!updatedData.tipoVacio){_showModal('Error','Si maneja vacío, selecciona el tipo.');document.getElementById('tipoVacioSelect')?.focus();return;} let precioValido=(updatedData.ventaPor.und&&updatedData.precios.und>0)||(updatedData.ventaPor.paq&&updatedData.precios.paq>0)||(updatedData.ventaPor.cj&&updatedData.precios.cj>0); if(!precioValido){_showModal('Error','Ingresa al menos un precio válido (> 0) para la forma de venta seleccionada.');document.querySelector('#preciosContainer input[required]')?.focus();return;}
         
         updatedData.cantidadUnidades = 0; 
+        // Forzamos nulidad de sortKey si se edita, para que tome el nuevo prefijo del Rubro automáticamente.
+        updatedData.sortKey = null;
 
         _showModal('Progreso','Guardando cambios en Catálogo Maestro...'); 
         try { 
             if (window.adminModule?.propagateProductChange) { 
                 await window.adminModule.propagateProductChange(productId, updatedData); 
-                 _showModal('Éxito','Producto modificado y propagado correctamente.', showModifyDeleteView); 
+                 _showModal('Éxito','Producto modificado y propagado correctamente. Recuerde reordenarlo en la vista de Orden.', showModifyDeleteView); 
             } else {
                 throw new Error("Módulo Admin no cargado.");
             }
@@ -794,7 +803,7 @@
         let lastHeader = null;
         
         productos.forEach(p => {
-            let currentHeaderValue = `${p.rubro || 'Sin Rubro'} > ${p.segmento || 'Sin Segmento'}`;
+            let currentHeaderValue = `${(p.rubro || 'Sin Rubro').toUpperCase()} > ${(p.segmento || 'Sin Segmento').toUpperCase()}`;
 
             if (currentHeaderValue !== lastHeader) { 
                 lastHeader = currentHeaderValue; 
@@ -910,7 +919,6 @@
         _showModal('Confirmar Recarga', `Se añadirán cantidades a ${changesCount} productos. ¿Continuar?`, async () => {
             _showModal('Progreso', 'Procesando recarga...');
             try {
-                // Log de auditoría
                 const recargaLogRef = _collection(_db, `artifacts/${_appId}/users/${_userId}/recargas`);
                 await _addDoc(recargaLogRef, {
                     fecha: new Date().toISOString(), 
@@ -998,16 +1006,17 @@
                 prodsEnRubro = prodsEnRubro.filter(p => p.rubro === rubroFiltro);
             }
             
-            // Ordenar por el índice absoluto actual
+            // Ordenar por la Firma Lexicográfica actual
             prodsEnRubro.sort((a, b) => {
-                const iA = (a.ordenVisibilidad !== undefined && a.ordenVisibilidad !== null) ? Number(a.ordenVisibilidad) : 999999;
-                const iB = (b.ordenVisibilidad !== undefined && b.ordenVisibilidad !== null) ? Number(b.ordenVisibilidad) : 999999;
-                let r = iA - iB;
-                if (r === 0) r = (a.presentacion || '').localeCompare(b.presentacion || '');
-                return r;
+                const norm = s => (s || '').trim().toUpperCase();
+                const prefixA = norm(a.rubro) || 'Z_OTROS';
+                const prefixB = norm(b.rubro) || 'Z_OTROS';
+                const keyA = `${prefixA}_${a.sortKey || `9999_9999_9999_${norm(a.presentacion)}`}`;
+                const keyB = `${prefixB}_${b.sortKey || `9999_9999_9999_${norm(b.presentacion)}`}`;
+                return keyA.localeCompare(keyB);
             });
 
-            // Descubrir y agrupar la jerarquía en el orden de aparición
+            // Agrupar jerarquía para dibujarla
             const hierarchy = new Map(); 
             
             prodsEnRubro.forEach(p => {
@@ -1028,7 +1037,6 @@
             }
 
             hierarchy.forEach((marcasMap, segName) => {
-                // --- CONTENEDOR SEGMENTO ---
                 const segCont = document.createElement('div');
                 segCont.className = 'segmento-container bg-white border border-blue-300 rounded-lg mb-4 shadow-sm';
                 segCont.dataset.name = segName;
@@ -1045,7 +1053,6 @@
                 marcasList.className = 'marcas-list p-3 space-y-3 bg-blue-50/30 min-h-[50px]';
 
                 marcasMap.forEach((prodsArray, marcaName) => {
-                    // --- CONTENEDOR MARCA ---
                     const li = document.createElement('li');
                     li.className = 'marca-container p-3 mb-3 bg-blue-50/50 rounded-lg border border-blue-200 shadow-sm';
                     li.dataset.name = marcaName;
@@ -1058,12 +1065,10 @@
                                             <span class="pointer-events-none">🏷️ ${marcaName}</span>`;
                     li.appendChild(marcaTitle);
 
-                    // --- LISTA DE PRODUCTOS ---
                     const prodList = document.createElement('ul');
                     prodList.className = 'productos-sortable-list pl-2 space-y-1 min-h-[10px]';
 
                     prodsArray.forEach(p => {
-                        // --- CONTENEDOR PRODUCTO ---
                         const pLi = document.createElement('li');
                         pLi.dataset.id = p.id;
                         pLi.dataset.type = 'producto';
@@ -1190,86 +1195,62 @@
         const segConts = document.querySelectorAll('#segmentos-marcas-sortable-list .segmento-container'); 
         if (segConts.length === 0) { _showModal('Aviso', 'No hay elementos para ordenar.'); return; }
         
-        _showModal('Progreso', 'Guardando Índice Absoluto de Ordenamiento...');
+        _showModal('Progreso', 'Generando Firmas Lexicográficas (Sort Keys)...');
         
-        const rubroFilter = document.getElementById('ordenarRubroFilter').value;
-        const domOrder = [];
+        const updates = [];
         
-        // 1. Extraer el orden lineal del DOM (Solo los IDs de los productos)
-        segConts.forEach(segCont => {
+        // El Algoritmo: Lee la posición visual y le asigna un número (0001, 0002) que nunca fallará en el .sort()
+        segConts.forEach((segCont, sIdx) => {
             const marcaItems = segCont.querySelectorAll('.marcas-list > .marca-container');
-            marcaItems.forEach(mItem => {
+            marcaItems.forEach((mItem, mIdx) => {
                 const prodItems = mItem.querySelectorAll('.productos-sortable-list .producto-item');
-                prodItems.forEach(pi => {
-                    domOrder.push(pi.dataset.id);
+                prodItems.forEach((pi, pIdx) => {
+                    const pId = pi.dataset.id;
+                    const prod = _inventarioCache.find(p => p.id === pId);
+                    
+                    if (prod) {
+                        const sStr = String(sIdx).padStart(4, '0');
+                        const mStr = String(mIdx).padStart(4, '0');
+                        const pStr = String(pIdx).padStart(4, '0');
+                        const newSortKey = `${sStr}_${mStr}_${pStr}`;
+                        
+                        // Evita escribir a base de datos si el producto ya está en la posición correcta
+                        if (prod.sortKey !== newSortKey) {
+                            updates.push({ pId: pId, sortKey: newSortKey });
+                        }
+                    }
                 });
             });
         });
 
-        const domOrderSet = new Set(domOrder);
-        let finalSortedIds = [];
-
-        // 2. Construir la lista global final manteniendo la posición de otros Rubros intacta
-        if (!rubroFilter) {
-            finalSortedIds = [...domOrder];
-            _inventarioCache.forEach(p => {
-                if (!domOrderSet.has(p.id)) finalSortedIds.push(p.id);
-            });
-        } else {
-            let existingSorted = [..._inventarioCache].sort((a, b) => {
-                const iA = (a.ordenVisibilidad !== undefined && a.ordenVisibilidad !== null) ? Number(a.ordenVisibilidad) : 999999;
-                const iB = (b.ordenVisibilidad !== undefined && b.ordenVisibilidad !== null) ? Number(b.ordenVisibilidad) : 999999;
-                let r = iA - iB;
-                if (r === 0) r = (a.presentacion || '').localeCompare(b.presentacion || '');
-                return r;
-            });
-            let inserted = false;
-            
-            existingSorted.forEach(p => {
-                if (p.rubro === rubroFilter) {
-                    if (!inserted) {
-                        finalSortedIds.push(...domOrder);
-                        inserted = true;
-                    }
-                } else {
-                    finalSortedIds.push(p.id);
-                }
-            });
-            
-            if (!inserted) finalSortedIds.push(...domOrder);
-
-            _inventarioCache.forEach(p => {
-                if (p.rubro === rubroFilter && !domOrderSet.has(p.id)) {
-                    finalSortedIds.push(p.id);
-                }
-            });
+        if (updates.length === 0) {
+            _showModal('Aviso', 'No se detectaron cambios en el orden visual.');
+            return;
         }
 
-        // 3. Escribir el Índice Absoluto en TODOS LADOS (Para no saltar la data heredada)
         try {
             let totalOps = 0;
             let batch = _writeBatch(_db);
             
-            for (let i = 0; i < finalSortedIds.length; i++) {
-                const pId = finalSortedIds[i];
+            for (const u of updates) {
                 let fueActualizado = false;
 
-                // A) Intentar actualizar en Catálogo Maestro
-                if (_masterCatalogCache[pId]) {
-                    const refMaster = _doc(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/productos`, pId);
-                    batch.set(refMaster, { ordenVisibilidad: i + 1 }, { merge: true });
+                // 1. Guardar en Catálogo Maestro
+                if (_masterCatalogCache[u.pId]) {
+                    const refMaster = _doc(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/productos`, u.pId);
+                    batch.set(refMaster, { sortKey: u.sortKey }, { merge: true });
                     totalOps++;
                     fueActualizado = true;
                 }
                 
-                // B) Intentar actualizar en Inventario de Usuario (Clave para datos Legacy)
-                if (_userStockCache[pId] || !fueActualizado) {
-                    const refStock = _doc(_db, `artifacts/${_appId}/users/${_userId}/inventario`, pId);
-                    batch.set(refStock, { ordenVisibilidad: i + 1 }, { merge: true });
+                // 2. Guardar en Caché Privada (Legacy / Seguridad)
+                if (_userStockCache[u.pId] || !fueActualizado) {
+                    const refStock = _doc(_db, `artifacts/${_appId}/users/${_userId}/inventario`, u.pId);
+                    batch.set(refStock, { sortKey: u.sortKey }, { merge: true });
                     totalOps++;
                 }
                 
-                if (totalOps >= 490) { // Límite de Firebase
+                if (totalOps >= 490) { // Batch límite de Firestore
                     await batch.commit();
                     batch = _writeBatch(_db);
                     totalOps = 0;
@@ -1281,7 +1262,7 @@
             }
 
             invalidateSegmentOrderCache(); 
-            _showModal('Éxito', `Índice Absoluto guardado. El orden ahora es definitivo y forzado en toda la base de datos.`, showInventarioSubMenu);
+            _showModal('Éxito', `Firma guardada en ${updates.length} productos. El orden es absoluto e irrompible.`, showInventarioSubMenu);
         } catch (error) {
             console.error("Error al guardar orden:", error);
             _showModal('Error', `Fallo al guardar: ${error.message}`);
