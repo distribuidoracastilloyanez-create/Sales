@@ -5,17 +5,21 @@
     let _increment; 
 
     // --- SISTEMA DE CACHÉ DOBLE ---
-    let _masterCatalogCache = {}; // Datos públicos
-    let _userStockCache = {};     // Datos privados
-    let _inventarioCache = [];    // Fusión
+    let _masterCatalogCache = {}; 
+    let _userStockCache = {};     
+    let _inventarioCache = [];    
     
     let _listenersUnsubscribes = []; 
-
     let _lastFilters = { searchTerm: '', rubro: '', segmento: '', marca: '' };
     let _recargaTempState = {}; 
 
-    // --- CACHÉ DE ORDENAMIENTO (Mantiene el orden de los Rubros) ---
-    let _globalSortCache = { rubros: null };
+    // --- NUEVO: CACHÉ ESTRUCTURAL (Optimizado y Seguro) ---
+    let _globalSortCache = {
+        ready: false,
+        rubros: {},
+        segmentos: {},
+        marcas: {}
+    };
 
     const PUBLIC_DATA_ID = window.AppConfig.PUBLIC_DATA_ID; 
 
@@ -96,42 +100,91 @@
     }
 
     // ==============================================================================
-    // --- MOTOR INQUEBRANTABLE: FIRMA LEXICOGRÁFICA REFORZADA CON RUBROS ---
+    // --- MOTOR MATEMÁTICO INQUEBRANTABLE ---
     // ==============================================================================
     window.getGlobalProductSortFunction = async () => {
         const norm = s => (s || '').trim().toUpperCase();
-        
-        // Cargar el orden numérico de los rubros una sola vez
-        if (!_globalSortCache.rubros) {
+
+        // Cargar los índices guardados una sola vez por sesión
+        if (!_globalSortCache.ready) {
             _globalSortCache.rubros = {};
+            _globalSortCache.segmentos = {};
+            _globalSortCache.marcas = {};
+
             try {
-                const rSnap = await _getDocs(_collection(_db, `artifacts/${_appId}/users/${_userId}/rubros`));
-                rSnap.forEach(d => _globalSortCache.rubros[norm(d.data().name)] = String(d.data().orden ?? 9999).padStart(4, '0'));
-            } catch(e) {
-                console.warn("Aviso: No se pudo cargar el orden de rubros", e);
+                const [rSnap, sSnap, mSnap] = await Promise.all([
+                    _getDocs(_collection(_db, `artifacts/${_appId}/users/${_userId}/rubros`)),
+                    _getDocs(_collection(_db, `artifacts/${_appId}/users/${_userId}/segmentos`)),
+                    _getDocs(_collection(_db, `artifacts/${_appId}/users/${_userId}/marcas`))
+                ]);
+
+                rSnap.forEach(d => { _globalSortCache.rubros[norm(d.data().name)] = String(d.data().orden ?? 9999).padStart(4, '0'); });
+                
+                sSnap.forEach(d => { 
+                    _globalSortCache.segmentos[norm(d.data().name)] = {
+                        orden: String(d.data().orden ?? 9999).padStart(4, '0'),
+                        marcaOrder: (d.data().marcaOrder || []).map(norm)
+                    };
+                });
+                
+                mSnap.forEach(d => {
+                    const mName = norm(d.data().name);
+                    if (!_globalSortCache.marcas[mName]) _globalSortCache.marcas[mName] = { productOrder: [] };
+                    _globalSortCache.marcas[mName].productOrder.push(...(d.data().productOrder || []));
+                });
+                
+                _globalSortCache.ready = true;
+            } catch (e) {
+                console.error("Error cargando configuración de orden:", e);
             }
         }
 
         return (a, b) => {
-            // 1. Obtener el índice numérico del Rubro (Garantiza que no se desordenen alfabéticamente)
+            // 1. Rubro (Numérico)
             const rA = _globalSortCache.rubros[norm(a.rubro)] || '9999';
             const rB = _globalSortCache.rubros[norm(b.rubro)] || '9999';
             
-            // 2. Extraer la Firma generada en la vista de Ordenar (ej: "0000_0001_0005")
-            // Si el producto es nuevo o no se ha ordenado, le damos "Z_9999..." para enviarlo al final de su Rubro.
-            const kA = a.sortKey ? `A_${a.sortKey}` : `Z_9999_9999_9999_${norm(a.segmento)}_${norm(a.marca)}`;
-            const kB = b.sortKey ? `A_${b.sortKey}` : `Z_9999_9999_9999_${norm(b.segmento)}_${norm(b.marca)}`;
+            // 2. Segmento (Numérico)
+            const sDataA = _globalSortCache.segmentos[norm(a.segmento)];
+            const sDataB = _globalSortCache.segmentos[norm(b.segmento)];
+            const sA = sDataA ? sDataA.orden : '9999';
+            const sB = sDataB ? sDataB.orden : '9999';
             
-            // 3. Unir las cadenas: [OrdenRubro]_[OrdenInterno]_[Nombre]
-            const stringA = `${rA}_${kA}_${norm(a.presentacion)}`;
-            const stringB = `${rB}_${kB}_${norm(b.presentacion)}`;
-            
-            return stringA.localeCompare(stringB);
+            // 3. Marca (Su índice dentro del Segmento)
+            let mA = '9999', mB = '9999';
+            if (sDataA && sDataA.marcaOrder) {
+                const idx = sDataA.marcaOrder.indexOf(norm(a.marca));
+                if (idx !== -1) mA = String(idx).padStart(4, '0');
+            }
+            if (sDataB && sDataB.marcaOrder) {
+                const idx = sDataB.marcaOrder.indexOf(norm(b.marca));
+                if (idx !== -1) mB = String(idx).padStart(4, '0');
+            }
+
+            // 4. Presentación (Su índice dentro de la Marca)
+            let pA = '9999', pB = '9999';
+            const mDataA = _globalSortCache.marcas[norm(a.marca)];
+            if (mDataA && mDataA.productOrder) {
+                const idx = mDataA.productOrder.indexOf(a.id);
+                if (idx !== -1) pA = String(idx).padStart(4, '0');
+            }
+            const mDataB = _globalSortCache.marcas[norm(b.marca)];
+            if (mDataB && mDataB.productOrder) {
+                const idx = mDataB.productOrder.indexOf(b.id);
+                if (idx !== -1) pB = String(idx).padStart(4, '0');
+            }
+
+            // --- LA LLAVE MAESTRA ---
+            // Combina los índices con los nombres reales para asegurar que jamás se entremezclen.
+            const keyA = `${rA}_${norm(a.rubro)}_${sA}_${norm(a.segmento)}_${mA}_${norm(a.marca)}_${pA}_${norm(a.presentacion)}`;
+            const keyB = `${rB}_${norm(b.rubro)}_${sB}_${norm(b.segmento)}_${mB}_${norm(b.marca)}_${pB}_${norm(b.presentacion)}`;
+
+            return keyA.localeCompare(keyB);
         };
     };
 
     function invalidateSegmentOrderCache() {
-        _globalSortCache.rubros = null;
+        _globalSortCache.ready = false;
         if (window.catalogoModule?.invalidateCache) window.catalogoModule.invalidateCache();
         if (window.ventasModule?.invalidateCache) window.ventasModule.invalidateCache();
     }
@@ -284,10 +337,6 @@
         return { updateDependentDropdowns };
     }
 
-    // =========================================================================================
-    // VISTA "VER Y MODIFICAR PRODUCTOS" RECONSTRUIDA
-    // =========================================================================================
-
     async function showModifyDeleteView() {
         if (_floatingControls) _floatingControls.classList.add('hidden'); 
         const isAdmin = _userRole === 'admin';
@@ -346,7 +395,6 @@
 
         container.innerHTML = '<div class="flex justify-center items-center p-12 text-gray-500 font-bold animate-pulse">Procesando y Ordenando...</div>';
 
-        // 1. Aplicar Filtros Manuales
         let filtrados = _inventarioCache.filter(p => {
             const term = (_lastFilters.searchTerm || '').toLowerCase();
             const textMatch = !term || 
@@ -361,7 +409,6 @@
             return textMatch && rMatch && sMatch && mMatch;
         });
 
-        // 2. Ordenamiento Global y Definitivo
         const sortFn = await window.getGlobalProductSortFunction();
         filtrados.sort(sortFn);
 
@@ -370,7 +417,6 @@
             return;
         }
 
-        // 3. Renderizar la tabla de forma lineal y limpia
         const numCols = readOnly ? 4 : 5;
         let html = `
             <table class="min-w-full bg-white text-sm text-left whitespace-nowrap">
@@ -389,7 +435,6 @@
         let currentGroup = null;
 
         filtrados.forEach(p => {
-            // Agrupación visual dependiente estrictamente de los valores reales
             const rName = (p.rubro || 'SIN RUBRO').toUpperCase();
             const sName = (p.segmento || 'SIN SEGMENTO').toUpperCase();
             const groupName = `${rName} > ${sName}`;
@@ -498,7 +543,6 @@
         const rubroFilter = document.getElementById('ordenarRubroFilter');
         rubroFilter.addEventListener('change', () => renderSortableHierarchy(rubroFilter.value));
         
-        // Carga inicial (forzando que esté vacío hasta que seleccione)
         renderSortableHierarchy('');
     }
 
@@ -507,7 +551,6 @@
         const saveBtn = document.getElementById('saveOrderBtn');
         if (!container) return;
         
-        // REGLA OBLIGATORIA: Si no hay rubro seleccionado, no se muestra nada para evitar fusiones.
         if (!rubroFiltro) {
             container.innerHTML = `
                 <div class="p-10 text-center bg-gray-50 rounded-xl border-2 border-dashed border-gray-300">
@@ -523,14 +566,10 @@
         saveBtn.classList.remove('hidden');
         
         try {
-            // Filtrar estrictamente solo el rubro seleccionado
             let prodsEnRubro = _inventarioCache.filter(p => p.rubro === rubroFiltro);
-            
-            // Ordenar por la Firma Lexicográfica actual
             const sortFn = await window.getGlobalProductSortFunction();
             prodsEnRubro.sort(sortFn);
 
-            // Agrupar jerarquía para dibujarla
             const hierarchy = new Map(); 
             
             prodsEnRubro.forEach(p => {
@@ -716,71 +755,74 @@
         const segConts = document.querySelectorAll('#segmentos-marcas-sortable-list .segmento-container'); 
         if (segConts.length === 0) { _showModal('Aviso', 'No hay elementos para ordenar.'); return; }
         
-        _showModal('Progreso', 'Generando Firmas Lexicográficas...');
+        _showModal('Progreso', 'Guardando orden jerárquico de forma segura en las categorías...');
         
-        const updates = [];
+        const batch = _writeBatch(_db);
+        const brandAccumulator = new Map();
+        const norm = s => (s || '').trim().toUpperCase();
         
+        // El script ahora guarda el orden visual actual en la base de datos de configuraciones Privadas (donde seguro tienes permiso)
         segConts.forEach((segCont, sIdx) => {
+            let sId = segCont.dataset.id;
+            const sName = segCont.dataset.name;
+            
+            if (!sId || sId.startsWith('temp_')) {
+                sId = _doc(_collection(_db, 'dummy')).id;
+            }
+            
             const marcaItems = segCont.querySelectorAll('.marcas-list > .marca-container');
-            marcaItems.forEach((mItem, mIdx) => {
-                const prodItems = mItem.querySelectorAll('.productos-sortable-list .producto-item');
-                prodItems.forEach((pi, pIdx) => {
-                    const pId = pi.dataset.id;
-                    const prod = _inventarioCache.find(p => p.id === pId);
-                    
-                    if (prod) {
-                        const sStr = String(sIdx).padStart(4, '0');
-                        const mStr = String(mIdx).padStart(4, '0');
-                        const pStr = String(pIdx).padStart(4, '0');
-                        const newSortKey = `${sStr}_${mStr}_${pStr}`;
-                        
-                        if (prod.sortKey !== newSortKey) {
-                            updates.push({ pId: pId, sortKey: newSortKey });
-                        }
+            const marcaOrder = Array.from(marcaItems).map(item => item.dataset.name);
+            
+            // Guardamos Segmento
+            batch.set(_doc(_db, `artifacts/${_appId}/users/${_userId}/segmentos`, sId), { 
+                name: sName, 
+                orden: sIdx, 
+                marcaOrder: marcaOrder 
+            }, { merge: true });
+
+            // Acumulamos las Marcas
+            marcaItems.forEach(mItem => {
+                const mName = mItem.dataset.name;
+                const nameKey = norm(mName);
+
+                if (!brandAccumulator.has(nameKey)) {
+                    let mId = mItem.dataset.id;
+                    if (!mId || mId.startsWith('temp_')) {
+                        mId = _doc(_collection(_db, 'dummy')).id;
                     }
-                });
+                    brandAccumulator.set(nameKey, { id: mId, name: mName, order: [] });
+                }
+
+                const prodItems = mItem.querySelectorAll('.productos-sortable-list .producto-item');
+                const pIds = Array.from(prodItems).map(pi => pi.dataset.id);
+                brandAccumulator.get(nameKey).order.push(...pIds);
             });
         });
 
-        if (updates.length === 0) {
-            _showModal('Aviso', 'No se detectaron cambios en el orden visual.');
-            return;
-        }
+        // Combinar con marcas existentes para no borrar productos de otros rubros ocultos
+        const existingMarcas = {};
+        try {
+            const snap = await _getDocs(_collection(_db, `artifacts/${_appId}/users/${_userId}/marcas`));
+            snap.docs.forEach(d => existingMarcas[d.id] = d.data().productOrder || []);
+        } catch (e) {}
+
+        brandAccumulator.forEach((data, nameKey) => {
+            const oldOrder = existingMarcas[data.id] || [];
+            const newOrderSet = new Set(data.order);
+            const hiddenKeys = oldOrder.filter(k => !newOrderSet.has(k));
+            const finalOrder = [...data.order, ...hiddenKeys];
+
+            batch.set(_doc(_db, `artifacts/${_appId}/users/${_userId}/marcas`, data.id), { 
+                name: data.name, 
+                productOrder: finalOrder
+            }, { merge: true });
+        });
 
         try {
-            let totalOps = 0;
-            let batch = _writeBatch(_db);
-            
-            for (const u of updates) {
-                let fueActualizado = false;
-
-                if (_masterCatalogCache[u.pId]) {
-                    const refMaster = _doc(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/productos`, u.pId);
-                    batch.set(refMaster, { sortKey: u.sortKey }, { merge: true });
-                    totalOps++;
-                    fueActualizado = true;
-                }
-                
-                if (_userStockCache[u.pId] || !fueActualizado) {
-                    const refStock = _doc(_db, `artifacts/${_appId}/users/${_userId}/inventario`, u.pId);
-                    batch.set(refStock, { sortKey: u.sortKey }, { merge: true });
-                    totalOps++;
-                }
-                
-                if (totalOps >= 490) { 
-                    await batch.commit();
-                    batch = _writeBatch(_db);
-                    totalOps = 0;
-                }
-            }
-            
-            if (totalOps > 0) {
-                await batch.commit();
-            }
-
+            await batch.commit();
             invalidateSegmentOrderCache(); 
-            _showModal('Éxito', `Firma guardada en ${updates.length} productos del rubro.`, showInventarioSubMenu);
-        } catch (error) {
+            _showModal('Éxito', `Orden guardado exitosamente. La vista Ver Productos ha sido actualizada.`, showInventarioSubMenu);
+        } catch (error) { 
             console.error("Error al guardar orden:", error);
             _showModal('Error', `Fallo al guardar: ${error.message}`);
         }
@@ -873,7 +915,6 @@
         _showModal('Progreso', 'Creando producto en Catálogo Maestro...');
         try {
             const newId = _doc(_collection(_db, 'dummy')).id;
-            data.sortKey = null; 
             if (window.adminModule?.propagateProductChange) {
                 await window.adminModule.propagateProductChange(newId, data);
                 _showModal('Éxito', 'Producto agregado al Catálogo y propagado.', showInventarioSubMenu);
@@ -1058,13 +1099,12 @@
         if (!updatedData.rubro||!updatedData.segmento||!updatedData.marca||!updatedData.presentacion){_showModal('Error','Completa Rubro, Segmento, Marca y Presentación.');return;} if (!updatedData.ventaPor.und&&!updatedData.ventaPor.paq&&!updatedData.ventaPor.cj){_showModal('Error','Selecciona al menos una forma de venta.');return;} if (updatedData.manejaVacios&&!updatedData.tipoVacio){_showModal('Error','Si maneja vacío, selecciona el tipo.');document.getElementById('tipoVacioSelect')?.focus();return;} let precioValido=(updatedData.ventaPor.und&&updatedData.precios.und>0)||(updatedData.ventaPor.paq&&updatedData.precios.paq>0)||(updatedData.ventaPor.cj&&updatedData.precios.cj>0); if(!precioValido){_showModal('Error','Ingresa al menos un precio válido (> 0) para la forma de venta seleccionada.');document.querySelector('#preciosContainer input[required]')?.focus();return;}
         
         updatedData.cantidadUnidades = 0; 
-        updatedData.sortKey = null;
 
         _showModal('Progreso','Guardando cambios en Catálogo Maestro...'); 
         try { 
             if (window.adminModule?.propagateProductChange) { 
                 await window.adminModule.propagateProductChange(productId, updatedData); 
-                 _showModal('Éxito','Producto modificado y propagado correctamente. Recuerde reordenarlo en la vista de Orden.', showModifyDeleteView); 
+                 _showModal('Éxito','Producto modificado y propagado correctamente.', showModifyDeleteView); 
             } else {
                 throw new Error("Módulo Admin no cargado.");
             }
