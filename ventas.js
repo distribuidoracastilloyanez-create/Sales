@@ -1,3 +1,4 @@
+
 (function() {
     let _db, _userId, _userRole, _appId, _mainContent, _floatingControls;
     let _showMainMenu, _showModal, _activeListeners;
@@ -5,7 +6,6 @@
     let _increment; // NUEVO: Necesario para operaciones offline
 
     // --- VARIABLES FASE 2 ---
-    // CORRECCIÓN: Usar ID global desde config.js
     const PUBLIC_DATA_ID = window.AppConfig.PUBLIC_DATA_ID; 
     
     let _masterCatalogCache = {}; // Cache del Catálogo Maestro
@@ -20,8 +20,8 @@
     let _tasaBs = 0;
     let _monedaActual = 'USD';
 
-    // Cache local para la preferencia de ordenamiento
-    let _localSortPreference = null;
+    // NOTA ARQUITECTÓNICA: Se eliminó _localSortPreference
+    // El orden ahora es dictado 100% por la Firma Lexicográfica Global.
 
     // Usaremos window.TIPOS_VACIO_GLOBAL si existe, o un default
     const TIPOS_VACIO = window.TIPOS_VACIO_GLOBAL || ["1/4 - 1/3", "ret 350 ml", "ret 1.25 Lts"];
@@ -53,7 +53,7 @@
         if (!_runTransaction) console.error("Error Crítico: 'runTransaction' no disponible en initVentas.");
         if (!_increment) console.warn("Advertencia: 'increment' no disponible. Ventas offline limitadas.");
         
-        console.log("Módulo Ventas inicializado (Modo Híbrido Fase 2). Public ID:", PUBLIC_DATA_ID);
+        console.log("Módulo Ventas inicializado (Alineado con Firma Global). Public ID:", PUBLIC_DATA_ID);
     };
 
     window.showVentasView = function() {
@@ -93,7 +93,6 @@
         loadDataForNewSale();
     }
 
-    // --- MODIFICADO: LECTURA HÍBRIDA (FASE 2) ---
     function loadDataForNewSale() {
         // 1. Clientes (Público)
         const clientesRef = _collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/clientes`);
@@ -133,7 +132,6 @@
         _activeListeners.push(unsubClientes, unsubMaster, unsubStock);
     }
 
-    // --- NUEVO: FUNCIÓN DE FUSIÓN ---
     function mergeInventarioCache() {
         _inventarioCache = [];
         const allIds = new Set([...Object.keys(_masterCatalogCache), ...Object.keys(_userStockCache)]);
@@ -150,7 +148,7 @@
                     id: id
                 });
             } else if (stock && stock._legacyData) {
-                // Caso Legacy: Producto solo existe en local (no migrado al maestro aún)
+                // Caso Legacy: Producto solo existe en local
                 _inventarioCache.push({ ...stock._legacyData, id: id });
             }
         });
@@ -187,27 +185,13 @@
         const body = document.getElementById('inventarioTableBody'), rF = document.getElementById('rubroFilter'); if (!body || !rF) return; body.innerHTML = `<tr><td colspan="4" class="text-center text-gray-500">Cargando...</td></tr>`;
         const selRubro = rF.value; const invFilt = _inventarioCache.filter(p => (p.cantidadUnidades || 0) > 0 || _ventaActual.productos[p.id]); let filtInv = selRubro ? invFilt.filter(p => p.rubro === selRubro) : invFilt;
         
-        // 1. Obtener función de ordenamiento global (inventario.js)
+        // 1. Obtener función de ordenamiento global (Inquebrantable desde inventario.js)
         const sortFunc = await window.getGlobalProductSortFunction();
         filtInv.sort(sortFunc);
         
-        // 2. Determinar la clave de agrupación (Encabezados Grises)
-        // Corregido: Leer directamente de Firestore si no está en caché local, en lugar de confiar en window._sortPreferenceCache
-        let sortKey = 'segmento';
-        if (!_localSortPreference) {
-            try {
-                const prefRef = _doc(_db, `artifacts/${_appId}/users/${_userId}/config/productSortOrder`);
-                const prefSnap = await _getDoc(prefRef);
-                if (prefSnap.exists() && prefSnap.data().order && prefSnap.data().order.length > 0) {
-                    _localSortPreference = prefSnap.data().order;
-                    sortKey = _localSortPreference[0];
-                }
-            } catch (e) { console.warn("Error cargando pref orden ventas:", e); }
-        } else {
-            sortKey = _localSortPreference[0];
-        }
-
-        body.innerHTML = window.ventasUI.getInventoryTableRows(filtInv, _ventaActual.productos, _monedaActual, _tasaCOP, _tasaBs, sortKey);
+        // 2. Pasamos el arreglo ya ordenado de manera perfecta a la UI. 
+        // Pasamos 'segmento' como default parameter para que la UI sepa cómo agrupar visualmente en la tabla.
+        body.innerHTML = window.ventasUI.getInventoryTableRows(filtInv, _ventaActual.productos, _monedaActual, _tasaCOP, _tasaBs, 'segmento');
         
         updateVentaTotal();
     }
@@ -219,6 +203,7 @@
         let invToShow = _inventarioCache.filter(p => _originalVentaForEdit.productos.some(oP => oP.id === p.id) || (p.cantidadUnidades || 0) > 0);
         if (selRubro) invToShow = invToShow.filter(p => p.rubro === selRubro);
         
+        // 1. Orden Universal
         const sortFunc = await window.getGlobalProductSortFunction(); 
         invToShow.sort(sortFunc);
         
@@ -231,13 +216,7 @@
              return copy;
         });
 
-        // Corregido: Usar la misma lógica de sortKey
-        let sortKey = 'segmento';
-        if (_localSortPreference && _localSortPreference.length > 0) {
-            sortKey = _localSortPreference[0];
-        }
-
-        body.innerHTML = window.ventasUI.getInventoryTableRows(mappedInv, _ventaActual.productos, _monedaActual, _tasaCOP, _tasaBs, sortKey);
+        body.innerHTML = window.ventasUI.getInventoryTableRows(mappedInv, _ventaActual.productos, _monedaActual, _tasaCOP, _tasaBs, 'segmento');
 
         updateVentaTotal();
     }
@@ -369,7 +348,6 @@
                 const stockLocal = p.cantidadUnidades || 0; 
                 const qtyNeeded = p.totalUnidadesVendidas || 0;
                 
-                // Aunque la UI ya valida, hacemos doble check antes de escribir
                 if (qtyNeeded > 0) {
                     if (stockLocal < qtyNeeded) throw new Error(`Stock insuficiente localmente para: ${p.presentacion}`);
                     
@@ -466,8 +444,6 @@
                         const sub = (precios.cj || 0) * (p.cantCj || 0) + (precios.paq || 0) * (p.cantPaq || 0) + (precios.und || 0) * (p.cantUnd || 0);
                         totalVenta += sub;
 
-                        // CORRECCIÓN FASE 2: Usar datos de 'p' (caché fusionado) para metadatos, no invDoc
-                        // Esto asegura que si invDoc pierde datos (por limpieza futura), la venta sigue funcionando.
                         if (p.manejaVacios && p.tipoVacio) {
                             const tV = p.tipoVacio;
                             const cjV = p.cantCj || 0;
@@ -767,7 +743,6 @@
             _showModal('Progreso', 'Eliminando venta y ajustando datos...');
             try {
                 const ventaRef = _doc(_db, `artifacts/${_appId}/users/${_userId}/ventas`, ventaId);
-                // CORRECCIÓN: Usar PUBLIC_DATA_ID
                 const clienteRef = _doc(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/clientes`, venta.clienteId);
 
                 if (!_runTransaction) throw new Error("Dependencia crítica 'runTransaction' no disponible.");
@@ -891,7 +866,6 @@
             _showModal('Progreso', 'Guardando y ajustando...');
             try {
                 const ventaRef = _doc(_db, `artifacts/${_appId}/users/${_userId}/ventas`, _originalVentaForEdit.id);
-                // CORRECCIÓN: Usar PUBLIC_DATA_ID
                 const clientRef = _doc(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/clientes`, _originalVentaForEdit.clienteId);
 
                 if (!_runTransaction) throw new Error("Dependencia crítica 'runTransaction' no disponible.");
