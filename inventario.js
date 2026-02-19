@@ -13,6 +13,7 @@
 
     let _lastFilters = { searchTerm: '', rubro: '', segmento: '', marca: '' };
     let _recargaTempState = {}; 
+    let _marcasCache = null;
 
     // --- CACHÉ DE ORDENAMIENTO GLOBAL ---
     let _globalSortCache = {
@@ -1197,12 +1198,8 @@
                         
                         const prodOrderPref = marcaData.productOrder || [];
                         prods.sort((a, b) => {
-                            // --- SOLUCIÓN: Identificador Compuesto Infalible ---
-                            const compA = `${a.rubro || ''}|${a.segmento || ''}|${a.marca || ''}|${a.presentacion || ''}`.toUpperCase();
-                            const compB = `${b.rubro || ''}|${b.segmento || ''}|${b.marca || ''}|${b.presentacion || ''}`.toUpperCase();
-                            
-                            const indexA = prodOrderPref.indexOf(compA);
-                            const indexB = prodOrderPref.indexOf(compB);
+                            const indexA = prodOrderPref.indexOf(a.id);
+                            const indexB = prodOrderPref.indexOf(b.id);
                             
                             if (indexA !== -1 && indexB !== -1) return indexA - indexB;
                             if (indexA !== -1) return -1;
@@ -1210,17 +1207,12 @@
                             
                             const nComp = (a.presentacion || '').localeCompare(b.presentacion || '');
                             if (nComp !== 0) return nComp;
-                            // En el raro caso de que TODO sea igual (hasta el nombre), desempatar por ID de Firestore
                             return (a.id || '').localeCompare(b.id || '');
                         });
 
                         prods.forEach(p => {
                             const pLi = document.createElement('li');
                             pLi.dataset.id = p.id;
-                            
-                            // GUARDAMOS LA CLAVE COMPUESTA EN EL HTML
-                            const compKey = `${p.rubro || ''}|${p.segmento || ''}|${p.marca || ''}|${p.presentacion || ''}`.toUpperCase();
-                            pLi.dataset.compositekey = compKey;
                             
                             pLi.dataset.type = 'producto';
                             pLi.className = 'producto-item flex items-center p-2 bg-gray-50 border border-gray-200 rounded text-sm hover:bg-amber-50 transition-colors';
@@ -1399,10 +1391,9 @@
                 }
 
                 const prodItems = mItem.querySelectorAll('.productos-list .producto-item');
-                // Tomar Claves Compuestas del HTML
-                const pKeys = Array.from(prodItems).map(pi => pi.dataset.compositekey);
+                const pIds = Array.from(prodItems).map(pi => pi.dataset.id); // Recoger IDs puros
                 
-                brandAccumulator.get(nameKey).order.push(...pKeys);
+                brandAccumulator.get(nameKey).order.push(...pIds);
             });
         });
 
