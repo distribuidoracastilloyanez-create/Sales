@@ -313,6 +313,9 @@
             console.log("Limpiando caché local de CXC...");
             localStorage.removeItem('cxc_local_data');
             localStorage.removeItem('cxc_local_date');
+            
+            // Si IndexedDB está en uso, también deberíamos limpiarlo aquí idealmente.
+            // Por ahora, recargar la página lo solucionará al fallar la lectura.
         }
         
         // Limpiar cachés globales en memoria para que la UI se actualice
@@ -408,8 +411,21 @@
             const invRef = _collection(_db, `artifacts/${_appId}/users/${_userId}/inventario`); 
             const snap = await _getDocs(invRef); 
             let inv = snap.docs.map(d => ({ id: d.id, ...d.data() })); 
-            const rOMap = await getRubroOrderMapAdmin(); const sOMap = await getSegmentoOrderMapAdmin();
-            inv.sort((a,b)=>{ const rOA=rOMap[a.rubro]??9999, rOB=rOMap[b.rubro]??9999; if(rOA!==rOB) return rOA-rOB; const sOA=sOMap[a.segmento]??9999, sOB=sOMap[b.segmento]??9999; if(sOA!==sOB) return sOA-sOB; return (a.marca||'').localeCompare(b.marca||''); });
+            
+            // Aplicar nueva lógica de ordenamiento global
+            inv.sort((a, b) => {
+                const ordA = a.ordenGlobal !== undefined ? a.ordenGlobal : 999999;
+                const ordB = b.ordenGlobal !== undefined ? b.ordenGlobal : 999999;
+                if (ordA !== ordB) return ordA - ordB;
+                
+                // Fallback a alfabeto
+                const sA = a.segmento || ''; const sB = b.segmento || '';
+                if (sA !== sB) return sA.localeCompare(sB);
+                const mA = a.marca || ''; const mB = b.marca || '';
+                if (mA !== mB) return mA.localeCompare(mB);
+                return (a.presentacion || '').localeCompare(b.presentacion || '');
+            });
+
             const dExport = inv.map(p=>({ 'Rubro':p.rubro||'', 'Segmento':p.segmento||'', 'Marca':p.marca||'', 'Presentacion':p.presentacion||'', 'CantidadActualUnidades':p.cantidadUnidades||0, 'VentaPorUnd':p.ventaPor?.und?'SI':'NO', 'VentaPorPaq':p.ventaPor?.paq?'SI':'NO', 'VentaPorCj':p.ventaPor?.cj?'SI':'NO', 'UnidadesPorPaquete':p.unidadesPorPaquete||'', 'UnidadesPorCaja':p.unidadesPorCaja||'', 'PrecioUnd':p.precios?.und||'', 'PrecioPaq':p.precios?.paq||'', 'PrecioCj':p.precios?.cj||'', 'ManejaVacios':p.manejaVacios?'SI':'NO', 'TipoVacio':p.tipoVacio||'', 'IVA':p.iva!==undefined?`${p.iva}%`:'' }));
             const wb = new ExcelJS.Workbook(); const ws = wb.addWorksheet('Inventario');
             ws.columns = Object.keys(dExport[0]||{}).map(k=>({header:k, key:k, width:15})); ws.getRow(1).font = { bold: true }; ws.addRows(dExport);
@@ -501,17 +517,16 @@
                     const { key, ...data } = item; 
                     data.cantidadUnidades = 0;
                     
+                    // Asignar ordenGlobal alto para que caigan al final
+                    data.ordenGlobal = 999999;
+                    
                     // FASE 2: Propagar creación al Maestro y a usuarios legacy
-                    // Como estamos en un bucle, usamos propagateProductChange secuencialmente
-                    // OJO: Esto puede ser lento si son muchos productos. 
-                    // Para importación masiva, idealmente haríamos un batch propio de escritura doble,
-                    // pero por simplicidad y seguridad, delegamos a la función robusta.
                     await window.adminModule.propagateProductChange(newId, data);
                     
                     added++;
                 }
             }
-            _showModal('Éxito', `Se añadieron ${added} productos nuevos.`, showImportExportInventarioView);
+            _showModal('Éxito', `Se añadieron ${added} productos nuevos. Recuerda ir a Ordenar Catálogo.`, showImportExportInventarioView);
         } catch (e) { _showModal('Error', e.message); }
     }
 
@@ -613,7 +628,7 @@
                 console.log("🗑️ Eliminado del Catálogo Maestro");
             } else {
                 // SEPARACIÓN DE RESPONSABILIDADES:
-                // El catálogo maestro guarda definiciones (Precio, Nombre, Marca), NO Stock.
+                // El catálogo maestro guarda definiciones (Precio, Nombre, Marca, ORDEN), NO Stock.
                 // Extraemos cantidadUnidades para no guardarla en el maestro.
                 const { cantidadUnidades, ...masterData } = productData;
                 masterData.lastUpdated = new Date(); 
@@ -634,6 +649,8 @@
         await _saveToMasterCatalog(productId, productData);
 
         // 2. FASE LEGACY: Mantener el comportamiento antiguo (Fan-out)
+        // NOTA: Para usuarios 100% migrados a Fase 2, esto ya no es estrictamente necesario,
+        // pero lo mantenemos por seguridad hasta asegurar que todos lean del Maestro.
         const allUIds = await _getAllOtherUserIds();
         const BATCH_LIMIT = 490;
         let batch = _writeBatch(_db);
@@ -663,7 +680,8 @@
         }
     }
 
-    // [MODIFICADO] Propagación de Categorías con lógica similar (Opcional, pero recomendada)
+    // Propagación de Categorías (Ya no se usa intensivamente para orden de productos, 
+    // pero se mantiene para nombres de categorías y orden de segmentos/marcas a nivel macro si fuera necesario)
     async function propagateCategoryChange(collectionName, itemId, itemData) {
         if (!collectionName || !itemId) return;
         
@@ -696,7 +714,7 @@
                 } 
             } 
             if (ops > 0) await batch.commit(); 
-            console.log("Propagado Categoría Legacy"); 
+            console.log(`Propagado Categoría Legacy: ${collectionName}`); 
         } catch (error) { console.error(error); }
     }
 
