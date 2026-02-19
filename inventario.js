@@ -96,13 +96,11 @@
     // --- NUEVO MOTOR: ÍNDICE ABSOLUTO (Cero dependencias cruzadas) ---
     // ==============================================================================
     window.getGlobalProductSortFunction = async () => {
-        // La simplicidad absoluta: Ordenar por el número guardado directamente en el producto
         return (a, b) => {
-            const indexA = typeof a.ordenVisibilidad === 'number' ? a.ordenVisibilidad : 999999;
-            const indexB = typeof b.ordenVisibilidad === 'number' ? b.ordenVisibilidad : 999999;
+            const indexA = (a.ordenVisibilidad !== undefined && a.ordenVisibilidad !== null) ? Number(a.ordenVisibilidad) : 999999;
+            const indexB = (b.ordenVisibilidad !== undefined && b.ordenVisibilidad !== null) ? Number(b.ordenVisibilidad) : 999999;
             
             let res = indexA - indexB;
-            // Desempate alfabético por defecto si no tienen índice asignado (productos nuevos)
             if (res === 0) res = (a.presentacion || '').localeCompare(b.presentacion || '');
             return res;
         };
@@ -317,7 +315,6 @@
         let lastHeader = null;
 
         productosFiltrados.forEach(p => {
-            // Agrupación visual limpia garantizada por el índice absoluto
             let currentHeaderValue = `${p.rubro || 'Sin Rubro'} > ${p.segmento || 'Sin Segmento'}`;
 
             if (currentHeaderValue !== lastHeader) {
@@ -990,8 +987,6 @@
         }
     }
 
-    // Ya no dependemos de colecciones maestras para dibujar el DOM
-    // El DOM se construye basándose EXCLUSIVAMENTE en el inventario actual ordenado por ordenVisibilidad
     async function renderSortableHierarchy(rubroFiltro = '') {
         const container = document.getElementById('segmentos-marcas-sortable-list');
         if (!container) return;
@@ -1004,7 +999,13 @@
             }
             
             // Ordenar por el índice absoluto actual
-            prodsEnRubro.sort((a, b) => (a.ordenVisibilidad || 9999) - (b.ordenVisibilidad || 9999));
+            prodsEnRubro.sort((a, b) => {
+                const iA = (a.ordenVisibilidad !== undefined && a.ordenVisibilidad !== null) ? Number(a.ordenVisibilidad) : 999999;
+                const iB = (b.ordenVisibilidad !== undefined && b.ordenVisibilidad !== null) ? Number(b.ordenVisibilidad) : 999999;
+                let r = iA - iB;
+                if (r === 0) r = (a.presentacion || '').localeCompare(b.presentacion || '');
+                return r;
+            });
 
             // Descubrir y agrupar la jerarquía en el orden de aparición
             const hierarchy = new Map(); 
@@ -1189,7 +1190,7 @@
         const segConts = document.querySelectorAll('#segmentos-marcas-sortable-list .segmento-container'); 
         if (segConts.length === 0) { _showModal('Aviso', 'No hay elementos para ordenar.'); return; }
         
-        _showModal('Progreso', 'Guardando Índice Absoluto...');
+        _showModal('Progreso', 'Guardando Índice Absoluto de Ordenamiento...');
         
         const rubroFilter = document.getElementById('ordenarRubroFilter').value;
         const domOrder = [];
@@ -1210,14 +1211,18 @@
 
         // 2. Construir la lista global final manteniendo la posición de otros Rubros intacta
         if (!rubroFilter) {
-            // Si no hay filtro, el DOM dicta toda la verdad. Los faltantes van al final.
             finalSortedIds = [...domOrder];
             _inventarioCache.forEach(p => {
                 if (!domOrderSet.has(p.id)) finalSortedIds.push(p.id);
             });
         } else {
-            // Si hay filtro, reemplazamos SOLO el bloque de ese Rubro
-            let existingSorted = [..._inventarioCache].sort((a, b) => (a.ordenVisibilidad || 9999) - (b.ordenVisibilidad || 9999));
+            let existingSorted = [..._inventarioCache].sort((a, b) => {
+                const iA = (a.ordenVisibilidad !== undefined && a.ordenVisibilidad !== null) ? Number(a.ordenVisibilidad) : 999999;
+                const iB = (b.ordenVisibilidad !== undefined && b.ordenVisibilidad !== null) ? Number(b.ordenVisibilidad) : 999999;
+                let r = iA - iB;
+                if (r === 0) r = (a.presentacion || '').localeCompare(b.presentacion || '');
+                return r;
+            });
             let inserted = false;
             
             existingSorted.forEach(p => {
@@ -1233,7 +1238,6 @@
             
             if (!inserted) finalSortedIds.push(...domOrder);
 
-            // Productos de este rubro que no estaban en el DOM por error, van al final del bloque
             _inventarioCache.forEach(p => {
                 if (p.rubro === rubroFilter && !domOrderSet.has(p.id)) {
                     finalSortedIds.push(p.id);
@@ -1241,25 +1245,34 @@
             });
         }
 
-        // 3. Escribir el Índice Absoluto en el Catálogo Maestro
+        // 3. Escribir el Índice Absoluto en TODOS LADOS (Para no saltar la data heredada)
         try {
             let totalOps = 0;
             let batch = _writeBatch(_db);
             
-            // Asignar índice secuencial (1, 2, 3...)
             for (let i = 0; i < finalSortedIds.length; i++) {
                 const pId = finalSortedIds[i];
-                // IMPORTANTE: Solo actualizamos si existe en el Catálogo Maestro
+                let fueActualizado = false;
+
+                // A) Intentar actualizar en Catálogo Maestro
                 if (_masterCatalogCache[pId]) {
-                    const ref = _doc(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/productos`, pId);
-                    batch.update(ref, { ordenVisibilidad: i + 1 });
+                    const refMaster = _doc(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/productos`, pId);
+                    batch.set(refMaster, { ordenVisibilidad: i + 1 }, { merge: true });
                     totalOps++;
-                    
-                    if (totalOps >= 490) { // Límite de Firestore
-                        await batch.commit();
-                        batch = _writeBatch(_db);
-                        totalOps = 0;
-                    }
+                    fueActualizado = true;
+                }
+                
+                // B) Intentar actualizar en Inventario de Usuario (Clave para datos Legacy)
+                if (_userStockCache[pId] || !fueActualizado) {
+                    const refStock = _doc(_db, `artifacts/${_appId}/users/${_userId}/inventario`, pId);
+                    batch.set(refStock, { ordenVisibilidad: i + 1 }, { merge: true });
+                    totalOps++;
+                }
+                
+                if (totalOps >= 490) { // Límite de Firebase
+                    await batch.commit();
+                    batch = _writeBatch(_db);
+                    totalOps = 0;
                 }
             }
             
@@ -1268,7 +1281,7 @@
             }
 
             invalidateSegmentOrderCache(); 
-            _showModal('Éxito', `Índice Absoluto guardado. El orden ahora es definitivo y se aplicará automáticamente en todos los módulos.`, showInventarioSubMenu);
+            _showModal('Éxito', `Índice Absoluto guardado. El orden ahora es definitivo y forzado en toda la base de datos.`, showInventarioSubMenu);
         } catch (error) {
             console.error("Error al guardar orden:", error);
             _showModal('Error', `Fallo al guardar: ${error.message}`);
