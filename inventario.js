@@ -4,7 +4,7 @@
     let _collection, _onSnapshot, _doc, _addDoc, _setDoc, _deleteDoc, _query, _where, _getDocs, _writeBatch, _getDoc;
     let _increment; 
 
-    // --- SISTEMA DE CACHÉ DOBLE (FASE 2) ---
+    // --- SISTEMA DE CACHÉ DOBLE ---
     let _masterCatalogCache = {}; // Datos públicos
     let _userStockCache = {};     // Datos privados
     let _inventarioCache = [];    // Fusión
@@ -13,15 +13,6 @@
 
     let _lastFilters = { searchTerm: '', rubro: '', segmento: '', marca: '' };
     let _recargaTempState = {}; 
-    let _marcasCache = null;
-
-    // --- CACHÉ DE ORDENAMIENTO GLOBAL ---
-    let _globalSortCache = {
-        preference: null,
-        rubros: null,
-        segmentos: null,
-        marcas: null
-    };
 
     const PUBLIC_DATA_ID = window.AppConfig.PUBLIC_DATA_ID; 
 
@@ -102,109 +93,22 @@
     }
 
     // ==============================================================================
-    // --- LÓGICA MAESTRA DE ORDENAMIENTO (CORREGIDA LA SENSIBILIDAD A MAYÚSCULAS) ---
+    // --- NUEVO MOTOR: ÍNDICE ABSOLUTO (Cero dependencias cruzadas) ---
     // ==============================================================================
     window.getGlobalProductSortFunction = async () => {
-        // Normalizador global para evitar fallos por mayúsculas/minúsculas o espacios extra
-        const norm = s => (s || '').trim().toUpperCase();
-
-        if (!_globalSortCache.rubros || !_globalSortCache.segmentos || !_globalSortCache.marcas || !_globalSortCache.preference) {
-            try {
-                const prefRef = _doc(_db, `artifacts/${_appId}/users/${_userId}/config/productSortOrder`);
-                const prefSnap = await _getDoc(prefRef);
-                _globalSortCache.preference = prefSnap.exists() ? prefSnap.data().order : ['rubro', 'segmento', 'marca', 'presentacion'];
-
-                const [rSnap, sSnap, mSnap] = await Promise.all([
-                    _getDocs(_collection(_db, `artifacts/${_appId}/users/${_userId}/rubros`)),
-                    _getDocs(_collection(_db, `artifacts/${_appId}/users/${_userId}/segmentos`)),
-                    _getDocs(_collection(_db, `artifacts/${_appId}/users/${_userId}/marcas`))
-                ]);
-
-                // Guardar llaves normalizadas
-                _globalSortCache.rubros = {};
-                rSnap.forEach(d => _globalSortCache.rubros[norm(d.data().name)] = d.data().orden ?? 9999);
-
-                _globalSortCache.segmentos = {};
-                sSnap.forEach(d => _globalSortCache.segmentos[norm(d.data().name)] = { 
-                    orden: d.data().orden ?? 9999, 
-                    marcaOrder: (d.data().marcaOrder || []).map(norm) // Normalizar array de orden
-                });
-
-                _globalSortCache.marcas = {};
-                
-                mSnap.forEach(d => {
-                    const nameKey = norm(d.data().name);
-                    if (!_globalSortCache.marcas[nameKey]) {
-                        _globalSortCache.marcas[nameKey] = { productOrder: [] };
-                    }
-                    const orderArr = d.data().productOrder || [];
-                    _globalSortCache.marcas[nameKey].productOrder.push(...orderArr);
-                });
-
-            } catch (e) { 
-                console.warn("Error cargando caché de orden:", e);
-                _globalSortCache.preference = ['rubro', 'segmento', 'marca', 'presentacion'];
-                _globalSortCache.rubros = {}; _globalSortCache.segmentos = {}; _globalSortCache.marcas = {};
-            }
-        }
-
+        // La simplicidad absoluta: Ordenar por el número guardado directamente en el producto
         return (a, b) => {
-            const safeA = a || {}; const safeB = b || {};
-            let res = 0;
-
-            for (const key of _globalSortCache.preference) {
-                if (key === 'rubro') {
-                    const rA = _globalSortCache.rubros[norm(safeA.rubro)] ?? 9999;
-                    const rB = _globalSortCache.rubros[norm(safeB.rubro)] ?? 9999;
-                    res = rA - rB;
-                    if (res === 0) res = norm(safeA.rubro).localeCompare(norm(safeB.rubro));
-                } 
-                else if (key === 'segmento') {
-                    const sA = _globalSortCache.segmentos[norm(safeA.segmento)]?.orden ?? 9999;
-                    const sB = _globalSortCache.segmentos[norm(safeB.segmento)]?.orden ?? 9999;
-                    res = sA - sB;
-                    if (res === 0) res = norm(safeA.segmento).localeCompare(norm(safeB.segmento));
-                } 
-                else if (key === 'marca') {
-                    // CORRECCIÓN CRÍTICA: Validar normalizado para no saltarse la comparación manual
-                    if (norm(safeA.segmento) === norm(safeB.segmento)) {
-                        const segData = _globalSortCache.segmentos[norm(safeA.segmento)];
-                        if (segData && segData.marcaOrder) {
-                            const idxA = segData.marcaOrder.indexOf(norm(safeA.marca));
-                            const idxB = segData.marcaOrder.indexOf(norm(safeB.marca));
-                            
-                            if (idxA !== -1 && idxB !== -1) res = idxA - idxB;
-                            else if (idxA !== -1) res = -1;
-                            else if (idxB !== -1) res = 1;
-                        }
-                    }
-                    if (res === 0) res = norm(safeA.marca).localeCompare(norm(safeB.marca));
-                } 
-                else if (key === 'presentacion') {
-                    // CORRECCIÓN CRÍTICA: Validar normalizado para no saltarse la comparación de productos
-                    if (norm(safeA.marca) === norm(safeB.marca)) {
-                        const marcaData = _globalSortCache.marcas[norm(safeA.marca)];
-                        
-                        if (marcaData && marcaData.productOrder) {
-                            const idxA = marcaData.productOrder.indexOf(safeA.id);
-                            const idxB = marcaData.productOrder.indexOf(safeB.id);
-                            
-                            if (idxA !== -1 && idxB !== -1) res = idxA - idxB;
-                            else if (idxA !== -1) res = -1;
-                            else if (idxB !== -1) res = 1;
-                        }
-                    }
-                    if (res === 0) res = norm(safeA.presentacion).localeCompare(norm(safeB.presentacion));
-                    if (res === 0) res = (safeA.id || '').localeCompare(safeB.id || ''); // Desempate
-                }
-                if (res !== 0) return res;
-            }
-            return 0; 
+            const indexA = typeof a.ordenVisibilidad === 'number' ? a.ordenVisibilidad : 999999;
+            const indexB = typeof b.ordenVisibilidad === 'number' ? b.ordenVisibilidad : 999999;
+            
+            let res = indexA - indexB;
+            // Desempate alfabético por defecto si no tienen índice asignado (productos nuevos)
+            if (res === 0) res = (a.presentacion || '').localeCompare(b.presentacion || '');
+            return res;
         };
     };
 
     function invalidateSegmentOrderCache() {
-        _globalSortCache = { preference: null, rubros: null, segmentos: null, marcas: null };
         if (window.catalogoModule?.invalidateCache) window.catalogoModule.invalidateCache();
         if (window.ventasModule?.invalidateCache) window.ventasModule.invalidateCache();
     }
@@ -217,12 +121,10 @@
         const currentVal = currentValParam !== null ? currentValParam : select.value;
         const uniqueValues = new Set();
         
-        // 1. Extraer nombres desde los productos (Importados de Excel)
         _inventarioCache.forEach(p => {
              if (p[itemKey]) uniqueValues.add((p[itemKey] || '').trim().toUpperCase());
         });
         
-        // 2. Extraer desde Firebase (Categorías creadas a mano)
         try {
             const snap = await _getDocs(_collection(_db, `artifacts/${_appId}/users/${_userId}/${collectionName}`));
             snap.docs.forEach(d => {
@@ -415,13 +317,8 @@
         let lastHeader = null;
 
         productosFiltrados.forEach(p => {
-            let currentHeaderValue = '';
-            if (_globalSortCache.preference && _globalSortCache.preference[0] === 'rubro' && _globalSortCache.preference[1] === 'segmento') {
-                currentHeaderValue = `${p.rubro || 'Sin Rubro'} > ${p.segmento || 'Sin Segmento'}`;
-            } else {
-                const firstSortKey = _globalSortCache.preference ? _globalSortCache.preference[0] : 'rubro';
-                currentHeaderValue = p[firstSortKey] || `Sin ${firstSortKey}`;
-            }
+            // Agrupación visual limpia garantizada por el índice absoluto
+            let currentHeaderValue = `${p.rubro || 'Sin Rubro'} > ${p.segmento || 'Sin Segmento'}`;
 
             if (currentHeaderValue !== lastHeader) {
                 lastHeader = currentHeaderValue;
@@ -900,13 +797,7 @@
         let lastHeader = null;
         
         productos.forEach(p => {
-            let currentHeaderValue = '';
-            if (_globalSortCache.preference && _globalSortCache.preference[0] === 'rubro' && _globalSortCache.preference[1] === 'segmento') {
-                currentHeaderValue = `${p.rubro || 'Sin Rubro'} > ${p.segmento || 'Sin Segmento'}`;
-            } else {
-                const firstSortKey = _globalSortCache.preference ? _globalSortCache.preference[0] : 'rubro';
-                currentHeaderValue = p[firstSortKey] || `Sin ${firstSortKey}`;
-            }
+            let currentHeaderValue = `${p.rubro || 'Sin Rubro'} > ${p.segmento || 'Sin Segmento'}`;
 
             if (currentHeaderValue !== lastHeader) { 
                 lastHeader = currentHeaderValue; 
@@ -1099,163 +990,96 @@
         }
     }
 
-    async function getAllMarcas() {
-        if (_marcasCache) return _marcasCache;
-        try {
-            const marcasRef = _collection(_db, `artifacts/${_appId}/users/${_userId}/marcas`);
-            const snapshot = await _getDocs(marcasRef);
-            _marcasCache = snapshot.docs.map(doc => ({ id: doc.id, name: doc.data().name, productOrder: doc.data().productOrder || [] }));
-            return _marcasCache;
-        } catch (error) { console.error("Error cargando marcas:", error); return []; }
-    }
-
+    // Ya no dependemos de colecciones maestras para dibujar el DOM
+    // El DOM se construye basándose EXCLUSIVAMENTE en el inventario actual ordenado por ordenVisibilidad
     async function renderSortableHierarchy(rubroFiltro = '') {
         const container = document.getElementById('segmentos-marcas-sortable-list');
         if (!container) return;
-        container.innerHTML = `<p class="text-gray-500 text-center">Cargando datos maestros...</p>`;
+        container.innerHTML = `<p class="text-gray-500 text-center">Cargando estructura...</p>`;
         
         try {
-            const segmentosRef = _collection(_db, `artifacts/${_appId}/users/${_userId}/segmentos`);
-            let segSnapshot = await _getDocs(segmentosRef);
-            let allSegments = segSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
-            const inventorySegments = new Set();
-            _inventarioCache.forEach(p => {
-                if (p.segmento) inventorySegments.add(p.segmento);
-            });
-
-            const segmentMap = new Map();
-            allSegments.forEach(seg => segmentMap.set(seg.name, seg));
-
-            inventorySegments.forEach(segName => {
-                if (!segmentMap.has(segName)) {
-                    const newSeg = {
-                        id: `temp_${segName.replace(/\s+/g, '_')}`, 
-                        name: segName,
-                        orden: 9999, 
-                        isNew: true
-                    };
-                    allSegments.push(newSeg);
-                    segmentMap.set(segName, newSeg);
-                }
-            });
-
-            allSegments.sort((a, b) => (a.orden ?? 9999) - (b.orden ?? 9999));
-
-            const allMarcas = await getAllMarcas();
-            const marcasMap = new Map();
-            allMarcas.forEach(m => marcasMap.set((m.name || '').trim().toUpperCase(), m));
-
-            let prodsEnRubro = _inventarioCache;
+            let prodsEnRubro = [..._inventarioCache];
             if (rubroFiltro) {
                 prodsEnRubro = prodsEnRubro.filter(p => p.rubro === rubroFiltro);
             }
-            const segmentsWithProductsInRubro = rubroFiltro ? new Set(prodsEnRubro.map(p => p.segmento).filter(Boolean)) : null;
+            
+            // Ordenar por el índice absoluto actual
+            prodsEnRubro.sort((a, b) => (a.ordenVisibilidad || 9999) - (b.ordenVisibilidad || 9999));
+
+            // Descubrir y agrupar la jerarquía en el orden de aparición
+            const hierarchy = new Map(); 
+            
+            prodsEnRubro.forEach(p => {
+                const seg = p.segmento || 'SIN SEGMENTO';
+                const mar = (p.marca || 'S/M').trim().toUpperCase();
+                
+                if (!hierarchy.has(seg)) hierarchy.set(seg, new Map());
+                const segMap = hierarchy.get(seg);
+                
+                if (!segMap.has(mar)) segMap.set(mar, []);
+                segMap.get(mar).push(p);
+            });
 
             container.innerHTML = '';
-            if (allSegments.length === 0) {
-                container.innerHTML = `<p class="text-gray-500 text-center">No hay segmentos definidos ni encontrados en productos.</p>`;
+            if (hierarchy.size === 0) {
+                container.innerHTML = `<p class="text-gray-500 text-center">No hay productos en este rubro.</p>`;
                 return;
             }
 
-            allSegments.forEach(seg => {
-                const segmentHasProductsInRubro = !segmentsWithProductsInRubro || segmentsWithProductsInRubro.has(seg.name);
-                if (rubroFiltro && !segmentHasProductsInRubro) return; 
-
+            hierarchy.forEach((marcasMap, segName) => {
                 // --- CONTENEDOR SEGMENTO ---
                 const segCont = document.createElement('div');
                 segCont.className = 'segmento-container bg-white border border-blue-300 rounded-lg mb-4 shadow-sm';
-                segCont.dataset.id = seg.id; 
-                segCont.dataset.name = seg.name;
+                segCont.dataset.name = segName;
                 segCont.dataset.type = 'segmento';
                 segCont.draggable = true; 
 
                 const segTitle = document.createElement('div');
                 segTitle.className = 'segmento-title p-3 bg-blue-100 rounded-t-lg flex items-center font-bold text-blue-900 border-b border-blue-300 cursor-move';
                 segTitle.innerHTML = `<span class="mr-3 drag-handle-seg px-2 py-1 bg-white hover:bg-blue-200 rounded text-gray-500 shadow-sm pointer-events-none">☰</span>
-                                      <span class="uppercase tracking-wider pointer-events-none">📁 ${seg.name}</span> ${seg.isNew ? '<span class="text-xs bg-yellow-200 px-2 ml-2 rounded text-yellow-800">Nuevo</span>' : ''}`;
+                                      <span class="uppercase tracking-wider pointer-events-none">📁 ${segName}</span>`;
                 segCont.appendChild(segTitle);
 
                 const marcasList = document.createElement('ul');
                 marcasList.className = 'marcas-list p-3 space-y-3 bg-blue-50/30 min-h-[50px]';
-                marcasList.dataset.segmentoParent = seg.id;
 
-                const marcasEnSeg = [...new Set(prodsEnRubro
-                    .filter(p => p.segmento === seg.name && p.marca)
-                    .map(p => (p.marca || '').trim().toUpperCase())
-                )];
+                marcasMap.forEach((prodsArray, marcaName) => {
+                    // --- CONTENEDOR MARCA ---
+                    const li = document.createElement('li');
+                    li.className = 'marca-container p-3 mb-3 bg-blue-50/50 rounded-lg border border-blue-200 shadow-sm';
+                    li.dataset.name = marcaName;
+                    li.dataset.type = 'marca';
+                    li.draggable = true; 
 
-                const marcaOrderPref = seg.marcaOrder || [];
-                marcasEnSeg.sort((a, b) => {
-                    const indexA = marcaOrderPref.indexOf(a);
-                    const indexB = marcaOrderPref.indexOf(b);
-                    if (indexA !== -1 && indexB !== -1) return indexA - indexB;
-                    if (indexA !== -1) return -1;
-                    if (indexB !== -1) return 1;
-                    return a.localeCompare(b);
-                });
+                    const marcaTitle = document.createElement('div');
+                    marcaTitle.className = 'marca-title font-bold text-gray-700 cursor-move mb-3 flex items-center bg-white p-2 rounded border border-blue-100 shadow-sm';
+                    marcaTitle.innerHTML = `<span class="mr-3 drag-handle-mar px-2 py-1 bg-gray-100 rounded text-gray-500 shadow-sm pointer-events-none">☰</span>
+                                            <span class="pointer-events-none">🏷️ ${marcaName}</span>`;
+                    li.appendChild(marcaTitle);
 
-                if (marcasEnSeg.length === 0) {
-                    marcasList.innerHTML = `<li class="text-xs text-gray-500 italic pl-2">No hay marcas ${rubroFiltro ? 'en este rubro' : ''} para este segmento.</li>`;
-                } else {
-                    marcasEnSeg.forEach(marcaName => {
-                        const marcaData = marcasMap.get(marcaName) || { id: `temp_m_${marcaName.replace(/\s+/g,'_')}`, name: marcaName, productOrder: [] };
-                        const marcaId = marcaData.id;
+                    // --- LISTA DE PRODUCTOS ---
+                    const prodList = document.createElement('ul');
+                    prodList.className = 'productos-sortable-list pl-2 space-y-1 min-h-[10px]';
 
-                        // --- CONTENEDOR MARCA ---
-                        const li = document.createElement('li');
-                        li.className = 'marca-container p-3 mb-3 bg-blue-50/50 rounded-lg border border-blue-200 shadow-sm';
-                        li.dataset.name = marcaName;
-                        li.dataset.id = marcaId;
-                        li.dataset.type = 'marca';
-                        li.draggable = true; 
-
-                        const marcaTitle = document.createElement('div');
-                        marcaTitle.className = 'marca-title font-bold text-gray-700 cursor-move mb-3 flex items-center bg-white p-2 rounded border border-blue-100 shadow-sm';
-                        marcaTitle.innerHTML = `<span class="mr-3 drag-handle-mar px-2 py-1 bg-gray-100 rounded text-gray-500 shadow-sm pointer-events-none">☰</span>
-                                                <span class="pointer-events-none">🏷️ ${marcaName}</span>`;
-                        li.appendChild(marcaTitle);
-
-                        // --- LISTA DE PRODUCTOS ---
-                        const prodList = document.createElement('ul');
-                        prodList.className = 'productos-sortable-list pl-2 space-y-1 min-h-[10px]';
-                        prodList.dataset.marcaParent = marcaName; 
-
-                        const prods = prodsEnRubro.filter(p => p.segmento === seg.name && (p.marca || '').trim().toUpperCase() === marcaName);
+                    prodsArray.forEach(p => {
+                        // --- CONTENEDOR PRODUCTO ---
+                        const pLi = document.createElement('li');
+                        pLi.dataset.id = p.id;
+                        pLi.dataset.type = 'producto';
+                        pLi.className = 'producto-item flex items-center p-2 bg-white border border-gray-200 rounded text-sm hover:bg-amber-50 transition-colors cursor-move mb-1 shadow-sm';
+                        pLi.draggable = true; 
                         
-                        const prodOrderPref = marcaData.productOrder || [];
-                        prods.sort((a, b) => {
-                            const indexA = prodOrderPref.indexOf(a.id);
-                            const indexB = prodOrderPref.indexOf(b.id);
-                            
-                            if (indexA !== -1 && indexB !== -1) return indexA - indexB;
-                            if (indexA !== -1) return -1;
-                            if (indexB !== -1) return 1;
-                            
-                            const nComp = (a.presentacion || '').localeCompare(b.presentacion || '');
-                            if (nComp !== 0) return nComp;
-                            return (a.id || '').localeCompare(b.id || '');
-                        });
-
-                        prods.forEach(p => {
-                            // --- CONTENEDOR PRODUCTO ---
-                            const pLi = document.createElement('li');
-                            pLi.dataset.id = p.id;
-                            pLi.dataset.type = 'producto';
-                            pLi.className = 'producto-item flex items-center p-2 bg-white border border-gray-200 rounded text-sm hover:bg-amber-50 transition-colors cursor-move mb-1 shadow-sm';
-                            pLi.draggable = true; 
-                            
-                            pLi.innerHTML = `
-                                <span class="mr-3 drag-handle-prod px-2 py-1 bg-gray-50 rounded text-gray-400 shadow-sm pointer-events-none">↕</span>
-                                <span class="flex-grow font-medium text-gray-800 pointer-events-none">${p.presentacion}</span>
-                            `;
-                            prodList.appendChild(pLi);
-                        });
-
-                        li.appendChild(prodList);
-                        marcasList.appendChild(li);
+                        pLi.innerHTML = `
+                            <span class="mr-3 drag-handle-prod px-2 py-1 bg-gray-50 rounded text-gray-400 shadow-sm pointer-events-none">↕</span>
+                            <span class="flex-grow font-medium text-gray-800 pointer-events-none">${p.presentacion}</span>
+                        `;
+                        prodList.appendChild(pLi);
                     });
-                }
+
+                    li.appendChild(prodList);
+                    marcasList.appendChild(li);
+                });
+                
                 segCont.appendChild(marcasList);
                 container.appendChild(segCont);
             });
@@ -1365,102 +1189,86 @@
         const segConts = document.querySelectorAll('#segmentos-marcas-sortable-list .segmento-container'); 
         if (segConts.length === 0) { _showModal('Aviso', 'No hay elementos para ordenar.'); return; }
         
-        _showModal('Progreso', 'Guardando estructura global...');
+        _showModal('Progreso', 'Guardando Índice Absoluto...');
         
-        const batch = _writeBatch(_db);
-        const orderedSegIds = []; 
-        const tempToRealIdMap = {};
+        const rubroFilter = document.getElementById('ordenarRubroFilter').value;
+        const domOrder = [];
         
-        const currentMarcaDocs = {};
-        try {
-            const marcasSnap = await _getDocs(_collection(_db, `artifacts/${_appId}/users/${_userId}/marcas`));
-            marcasSnap.docs.forEach(doc => { currentMarcaDocs[doc.id] = doc.data(); });
-        } catch (e) {
-            console.warn("No se pudieron precargar datos de marcas:", e);
-        }
-
-        const brandAccumulator = new Map(); 
-
-        // 1. Recorrer Segmentos
-        segConts.forEach((segCont, sIdx) => {
-            let sId = segCont.dataset.id;
-            const sName = segCont.dataset.name;
-            
-            if (sId.startsWith('temp_')) {
-                const newRef = _doc(_collection(_db, `artifacts/${_appId}/users/${_userId}/segmentos`));
-                sId = newRef.id;
-                tempToRealIdMap[segCont.dataset.id] = sId; 
-                segCont.dataset.id = sId;
-            }
-            orderedSegIds.push(sId);
-
-            // 2. Extraer orden de Marcas en este Segmento
+        // 1. Extraer el orden lineal del DOM (Solo los IDs de los productos)
+        segConts.forEach(segCont => {
             const marcaItems = segCont.querySelectorAll('.marcas-list > .marca-container');
-            const marcaOrder = Array.from(marcaItems).map(item => item.dataset.name);
-            
-            batch.set(_doc(_db, `artifacts/${_appId}/users/${_userId}/segmentos`, sId), { 
-                name: sName, 
-                orden: sIdx, 
-                marcaOrder: marcaOrder 
-            }, { merge: true });
-
-            // 3. Acumular orden de Productos por Marca
             marcaItems.forEach(mItem => {
-                const mName = mItem.dataset.name;
-                const nameKey = mName.trim().toUpperCase();
-
-                if (!brandAccumulator.has(nameKey)) {
-                    let mId = mItem.dataset.id;
-                    if (mId.startsWith('temp_') && !tempToRealIdMap[mId]) {
-                        tempToRealIdMap[mId] = _doc(_collection(_db, `artifacts/${_appId}/users/${_userId}/marcas`)).id;
-                    }
-                    mId = mId.startsWith('temp_') ? tempToRealIdMap[mId] : mId;
-
-                    brandAccumulator.set(nameKey, { id: mId, name: mName, order: [] });
-                }
-
                 const prodItems = mItem.querySelectorAll('.productos-sortable-list .producto-item');
-                const pIds = Array.from(prodItems).map(pi => pi.dataset.id);
-                
-                brandAccumulator.get(nameKey).order.push(...pIds);
+                prodItems.forEach(pi => {
+                    domOrder.push(pi.dataset.id);
+                });
             });
         });
 
-        // 4. Guardar Marcas acumuladas (preservando los que estaban ocultos por el filtro de rubro)
-        brandAccumulator.forEach((data, nameKey) => {
-            const oldData = currentMarcaDocs[data.id] || {};
-            const oldOrder = oldData.productOrder || [];
+        const domOrderSet = new Set(domOrder);
+        let finalSortedIds = [];
+
+        // 2. Construir la lista global final manteniendo la posición de otros Rubros intacta
+        if (!rubroFilter) {
+            // Si no hay filtro, el DOM dicta toda la verdad. Los faltantes van al final.
+            finalSortedIds = [...domOrder];
+            _inventarioCache.forEach(p => {
+                if (!domOrderSet.has(p.id)) finalSortedIds.push(p.id);
+            });
+        } else {
+            // Si hay filtro, reemplazamos SOLO el bloque de ese Rubro
+            let existingSorted = [..._inventarioCache].sort((a, b) => (a.ordenVisibilidad || 9999) - (b.ordenVisibilidad || 9999));
+            let inserted = false;
             
-            const newlyOrderedKeys = data.order;
-            const newOrderSet = new Set(newlyOrderedKeys);
+            existingSorted.forEach(p => {
+                if (p.rubro === rubroFilter) {
+                    if (!inserted) {
+                        finalSortedIds.push(...domOrder);
+                        inserted = true;
+                    }
+                } else {
+                    finalSortedIds.push(p.id);
+                }
+            });
+            
+            if (!inserted) finalSortedIds.push(...domOrder);
 
-            const hiddenKeys = oldOrder.filter(k => !newOrderSet.has(k));
-            const finalOrder = [...newlyOrderedKeys, ...hiddenKeys];
+            // Productos de este rubro que no estaban en el DOM por error, van al final del bloque
+            _inventarioCache.forEach(p => {
+                if (p.rubro === rubroFilter && !domOrderSet.has(p.id)) {
+                    finalSortedIds.push(p.id);
+                }
+            });
+        }
 
-            batch.set(_doc(_db, `artifacts/${_appId}/users/${_userId}/marcas`, data.id), { 
-                name: data.name, 
-                productOrder: finalOrder
-            }, { merge: true });
-        });
-
+        // 3. Escribir el Índice Absoluto en el Catálogo Maestro
         try {
-            await batch.commit(); 
-            invalidateSegmentOrderCache(); 
-
-            _showModal('Progreso', 'Propagando cambios a Catálogo Maestro...');
-
-            if (window.adminModule?.propagateCategoryChange) {
-                 for (const sId of orderedSegIds) {
-                     const snap = await _getDoc(_doc(_db, `artifacts/${_appId}/users/${_userId}/segmentos`, sId));
-                     if(snap.exists()) await window.adminModule.propagateCategoryChange('segmentos', sId, snap.data());
-                 }
-                 for (const data of brandAccumulator.values()) {
-                     const snap = await _getDoc(_doc(_db, `artifacts/${_appId}/users/${_userId}/marcas`, data.id));
-                     if(snap.exists()) await window.adminModule.propagateCategoryChange('marcas', data.id, snap.data());
-                 }
+            let totalOps = 0;
+            let batch = _writeBatch(_db);
+            
+            // Asignar índice secuencial (1, 2, 3...)
+            for (let i = 0; i < finalSortedIds.length; i++) {
+                const pId = finalSortedIds[i];
+                // IMPORTANTE: Solo actualizamos si existe en el Catálogo Maestro
+                if (_masterCatalogCache[pId]) {
+                    const ref = _doc(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/productos`, pId);
+                    batch.update(ref, { ordenVisibilidad: i + 1 });
+                    totalOps++;
+                    
+                    if (totalOps >= 490) { // Límite de Firestore
+                        await batch.commit();
+                        batch = _writeBatch(_db);
+                        totalOps = 0;
+                    }
+                }
+            }
+            
+            if (totalOps > 0) {
+                await batch.commit();
             }
 
-            _showModal('Éxito', `Orden guardado perfectamente en todos los niveles.`, showInventarioSubMenu);
+            invalidateSegmentOrderCache(); 
+            _showModal('Éxito', `Índice Absoluto guardado. El orden ahora es definitivo y se aplicará automáticamente en todos los módulos.`, showInventarioSubMenu);
         } catch (error) {
             console.error("Error al guardar orden:", error);
             _showModal('Error', `Fallo al guardar: ${error.message}`);
