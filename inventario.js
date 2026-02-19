@@ -16,9 +16,7 @@
     // --- NUEVO: CACHÉ ESTRUCTURAL (Optimizado y Seguro) ---
     let _globalSortCache = {
         ready: false,
-        rubros: {},
-        segmentos: {},
-        marcas: {}
+        rubros: {}
     };
 
     const PUBLIC_DATA_ID = window.AppConfig.PUBLIC_DATA_ID; 
@@ -100,84 +98,35 @@
     }
 
     // ==============================================================================
-    // --- MOTOR MATEMÁTICO INQUEBRANTABLE ---
+    // --- MOTOR MATEMÁTICO INQUEBRANTABLE (Basado en la llave Embebida) ---
     // ==============================================================================
     window.getGlobalProductSortFunction = async () => {
         const norm = s => (s || '').trim().toUpperCase();
 
-        // Cargar los índices guardados una sola vez por sesión
+        // Cargar el orden de los Rubros una sola vez por sesión
         if (!_globalSortCache.ready) {
             _globalSortCache.rubros = {};
-            _globalSortCache.segmentos = {};
-            _globalSortCache.marcas = {};
-
             try {
-                const [rSnap, sSnap, mSnap] = await Promise.all([
-                    _getDocs(_collection(_db, `artifacts/${_appId}/users/${_userId}/rubros`)),
-                    _getDocs(_collection(_db, `artifacts/${_appId}/users/${_userId}/segmentos`)),
-                    _getDocs(_collection(_db, `artifacts/${_appId}/users/${_userId}/marcas`))
-                ]);
-
+                const rSnap = await _getDocs(_collection(_db, `artifacts/${_appId}/users/${_userId}/rubros`));
                 rSnap.forEach(d => { _globalSortCache.rubros[norm(d.data().name)] = String(d.data().orden ?? 9999).padStart(4, '0'); });
-                
-                sSnap.forEach(d => { 
-                    _globalSortCache.segmentos[norm(d.data().name)] = {
-                        orden: String(d.data().orden ?? 9999).padStart(4, '0'),
-                        marcaOrder: (d.data().marcaOrder || []).map(norm)
-                    };
-                });
-                
-                mSnap.forEach(d => {
-                    const mName = norm(d.data().name);
-                    if (!_globalSortCache.marcas[mName]) _globalSortCache.marcas[mName] = { productOrder: [] };
-                    _globalSortCache.marcas[mName].productOrder.push(...(d.data().productOrder || []));
-                });
-                
                 _globalSortCache.ready = true;
             } catch (e) {
-                console.error("Error cargando configuración de orden:", e);
+                console.error("Error cargando orden de rubros:", e);
             }
         }
 
         return (a, b) => {
-            // 1. Rubro (Numérico)
+            // 1. Obtener el número del Rubro para que los rubros no se mezclen nunca
             const rA = _globalSortCache.rubros[norm(a.rubro)] || '9999';
             const rB = _globalSortCache.rubros[norm(b.rubro)] || '9999';
             
-            // 2. Segmento (Numérico)
-            const sDataA = _globalSortCache.segmentos[norm(a.segmento)];
-            const sDataB = _globalSortCache.segmentos[norm(b.segmento)];
-            const sA = sDataA ? sDataA.orden : '9999';
-            const sB = sDataB ? sDataB.orden : '9999';
+            // 2. Extraer la Llave guardada (ej. 0001_0002_0005). Si no tiene, se va al fondo con 'Z_9999'
+            const kA = a.sortKey ? `A_${a.sortKey}` : `Z_9999_${norm(a.segmento)}_${norm(a.marca)}_${norm(a.presentacion)}`;
+            const kB = b.sortKey ? `A_${b.sortKey}` : `Z_9999_${norm(b.segmento)}_${norm(b.marca)}_${norm(b.presentacion)}`;
             
-            // 3. Marca (Su índice dentro del Segmento)
-            let mA = '9999', mB = '9999';
-            if (sDataA && sDataA.marcaOrder) {
-                const idx = sDataA.marcaOrder.indexOf(norm(a.marca));
-                if (idx !== -1) mA = String(idx).padStart(4, '0');
-            }
-            if (sDataB && sDataB.marcaOrder) {
-                const idx = sDataB.marcaOrder.indexOf(norm(b.marca));
-                if (idx !== -1) mB = String(idx).padStart(4, '0');
-            }
-
-            // 4. Presentación (Su índice dentro de la Marca)
-            let pA = '9999', pB = '9999';
-            const mDataA = _globalSortCache.marcas[norm(a.marca)];
-            if (mDataA && mDataA.productOrder) {
-                const idx = mDataA.productOrder.indexOf(a.id);
-                if (idx !== -1) pA = String(idx).padStart(4, '0');
-            }
-            const mDataB = _globalSortCache.marcas[norm(b.marca)];
-            if (mDataB && mDataB.productOrder) {
-                const idx = mDataB.productOrder.indexOf(b.id);
-                if (idx !== -1) pB = String(idx).padStart(4, '0');
-            }
-
-            // --- LA LLAVE MAESTRA ---
-            // Combina los índices con los nombres reales para asegurar que jamás se entremezclen.
-            const keyA = `${rA}_${norm(a.rubro)}_${sA}_${norm(a.segmento)}_${mA}_${norm(a.marca)}_${pA}_${norm(a.presentacion)}`;
-            const keyB = `${rB}_${norm(b.rubro)}_${sB}_${norm(b.segmento)}_${mB}_${norm(b.marca)}_${pB}_${norm(b.presentacion)}`;
+            // 3. Crear el código de barras definitivo: (0000_VIVERES_A_0001_0002_0005)
+            const keyA = `${rA}_${norm(a.rubro)}_${kA}`;
+            const keyB = `${rB}_${norm(b.rubro)}_${kB}`;
 
             return keyA.localeCompare(keyB);
         };
@@ -501,7 +450,7 @@
     }
 
     // =========================================================================================
-    // VISTA "ORDENAR SEGMENTOS Y MARCAS" RECONSTRUIDA
+    // VISTA "ORDENAR SEGMENTOS Y MARCAS" RECONSTRUIDA Y AISLADA
     // =========================================================================================
 
     function showOrdenarSegmentosMarcasView() {
@@ -520,7 +469,7 @@
                         <div class="mb-6 bg-blue-50 p-6 border-2 border-blue-200 rounded-xl shadow-inner">
                            <label for="ordenarRubroFilter" class="block text-blue-800 font-bold mb-3 text-lg">Paso 1: Seleccione el Rubro a ordenar</label>
                            <select id="ordenarRubroFilter" class="w-full px-4 py-3 border-2 border-blue-300 rounded-lg shadow-sm text-lg font-semibold focus:ring-4 focus:ring-blue-400 outline-none transition-all cursor-pointer bg-white">
-                               <option value="">-- Elija un Rubro --</option>
+                               <option value="">-- Elija un Rubro Obligatoriamente --</option>
                            </select>
                         </div>
 
@@ -755,74 +704,75 @@
         const segConts = document.querySelectorAll('#segmentos-marcas-sortable-list .segmento-container'); 
         if (segConts.length === 0) { _showModal('Aviso', 'No hay elementos para ordenar.'); return; }
         
-        _showModal('Progreso', 'Guardando orden jerárquico de forma segura en las categorías...');
+        _showModal('Progreso', 'Grabando la firma de orden en el sistema...');
         
-        const batch = _writeBatch(_db);
-        const brandAccumulator = new Map();
-        const norm = s => (s || '').trim().toUpperCase();
+        const updates = [];
         
-        // El script ahora guarda el orden visual actual en la base de datos de configuraciones Privadas (donde seguro tienes permiso)
+        // REESCRITURA TOTAL DEL GUARDADO: ¡NO TOCAMOS LAS COLECCIONES DE SEGMENTOS Y MARCAS!
+        // Solo inyectamos la "Llave Lexicográfica" directo en cada producto que vemos en pantalla.
         segConts.forEach((segCont, sIdx) => {
-            let sId = segCont.dataset.id;
-            const sName = segCont.dataset.name;
-            
-            if (!sId || sId.startsWith('temp_')) {
-                sId = _doc(_collection(_db, 'dummy')).id;
-            }
-            
             const marcaItems = segCont.querySelectorAll('.marcas-list > .marca-container');
-            const marcaOrder = Array.from(marcaItems).map(item => item.dataset.name);
-            
-            // Guardamos Segmento
-            batch.set(_doc(_db, `artifacts/${_appId}/users/${_userId}/segmentos`, sId), { 
-                name: sName, 
-                orden: sIdx, 
-                marcaOrder: marcaOrder 
-            }, { merge: true });
-
-            // Acumulamos las Marcas
-            marcaItems.forEach(mItem => {
-                const mName = mItem.dataset.name;
-                const nameKey = norm(mName);
-
-                if (!brandAccumulator.has(nameKey)) {
-                    let mId = mItem.dataset.id;
-                    if (!mId || mId.startsWith('temp_')) {
-                        mId = _doc(_collection(_db, 'dummy')).id;
-                    }
-                    brandAccumulator.set(nameKey, { id: mId, name: mName, order: [] });
-                }
-
+            marcaItems.forEach((mItem, mIdx) => {
                 const prodItems = mItem.querySelectorAll('.productos-sortable-list .producto-item');
-                const pIds = Array.from(prodItems).map(pi => pi.dataset.id);
-                brandAccumulator.get(nameKey).order.push(...pIds);
+                prodItems.forEach((pi, pIdx) => {
+                    const pId = pi.dataset.id;
+                    const prod = _inventarioCache.find(p => p.id === pId);
+                    
+                    if (prod) {
+                        const sStr = String(sIdx).padStart(4, '0');
+                        const mStr = String(mIdx).padStart(4, '0');
+                        const pStr = String(pIdx).padStart(4, '0');
+                        const newSortKey = `${sStr}_${mStr}_${pStr}`; // Ej: "0000_0001_0005"
+                        
+                        if (prod.sortKey !== newSortKey) {
+                            updates.push({ pId: pId, sortKey: newSortKey });
+                        }
+                    }
+                });
             });
         });
 
-        // Combinar con marcas existentes para no borrar productos de otros rubros ocultos
-        const existingMarcas = {};
-        try {
-            const snap = await _getDocs(_collection(_db, `artifacts/${_appId}/users/${_userId}/marcas`));
-            snap.docs.forEach(d => existingMarcas[d.id] = d.data().productOrder || []);
-        } catch (e) {}
-
-        brandAccumulator.forEach((data, nameKey) => {
-            const oldOrder = existingMarcas[data.id] || [];
-            const newOrderSet = new Set(data.order);
-            const hiddenKeys = oldOrder.filter(k => !newOrderSet.has(k));
-            const finalOrder = [...data.order, ...hiddenKeys];
-
-            batch.set(_doc(_db, `artifacts/${_appId}/users/${_userId}/marcas`, data.id), { 
-                name: data.name, 
-                productOrder: finalOrder
-            }, { merge: true });
-        });
+        if (updates.length === 0) {
+            _showModal('Aviso', 'No se detectaron cambios en el orden visual.');
+            return;
+        }
 
         try {
-            await batch.commit();
+            let totalOps = 0;
+            let batch = _writeBatch(_db);
+            
+            for (const u of updates) {
+                let fueActualizado = false;
+
+                // 1. Guardar directo en la definición pública del producto
+                if (_masterCatalogCache[u.pId]) {
+                    const refMaster = _doc(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/productos`, u.pId);
+                    batch.set(refMaster, { sortKey: u.sortKey }, { merge: true });
+                    totalOps++;
+                    fueActualizado = true;
+                }
+                
+                // 2. Guardar directo en la caché privada del producto
+                if (_userStockCache[u.pId] || !fueActualizado) {
+                    const refStock = _doc(_db, `artifacts/${_appId}/users/${_userId}/inventario`, u.pId);
+                    batch.set(refStock, { sortKey: u.sortKey }, { merge: true });
+                    totalOps++;
+                }
+                
+                if (totalOps >= 490) { 
+                    await batch.commit();
+                    batch = _writeBatch(_db);
+                    totalOps = 0;
+                }
+            }
+            
+            if (totalOps > 0) {
+                await batch.commit();
+            }
+
             invalidateSegmentOrderCache(); 
-            _showModal('Éxito', `Orden guardado exitosamente. La vista Ver Productos ha sido actualizada.`, showInventarioSubMenu);
-        } catch (error) { 
+            _showModal('Éxito', `Firma guardada. El orden del rubro ${rubroValue} está ahora blindado.`, showInventarioSubMenu);
+        } catch (error) {
             console.error("Error al guardar orden:", error);
             _showModal('Error', `Fallo al guardar: ${error.message}`);
         }
@@ -1104,7 +1054,7 @@
         try { 
             if (window.adminModule?.propagateProductChange) { 
                 await window.adminModule.propagateProductChange(productId, updatedData); 
-                 _showModal('Éxito','Producto modificado y propagado correctamente.', showModifyDeleteView); 
+                 _showModal('Éxito','Producto modificado y propagado correctamente. Recuerde reordenarlo en la vista de Orden.', showModifyDeleteView); 
             } else {
                 throw new Error("Módulo Admin no cargado.");
             }
