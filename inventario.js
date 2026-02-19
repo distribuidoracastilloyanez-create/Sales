@@ -12,10 +12,15 @@
     let _listenersUnsubscribes = []; 
 
     let _lastFilters = { searchTerm: '', rubro: '', segmento: '', marca: '' };
-    let _marcasCache = null;
     let _recargaTempState = {}; 
 
-    // ID PÚBLICO FIJO (Para leer el maestro)
+    // --- CACHÉ DE ORDENAMIENTO GLOBAL ---
+    let _globalSortCache = {
+        rubros: null,
+        segmentos: null,
+        marcas: null
+    };
+
     const PUBLIC_DATA_ID = window.AppConfig.PUBLIC_DATA_ID; 
 
     window.initInventario = function(dependencies) {
@@ -95,29 +100,93 @@
     }
 
     // ==============================================================================
-    // --- NUEVA ESTRATEGIA: ORDENAMIENTO BASADO EN CAMPO 'ordenGlobal' ---
+    // --- LÓGICA MAESTRA DE ORDENAMIENTO ESTRICTO (JERARQUÍA COMPLETA) ---
     // ==============================================================================
     window.getGlobalProductSortFunction = async () => {
-        // La lógica de ordenamiento ahora es extremadamente simple y rápida.
-        // Solo verificamos el campo 'ordenGlobal' que asignamos al guardar.
-        return (a, b) => {
-            const ordA = a.ordenGlobal !== undefined ? a.ordenGlobal : 999999;
-            const ordB = b.ordenGlobal !== undefined ? b.ordenGlobal : 999999;
-            
-            // 1. Ordenar por el número global asignado
-            if (ordA !== ordB) {
-                return ordA - ordB;
+        if (!_globalSortCache.rubros || !_globalSortCache.segmentos || !_globalSortCache.marcas) {
+            try {
+                const [rSnap, sSnap, mSnap] = await Promise.all([
+                    _getDocs(_collection(_db, `artifacts/${_appId}/users/${_userId}/rubros`)),
+                    _getDocs(_collection(_db, `artifacts/${_appId}/users/${_userId}/segmentos`)),
+                    _getDocs(_collection(_db, `artifacts/${_appId}/users/${_userId}/marcas`))
+                ]);
+
+                _globalSortCache.rubros = {};
+                rSnap.forEach(d => _globalSortCache.rubros[d.data().name] = d.data().orden ?? 9999);
+
+                _globalSortCache.segmentos = {};
+                sSnap.forEach(d => _globalSortCache.segmentos[d.data().name] = { 
+                    orden: d.data().orden ?? 9999, 
+                    marcaOrder: d.data().marcaOrder || [] 
+                });
+
+                _globalSortCache.marcas = {};
+                mSnap.forEach(d => _globalSortCache.marcas[d.data().name] = { 
+                    productOrder: d.data().productOrder || [] 
+                });
+            } catch (e) { 
+                console.warn("Error cargando caché de orden:", e);
+                _globalSortCache.rubros = {}; _globalSortCache.segmentos = {}; _globalSortCache.marcas = {};
             }
+        }
+
+        return (a, b) => {
+            const safeA = a || {}; const safeB = b || {};
+            let res = 0;
+
+            // 1. RUBRO
+            const rA = _globalSortCache.rubros[safeA.rubro] ?? 9999;
+            const rB = _globalSortCache.rubros[safeB.rubro] ?? 9999;
+            res = rA - rB;
+            if (res !== 0) return res;
+            res = (safeA.rubro || '').localeCompare(safeB.rubro || '');
+            if (res !== 0) return res;
+
+            // 2. SEGMENTO
+            const sA = _globalSortCache.segmentos[safeA.segmento]?.orden ?? 9999;
+            const sB = _globalSortCache.segmentos[safeB.segmento]?.orden ?? 9999;
+            res = sA - sB;
+            if (res !== 0) return res;
+            res = (safeA.segmento || '').localeCompare(safeB.segmento || '');
+            if (res !== 0) return res;
+
+            // 3. MARCA (Dentro del Segmento)
+            const segData = _globalSortCache.segmentos[safeA.segmento];
+            if (segData && segData.marcaOrder) {
+                const idxA = segData.marcaOrder.indexOf(safeA.marca);
+                const idxB = segData.marcaOrder.indexOf(safeB.marca);
+                if (idxA !== -1 && idxB !== -1) res = idxA - idxB;
+                else if (idxA !== -1) res = -1;
+                else if (idxB !== -1) res = 1;
+            }
+            if (res !== 0) return res;
+            res = (safeA.marca || '').localeCompare(safeB.marca || '');
+            if (res !== 0) return res;
+
+            // 4. PRESENTACIÓN (Dentro de la Marca)
+            const marcaData = _globalSortCache.marcas[safeA.marca];
+            if (marcaData && marcaData.productOrder) {
+                const idxA = marcaData.productOrder.indexOf(safeA.id);
+                const idxB = marcaData.productOrder.indexOf(safeB.id);
+                if (idxA !== -1 && idxB !== -1) res = idxA - idxB;
+                else if (idxA !== -1) res = -1;
+                else if (idxB !== -1) res = 1;
+            }
+            if (res !== 0) return res;
             
-            // 2. Si no tienen orden (nuevos productos), ordenar por nombre como respaldo
-            return (a.presentacion || '').localeCompare(b.presentacion || '');
+            // 5. NOMBRES IDÉNTICOS (Tie-breaker)
+            res = (safeA.presentacion || '').localeCompare(safeB.presentacion || '');
+            if (res !== 0) return res;
+
+            // 6. SOLUCIÓN DEFINITIVA PARA NOMBRES DUPLICADOS: Ordenar por ID para mantener estabilidad
+            return (safeA.id || '').localeCompare(safeB.id || '');
         };
     };
 
     function invalidateSegmentOrderCache() {
+        _globalSortCache = { rubros: null, segmentos: null, marcas: null };
         if (window.catalogoModule?.invalidateCache) window.catalogoModule.invalidateCache();
         if (window.ventasModule?.invalidateCache) window.ventasModule.invalidateCache();
-        console.log("Cachés de UI invalidadas (La nueva lógica usa el campo ordenGlobal).");
     }
 
     function populateRubrosFromCache(selectId) {
@@ -138,7 +207,6 @@
     }
 
     // --- VISTAS ---
-
     window.showInventarioSubMenu = function() {
         if (_floatingControls) _floatingControls.classList.add('hidden');
         _listenersUnsubscribes.forEach(u => u()); _listenersUnsubscribes = [];
@@ -152,7 +220,7 @@
                             <button id="verModificarBtn" class="w-full px-6 py-3 bg-blue-500 text-white font-semibold rounded-lg shadow-md hover:bg-blue-600">Ver Productos / ${isAdmin ? 'Modificar Def.' : 'Consultar Stock'}</button>
                             ${isAdmin ? `<button id="agregarProductoBtn" class="w-full px-6 py-3 bg-blue-500 text-white font-semibold rounded-lg shadow-md hover:bg-blue-600">Agregar Producto</button>` : ''}
                             <button id="recargaProductosBtn" class="w-full px-6 py-3 bg-teal-500 text-white font-semibold rounded-lg shadow-md hover:bg-teal-600">Recarga de Productos</button>
-                            ${isAdmin ? `<button id="ordenarSegmentosBtn" class="w-full px-6 py-3 bg-purple-500 text-white font-semibold rounded-lg shadow-md hover:bg-purple-600">Ordenar Catálogo Completo</button>` : ''}
+                            ${isAdmin ? `<button id="ordenarSegmentosBtn" class="w-full px-6 py-3 bg-purple-500 text-white font-semibold rounded-lg shadow-md hover:bg-purple-600">Ordenar Segmentos y Marcas</button>` : ''}
                             ${isAdmin ? `<button id="modificarDatosBtn" class="w-full px-6 py-3 bg-yellow-500 text-gray-800 font-semibold rounded-lg shadow-md hover:bg-yellow-600">Modificar Datos Maestros</button>` : ''}
                             <button id="backToMenuBtn" class="w-full px-6 py-3 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500">Volver al Menú Principal</button>
                         </div>
@@ -181,7 +249,7 @@
          if (_floatingControls) _floatingControls.classList.add('hidden'); 
          const isAdmin = _userRole === 'admin';
         
-        _mainContent.innerHTML = `<div class="p-4 pt-8"> <div class="container mx-auto"> <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl"> <h2 class="text-2xl font-bold mb-6 text-center">Ver Productos / ${isAdmin?'Modificar Def.':'Consultar Stock'}</h2> ${getFiltrosHTML('modify')} <div id="productosListContainer" class="overflow-x-auto max-h-96 border rounded-lg"> <p class="text-gray-500 text-center p-4">Cargando...</p> </div> <div class="mt-6 flex flex-col sm:flex-row gap-4"> <button id="backToInventarioBtn" class="w-full px-6 py-3 bg-gray-400 text-white rounded-lg shadow-md hover:bg-gray-500">Volver</button> ${isAdmin?`<button id="deleteAllProductosBtn" class="w-full px-6 py-3 bg-red-600 text-white rounded-lg shadow-md hover:bg-red-700">Eliminar Todos</button>`:''} </div> </div> </div> </div>`;
+        _mainContent.innerHTML = `<div class="p-4 pt-8"> <div class="container mx-auto"> <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl"> <h2 class="text-2xl font-bold mb-6 text-center">Ver Productos / ${isAdmin?'Modificar Def.':'Consultar Stock'}</h2> ${getFiltrosHTML('modify')} <div id="productosListContainer" class="overflow-x-auto max-h-[60vh] border rounded-lg"> <p class="text-gray-500 text-center p-4">Cargando...</p> </div> <div class="mt-6 flex flex-col sm:flex-row gap-4"> <button id="backToInventarioBtn" class="w-full px-6 py-3 bg-gray-400 text-white rounded-lg shadow-md hover:bg-gray-500">Volver</button> ${isAdmin?`<button id="deleteAllProductosBtn" class="w-full px-6 py-3 bg-red-600 text-white rounded-lg shadow-md hover:bg-red-700">Eliminar Todos</button>`:''} </div> </div> </div> </div>`;
 
         document.getElementById('backToInventarioBtn').addEventListener('click', showInventarioSubMenu);
         if (isAdmin) document.getElementById('deleteAllProductosBtn')?.addEventListener('click', handleDeleteAllProductos);
@@ -285,31 +353,38 @@
         let productosFiltrados = [..._inventarioCache];
         productosFiltrados = productosFiltrados.filter(p => {
             const searchTermLower = (_lastFilters.searchTerm || '').toLowerCase();
-            const textMatch = !searchTermLower || (p.presentacion && p.presentacion.toLowerCase().includes(searchTermLower)) || (p.marca && p.marca.toLowerCase().includes(searchTermLower)) || (p.segmento && p.segmento.toLowerCase().includes(searchTermLower));
+            const textMatch = !searchTermLower ||
+                (p.presentacion && p.presentacion.toLowerCase().includes(searchTermLower)) ||
+                (p.marca && p.marca.toLowerCase().includes(searchTermLower)) ||
+                (p.segmento && p.segmento.toLowerCase().includes(searchTermLower));
             const rubroMatch = !_lastFilters.rubro || p.rubro === _lastFilters.rubro;
             const segmentoMatch = !_lastFilters.segmento || p.segmento === _lastFilters.segmento;
             const marcaMatch = !_lastFilters.marca || p.marca === _lastFilters.marca;
             return textMatch && rubroMatch && segmentoMatch && marcaMatch;
         });
 
+        // Ordenamos toda la lista
         const sortFunction = await window.getGlobalProductSortFunction();
         productosFiltrados.sort(sortFunction);
 
-        if (productosFiltrados.length === 0) { container.innerHTML = `<p class="text-center text-gray-500 p-4">No hay productos que coincidan con los filtros seleccionados.</p>`; return; }
+        if (productosFiltrados.length === 0) {
+            container.innerHTML = `<p class="text-center text-gray-500 p-4">No hay productos que coincidan con los filtros seleccionados.</p>`;
+            return;
+        }
 
         const cols = readOnly ? 4 : 5;
         let tableHTML = `<table class="min-w-full bg-white text-sm"> <thead class="bg-gray-200 sticky top-0 z-10"> <tr> <th class="py-2 px-3 text-left font-semibold text-gray-600 uppercase tracking-wider">Presentación</th> <th class="py-2 px-3 text-left font-semibold text-gray-600 uppercase tracking-wider">Marca</th> <th class="py-2 px-3 text-right font-semibold text-gray-600 uppercase tracking-wider">Precio</th> <th class="py-2 px-3 text-center font-semibold text-gray-600 uppercase tracking-wider">Stock</th> ${!readOnly ? `<th class="py-2 px-3 text-center font-semibold text-gray-600 uppercase tracking-wider">Acciones</th>` : ''} </tr> </thead> <tbody>`;
-        let lastHeaderKey = null;
         
-        // Ahora agrupamos por el primer filtro activo para que tenga sentido visual, o por defecto por rubro/segmento
-        const firstSortKey = _lastFilters.rubro && !_lastFilters.segmento ? 'segmento' : (_lastFilters.segmento && !_lastFilters.marca ? 'marca' : 'segmento');
+        let lastSegmento = null;
 
         productosFiltrados.forEach(p => {
-            const currentHeaderValue = p[firstSortKey] || `Sin ${firstSortKey}`;
-            if (currentHeaderValue !== lastHeaderKey) {
-                lastHeaderKey = currentHeaderValue;
-                tableHTML += `<tr><td colspan="${cols}" class="py-2 px-4 bg-gray-300 font-bold text-gray-800 sticky top-[calc(theme(height.10))] z-[9]">${lastHeaderKey}</td></tr>`;
+            // Agrupación visual siempre por Segmento para mantener orden lógico en pantalla
+            const currentSegmento = p.segmento || `Sin Segmento`;
+            if (currentSegmento !== lastSegmento) {
+                lastSegmento = currentSegmento;
+                tableHTML += `<tr><td colspan="${cols}" class="py-2 px-4 bg-gray-300 font-bold text-gray-800 sticky top-[calc(theme(height.10))] z-[9]">${lastSegmento}</td></tr>`;
             }
+            
             const ventaPor = p.ventaPor || {und:true};
             const precios = p.precios || {und: p.precioPorUnidad || 0};
             let displayPresentacion = p.presentacion || 'N/A';
@@ -417,10 +492,7 @@
         _showModal('Progreso', 'Creando producto en Catálogo Maestro...');
         try {
             const newId = _doc(_collection(_db, 'dummy')).id;
-            
             if (window.adminModule?.propagateProductChange) {
-                // Se asigna un orden temporal para que aparezca al final
-                data.ordenGlobal = 999999;
                 await window.adminModule.propagateProductChange(newId, data);
                 _showModal('Éxito', 'Producto agregado al Catálogo y propagado.', showInventarioSubMenu);
             } else {
@@ -601,7 +673,6 @@
     async function handleUpdateProducto(e, productId) {
         e.preventDefault(); if (_userRole !== 'admin') return; 
         const updatedData = getProductoDataFromForm(true); 
-        
         if (!updatedData.rubro||!updatedData.segmento||!updatedData.marca||!updatedData.presentacion){_showModal('Error','Completa Rubro, Segmento, Marca y Presentación.');return;} if (!updatedData.ventaPor.und&&!updatedData.ventaPor.paq&&!updatedData.ventaPor.cj){_showModal('Error','Selecciona al menos una forma de venta.');return;} if (updatedData.manejaVacios&&!updatedData.tipoVacio){_showModal('Error','Si maneja vacío, selecciona el tipo.');document.getElementById('tipoVacioSelect')?.focus();return;} let precioValido=(updatedData.ventaPor.und&&updatedData.precios.und>0)||(updatedData.ventaPor.paq&&updatedData.precios.paq>0)||(updatedData.ventaPor.cj&&updatedData.precios.cj>0); if(!precioValido){_showModal('Error','Ingresa al menos un precio válido (> 0) para la forma de venta seleccionada.');document.querySelector('#preciosContainer input[required]')?.focus();return;}
         
         updatedData.cantidadUnidades = 0; 
@@ -619,7 +690,6 @@
             _showModal('Error',`Ocurrió un error al guardar: ${err.message}`); 
         }
     }
-
 
     function deleteProducto(productId) {
         if (_userRole !== 'admin') { _showModal('Acceso Denegado', 'Solo administradores.'); return; } const prod = _inventarioCache.find(p => p.id === productId); if (!prod) { _showModal('Error', 'Producto no encontrado.'); return; }
@@ -710,7 +780,7 @@
                         <h2 class="text-2xl font-bold text-gray-800 mb-6 text-center">Recarga de Productos</h2>
                         <p class="text-center text-gray-600 mb-4 text-sm">Ingrese la CANTIDAD A AÑADIR. Este valor se sumará al stock actual. Los cambios se mantienen al cambiar de filtro.</p>
                         ${getFiltrosHTML('recarga')}
-                        <div id="recargaListContainer" class="overflow-x-auto max-h-96 border rounded-lg">
+                        <div id="recargaListContainer" class="overflow-x-auto max-h-[60vh] border rounded-lg">
                             <p class="text-gray-500 text-center p-4">Cargando productos...</p>
                         </div>
                         <div class="mt-6 flex flex-col sm:flex-row gap-4">
@@ -778,14 +848,13 @@
                 </thead>
                 <tbody>`;
         
-        let lastHeaderKey = null; 
-        const firstSortKey = window._sortPreferenceCache ? window._sortPreferenceCache[0] : 'segmento';
+        let lastSegmento = null;
         
         productos.forEach(p => {
-            const currentHeaderValue = p[firstSortKey] || `Sin ${firstSortKey}`;
-            if (currentHeaderValue !== lastHeaderKey) { 
-                lastHeaderKey = currentHeaderValue; 
-                tableHTML += `<tr><td colspan="3" class="py-2 px-4 bg-gray-300 font-bold text-gray-800 sticky top-[calc(theme(height.10))] z-[9]">${lastHeaderKey}</td></tr>`; 
+            const currentSegmento = p.segmento || `Sin Segmento`;
+            if (currentSegmento !== lastSegmento) { 
+                lastSegmento = currentSegmento; 
+                tableHTML += `<tr><td colspan="3" class="py-2 px-4 bg-gray-300 font-bold text-gray-800 sticky top-[calc(theme(height.10))] z-[9]">${lastSegmento}</td></tr>`; 
             }
             
             const vPor = p.ventaPor || {und:true};
@@ -928,7 +997,7 @@
     }
 
     // ==============================================================================
-    // --- VISTA DE ORDENAMIENTO (ACTUALIZADA PARA USAR 'ordenGlobal') ---
+    // --- VISTA DE ORDENAMIENTO (DRAG & DROP JERÁRQUICO RESTAURADO Y MEJORADO) ---
     // ==============================================================================
     function showOrdenarSegmentosMarcasView() {
         if (_userRole !== 'admin') {
@@ -940,8 +1009,8 @@
             <div class="p-4 pt-8">
                 <div class="container mx-auto max-w-4xl">
                     <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl">
-                        <h2 class="text-2xl font-bold text-gray-800 mb-4 text-center">Ordenar Catálogo (Global)</h2>
-                        <p class="text-center text-gray-600 mb-6 text-sm">Arrastra los productos para definir el orden en el que aparecerán en <strong>toda la aplicación</strong> (Ventas, Catálogo, Reportes).<br>El orden se guarda directamente en cada producto.</p>
+                        <h2 class="text-2xl font-bold text-gray-800 mb-4 text-center">Ordenar Catálogo Completo</h2>
+                        <p class="text-center text-gray-600 mb-6 text-sm">Arrastra para definir el orden en el que aparecerán en <strong>toda la aplicación</strong> (Ventas, Catálogo, Reportes).</p>
                         
                         <div class="mb-4 bg-gray-50 p-4 border rounded-lg">
                            <label for="ordenarRubroFilter" class="block text-gray-700 font-medium mb-2 text-sm">Filtrar por Rubro (Facilita el trabajo):</label>
@@ -950,16 +1019,8 @@
                            </select>
                         </div>
 
-                        <div class="border rounded-lg bg-gray-100 p-2">
-                            <div class="grid grid-cols-12 gap-2 px-4 py-2 bg-gray-200 font-bold text-sm text-gray-700 rounded-t-lg">
-                                <div class="col-span-1 text-center">#</div>
-                                <div class="col-span-3">Segmento</div>
-                                <div class="col-span-3">Marca</div>
-                                <div class="col-span-5">Presentación</div>
-                            </div>
-                            <ul id="productos-sortable-list" class="space-y-1 mt-1 max-h-[60vh] overflow-y-auto pb-4">
-                                <p class="text-gray-500 text-center py-4">Cargando...</p>
-                            </ul>
+                        <div id="segmentos-marcas-sortable-list" class="space-y-4 max-h-[65vh] overflow-y-auto pb-4">
+                            <p class="text-gray-500 text-center py-4">Cargando...</p>
                         </div>
 
                         <div class="mt-6 flex flex-col sm:flex-row gap-4">
@@ -971,111 +1032,230 @@
             </div>
         `;
         document.getElementById('backToInventarioBtn').addEventListener('click', showInventarioSubMenu);
-        document.getElementById('saveOrderBtn').addEventListener('click', handleGuardarOrdenDirecto);
+        document.getElementById('saveOrderBtn').addEventListener('click', handleGuardarOrdenJerarquia);
         
         populateRubrosFromCache('ordenarRubroFilter');
         
         const rubroFilter = document.getElementById('ordenarRubroFilter');
-        rubroFilter.addEventListener('change', () => renderFlatSortableList(rubroFilter.value));
+        rubroFilter.addEventListener('change', () => renderSortableHierarchy(rubroFilter.value));
         
         if (_inventarioCache.length > 0) {
-            renderFlatSortableList('');
+            renderSortableHierarchy('');
         } else {
              startMainInventarioListener(() => {
                  populateRubrosFromCache('ordenarRubroFilter');
-                 renderFlatSortableList('');
+                 renderSortableHierarchy('');
              });
         }
     }
 
-    async function renderFlatSortableList(rubroFiltro = '') {
-        const container = document.getElementById('productos-sortable-list');
+    async function renderSortableHierarchy(rubroFiltro = '') {
+        const container = document.getElementById('segmentos-marcas-sortable-list');
         if (!container) return;
+        container.innerHTML = `<p class="text-gray-500 text-center">Cargando datos maestros...</p>`;
         
-        let prods = [..._inventarioCache];
-        if (rubroFiltro) {
-            prods = prods.filter(p => p.rubro === rubroFiltro);
+        try {
+            // 1. Obtener segmentos y marcas desde Firebase
+            const segmentosRef = _collection(_db, `artifacts/${_appId}/users/${_userId}/segmentos`);
+            const segSnapshot = await _getDocs(segmentosRef);
+            const dbSegments = new Map();
+            segSnapshot.forEach(doc => dbSegments.set((doc.data().name || '').trim().toUpperCase(), { id: doc.id, ...doc.data() }));
+
+            const marcasRef = _collection(_db, `artifacts/${_appId}/users/${_userId}/marcas`);
+            const marSnapshot = await _getDocs(marcasRef);
+            const dbMarcas = new Map();
+            marSnapshot.forEach(doc => dbMarcas.set((doc.data().name || '').trim().toUpperCase(), { id: doc.id, ...doc.data() }));
+
+            // 2. Filtrar productos
+            let prods = [..._inventarioCache];
+            if (rubroFiltro) prods = prods.filter(p => p.rubro === rubroFiltro);
+
+            if (prods.length === 0) {
+                container.innerHTML = `<p class="text-gray-500 text-center">No hay productos en este rubro.</p>`;
+                return;
+            }
+
+            // 3. Construir Segmentos
+            const currentSegments = new Set(prods.map(p => (p.segmento || 'S/S').trim().toUpperCase()));
+            let segmentsArray = [];
+            currentSegments.forEach(sName => {
+                segmentsArray.push(dbSegments.get(sName) || { id: `temp_s_${sName}`, name: sName, orden: 9999, marcaOrder: [] });
+            });
+            segmentsArray.sort((a, b) => (a.orden ?? 9999) - (b.orden ?? 9999));
+
+            container.innerHTML = '';
+
+            segmentsArray.forEach(seg => {
+                const segDiv = document.createElement('div');
+                segDiv.className = 'segmento-container bg-white border border-blue-300 rounded-lg mb-4 shadow-sm';
+                segDiv.dataset.id = seg.id;
+                segDiv.dataset.name = seg.name;
+
+                segDiv.innerHTML = `
+                    <div class="bg-blue-100 p-3 rounded-t-lg flex items-center font-bold text-blue-900 border-b border-blue-300">
+                        <span class="cursor-grab mr-3 drag-handle-seg px-2 py-1 bg-white hover:bg-blue-200 rounded text-gray-500 shadow-sm" draggable="true">☰</span>
+                        <span class="uppercase tracking-wider">📁 ${seg.name}</span>
+                    </div>
+                    <ul class="marcas-list p-3 space-y-3 bg-blue-50/30 min-h-[50px]"></ul>
+                `;
+
+                const marcasList = segDiv.querySelector('.marcas-list');
+                const prodsInSeg = prods.filter(p => (p.segmento || 'S/S').trim().toUpperCase() === seg.name);
+                
+                // 4. Construir Marcas dentro del segmento
+                const currentMarcas = new Set(prodsInSeg.map(p => (p.marca || 'S/M').trim().toUpperCase()));
+                let marcasArray = [];
+                currentMarcas.forEach(mName => {
+                    marcasArray.push(dbMarcas.get(mName) || { id: `temp_m_${mName}`, name: mName, productOrder: [] });
+                });
+
+                const mo = seg.marcaOrder || [];
+                marcasArray.sort((a, b) => {
+                    const ia = mo.indexOf(a.name);
+                    const ib = mo.indexOf(b.name);
+                    if (ia !== -1 && ib !== -1) return ia - ib;
+                    if (ia !== -1) return -1;
+                    if (ib !== -1) return 1;
+                    return a.name.localeCompare(b.name);
+                });
+
+                marcasArray.forEach(marca => {
+                    const marcaLi = document.createElement('li');
+                    marcaLi.className = 'marca-container bg-white border border-emerald-200 rounded-lg shadow-sm';
+                    marcaLi.dataset.id = marca.id;
+                    marcaLi.dataset.name = marca.name;
+
+                    marcaLi.innerHTML = `
+                        <div class="bg-emerald-50 p-2 rounded-t-lg flex items-center font-semibold text-emerald-900 border-b border-emerald-200 text-sm">
+                            <span class="cursor-grab mr-3 drag-handle-mar px-2 py-1 bg-white hover:bg-emerald-100 rounded text-gray-500 shadow-sm" draggable="true">☰</span>
+                            <span>🏷️ ${marca.name}</span>
+                        </div>
+                        <ul class="productos-list p-2 space-y-1 min-h-[40px] bg-white rounded-b-lg"></ul>
+                    `;
+
+                    const prodList = marcaLi.querySelector('.productos-list');
+                    const prodsInMarca = prodsInSeg.filter(p => (p.marca || 'S/M').trim().toUpperCase() === marca.name);
+
+                    const po = marca.productOrder || [];
+                    prodsInMarca.sort((a, b) => {
+                        const ia = po.indexOf(a.id);
+                        const ib = po.indexOf(b.id);
+                        if (ia !== -1 && ib !== -1) return ia - ib;
+                        if (ia !== -1) return -1;
+                        if (ib !== -1) return 1;
+                        
+                        // EMPATE DE NOMBRES -> Desempata por ID
+                        const nameComp = (a.presentacion || '').localeCompare(b.presentacion || '');
+                        if (nameComp !== 0) return nameComp;
+                        return (a.id || '').localeCompare(b.id || ''); 
+                    });
+
+                    prodsInMarca.forEach(p => {
+                        const pLi = document.createElement('li');
+                        pLi.className = 'producto-item flex items-center p-2 bg-gray-50 border border-gray-200 rounded text-sm hover:bg-amber-50 transition-colors';
+                        pLi.dataset.id = p.id;
+                        pLi.innerHTML = `
+                            <span class="cursor-grab mr-3 drag-handle-prod px-2 py-1 bg-white hover:bg-gray-200 text-gray-400 hover:text-gray-700 rounded shadow-sm" draggable="true">↕</span>
+                            <span class="flex-grow font-medium text-gray-800">${p.presentacion}</span>
+                            <span class="text-[10px] text-gray-400 font-mono hidden md:block">ID:${p.id.slice(0,5)}</span>
+                        `;
+                        prodList.appendChild(pLi);
+                    });
+
+                    marcasList.appendChild(marcaLi);
+                });
+
+                container.appendChild(segDiv);
+            });
+
+            setupNativeDragAndDrop(container);
+
+        } catch(e) {
+            console.error(e);
+            container.innerHTML = `<p class="text-red-500">Error: ${e.message}</p>`;
         }
-
-        // Ordenar inicialmente por el orden global actual, luego alfabético
-        prods.sort((a, b) => {
-            const ordA = a.ordenGlobal !== undefined ? a.ordenGlobal : 999999;
-            const ordB = b.ordenGlobal !== undefined ? b.ordenGlobal : 999999;
-            if (ordA !== ordB) return ordA - ordB;
-            
-            // Fallback: Segmento -> Marca -> Presentacion
-            const sA = a.segmento || ''; const sB = b.segmento || '';
-            if (sA !== sB) return sA.localeCompare(sB);
-            const mA = a.marca || ''; const mB = b.marca || '';
-            if (mA !== mB) return mA.localeCompare(mB);
-            return (a.presentacion || '').localeCompare(b.presentacion || '');
-        });
-
-        if (prods.length === 0) {
-            container.innerHTML = `<p class="text-gray-500 text-center py-4">No hay productos para mostrar.</p>`;
-            return;
-        }
-
-        container.innerHTML = '';
-        prods.forEach((p, index) => {
-            const li = document.createElement('li');
-            li.className = 'producto-sortable-item grid grid-cols-12 gap-2 px-4 py-2 bg-white border rounded shadow-sm items-center cursor-grab active:cursor-grabbing hover:bg-blue-50 transition-colors';
-            li.dataset.productId = p.id;
-            li.draggable = true;
-            
-            li.innerHTML = `
-                <div class="col-span-1 text-center text-gray-400 font-mono text-xs drag-handle">☰</div>
-                <div class="col-span-3 text-sm text-gray-600 truncate" title="${p.segmento || 'N/A'}">${p.segmento || 'N/A'}</div>
-                <div class="col-span-3 text-sm font-semibold text-gray-700 truncate" title="${p.marca || 'N/A'}">${p.marca || 'N/A'}</div>
-                <div class="col-span-5 text-sm font-bold text-gray-900 truncate" title="${p.presentacion || 'N/A'}">${p.presentacion || 'N/A'}</div>
-            `;
-            container.appendChild(li);
-        });
-
-        addDragAndDropHandlersFlat(container);
     }
 
-    function addDragAndDropHandlersFlat(container) {
+    function setupNativeDragAndDrop(container) {
         let draggedItem = null;
-        let placeholder = document.createElement('li');
-        placeholder.className = 'bg-blue-100 border-2 border-dashed border-blue-400 rounded h-10 my-1';
+        let draggedType = null;
+        let sourceList = null;
+        let placeholder = document.createElement('div');
 
         container.addEventListener('dragstart', e => {
-            const item = e.target.closest('.producto-sortable-item');
-            if (!item) return;
-            draggedItem = item;
-            setTimeout(() => item.classList.add('opacity-50'), 0);
+            if (e.target.classList.contains('drag-handle-seg')) {
+                draggedItem = e.target.closest('.segmento-container');
+                draggedType = 'segmento';
+            } else if (e.target.classList.contains('drag-handle-mar')) {
+                draggedItem = e.target.closest('.marca-container');
+                draggedType = 'marca';
+            } else if (e.target.classList.contains('drag-handle-prod')) {
+                draggedItem = e.target.closest('.producto-item');
+                draggedType = 'producto';
+            }
+
+            if (!draggedItem) return;
+            
+            sourceList = draggedItem.parentNode;
+            e.stopPropagation(); 
+            
+            setTimeout(() => draggedItem.classList.add('opacity-50'), 0);
             e.dataTransfer.effectAllowed = 'move';
+            
+            // Setup Placeholder visual
+            placeholder.className = draggedItem.className + ' bg-gray-200 border-dashed border-2 border-gray-400 opacity-70';
+            placeholder.innerHTML = '';
+            placeholder.style.height = draggedItem.offsetHeight + 'px';
         });
 
-        container.addEventListener('dragend', () => {
+        container.addEventListener('dragend', e => {
             if (draggedItem) draggedItem.classList.remove('opacity-50');
             if (placeholder.parentNode) placeholder.parentNode.removeChild(placeholder);
             draggedItem = null;
+            draggedType = null;
+            sourceList = null;
         });
 
         container.addEventListener('dragover', e => {
             e.preventDefault();
             if (!draggedItem) return;
+            e.stopPropagation();
+
+            let dropZoneClass = '';
+            if (draggedType === 'segmento') dropZoneClass = '#segmentos-marcas-sortable-list';
+            else if (draggedType === 'marca') dropZoneClass = '.marcas-list';
+            else if (draggedType === 'producto') dropZoneClass = '.productos-list';
+
+            const dropZone = e.target.closest(dropZoneClass);
+            if (!dropZone) {
+                e.dataTransfer.dropEffect = 'none';
+                return;
+            }
+
             e.dataTransfer.dropEffect = 'move';
-            
-            const afterElement = getDragAfterElement(container, e.clientY);
+            const afterElement = getDragAfterElement(dropZone, e.clientY, draggedType);
             if (afterElement == null) {
-                container.appendChild(placeholder);
+                dropZone.appendChild(placeholder);
             } else {
-                container.insertBefore(placeholder, afterElement);
+                dropZone.insertBefore(placeholder, afterElement);
             }
         });
 
         container.addEventListener('drop', e => {
             e.preventDefault();
+            e.stopPropagation();
             if (draggedItem && placeholder.parentNode) {
                 placeholder.parentNode.insertBefore(draggedItem, placeholder);
             }
         });
 
-        function getDragAfterElement(container, y) {
-            const draggableElements = [...container.querySelectorAll('.producto-sortable-item:not(.opacity-50)')];
+        function getDragAfterElement(container, y, type) {
+            let itemClass = '';
+            if (type === 'segmento') itemClass = 'segmento-container';
+            else if (type === 'marca') itemClass = 'marca-container';
+            else if (type === 'producto') itemClass = 'producto-item';
+
+            const draggableElements = [...container.querySelectorAll(`.${itemClass}:not(.opacity-50)`)];
             return draggableElements.reduce((closest, child) => {
                 const box = child.getBoundingClientRect();
                 const offset = y - box.top - box.height / 2;
@@ -1088,76 +1268,100 @@
         }
     }
 
-    async function handleGuardarOrdenDirecto() {
+    async function handleGuardarOrdenJerarquia() {
         if (_userRole !== 'admin') return;
-        const items = document.querySelectorAll('#productos-sortable-list .producto-sortable-item');
-        if (items.length === 0) return;
-
-        _showModal('Progreso', 'Guardando orden global de productos...');
+        const segConts = document.querySelectorAll('#segmentos-marcas-sortable-list .segmento-container'); 
+        if (segConts.length === 0) { _showModal('Aviso', 'No hay elementos para ordenar.'); return; }
         
-        try {
-            // Recolectar el nuevo orden
-            // Si el admin filtró por rubro, solo estamos ordenando ese rubro. 
-            // Para no dañar el orden de los demás, deberíamos obtener el orden máximo actual del catálogo
-            // y posicionar estos, pero para simplificar: si guardan desde un filtro, asumen que esos
-            // números se sobreescriben. Lo ideal es que configuren el orden viendo "Todos los Rubros".
+        _showModal('Progreso', 'Guardando estructura global...');
+        
+        const batch = _writeBatch(_db);
+        const orderedSegIds = []; 
+        const tempToRealIdMap = {};
+        
+        // Acumulador de marcas para evitar que se sobrescriban si están en varios segmentos
+        const brandAccumulator = new Map(); 
+
+        // 1. Recorrer Segmentos
+        segConts.forEach((segCont, sIdx) => {
+            let sId = segCont.dataset.id;
+            const sName = segCont.dataset.name;
             
-            const rubroFilter = document.getElementById('ordenarRubroFilter').value;
-            let startIndex = 0;
+            if (sId.startsWith('temp_')) {
+                const newRef = _doc(_collection(_db, `artifacts/${_appId}/users/${_userId}/segmentos`));
+                sId = newRef.id;
+                tempToRealIdMap[segCont.dataset.id] = sId; 
+                segCont.dataset.id = sId;
+            }
+            orderedSegIds.push(sId);
 
-            // Si hay un filtro aplicado, intentamos respetar el espacio de los anteriores
-            if (rubroFilter) {
-                const prodsFueraDelFiltro = _inventarioCache.filter(p => p.rubro !== rubroFilter && p.ordenGlobal !== undefined);
-                if (prodsFueraDelFiltro.length > 0) {
-                    // Obtener el máximo orden existente para no solaparnos (modo append)
-                    // O más bien, esto es complejo. Requerimos que el usuario ordene todo junto
-                    // o que entienda que los números se recalcularán.
-                    // Para ser seguros, asignamos un índice base alto si está filtrado, o simplemente
-                    // advertimos al usuario que ordene sin filtros para un control total.
+            // 2. Extraer orden de Marcas en este Segmento
+            const marcaItems = segCont.querySelectorAll('.marcas-list > .marca-container');
+            const marcaOrder = Array.from(marcaItems).map(item => item.dataset.name);
+            
+            batch.set(_doc(_db, `artifacts/${_appId}/users/${_userId}/segmentos`, sId), { 
+                name: sName, 
+                orden: sIdx, 
+                marcaOrder: marcaOrder 
+            }, { merge: true });
+
+            // 3. Acumular orden de Productos por Marca
+            marcaItems.forEach(mItem => {
+                let mId = mItem.dataset.id;
+                const mName = mItem.dataset.name;
+                
+                if (mId.startsWith('temp_')) {
+                    if (!tempToRealIdMap[mId]) {
+                        tempToRealIdMap[mId] = _doc(_collection(_db, `artifacts/${_appId}/users/${_userId}/marcas`)).id;
+                    }
+                    mId = tempToRealIdMap[mId];
                 }
-            }
 
-            let batch = _writeBatch(_db);
-            let opsCount = 0;
-            const BATCH_LIMIT = 490;
-            let successCount = 0;
-
-            for (let i = 0; i < items.length; i++) {
-                const pId = items[i].dataset.productId;
-                const newOrder = startIndex + i;
-
-                // 1. Guardar en Catálogo Maestro
-                const masterRef = _doc(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/productos`, pId);
-                batch.update(masterRef, { ordenGlobal: newOrder });
-                opsCount++;
-
-                // 2. Opcional/Legacy: Propagar al usuario actual para inmediatez (y a los demás si es necesario)
-                // Para no hacer un loop masivo, confiaremos en que el listener del maestro (Fase 2)
-                // actualizará las cachés de todos los usuarios al cambiar public/data/productos.
-                // Como _inventarioCache fusiona master + stock, el ordenGlobal vendrá del master instantáneamente.
-
-                if (opsCount >= BATCH_LIMIT) {
-                    await batch.commit();
-                    batch = _writeBatch(_db);
-                    opsCount = 0;
+                if (!brandAccumulator.has(mId)) {
+                    brandAccumulator.set(mId, { name: mName, order: [] });
                 }
-                successCount++;
+
+                const prodItems = mItem.querySelectorAll('.productos-list .producto-item');
+                const pIds = Array.from(prodItems).map(pi => pi.dataset.id);
+                
+                // Agregar los productos al arreglo final de la marca
+                brandAccumulator.get(mId).order.push(...pIds);
+            });
+        });
+
+        // 4. Guardar Marcas acumuladas
+        brandAccumulator.forEach((data, mId) => {
+            batch.set(_doc(_db, `artifacts/${_appId}/users/${_userId}/marcas`, mId), { 
+                name: data.name, 
+                productOrder: data.order 
+            }, { merge: true });
+        });
+
+        try {
+            await batch.commit(); 
+            invalidateSegmentOrderCache(); 
+
+            _showModal('Progreso', 'Propagando cambios a Catálogo Maestro...');
+
+            if (window.adminModule?.propagateCategoryChange) {
+                 for (const sId of orderedSegIds) {
+                     const snap = await _getDoc(_doc(_db, `artifacts/${_appId}/users/${_userId}/segmentos`, sId));
+                     if(snap.exists()) await window.adminModule.propagateCategoryChange('segmentos', sId, snap.data());
+                 }
+                 for (const mId of brandAccumulator.keys()) {
+                     const snap = await _getDoc(_doc(_db, `artifacts/${_appId}/users/${_userId}/marcas`, mId));
+                     if(snap.exists()) await window.adminModule.propagateCategoryChange('marcas', mId, snap.data());
+                 }
             }
 
-            if (opsCount > 0) {
-                await batch.commit();
-            }
-
-            invalidateSegmentOrderCache();
-            _showModal('Éxito', `Orden guardado para ${successCount} productos. Los cambios se reflejarán instantáneamente en todos los dispositivos.`, showInventarioSubMenu);
-
+            _showModal('Éxito', `Orden guardado perfectamente. Los productos con nombres idénticos ahora respetarán esta posición.`, showInventarioSubMenu);
         } catch (error) {
-            console.error("Error al guardar orden directo:", error);
-            _showModal('Error', `Ocurrió un error al guardar: ${error.message}`);
+            console.error("Error al guardar orden:", error);
+            _showModal('Error', `Fallo al guardar: ${error.message}`);
         }
     }
 
-    // Exponer funciones públicas
+    // Exponer funciones públicas necesarias
     window.inventarioModule = {
         editProducto,
         deleteProducto,
