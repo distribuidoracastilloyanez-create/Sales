@@ -13,12 +13,6 @@
     let _lastFilters = { searchTerm: '', rubro: '', segmento: '', marca: '' };
     let _recargaTempState = {}; 
 
-    // --- NUEVO: CACHÉ ESTRUCTURAL (Optimizado y Seguro) ---
-    let _globalSortCache = {
-        ready: false,
-        rubros: {}
-    };
-
     const PUBLIC_DATA_ID = window.AppConfig.PUBLIC_DATA_ID; 
 
     window.initInventario = function(dependencies) {
@@ -98,42 +92,44 @@
     }
 
     // ==============================================================================
-    // --- MOTOR MATEMÁTICO INQUEBRANTABLE (Basado en la llave Embebida) ---
+    // --- NUEVO MOTOR DE ORDENAMIENTO (COORDENADAS + ESCUDO ALFABÉTICO) ---
     // ==============================================================================
     window.getGlobalProductSortFunction = async () => {
-        const norm = s => (s || '').trim().toUpperCase();
-
-        // Cargar el orden de los Rubros una sola vez por sesión
-        if (!_globalSortCache.ready) {
-            _globalSortCache.rubros = {};
-            try {
-                const rSnap = await _getDocs(_collection(_db, `artifacts/${_appId}/users/${_userId}/rubros`));
-                rSnap.forEach(d => { _globalSortCache.rubros[norm(d.data().name)] = String(d.data().orden ?? 9999).padStart(4, '0'); });
-                _globalSortCache.ready = true;
-            } catch (e) {
-                console.error("Error cargando orden de rubros:", e);
-            }
-        }
-
         return (a, b) => {
-            // 1. Obtener el número del Rubro para que los rubros no se mezclen nunca
-            const rA = _globalSortCache.rubros[norm(a.rubro)] || '9999';
-            const rB = _globalSortCache.rubros[norm(b.rubro)] || '9999';
-            
-            // 2. Extraer la Llave guardada (ej. 0001_0002_0005). Si no tiene, se va al fondo con 'Z_9999'
-            const kA = a.sortKey ? `A_${a.sortKey}` : `Z_9999_${norm(a.segmento)}_${norm(a.marca)}_${norm(a.presentacion)}`;
-            const kB = b.sortKey ? `A_${b.sortKey}` : `Z_9999_${norm(b.segmento)}_${norm(b.marca)}_${norm(b.presentacion)}`;
-            
-            // 3. Crear el código de barras definitivo: (0000_VIVERES_A_0001_0002_0005)
-            const keyA = `${rA}_${norm(a.rubro)}_${kA}`;
-            const keyB = `${rB}_${norm(b.rubro)}_${kB}`;
+            // 1. Nivel Rubro: Siempre alfabético para que los rubros no se mezclen.
+            const rStrA = (a.rubro || 'SIN RUBRO').toUpperCase();
+            const rStrB = (b.rubro || 'SIN RUBRO').toUpperCase();
+            if (rStrA !== rStrB) return rStrA.localeCompare(rStrB);
 
-            return keyA.localeCompare(keyB);
+            // 2. Nivel Segmento: Por Coordenada visual, si no existe (9999), por orden alfabético estricto.
+            const sOrdA = a.ordenSegmento ?? 9999;
+            const sOrdB = b.ordenSegmento ?? 9999;
+            if (sOrdA !== sOrdB) return sOrdA - sOrdB;
+            const sStrA = (a.segmento || 'SIN SEGMENTO').toUpperCase();
+            const sStrB = (b.segmento || 'SIN SEGMENTO').toUpperCase();
+            if (sStrA !== sStrB) return sStrA.localeCompare(sStrB);
+
+            // 3. Nivel Marca: Por Coordenada visual, luego alfabético.
+            const mOrdA = a.ordenMarca ?? 9999;
+            const mOrdB = b.ordenMarca ?? 9999;
+            if (mOrdA !== mOrdB) return mOrdA - mOrdB;
+            const mStrA = (a.marca || 'S/M').toUpperCase();
+            const mStrB = (b.marca || 'S/M').toUpperCase();
+            if (mStrA !== mStrB) return mStrA.localeCompare(mStrB);
+
+            // 4. Nivel Producto: Por Coordenada visual, luego por nombre.
+            const pOrdA = a.ordenProducto ?? 9999;
+            const pOrdB = b.ordenProducto ?? 9999;
+            if (pOrdA !== pOrdB) return pOrdA - pOrdB;
+            const pStrA = (a.presentacion || '').toUpperCase();
+            const pStrB = (b.presentacion || '').toUpperCase();
+            return pStrA.localeCompare(pStrB);
         };
     };
 
     function invalidateSegmentOrderCache() {
-        _globalSortCache.ready = false;
+        // En esta nueva arquitectura ya no hay caches intermedios que limpiar, 
+        // pero mantenemos la función para avisar a otras vistas (ej. ventas.js) que se actualicen
         if (window.catalogoModule?.invalidateCache) window.catalogoModule.invalidateCache();
         if (window.ventasModule?.invalidateCache) window.ventasModule.invalidateCache();
     }
@@ -450,7 +446,7 @@
     }
 
     // =========================================================================================
-    // VISTA "ORDENAR SEGMENTOS Y MARCAS" RECONSTRUIDA Y AISLADA
+    // VISTA "ORDENAR SEGMENTOS Y MARCAS" CON LIMPIEZA PROFUNDA
     // =========================================================================================
 
     function showOrdenarSegmentosMarcasView() {
@@ -473,12 +469,16 @@
                            </select>
                         </div>
 
-                        <div id="segmentos-marcas-sortable-list" class="space-y-4 max-h-[60vh] overflow-y-auto pb-4 px-2">
+                        <div id="segmentos-marcas-sortable-list" class="space-y-4 max-h-[50vh] overflow-y-auto pb-4 px-2">
                             <!-- Se llena dinámicamente -->
                         </div>
-                        <div class="mt-8 flex flex-col sm:flex-row gap-4 justify-between border-t pt-6">
+                        
+                        <div class="mt-8 flex flex-col sm:flex-row gap-4 justify-between border-t border-gray-300 pt-6">
                             <button id="backToInventarioBtn" class="w-full sm:w-auto px-8 py-3 bg-gray-500 text-white font-bold rounded-lg shadow hover:bg-gray-600 transition-colors">Volver</button>
-                            <button id="saveOrderBtn" class="w-full sm:w-auto px-8 py-3 bg-blue-600 text-white font-bold rounded-lg shadow hover:bg-blue-700 transition-colors hidden">Guardar Orden de este Rubro</button>
+                            <div class="flex flex-col sm:flex-row gap-4 w-full sm:w-auto">
+                                <button id="resetOrderBtn" class="w-full sm:w-auto px-8 py-3 bg-red-500 text-white font-bold rounded-lg shadow hover:bg-red-600 transition-colors hidden">Restablecer Orden Alfabético</button>
+                                <button id="saveOrderBtn" class="w-full sm:w-auto px-8 py-3 bg-blue-600 text-white font-bold rounded-lg shadow hover:bg-blue-700 transition-colors hidden">Guardar Orden de este Rubro</button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -486,6 +486,7 @@
         `;
         document.getElementById('backToInventarioBtn').addEventListener('click', showInventarioSubMenu);
         document.getElementById('saveOrderBtn').addEventListener('click', handleGuardarOrdenJerarquia);
+        document.getElementById('resetOrderBtn').addEventListener('click', handleResetOrderJerarquia);
         
         populateMergedDropdown('rubros', 'ordenarRubroFilter', 'rubro', 'Elija un Rubro');
         
@@ -498,6 +499,7 @@
     async function renderSortableHierarchy(rubroFiltro) {
         const container = document.getElementById('segmentos-marcas-sortable-list');
         const saveBtn = document.getElementById('saveOrderBtn');
+        const resetBtn = document.getElementById('resetOrderBtn');
         if (!container) return;
         
         if (!rubroFiltro) {
@@ -508,11 +510,13 @@
                     <p class="text-gray-500">Para garantizar que el orden se guarde correctamente, debe ordenar un rubro a la vez.</p>
                 </div>`;
             saveBtn.classList.add('hidden');
+            resetBtn.classList.add('hidden');
             return;
         }
 
-        container.innerHTML = `<p class="text-gray-500 text-center font-bold p-8 animate-pulse">Cargando estructura del rubro...</p>`;
+        container.innerHTML = `<div class="flex justify-center p-8"><span class="text-gray-500 font-bold animate-pulse">Cargando y estructurando rubro...</span></div>`;
         saveBtn.classList.remove('hidden');
+        resetBtn.classList.remove('hidden');
         
         try {
             let prodsEnRubro = _inventarioCache.filter(p => p.rubro === rubroFiltro);
@@ -536,6 +540,7 @@
             if (hierarchy.size === 0) {
                 container.innerHTML = `<p class="text-gray-500 text-center p-8 font-medium">Este rubro no contiene productos actualmente.</p>`;
                 saveBtn.classList.add('hidden');
+                resetBtn.classList.add('hidden');
                 return;
             }
 
@@ -652,6 +657,7 @@
 
             const dropZone = e.target.closest(dropZoneClass);
             
+            // ESCUDO DE PROTECCIÓN: No deja arrastrar a otra carpeta distinta a la original
             if (!dropZone || dropZone !== sourceList) {
                 e.dataTransfer.dropEffect = 'none';
                 return;
@@ -704,12 +710,11 @@
         const segConts = document.querySelectorAll('#segmentos-marcas-sortable-list .segmento-container'); 
         if (segConts.length === 0) { _showModal('Aviso', 'No hay elementos para ordenar.'); return; }
         
-        _showModal('Progreso', 'Grabando la firma de orden en el sistema...');
+        _showModal('Progreso', 'Inyectando coordenadas matemáticas en los productos...');
         
         const updates = [];
         
-        // REESCRITURA TOTAL DEL GUARDADO: ¡NO TOCAMOS LAS COLECCIONES DE SEGMENTOS Y MARCAS!
-        // Solo inyectamos la "Llave Lexicográfica" directo en cada producto que vemos en pantalla.
+        // El Algoritmo Perfecto: Lee el DOM y crea números (0, 1, 2) que se guardan DIRECTAMENTE en el producto
         segConts.forEach((segCont, sIdx) => {
             const marcaItems = segCont.querySelectorAll('.marcas-list > .marca-container');
             marcaItems.forEach((mItem, mIdx) => {
@@ -719,13 +724,14 @@
                     const prod = _inventarioCache.find(p => p.id === pId);
                     
                     if (prod) {
-                        const sStr = String(sIdx).padStart(4, '0');
-                        const mStr = String(mIdx).padStart(4, '0');
-                        const pStr = String(pIdx).padStart(4, '0');
-                        const newSortKey = `${sStr}_${mStr}_${pStr}`; // Ej: "0000_0001_0005"
-                        
-                        if (prod.sortKey !== newSortKey) {
-                            updates.push({ pId: pId, sortKey: newSortKey });
+                        // Solo mandamos actualizar si la posición cambió, ahorrando peticiones a Firebase
+                        if (prod.ordenSegmento !== sIdx || prod.ordenMarca !== mIdx || prod.ordenProducto !== pIdx) {
+                            updates.push({
+                                pId: pId,
+                                ordenSegmento: sIdx,
+                                ordenMarca: mIdx,
+                                ordenProducto: pIdx
+                            });
                         }
                     }
                 });
@@ -733,7 +739,7 @@
         });
 
         if (updates.length === 0) {
-            _showModal('Aviso', 'No se detectaron cambios en el orden visual.');
+            _showModal('Aviso', 'No se detectaron cambios visuales para guardar.');
             return;
         }
 
@@ -744,18 +750,26 @@
             for (const u of updates) {
                 let fueActualizado = false;
 
-                // 1. Guardar directo en la definición pública del producto
+                // 1. Guardar en Catálogo Maestro Público
                 if (_masterCatalogCache[u.pId]) {
                     const refMaster = _doc(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/productos`, u.pId);
-                    batch.set(refMaster, { sortKey: u.sortKey }, { merge: true });
+                    batch.set(refMaster, { 
+                        ordenSegmento: u.ordenSegmento,
+                        ordenMarca: u.ordenMarca,
+                        ordenProducto: u.ordenProducto
+                    }, { merge: true });
                     totalOps++;
                     fueActualizado = true;
                 }
                 
-                // 2. Guardar directo en la caché privada del producto
+                // 2. Guardar en Caché Privada del Usuario (Capa de Seguridad / Legacy)
                 if (_userStockCache[u.pId] || !fueActualizado) {
                     const refStock = _doc(_db, `artifacts/${_appId}/users/${_userId}/inventario`, u.pId);
-                    batch.set(refStock, { sortKey: u.sortKey }, { merge: true });
+                    batch.set(refStock, { 
+                        ordenSegmento: u.ordenSegmento,
+                        ordenMarca: u.ordenMarca,
+                        ordenProducto: u.ordenProducto
+                    }, { merge: true });
                     totalOps++;
                 }
                 
@@ -771,15 +785,59 @@
             }
 
             invalidateSegmentOrderCache(); 
-            _showModal('Éxito', `Firma guardada. El orden del rubro ${rubroValue} está ahora blindado.`, showInventarioSubMenu);
+            _showModal('Éxito', `Coordenadas actualizadas en ${updates.length} productos. Verifique la tabla "Ver Productos".`, showInventarioSubMenu);
         } catch (error) {
             console.error("Error al guardar orden:", error);
             _showModal('Error', `Fallo al guardar: ${error.message}`);
         }
     }
 
+    // --- FUNCIÓN DE LIMPIEZA PROFUNDA SOLICITADA ---
+    async function handleResetOrderJerarquia() {
+        const rubroValue = document.getElementById('ordenarRubroFilter')?.value;
+        if (!rubroValue) return;
+
+        _showModal('Confirmación Crítica', `¿Desea hacer una LIMPIEZA PROFUNDA y restablecer todo el rubro "${rubroValue}" a su orden alfabético original?`, async () => {
+            _showModal('Progreso', 'Borrando coordenadas y restableciendo...');
+            
+            const prods = _inventarioCache.filter(p => p.rubro === rubroValue);
+            let batch = _writeBatch(_db);
+            let totalOps = 0;
+
+            for(const p of prods) {
+                // Solo limpia si realmente tiene números guardados
+                if (p.ordenSegmento !== undefined || p.ordenMarca !== undefined || p.ordenProducto !== undefined) {
+                    if (_masterCatalogCache[p.id]) {
+                        batch.set(_doc(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/productos`, p.id), {
+                            ordenSegmento: null, ordenMarca: null, ordenProducto: null
+                        }, {merge: true});
+                        totalOps++;
+                    }
+                    if (_userStockCache[p.id]) {
+                        batch.set(_doc(_db, `artifacts/${_appId}/users/${_userId}/inventario`, p.id), {
+                            ordenSegmento: null, ordenMarca: null, ordenProducto: null
+                        }, {merge: true});
+                        totalOps++;
+                    }
+                    if (totalOps >= 490) { await batch.commit(); batch = _writeBatch(_db); totalOps = 0; }
+                }
+            }
+            if (totalOps > 0) await batch.commit();
+            
+            invalidateSegmentOrderCache();
+            renderSortableHierarchy(rubroValue); // Refresca la vista en vivo
+            
+            // Cerrar modal de progreso (workaround)
+            const pModal = document.getElementById('modalContainer');
+            if(pModal && pModal.querySelector('h3')?.textContent === 'Progreso') pModal.classList.add('hidden');
+            
+            setTimeout(() => _showModal('Éxito', 'Limpieza profunda exitosa. Orden alfabético restablecido.'), 500);
+
+        }, 'Sí, Limpiar y Restablecer');
+    }
+
     // =========================================================================================
-    // RESTO DE FUNCIONES DEL MÓDULO
+    // RESTO DE FUNCIONES DEL MÓDULO (AGREGAR, EDITAR, BORRAR)
     // =========================================================================================
 
     async function showAgregarProductoView() {
@@ -1049,6 +1107,7 @@
         if (!updatedData.rubro||!updatedData.segmento||!updatedData.marca||!updatedData.presentacion){_showModal('Error','Completa Rubro, Segmento, Marca y Presentación.');return;} if (!updatedData.ventaPor.und&&!updatedData.ventaPor.paq&&!updatedData.ventaPor.cj){_showModal('Error','Selecciona al menos una forma de venta.');return;} if (updatedData.manejaVacios&&!updatedData.tipoVacio){_showModal('Error','Si maneja vacío, selecciona el tipo.');document.getElementById('tipoVacioSelect')?.focus();return;} let precioValido=(updatedData.ventaPor.und&&updatedData.precios.und>0)||(updatedData.ventaPor.paq&&updatedData.precios.paq>0)||(updatedData.ventaPor.cj&&updatedData.precios.cj>0); if(!precioValido){_showModal('Error','Ingresa al menos un precio válido (> 0) para la forma de venta seleccionada.');document.querySelector('#preciosContainer input[required]')?.focus();return;}
         
         updatedData.cantidadUnidades = 0; 
+        // Eliminamos el reseteo del sortKey para que el producto mantenga su lugar si solo le editas el precio
 
         _showModal('Progreso','Guardando cambios en Catálogo Maestro...'); 
         try { 
