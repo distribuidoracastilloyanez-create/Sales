@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v12'; // ACTUALIZADO A v12 PARA FORZAR DESCARGA DE NUEVOS ARCHIVOS
+const CACHE_NAME = 'ventas-app-cache-v13'; // ACTUALIZADO A v13 PARA FORZAR LIMPIEZA
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
@@ -30,13 +30,11 @@ const urlsToCache = [
 self.addEventListener('install', event => {
     console.log('[Service Worker] Instalando versión:', CACHE_NAME);
     self.skipWaiting(); // Forzar activación inmediata
-
+    
     event.waitUntil(
         caches.open(CACHE_NAME)
             .then(cache => {
                 console.log('[Service Worker] Cacheando App Shell');
-                // Usamos addAll con manejo de errores para que un solo archivo faltante (ej. una imagen)
-                // no rompa toda la instalación de la app.
                 return Promise.all(
                     urlsToCache.map(url => {
                         return cache.add(url).catch(err => {
@@ -64,7 +62,7 @@ self.addEventListener('activate', event => {
             );
         })
     );
-    return self.clients.claim(); // Tomar control inmediatamente
+    return self.clients.claim(); // Tomar control inmediatamente de las pestañas abiertas
 });
 
 self.addEventListener('fetch', event => {
@@ -80,26 +78,24 @@ self.addEventListener('fetch', event => {
         return;
     }
 
-    // 2. Estrategia Stale-While-Revalidate para archivos estáticos
-    // (Devuelve rápido desde caché, pero actualiza en segundo plano)
+    // 2. NUEVA ESTRATEGIA: Network First (Red primero, Caché como respaldo)
+    // Esto garantiza que siempre veas el código más nuevo si tienes internet.
     event.respondWith(
-        caches.match(event.request).then(cachedResponse => {
-            // Fetch de red para actualizar caché
-            const networkFetch = fetch(event.request).then(networkResponse => {
-                // Si la respuesta es válida, actualizamos la caché
+        fetch(event.request)
+            .then(networkResponse => {
+                // Si la red responde bien, guardamos una copia fresca en caché
                 if (networkResponse && networkResponse.status === 200 && networkResponse.type === 'basic') {
                     const responseToCache = networkResponse.clone();
                     caches.open(CACHE_NAME).then(cache => {
                         cache.put(event.request, responseToCache);
                     });
                 }
-                return networkResponse;
-            }).catch(() => {
-                // Si falla la red, no pasa nada, ya tenemos (o no) la caché
-            });
-
-            // Retornar caché si existe, sino esperar a la red
-            return cachedResponse || networkFetch;
-        })
+                return networkResponse; // Entregamos la versión fresca
+            })
+            .catch(() => {
+                // Si falla la red (offline), sacamos el archivo de la caché
+                console.log('[Service Worker] Modo Offline: Sirviendo desde caché', event.request.url);
+                return caches.match(event.request);
+            })
     );
 });
