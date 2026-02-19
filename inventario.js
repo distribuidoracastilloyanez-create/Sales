@@ -102,7 +102,7 @@
     }
 
     // ==============================================================================
-    // --- LÓGICA MAESTRA DE ORDENAMIENTO ---
+    // --- LÓGICA MAESTRA DE ORDENAMIENTO (CORREGIDA LA SENSIBILIDAD A MAYÚSCULAS) ---
     // ==============================================================================
     window.getGlobalProductSortFunction = async () => {
         if (!_globalSortCache.rubros || !_globalSortCache.segmentos || !_globalSortCache.marcas || !_globalSortCache.preference) {
@@ -146,6 +146,8 @@
 
         return (a, b) => {
             const safeA = a || {}; const safeB = b || {};
+            // FUNCIÓN NORMALIZADORA: Elimina problemas si el usuario escribió con minúsculas/mayúsculas mixtas
+            const norm = s => (s || '').trim().toUpperCase();
             let res = 0;
 
             for (const key of _globalSortCache.preference) {
@@ -153,31 +155,33 @@
                     const rA = _globalSortCache.rubros[safeA.rubro] ?? 9999;
                     const rB = _globalSortCache.rubros[safeB.rubro] ?? 9999;
                     res = rA - rB;
-                    if (res === 0) res = (safeA.rubro || '').localeCompare(safeB.rubro || '');
+                    if (res === 0) res = norm(safeA.rubro).localeCompare(norm(safeB.rubro));
                 } 
                 else if (key === 'segmento') {
                     const sA = _globalSortCache.segmentos[safeA.segmento]?.orden ?? 9999;
                     const sB = _globalSortCache.segmentos[safeB.segmento]?.orden ?? 9999;
                     res = sA - sB;
-                    if (res === 0) res = (safeA.segmento || '').localeCompare(safeB.segmento || '');
+                    if (res === 0) res = norm(safeA.segmento).localeCompare(norm(safeB.segmento));
                 } 
                 else if (key === 'marca') {
                     if (safeA.segmento === safeB.segmento) {
                         const segData = _globalSortCache.segmentos[safeA.segmento];
                         if (segData && segData.marcaOrder) {
-                            const idxA = segData.marcaOrder.indexOf(safeA.marca);
-                            const idxB = segData.marcaOrder.indexOf(safeB.marca);
+                            // AQUÍ ESTABA EL ERROR: Evaluar usando el normalizador
+                            const idxA = segData.marcaOrder.indexOf(norm(safeA.marca));
+                            const idxB = segData.marcaOrder.indexOf(norm(safeB.marca));
+                            
                             if (idxA !== -1 && idxB !== -1) res = idxA - idxB;
                             else if (idxA !== -1) res = -1;
                             else if (idxB !== -1) res = 1;
                         }
                     }
-                    if (res === 0) res = (safeA.marca || '').localeCompare(safeB.marca || '');
+                    if (res === 0) res = norm(safeA.marca).localeCompare(norm(safeB.marca));
                 } 
                 else if (key === 'presentacion') {
-                    if (safeA.marca === safeB.marca) {
-                        const marcaKeyA = (safeA.marca || '').trim().toUpperCase();
-                        const marcaData = _globalSortCache.marcas[marcaKeyA];
+                    // AQUÍ TAMBIÉN: Garantizar que la marca sea evaluada por su forma estandarizada
+                    if (norm(safeA.marca) === norm(safeB.marca)) {
+                        const marcaData = _globalSortCache.marcas[norm(safeA.marca)];
                         
                         if (marcaData && marcaData.productOrder) {
                             const idxA = marcaData.productOrder.indexOf(safeA.id);
@@ -188,7 +192,7 @@
                             else if (idxB !== -1) res = 1;
                         }
                     }
-                    if (res === 0) res = (safeA.presentacion || '').localeCompare(safeB.presentacion || '');
+                    if (res === 0) res = norm(safeA.presentacion).localeCompare(norm(safeB.presentacion));
                     if (res === 0) res = (safeA.id || '').localeCompare(safeB.id || ''); // Desempate
                 }
                 if (res !== 0) return res;
@@ -1162,7 +1166,7 @@
                 segCont.dataset.id = seg.id; 
                 segCont.dataset.name = seg.name;
                 segCont.dataset.type = 'segmento';
-                segCont.draggable = true; // CORRECCIÓN: Draggable real en el contenedor
+                segCont.draggable = true; 
 
                 const segTitle = document.createElement('div');
                 segTitle.className = 'segmento-title p-3 bg-blue-100 rounded-t-lg flex items-center font-bold text-blue-900 border-b border-blue-300 cursor-move';
@@ -1198,12 +1202,11 @@
 
                         // --- CONTENEDOR MARCA ---
                         const li = document.createElement('li');
-                        // CORRECCIÓN: Agregar la clase marca-container obligatoria para que el script de guardado la encuentre
                         li.className = 'marca-container p-3 mb-3 bg-blue-50/50 rounded-lg border border-blue-200 shadow-sm';
                         li.dataset.name = marcaName;
                         li.dataset.id = marcaId;
                         li.dataset.type = 'marca';
-                        li.draggable = true; // CORRECCIÓN: Draggable real en el contenedor
+                        li.draggable = true; 
 
                         const marcaTitle = document.createElement('div');
                         marcaTitle.className = 'marca-title font-bold text-gray-700 cursor-move mb-3 flex items-center bg-white p-2 rounded border border-blue-100 shadow-sm';
@@ -1213,7 +1216,6 @@
 
                         // --- LISTA DE PRODUCTOS ---
                         const prodList = document.createElement('ul');
-                        // CORRECCIÓN: Estandarizar nombre a productos-sortable-list
                         prodList.className = 'productos-sortable-list pl-2 space-y-1 min-h-[10px]';
                         prodList.dataset.marcaParent = marcaName; 
 
@@ -1239,7 +1241,7 @@
                             pLi.dataset.id = p.id;
                             pLi.dataset.type = 'producto';
                             pLi.className = 'producto-item flex items-center p-2 bg-white border border-gray-200 rounded text-sm hover:bg-amber-50 transition-colors cursor-move mb-1 shadow-sm';
-                            pLi.draggable = true; // CORRECCIÓN: Draggable real en el contenedor
+                            pLi.draggable = true; 
                             
                             pLi.innerHTML = `
                                 <span class="mr-3 drag-handle-prod px-2 py-1 bg-gray-50 rounded text-gray-400 shadow-sm pointer-events-none">↕</span>
@@ -1271,7 +1273,6 @@
         let placeholder = document.createElement('div');
 
         container.addEventListener('dragstart', e => {
-            // Identificar qué nivel se está arrastrando revisando la clase del contenedor directamente
             if (e.target.classList.contains('segmento-container')) {
                 draggedItem = e.target;
                 draggedType = 'segmento';
@@ -1286,7 +1287,7 @@
             if (!draggedItem) return;
             
             sourceList = draggedItem.parentNode;
-            e.stopPropagation(); // Evitar que el contenedor padre también inicie el arrastre
+            e.stopPropagation(); 
             
             setTimeout(() => draggedItem.classList.add('opacity-50'), 0);
             e.dataTransfer.effectAllowed = 'move';
@@ -1316,8 +1317,6 @@
 
             const dropZone = e.target.closest(dropZoneClass);
             
-            // CORRECCIÓN CRÍTICA: Impedir que un producto se mueva a otra marca distinta de su contenedor original.
-            // Visuallmente se movería, pero en Firebase seguiría perteneciendo a su marca real y causaría fallos.
             if (!dropZone || dropZone !== sourceList) {
                 e.dataTransfer.dropEffect = 'none';
                 return;
@@ -1393,7 +1392,7 @@
             }
             orderedSegIds.push(sId);
 
-            // 2. Extraer orden de Marcas en este Segmento (Ahora encuentra la clase correctamente)
+            // 2. Extraer orden de Marcas en este Segmento
             const marcaItems = segCont.querySelectorAll('.marcas-list > .marca-container');
             const marcaOrder = Array.from(marcaItems).map(item => item.dataset.name);
             
@@ -1418,7 +1417,6 @@
                     brandAccumulator.set(nameKey, { id: mId, name: mName, order: [] });
                 }
 
-                // CORRECCIÓN: Usar la clase estandarizada 'productos-sortable-list'
                 const prodItems = mItem.querySelectorAll('.productos-sortable-list .producto-item');
                 const pIds = Array.from(prodItems).map(pi => pi.dataset.id);
                 
