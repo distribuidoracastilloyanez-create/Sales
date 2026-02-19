@@ -92,16 +92,16 @@
     }
 
     // ==============================================================================
-    // --- NUEVO MOTOR DE ORDENAMIENTO (COORDENADAS + ESCUDO ALFABÉTICO) ---
+    // --- MOTOR DE ORDENAMIENTO (COORDENADAS + ESCUDO ALFABÉTICO) ---
     // ==============================================================================
     window.getGlobalProductSortFunction = async () => {
         return (a, b) => {
-            // 1. Nivel Rubro: Siempre alfabético para que los rubros no se mezclen.
+            // 1. Nivel Rubro: Siempre alfabético
             const rStrA = (a.rubro || 'SIN RUBRO').toUpperCase();
             const rStrB = (b.rubro || 'SIN RUBRO').toUpperCase();
             if (rStrA !== rStrB) return rStrA.localeCompare(rStrB);
 
-            // 2. Nivel Segmento: Por Coordenada visual, si no existe (9999), por orden alfabético estricto.
+            // 2. Nivel Segmento: Por Coordenada visual
             const sOrdA = a.ordenSegmento ?? 9999;
             const sOrdB = b.ordenSegmento ?? 9999;
             if (sOrdA !== sOrdB) return sOrdA - sOrdB;
@@ -109,7 +109,7 @@
             const sStrB = (b.segmento || 'SIN SEGMENTO').toUpperCase();
             if (sStrA !== sStrB) return sStrA.localeCompare(sStrB);
 
-            // 3. Nivel Marca: Por Coordenada visual, luego alfabético.
+            // 3. Nivel Marca: Por Coordenada visual
             const mOrdA = a.ordenMarca ?? 9999;
             const mOrdB = b.ordenMarca ?? 9999;
             if (mOrdA !== mOrdB) return mOrdA - mOrdB;
@@ -117,7 +117,7 @@
             const mStrB = (b.marca || 'S/M').toUpperCase();
             if (mStrA !== mStrB) return mStrA.localeCompare(mStrB);
 
-            // 4. Nivel Producto: Por Coordenada visual, luego por nombre.
+            // 4. Nivel Producto: Por Coordenada visual
             const pOrdA = a.ordenProducto ?? 9999;
             const pOrdB = b.ordenProducto ?? 9999;
             if (pOrdA !== pOrdB) return pOrdA - pOrdB;
@@ -128,8 +128,6 @@
     };
 
     function invalidateSegmentOrderCache() {
-        // En esta nueva arquitectura ya no hay caches intermedios que limpiar, 
-        // pero mantenemos la función para avisar a otras vistas (ej. ventas.js) que se actualicen
         if (window.catalogoModule?.invalidateCache) window.catalogoModule.invalidateCache();
         if (window.ventasModule?.invalidateCache) window.ventasModule.invalidateCache();
     }
@@ -446,7 +444,7 @@
     }
 
     // =========================================================================================
-    // VISTA "ORDENAR SEGMENTOS Y MARCAS" CON LIMPIEZA PROFUNDA
+    // VISTA "ORDENAR SEGMENTOS Y MARCAS" (MODO COMPACTO)
     // =========================================================================================
 
     function showOrdenarSegmentosMarcasView() {
@@ -456,28 +454,29 @@
         }
         if (_floatingControls) _floatingControls.classList.add('hidden');
         _mainContent.innerHTML = `
-            <div class="p-4 pt-8">
+            <div class="p-2 sm:p-4 pt-6">
                 <div class="container mx-auto max-w-4xl">
-                    <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl border border-blue-100">
-                        <h2 class="text-3xl font-black text-blue-900 mb-2 text-center tracking-tight">Ordenar Catálogo</h2>
-                        <p class="text-center text-gray-600 mb-6 font-medium">Arrastre los elementos para definir el orden exacto.</p>
+                    <div class="bg-white/95 backdrop-blur-sm p-4 sm:p-6 rounded-lg shadow-xl border border-blue-100">
+                        <h2 class="text-2xl font-black text-blue-900 mb-1 text-center tracking-tight">Ordenar Catálogo</h2>
+                        <p class="text-center text-gray-500 mb-4 text-sm font-medium">Arrastre los elementos para definir el orden exacto.</p>
                         
-                        <div class="mb-6 bg-blue-50 p-6 border-2 border-blue-200 rounded-xl shadow-inner">
-                           <label for="ordenarRubroFilter" class="block text-blue-800 font-bold mb-3 text-lg">Paso 1: Seleccione el Rubro a ordenar</label>
-                           <select id="ordenarRubroFilter" class="w-full px-4 py-3 border-2 border-blue-300 rounded-lg shadow-sm text-lg font-semibold focus:ring-4 focus:ring-blue-400 outline-none transition-all cursor-pointer bg-white">
+                        <div class="mb-4 bg-blue-50 p-3 sm:p-4 border border-blue-200 rounded-lg shadow-inner">
+                           <label for="ordenarRubroFilter" class="block text-blue-800 font-bold mb-2 text-sm uppercase">Paso 1: Seleccione el Rubro a ordenar</label>
+                           <select id="ordenarRubroFilter" class="w-full px-3 py-2 border border-blue-300 rounded shadow-sm text-sm font-semibold focus:ring-2 focus:ring-blue-400 outline-none transition-all cursor-pointer bg-white">
                                <option value="">-- Elija un Rubro Obligatoriamente --</option>
                            </select>
                         </div>
 
-                        <div id="segmentos-marcas-sortable-list" class="space-y-4 max-h-[50vh] overflow-y-auto pb-4 px-2">
+                        <!-- Contenedor con altura aumentada para facilitar el arrastre en listas largas -->
+                        <div id="segmentos-marcas-sortable-list" class="space-y-3 max-h-[65vh] overflow-y-auto pb-4 px-1">
                             <!-- Se llena dinámicamente -->
                         </div>
                         
-                        <div class="mt-8 flex flex-col sm:flex-row gap-4 justify-between border-t border-gray-300 pt-6">
-                            <button id="backToInventarioBtn" class="w-full sm:w-auto px-8 py-3 bg-gray-500 text-white font-bold rounded-lg shadow hover:bg-gray-600 transition-colors">Volver</button>
-                            <div class="flex flex-col sm:flex-row gap-4 w-full sm:w-auto">
-                                <button id="resetOrderBtn" class="w-full sm:w-auto px-8 py-3 bg-red-500 text-white font-bold rounded-lg shadow hover:bg-red-600 transition-colors hidden">Restablecer Orden Alfabético</button>
-                                <button id="saveOrderBtn" class="w-full sm:w-auto px-8 py-3 bg-blue-600 text-white font-bold rounded-lg shadow hover:bg-blue-700 transition-colors hidden">Guardar Orden de este Rubro</button>
+                        <div class="mt-4 flex flex-col sm:flex-row gap-3 justify-between border-t border-gray-200 pt-4">
+                            <button id="backToInventarioBtn" class="w-full sm:w-auto px-6 py-2 bg-gray-500 text-white font-bold rounded shadow hover:bg-gray-600 transition-colors text-sm">Volver</button>
+                            <div class="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
+                                <button id="resetOrderBtn" class="w-full sm:w-auto px-4 py-2 bg-red-500 text-white font-bold rounded shadow hover:bg-red-600 transition-colors hidden text-sm">Restablecer Orden</button>
+                                <button id="saveOrderBtn" class="w-full sm:w-auto px-6 py-2 bg-blue-600 text-white font-bold rounded shadow hover:bg-blue-700 transition-colors hidden text-sm">Guardar Orden</button>
                             </div>
                         </div>
                     </div>
@@ -504,17 +503,17 @@
         
         if (!rubroFiltro) {
             container.innerHTML = `
-                <div class="p-10 text-center bg-gray-50 rounded-xl border-2 border-dashed border-gray-300">
-                    <span class="text-4xl mb-4 block">👆</span>
-                    <h3 class="text-xl font-bold text-gray-700 mb-2">Esperando Selección</h3>
-                    <p class="text-gray-500">Para garantizar que el orden se guarde correctamente, debe ordenar un rubro a la vez.</p>
+                <div class="p-6 text-center bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
+                    <span class="text-3xl mb-2 block">👆</span>
+                    <h3 class="text-lg font-bold text-gray-700 mb-1">Esperando Selección</h3>
+                    <p class="text-gray-500 text-sm">Debe seleccionar un rubro para visualizar y ordenar sus elementos.</p>
                 </div>`;
             saveBtn.classList.add('hidden');
             resetBtn.classList.add('hidden');
             return;
         }
 
-        container.innerHTML = `<div class="flex justify-center p-8"><span class="text-gray-500 font-bold animate-pulse">Cargando y estructurando rubro...</span></div>`;
+        container.innerHTML = `<div class="flex justify-center p-6"><span class="text-gray-500 font-bold text-sm animate-pulse">Cargando estructura...</span></div>`;
         saveBtn.classList.remove('hidden');
         resetBtn.classList.remove('hidden');
         
@@ -538,54 +537,61 @@
 
             container.innerHTML = '';
             if (hierarchy.size === 0) {
-                container.innerHTML = `<p class="text-gray-500 text-center p-8 font-medium">Este rubro no contiene productos actualmente.</p>`;
+                container.innerHTML = `<p class="text-gray-500 text-center p-6 text-sm font-medium">Este rubro no contiene productos actualmente.</p>`;
                 saveBtn.classList.add('hidden');
                 resetBtn.classList.add('hidden');
                 return;
             }
 
             hierarchy.forEach((marcasMap, segName) => {
+                // --- MODO COMPACTO: CONTENEDOR SEGMENTO ---
                 const segCont = document.createElement('div');
-                segCont.className = 'segmento-container bg-white border border-blue-300 rounded-xl mb-6 shadow-sm overflow-hidden';
+                // Reducidos los paddings y margenes
+                segCont.className = 'segmento-container bg-white border border-blue-300 rounded-lg mb-3 shadow-sm overflow-hidden';
                 segCont.dataset.name = segName;
                 segCont.dataset.type = 'segmento';
                 segCont.draggable = true; 
 
                 const segTitle = document.createElement('div');
-                segTitle.className = 'segmento-title p-4 bg-blue-100/50 flex items-center font-black text-blue-900 border-b border-blue-200 cursor-move hover:bg-blue-100 transition-colors';
-                segTitle.innerHTML = `<span class="mr-3 drag-handle-seg px-3 py-1.5 bg-white rounded shadow-sm text-gray-500 pointer-events-none">↕</span>
-                                      <span class="uppercase tracking-wider pointer-events-none text-lg">📁 ${segName}</span>`;
+                segTitle.className = 'segmento-title p-2 bg-blue-100/50 flex items-center font-bold text-blue-900 border-b border-blue-200 cursor-move hover:bg-blue-100 transition-colors';
+                segTitle.innerHTML = `<span class="mr-2 drag-handle-seg px-2 py-0.5 bg-white rounded shadow-sm text-gray-500 pointer-events-none text-xs">↕</span>
+                                      <span class="uppercase tracking-wider pointer-events-none text-sm">📁 ${segName}</span>`;
                 segCont.appendChild(segTitle);
 
                 const marcasList = document.createElement('ul');
-                marcasList.className = 'marcas-list p-4 space-y-4 bg-gray-50/50 min-h-[50px]';
+                // Reducido espacio entre marcas
+                marcasList.className = 'marcas-list p-2 space-y-2 bg-gray-50/50 min-h-[30px]';
 
                 marcasMap.forEach((prodsArray, marcaName) => {
+                    // --- MODO COMPACTO: CONTENEDOR MARCA ---
                     const li = document.createElement('li');
-                    li.className = 'marca-container p-4 bg-white rounded-lg border border-gray-200 shadow-sm hover:border-blue-300 transition-colors';
+                    li.className = 'marca-container p-2 bg-white rounded-md border border-gray-200 shadow-sm hover:border-blue-300 transition-colors';
                     li.dataset.name = marcaName;
                     li.dataset.type = 'marca';
                     li.draggable = true; 
 
                     const marcaTitle = document.createElement('div');
-                    marcaTitle.className = 'marca-title font-bold text-gray-800 cursor-move mb-3 flex items-center bg-gray-100 p-2 rounded-md border border-gray-200';
-                    marcaTitle.innerHTML = `<span class="mr-3 drag-handle-mar px-2 py-1 bg-white rounded shadow-sm text-gray-400 pointer-events-none">↕</span>
-                                            <span class="pointer-events-none">🏷️ ${marcaName}</span>`;
+                    marcaTitle.className = 'marca-title font-semibold text-gray-800 cursor-move mb-2 flex items-center bg-gray-100 p-1.5 rounded border border-gray-200 text-sm';
+                    marcaTitle.innerHTML = `<span class="mr-2 drag-handle-mar px-2 py-0.5 bg-white rounded shadow-sm text-gray-400 pointer-events-none text-xs">↕</span>
+                                            <span class="pointer-events-none truncate">🏷️ ${marcaName}</span>`;
                     li.appendChild(marcaTitle);
 
                     const prodList = document.createElement('ul');
-                    prodList.className = 'productos-sortable-list pl-4 space-y-2 min-h-[20px] border-l-2 border-dashed border-gray-200 ml-4';
+                    // Reducido espacio entre productos y margin-left
+                    prodList.className = 'productos-sortable-list pl-2 space-y-1 min-h-[20px] border-l-2 border-dashed border-gray-200 ml-2';
 
                     prodsArray.forEach(p => {
+                        // --- MODO COMPACTO: CONTENEDOR PRODUCTO ---
                         const pLi = document.createElement('li');
                         pLi.dataset.id = p.id;
                         pLi.dataset.type = 'producto';
-                        pLi.className = 'producto-item flex items-center p-2.5 bg-white border border-gray-200 rounded-md text-sm hover:bg-yellow-50 hover:border-yellow-300 transition-all cursor-move shadow-sm';
+                        // Elementos de producto más delgados y texto truncado
+                        pLi.className = 'producto-item flex items-center p-1.5 bg-white border border-gray-200 rounded text-xs hover:bg-yellow-50 hover:border-yellow-300 transition-all cursor-move shadow-sm';
                         pLi.draggable = true; 
                         
                         pLi.innerHTML = `
-                            <span class="mr-3 drag-handle-prod px-2 py-1 bg-gray-100 rounded text-gray-400 pointer-events-none">⋮</span>
-                            <span class="flex-grow font-semibold text-gray-700 pointer-events-none">${p.presentacion}</span>
+                            <span class="mr-2 drag-handle-prod px-1.5 py-0.5 bg-gray-100 rounded text-gray-400 pointer-events-none">⋮</span>
+                            <span class="flex-grow font-medium text-gray-700 pointer-events-none truncate" title="${p.presentacion}">${p.presentacion}</span>
                         `;
                         prodList.appendChild(pLi);
                     });
@@ -602,7 +608,7 @@
 
         } catch (error) {
             console.error("Error al renderizar jerarquía:", error);
-            container.innerHTML = `<p class="text-red-500 text-center font-bold p-8">Error: ${error.message}</p>`;
+            container.innerHTML = `<p class="text-red-500 text-center font-bold p-6 text-sm">Error: ${error.message}</p>`;
         }
     }
 
@@ -629,16 +635,16 @@
             sourceList = draggedItem.parentNode;
             e.stopPropagation(); 
             
-            setTimeout(() => draggedItem.classList.add('opacity-50', 'scale-95'), 0);
+            setTimeout(() => draggedItem.classList.add('opacity-40', 'scale-[0.98]'), 0);
             e.dataTransfer.effectAllowed = 'move';
             
-            placeholder.className = draggedItem.className + ' bg-blue-50 border-2 border-dashed border-blue-400 opacity-80 shadow-inner rounded-lg';
-            placeholder.innerHTML = '<div class="w-full h-full flex items-center justify-center text-blue-400 font-bold">Soltar aquí</div>';
+            placeholder.className = draggedItem.className + ' bg-blue-50/80 border border-dashed border-blue-400 shadow-inner rounded';
+            placeholder.innerHTML = '<div class="w-full h-full flex items-center justify-center text-blue-400 font-semibold text-xs">Soltar aquí</div>';
             placeholder.style.height = draggedItem.offsetHeight + 'px';
         });
 
         container.addEventListener('dragend', e => {
-            if (draggedItem) draggedItem.classList.remove('opacity-50', 'scale-95');
+            if (draggedItem) draggedItem.classList.remove('opacity-40', 'scale-[0.98]');
             if (placeholder.parentNode) placeholder.parentNode.removeChild(placeholder);
             draggedItem = null;
             draggedType = null;
@@ -657,7 +663,7 @@
 
             const dropZone = e.target.closest(dropZoneClass);
             
-            // ESCUDO DE PROTECCIÓN: No deja arrastrar a otra carpeta distinta a la original
+            // ESCUDO DE PROTECCIÓN
             if (!dropZone || dropZone !== sourceList) {
                 e.dataTransfer.dropEffect = 'none';
                 return;
@@ -686,7 +692,7 @@
             else if (type === 'marca') itemClass = 'marca-container';
             else if (type === 'producto') itemClass = 'producto-item';
 
-            const draggableElements = [...container.querySelectorAll(`.${itemClass}:not(.opacity-50)`)];
+            const draggableElements = [...container.querySelectorAll(`.${itemClass}:not(.opacity-40)`)];
             return draggableElements.reduce((closest, child) => {
                 const box = child.getBoundingClientRect();
                 const offset = y - box.top - box.height / 2;
@@ -714,7 +720,6 @@
         
         const updates = [];
         
-        // El Algoritmo Perfecto: Lee el DOM y crea números (0, 1, 2) que se guardan DIRECTAMENTE en el producto
         segConts.forEach((segCont, sIdx) => {
             const marcaItems = segCont.querySelectorAll('.marcas-list > .marca-container');
             marcaItems.forEach((mItem, mIdx) => {
@@ -724,7 +729,6 @@
                     const prod = _inventarioCache.find(p => p.id === pId);
                     
                     if (prod) {
-                        // Solo mandamos actualizar si la posición cambió, ahorrando peticiones a Firebase
                         if (prod.ordenSegmento !== sIdx || prod.ordenMarca !== mIdx || prod.ordenProducto !== pIdx) {
                             updates.push({
                                 pId: pId,
@@ -750,7 +754,6 @@
             for (const u of updates) {
                 let fueActualizado = false;
 
-                // 1. Guardar en Catálogo Maestro Público
                 if (_masterCatalogCache[u.pId]) {
                     const refMaster = _doc(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/productos`, u.pId);
                     batch.set(refMaster, { 
@@ -762,7 +765,6 @@
                     fueActualizado = true;
                 }
                 
-                // 2. Guardar en Caché Privada del Usuario (Capa de Seguridad / Legacy)
                 if (_userStockCache[u.pId] || !fueActualizado) {
                     const refStock = _doc(_db, `artifacts/${_appId}/users/${_userId}/inventario`, u.pId);
                     batch.set(refStock, { 
@@ -792,7 +794,6 @@
         }
     }
 
-    // --- FUNCIÓN DE LIMPIEZA PROFUNDA SOLICITADA ---
     async function handleResetOrderJerarquia() {
         const rubroValue = document.getElementById('ordenarRubroFilter')?.value;
         if (!rubroValue) return;
@@ -805,7 +806,6 @@
             let totalOps = 0;
 
             for(const p of prods) {
-                // Solo limpia si realmente tiene números guardados
                 if (p.ordenSegmento !== undefined || p.ordenMarca !== undefined || p.ordenProducto !== undefined) {
                     if (_masterCatalogCache[p.id]) {
                         batch.set(_doc(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/productos`, p.id), {
@@ -825,9 +825,8 @@
             if (totalOps > 0) await batch.commit();
             
             invalidateSegmentOrderCache();
-            renderSortableHierarchy(rubroValue); // Refresca la vista en vivo
+            renderSortableHierarchy(rubroValue); 
             
-            // Cerrar modal de progreso (workaround)
             const pModal = document.getElementById('modalContainer');
             if(pModal && pModal.querySelector('h3')?.textContent === 'Progreso') pModal.classList.add('hidden');
             
@@ -1107,7 +1106,6 @@
         if (!updatedData.rubro||!updatedData.segmento||!updatedData.marca||!updatedData.presentacion){_showModal('Error','Completa Rubro, Segmento, Marca y Presentación.');return;} if (!updatedData.ventaPor.und&&!updatedData.ventaPor.paq&&!updatedData.ventaPor.cj){_showModal('Error','Selecciona al menos una forma de venta.');return;} if (updatedData.manejaVacios&&!updatedData.tipoVacio){_showModal('Error','Si maneja vacío, selecciona el tipo.');document.getElementById('tipoVacioSelect')?.focus();return;} let precioValido=(updatedData.ventaPor.und&&updatedData.precios.und>0)||(updatedData.ventaPor.paq&&updatedData.precios.paq>0)||(updatedData.ventaPor.cj&&updatedData.precios.cj>0); if(!precioValido){_showModal('Error','Ingresa al menos un precio válido (> 0) para la forma de venta seleccionada.');document.querySelector('#preciosContainer input[required]')?.focus();return;}
         
         updatedData.cantidadUnidades = 0; 
-        // Eliminamos el reseteo del sortKey para que el producto mantenga su lugar si solo le editas el precio
 
         _showModal('Progreso','Guardando cambios en Catálogo Maestro...'); 
         try { 
