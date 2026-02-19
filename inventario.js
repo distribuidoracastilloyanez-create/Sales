@@ -180,7 +180,7 @@
                         const marcaData = _globalSortCache.marcas[marcaKeyA];
                         
                         if (marcaData && marcaData.productOrder) {
-                            // MAGIA: Búsqueda exacta por ID Único para evitar empates de nombre
+                            // --- SOLUCIÓN DEFINITIVA: Usar ID Único para distinguir duplicados idénticos ---
                             const idxA = marcaData.productOrder.indexOf(safeA.id);
                             const idxB = marcaData.productOrder.indexOf(safeB.id);
                             
@@ -190,7 +190,7 @@
                         }
                     }
                     if (res === 0) res = (safeA.presentacion || '').localeCompare(safeB.presentacion || '');
-                    if (res === 0) res = (safeA.id || '').localeCompare(safeB.id || ''); // Desempate final
+                    if (res === 0) res = (safeA.id || '').localeCompare(safeB.id || ''); // Desempate
                 }
                 if (res !== 0) return res;
             }
@@ -455,11 +455,20 @@
         
         _mainContent.innerHTML = `<div class="p-4 pt-8"> <div class="container mx-auto max-w-2xl"> <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl text-center"> <h2 class="text-2xl font-bold mb-6">Agregar Nuevo Producto</h2> <form id="addProductoForm" class="space-y-4 text-left"> <div class="grid grid-cols-1 md:grid-cols-2 gap-4"> <div> <label for="rubro">Rubro:</label> <div class="flex items-center space-x-2"> <select id="rubro" class="w-full px-4 py-2 border rounded-lg" required></select> <button type="button" onclick="window.inventarioModule.showAddCategoryModal('rubros','Rubro')" class="px-3 py-2 bg-blue-500 text-white rounded-lg text-xs hover:bg-blue-600">+</button> </div> </div> <div> <label for="segmento">Segmento:</label> <div class="flex items-center space-x-2"> <select id="segmento" class="w-full px-4 py-2 border rounded-lg" required></select> <button type="button" onclick="window.inventarioModule.showAddCategoryModal('segmentos','Segmento')" class="px-3 py-2 bg-blue-500 text-white rounded-lg text-xs hover:bg-blue-600">+</button> </div> </div> <div> <label for="marca">Marca:</label> <div class="flex items-center space-x-2"> <select id="marca" class="w-full px-4 py-2 border rounded-lg" required></select> <button type="button" onclick="window.inventarioModule.showAddCategoryModal('marcas','Marca')" class="px-3 py-2 bg-blue-500 text-white rounded-lg text-xs hover:bg-blue-600">+</button> </div> </div> <div> <label for="presentacion">Presentación:</label> <input type="text" id="presentacion" class="w-full px-4 py-2 border rounded-lg" required> </div> </div> <div class="border-t pt-4 mt-4"> <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4"> <div> <label class="block mb-2 font-medium">Venta por:</label> <div id="ventaPorContainer" class="flex space-x-4"> <label class="flex items-center"><input type="checkbox" id="ventaPorUnd" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> <span class="ml-2">Und.</span></label> <label class="flex items-center"><input type="checkbox" id="ventaPorPaq" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> <span class="ml-2">Paq.</span></label> <label class="flex items-center"><input type="checkbox" id="ventaPorCj" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> <span class="ml-2">Cj.</span></label> </div> </div> <div class="mt-4 md:mt-0"> <label class="flex items-center cursor-pointer"> <input type="checkbox" id="manejaVaciosCheck" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> <span class="ml-2 font-medium">Maneja Vacío</span> </label> <div id="tipoVacioContainer" class="mt-2 hidden"> <label for="tipoVacioSelect" class="block text-sm font-medium">Tipo:</label> <select id="tipoVacioSelect" class="w-full mt-1 px-2 py-1 border rounded-lg text-sm bg-gray-50"> <option value="">Seleccione...</option> <option value="1/4 - 1/3">1/4 - 1/3</option> <option value="ret 350 ml">Ret 350 ml</option> <option value="ret 1.25 Lts">Ret 1.25 Lts</option> </select> </div> </div> </div> <div id="empaquesContainer" class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4"></div> <div id="preciosContainer" class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4"></div> </div> <div class="border-t pt-4 mt-4"> <div class="grid grid-cols-1 md:grid-cols-2 gap-4"> <div> <label for="cantidadActual" class="block font-medium">Stock Inicial (Und. Base):</label> <input type="number" id="cantidadActual" value="0" min="0" class="w-full mt-1 px-4 py-2 border rounded-lg bg-white text-gray-700"> </div> <div> <label for="ivaTipo" class="block font-medium">IVA:</label> <select id="ivaTipo" class="w-full mt-1 px-4 py-2 border rounded-lg bg-white" required> <option value="16">16%</option> <option value="0">Exento 0%</option> </select> </div> </div> </div> <button type="submit" class="w-full px-6 py-3 bg-green-500 text-white font-semibold rounded-lg shadow-md hover:bg-green-600 transition duration-150">Agregar Producto</button> </form> <button id="backToMenuBtn" class="mt-4 w-full px-6 py-3 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500 transition duration-150">Volver</button> </div> </div> </div>`;
 
-        await Promise.all([
-            populateMergedDropdown('rubros', 'rubro', 'rubro', 'Rubro'),
-            populateMergedDropdown('segmentos', 'segmento', 'segmento', 'Segmento'),
-            populateMergedDropdown('marcas', 'marca', 'marca', 'Marca')
-        ]);
+        // CORRECCIÓN: Garantizar que la caché esté cargada antes de poblar los dropdowns
+        const setupDropdowns = async () => {
+            await Promise.all([
+                populateMergedDropdown('rubros', 'rubro', 'rubro', 'Rubro'),
+                populateMergedDropdown('segmentos', 'segmento', 'segmento', 'Segmento'),
+                populateMergedDropdown('marcas', 'marca', 'marca', 'Marca')
+            ]);
+        };
+
+        if (_inventarioCache.length === 0) {
+            startMainInventarioListener(setupDropdowns);
+        } else {
+            await setupDropdowns();
+        }
 
         const ventaPorContainer=document.getElementById('ventaPorContainer');
         const preciosContainer=document.getElementById('preciosContainer');
@@ -1180,24 +1189,24 @@
                         const marcaId = marcaData.id;
 
                         const li = document.createElement('li');
-                        li.dataset.id = marcaId;
-                        li.dataset.name = marcaName;
-                        li.dataset.type = 'marca';
-                        li.className = 'marca-container bg-white border border-emerald-200 rounded-lg shadow-sm';
+                        // Marca Title as Draggable Handle
+                        const marcaTitle = document.createElement('div');
+                        marcaTitle.className = 'marca-title font-medium text-gray-700 cursor-grab active:cursor-grabbing mb-1';
+                        marcaTitle.textContent = marcaName;
+                        marcaTitle.draggable = true;
+                        li.appendChild(marcaTitle);
 
-                        li.innerHTML = `
-                            <div class="marca-title bg-emerald-50 p-2 rounded-t-lg flex items-center font-semibold text-emerald-900 border-b border-emerald-200 text-sm">
-                                <span class="cursor-grab mr-3 drag-handle-mar px-2 py-1 bg-white hover:bg-emerald-100 rounded text-gray-500 shadow-sm" draggable="true">☰</span>
-                                <span>🏷️ ${marcaName}</span>
-                            </div>
-                            <ul class="productos-list p-2 space-y-1 min-h-[40px] bg-white rounded-b-lg"></ul>
-                        `;
+                        // Product List
+                        const prodList = document.createElement('ul');
+                        prodList.className = 'productos-sortable-list pl-4 space-y-1';
+                        prodList.dataset.marcaParent = marcaName; // Use Name as identifier within Segment context
 
-                        const prodList = li.querySelector('.productos-list');
+                        // Get products for this brand and segment
                         const prods = prodsEnRubro.filter(p => p.segmento === seg.name && (p.marca || '').trim().toUpperCase() === marcaName);
                         
                         const prodOrderPref = marcaData.productOrder || [];
                         prods.sort((a, b) => {
+                            // --- SOLUCIÓN: Identificador Único ---
                             const indexA = prodOrderPref.indexOf(a.id);
                             const indexB = prodOrderPref.indexOf(b.id);
                             
@@ -1375,7 +1384,7 @@
                 marcaOrder: marcaOrder 
             }, { merge: true });
 
-            // 3. Acumular orden de Productos por Marca (usando la clave compuesta)
+            // 3. Acumular orden de Productos por Marca
             marcaItems.forEach(mItem => {
                 const mName = mItem.dataset.name;
                 const nameKey = mName.trim().toUpperCase();
@@ -1391,7 +1400,8 @@
                 }
 
                 const prodItems = mItem.querySelectorAll('.productos-list .producto-item');
-                const pIds = Array.from(prodItems).map(pi => pi.dataset.id); // Recoger IDs puros
+                // NUEVO Y CRÍTICO: Recoger el ID único. Es la única forma de distinguir items con el mismo nombre.
+                const pIds = Array.from(prodItems).map(pi => pi.dataset.id);
                 
                 brandAccumulator.get(nameKey).order.push(...pIds);
             });
