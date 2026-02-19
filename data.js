@@ -9,15 +9,13 @@
     let mapInstance = null;
     let mapMarkers = new Map();
 
-    // Cachés de ordenamiento
     let _sortPreferenceCache = null;
     let _rubroOrderMapCache = null;
     let _segmentoOrderMapCache = null;
-    let _marcasOrderMapCache = null; // Agregado para consistencia con inventario.js
-
     const SORT_CONFIG_PATH = 'config/productSortOrder'; 
 
     // CONSTANTES DE RUTAS (Alineadas con clientes.js y ventas.js)
+    // CORRECCIÓN: Usar ID global desde config.js
     const PUBLIC_DATA_ID = window.AppConfig.PUBLIC_DATA_ID;
     const CLIENTES_COLLECTION_PATH = `artifacts/${PUBLIC_DATA_ID}/public/data/clientes`;
     const REPORTE_DESIGN_CONFIG_PATH = `artifacts/${PUBLIC_DATA_ID}/public/data/config/reporteCierreVentas`;
@@ -1667,11 +1665,10 @@
     }
 
     // --- FUNCIÓN GLOBAL DE ORDENAMIENTO REESCRITA (VERSIÓN DATA.JS) ---
-    // Esta función lee los datos PÚBLICOS y normaliza las claves para coincidir con inventario.js
+    // Esta función lee los datos PÚBLICOS y respeta el orden estricto por ID
     async function getGlobalProductSortFunction() {
-        if (!_sortPreferenceCache || !_rubroOrderMapCache) {
+        if (!_sortPreferenceCache || !_rubroOrderMapCache || !_marcasOrderMapCache) {
             try { 
-                // 1. Preferencias (se mantiene por usuario o default)
                 const dRef=_doc(_db, `artifacts/${_appId}/users/${_userId}/${SORT_CONFIG_PATH}`); 
                 const dSnap=await _getDoc(dRef); 
                 if(dSnap.exists()&&dSnap.data().order){ 
@@ -1680,11 +1677,10 @@
                     _sortPreferenceCache=['segmento','marca','presentacion','rubro'];
                 } 
 
-                // 2. Cargar maestros desde RUTA PÚBLICA (Corrección Crítica)
                 const publicPath = `artifacts/${PUBLIC_DATA_ID}/public/data`;
                 _rubroOrderMapCache = {};
                 _segmentoOrderMapCache = {};
-                _marcasOrderMapCache = {}; // Inicializar
+                _marcasOrderMapCache = {}; 
 
                 const [rSnap, sSnap, mSnap] = await Promise.all([
                     _getDocs(_collection(_db, `${publicPath}/rubros`)),
@@ -1712,7 +1708,6 @@
             } catch (error) { 
                 console.error("Error cargando pref orden (Data):", error); 
                 _sortPreferenceCache=['segmento','marca','presentacion','rubro']; 
-                // Fallback objects
                 _rubroOrderMapCache={}; _segmentoOrderMapCache={}; _marcasOrderMapCache={};
             }
         }
@@ -1739,7 +1734,6 @@
                     if (res === 0) res = kA.localeCompare(kB); 
                 }
                 else if (key === 'marca') { 
-                    // Ordenar Marcas dentro de su Segmento
                     if (norm(safeA.segmento) === norm(safeB.segmento)) {
                         const segData = _segmentoOrderMapCache[norm(safeA.segmento)];
                         if (segData && segData.marcaOrder) {
@@ -1753,10 +1747,10 @@
                     if (res === 0) res = (safeA.marca||'').localeCompare(safeB.marca||''); 
                 }
                 else if (key === 'presentacion') { 
-                    // Ordenar Productos dentro de su Marca
                     if (norm(safeA.marca) === norm(safeB.marca)) {
                         const mData = _marcasOrderMapCache?.[norm(safeA.marca)];
                         if (mData && mData.productOrder) {
+                            // --- SOLUCIÓN DEFINITIVA: Usar ID Único para reportes ---
                             const iA = mData.productOrder.indexOf(safeA.id);
                             const iB = mData.productOrder.indexOf(safeB.id);
                             if (iA !== -1 && iB !== -1) res = iA - iB;
@@ -1765,6 +1759,7 @@
                         }
                     }
                     if (res === 0) res = (safeA.presentacion||'').localeCompare(safeB.presentacion||''); 
+                    if (res === 0) res = (safeA.id || '').localeCompare(safeB.id || ''); // Desempate final
                 }
                 
                 if (res !== 0) return res;
