@@ -102,7 +102,7 @@
     }
 
     // ==============================================================================
-    // --- LÓGICA MAESTRA DE ORDENAMIENTO (Basado 100% en ID único) ---
+    // --- LÓGICA MAESTRA DE ORDENAMIENTO ---
     // ==============================================================================
     window.getGlobalProductSortFunction = async () => {
         if (!_globalSortCache.rubros || !_globalSortCache.segmentos || !_globalSortCache.marcas || !_globalSortCache.preference) {
@@ -180,7 +180,6 @@
                         const marcaData = _globalSortCache.marcas[marcaKeyA];
                         
                         if (marcaData && marcaData.productOrder) {
-                            // --- SOLUCIÓN DEFINITIVA: Usar ID Único para distinguir duplicados idénticos ---
                             const idxA = marcaData.productOrder.indexOf(safeA.id);
                             const idxB = marcaData.productOrder.indexOf(safeB.id);
                             
@@ -204,7 +203,7 @@
         if (window.ventasModule?.invalidateCache) window.ventasModule.invalidateCache();
     }
 
-    // --- FUNCIÓN HÍBRIDA PARA POBLAR DROPDOWNS (SOLUCIONA EL SELECT VACÍO) ---
+    // --- FUNCIÓN HÍBRIDA PARA POBLAR DROPDOWNS ---
     async function populateMergedDropdown(collectionName, selectId, itemKey, defaultLabel, currentValParam = null) {
         const select = document.getElementById(selectId);
         if (!select) return;
@@ -459,7 +458,6 @@
         
         _mainContent.innerHTML = `<div class="p-4 pt-8"> <div class="container mx-auto max-w-2xl"> <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl text-center"> <h2 class="text-2xl font-bold mb-6">Agregar Nuevo Producto</h2> <form id="addProductoForm" class="space-y-4 text-left"> <div class="grid grid-cols-1 md:grid-cols-2 gap-4"> <div> <label for="rubro">Rubro:</label> <div class="flex items-center space-x-2"> <select id="rubro" class="w-full px-4 py-2 border rounded-lg" required></select> <button type="button" onclick="window.inventarioModule.showAddCategoryModal('rubros','Rubro')" class="px-3 py-2 bg-blue-500 text-white rounded-lg text-xs hover:bg-blue-600">+</button> </div> </div> <div> <label for="segmento">Segmento:</label> <div class="flex items-center space-x-2"> <select id="segmento" class="w-full px-4 py-2 border rounded-lg" required></select> <button type="button" onclick="window.inventarioModule.showAddCategoryModal('segmentos','Segmento')" class="px-3 py-2 bg-blue-500 text-white rounded-lg text-xs hover:bg-blue-600">+</button> </div> </div> <div> <label for="marca">Marca:</label> <div class="flex items-center space-x-2"> <select id="marca" class="w-full px-4 py-2 border rounded-lg" required></select> <button type="button" onclick="window.inventarioModule.showAddCategoryModal('marcas','Marca')" class="px-3 py-2 bg-blue-500 text-white rounded-lg text-xs hover:bg-blue-600">+</button> </div> </div> <div> <label for="presentacion">Presentación:</label> <input type="text" id="presentacion" class="w-full px-4 py-2 border rounded-lg" required> </div> </div> <div class="border-t pt-4 mt-4"> <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4"> <div> <label class="block mb-2 font-medium">Venta por:</label> <div id="ventaPorContainer" class="flex space-x-4"> <label class="flex items-center"><input type="checkbox" id="ventaPorUnd" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> <span class="ml-2">Und.</span></label> <label class="flex items-center"><input type="checkbox" id="ventaPorPaq" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> <span class="ml-2">Paq.</span></label> <label class="flex items-center"><input type="checkbox" id="ventaPorCj" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> <span class="ml-2">Cj.</span></label> </div> </div> <div class="mt-4 md:mt-0"> <label class="flex items-center cursor-pointer"> <input type="checkbox" id="manejaVaciosCheck" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> <span class="ml-2 font-medium">Maneja Vacío</span> </label> <div id="tipoVacioContainer" class="mt-2 hidden"> <label for="tipoVacioSelect" class="block text-sm font-medium">Tipo:</label> <select id="tipoVacioSelect" class="w-full mt-1 px-2 py-1 border rounded-lg text-sm bg-gray-50"> <option value="">Seleccione...</option> <option value="1/4 - 1/3">1/4 - 1/3</option> <option value="ret 350 ml">Ret 350 ml</option> <option value="ret 1.25 Lts">Ret 1.25 Lts</option> </select> </div> </div> </div> <div id="empaquesContainer" class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4"></div> <div id="preciosContainer" class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4"></div> </div> <div class="border-t pt-4 mt-4"> <div class="grid grid-cols-1 md:grid-cols-2 gap-4"> <div> <label for="cantidadActual" class="block font-medium">Stock Inicial (Und. Base):</label> <input type="number" id="cantidadActual" value="0" min="0" class="w-full mt-1 px-4 py-2 border rounded-lg bg-white text-gray-700"> </div> <div> <label for="ivaTipo" class="block font-medium">IVA:</label> <select id="ivaTipo" class="w-full mt-1 px-4 py-2 border rounded-lg bg-white" required> <option value="16">16%</option> <option value="0">Exento 0%</option> </select> </div> </div> </div> <button type="submit" class="w-full px-6 py-3 bg-green-500 text-white font-semibold rounded-lg shadow-md hover:bg-green-600 transition duration-150">Agregar Producto</button> </form> <button id="backToMenuBtn" class="mt-4 w-full px-6 py-3 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500 transition duration-150">Volver</button> </div> </div> </div>`;
 
-        // CORRECCIÓN: Garantizar que la caché esté cargada antes de poblar los dropdowns
         const setupDropdowns = async () => {
             await Promise.all([
                 populateMergedDropdown('rubros', 'rubro', 'rubro', 'Rubro'),
@@ -1158,17 +1156,18 @@
                 const segmentHasProductsInRubro = !segmentsWithProductsInRubro || segmentsWithProductsInRubro.has(seg.name);
                 if (rubroFiltro && !segmentHasProductsInRubro) return; 
 
+                // --- CONTENEDOR SEGMENTO ---
                 const segCont = document.createElement('div');
                 segCont.className = 'segmento-container bg-white border border-blue-300 rounded-lg mb-4 shadow-sm';
                 segCont.dataset.id = seg.id; 
                 segCont.dataset.name = seg.name;
                 segCont.dataset.type = 'segmento';
+                segCont.draggable = true; // CORRECCIÓN: Draggable real en el contenedor
 
                 const segTitle = document.createElement('div');
-                segTitle.className = 'segmento-title p-3 bg-blue-100 rounded-t-lg flex items-center font-bold text-blue-900 border-b border-blue-300';
-                segTitle.draggable = true;
-                segTitle.innerHTML = `<span class="cursor-grab mr-3 drag-handle-seg px-2 py-1 bg-white hover:bg-blue-200 rounded text-gray-500 shadow-sm" draggable="true">☰</span>
-                                      <span class="uppercase tracking-wider">📁 ${seg.name}</span> ${seg.isNew ? '<span class="text-xs bg-yellow-200 px-2 ml-2 rounded text-yellow-800">Nuevo</span>' : ''}`;
+                segTitle.className = 'segmento-title p-3 bg-blue-100 rounded-t-lg flex items-center font-bold text-blue-900 border-b border-blue-300 cursor-move';
+                segTitle.innerHTML = `<span class="mr-3 drag-handle-seg px-2 py-1 bg-white hover:bg-blue-200 rounded text-gray-500 shadow-sm pointer-events-none">☰</span>
+                                      <span class="uppercase tracking-wider pointer-events-none">📁 ${seg.name}</span> ${seg.isNew ? '<span class="text-xs bg-yellow-200 px-2 ml-2 rounded text-yellow-800">Nuevo</span>' : ''}`;
                 segCont.appendChild(segTitle);
 
                 const marcasList = document.createElement('ul');
@@ -1197,25 +1196,31 @@
                         const marcaData = marcasMap.get(marcaName) || { id: `temp_m_${marcaName.replace(/\s+/g,'_')}`, name: marcaName, productOrder: [] };
                         const marcaId = marcaData.id;
 
+                        // --- CONTENEDOR MARCA ---
                         const li = document.createElement('li');
-                        // Marca Title as Draggable Handle
+                        // CORRECCIÓN: Agregar la clase marca-container obligatoria para que el script de guardado la encuentre
+                        li.className = 'marca-container p-3 mb-3 bg-blue-50/50 rounded-lg border border-blue-200 shadow-sm';
+                        li.dataset.name = marcaName;
+                        li.dataset.id = marcaId;
+                        li.dataset.type = 'marca';
+                        li.draggable = true; // CORRECCIÓN: Draggable real en el contenedor
+
                         const marcaTitle = document.createElement('div');
-                        marcaTitle.className = 'marca-title font-medium text-gray-700 cursor-grab active:cursor-grabbing mb-1';
-                        marcaTitle.textContent = marcaName;
-                        marcaTitle.draggable = true;
+                        marcaTitle.className = 'marca-title font-bold text-gray-700 cursor-move mb-3 flex items-center bg-white p-2 rounded border border-blue-100 shadow-sm';
+                        marcaTitle.innerHTML = `<span class="mr-3 drag-handle-mar px-2 py-1 bg-gray-100 rounded text-gray-500 shadow-sm pointer-events-none">☰</span>
+                                                <span class="pointer-events-none">🏷️ ${marcaName}</span>`;
                         li.appendChild(marcaTitle);
 
-                        // Product List
+                        // --- LISTA DE PRODUCTOS ---
                         const prodList = document.createElement('ul');
-                        prodList.className = 'productos-sortable-list pl-4 space-y-1';
-                        prodList.dataset.marcaParent = marcaName; // Use Name as identifier within Segment context
+                        // CORRECCIÓN: Estandarizar nombre a productos-sortable-list
+                        prodList.className = 'productos-sortable-list pl-2 space-y-1 min-h-[10px]';
+                        prodList.dataset.marcaParent = marcaName; 
 
-                        // Get products for this brand and segment
                         const prods = prodsEnRubro.filter(p => p.segmento === seg.name && (p.marca || '').trim().toUpperCase() === marcaName);
                         
                         const prodOrderPref = marcaData.productOrder || [];
                         prods.sort((a, b) => {
-                            // --- SOLUCIÓN: Identificador Único ---
                             const indexA = prodOrderPref.indexOf(a.id);
                             const indexB = prodOrderPref.indexOf(b.id);
                             
@@ -1229,19 +1234,21 @@
                         });
 
                         prods.forEach(p => {
+                            // --- CONTENEDOR PRODUCTO ---
                             const pLi = document.createElement('li');
                             pLi.dataset.id = p.id;
-                            
                             pLi.dataset.type = 'producto';
-                            pLi.className = 'producto-item flex items-center p-2 bg-gray-50 border border-gray-200 rounded text-sm hover:bg-amber-50 transition-colors';
+                            pLi.className = 'producto-item flex items-center p-2 bg-white border border-gray-200 rounded text-sm hover:bg-amber-50 transition-colors cursor-move mb-1 shadow-sm';
+                            pLi.draggable = true; // CORRECCIÓN: Draggable real en el contenedor
                             
                             pLi.innerHTML = `
-                                <span class="cursor-grab mr-3 drag-handle-prod px-2 py-1 bg-white hover:bg-gray-200 text-gray-400 hover:text-gray-700 rounded shadow-sm" draggable="true">↕</span>
-                                <span class="flex-grow font-medium text-gray-800">${p.presentacion}</span>
+                                <span class="mr-3 drag-handle-prod px-2 py-1 bg-gray-50 rounded text-gray-400 shadow-sm pointer-events-none">↕</span>
+                                <span class="flex-grow font-medium text-gray-800 pointer-events-none">${p.presentacion}</span>
                             `;
                             prodList.appendChild(pLi);
                         });
 
+                        li.appendChild(prodList);
                         marcasList.appendChild(li);
                     });
                 }
@@ -1264,21 +1271,22 @@
         let placeholder = document.createElement('div');
 
         container.addEventListener('dragstart', e => {
-            if (e.target.classList.contains('drag-handle-seg')) {
-                draggedItem = e.target.closest('.segmento-container');
+            // Identificar qué nivel se está arrastrando revisando la clase del contenedor directamente
+            if (e.target.classList.contains('segmento-container')) {
+                draggedItem = e.target;
                 draggedType = 'segmento';
-            } else if (e.target.classList.contains('drag-handle-mar')) {
-                draggedItem = e.target.closest('.marca-container');
+            } else if (e.target.classList.contains('marca-container')) {
+                draggedItem = e.target;
                 draggedType = 'marca';
-            } else if (e.target.classList.contains('drag-handle-prod')) {
-                draggedItem = e.target.closest('.producto-item');
+            } else if (e.target.classList.contains('producto-item')) {
+                draggedItem = e.target;
                 draggedType = 'producto';
             }
 
             if (!draggedItem) return;
             
             sourceList = draggedItem.parentNode;
-            e.stopPropagation(); 
+            e.stopPropagation(); // Evitar que el contenedor padre también inicie el arrastre
             
             setTimeout(() => draggedItem.classList.add('opacity-50'), 0);
             e.dataTransfer.effectAllowed = 'move';
@@ -1304,10 +1312,13 @@
             let dropZoneClass = '';
             if (draggedType === 'segmento') dropZoneClass = '#segmentos-marcas-sortable-list';
             else if (draggedType === 'marca') dropZoneClass = '.marcas-list';
-            else if (draggedType === 'producto') dropZoneClass = '.productos-list';
+            else if (draggedType === 'producto') dropZoneClass = '.productos-sortable-list';
 
             const dropZone = e.target.closest(dropZoneClass);
-            if (!dropZone) {
+            
+            // CORRECCIÓN CRÍTICA: Impedir que un producto se mueva a otra marca distinta de su contenedor original.
+            // Visuallmente se movería, pero en Firebase seguiría perteneciendo a su marca real y causaría fallos.
+            if (!dropZone || dropZone !== sourceList) {
                 e.dataTransfer.dropEffect = 'none';
                 return;
             }
@@ -1359,7 +1370,6 @@
         const orderedSegIds = []; 
         const tempToRealIdMap = {};
         
-        // Obtener estado anterior de las marcas para evitar sobreescribir productos ocultos
         const currentMarcaDocs = {};
         try {
             const marcasSnap = await _getDocs(_collection(_db, `artifacts/${_appId}/users/${_userId}/marcas`));
@@ -1383,7 +1393,7 @@
             }
             orderedSegIds.push(sId);
 
-            // 2. Extraer orden de Marcas en este Segmento
+            // 2. Extraer orden de Marcas en este Segmento (Ahora encuentra la clase correctamente)
             const marcaItems = segCont.querySelectorAll('.marcas-list > .marca-container');
             const marcaOrder = Array.from(marcaItems).map(item => item.dataset.name);
             
@@ -1408,15 +1418,15 @@
                     brandAccumulator.set(nameKey, { id: mId, name: mName, order: [] });
                 }
 
-                const prodItems = mItem.querySelectorAll('.productos-list .producto-item');
-                // NUEVO Y CRÍTICO: Recoger el ID único. Es la única forma de distinguir items con el mismo nombre.
+                // CORRECCIÓN: Usar la clase estandarizada 'productos-sortable-list'
+                const prodItems = mItem.querySelectorAll('.productos-sortable-list .producto-item');
                 const pIds = Array.from(prodItems).map(pi => pi.dataset.id);
                 
                 brandAccumulator.get(nameKey).order.push(...pIds);
             });
         });
 
-        // 4. Guardar Marcas acumuladas (preservando ocultos por el filtro de rubro)
+        // 4. Guardar Marcas acumuladas (preservando los que estaban ocultos por el filtro de rubro)
         brandAccumulator.forEach((data, nameKey) => {
             const oldData = currentMarcaDocs[data.id] || {};
             const oldOrder = oldData.productOrder || [];
@@ -1424,7 +1434,6 @@
             const newlyOrderedKeys = data.order;
             const newOrderSet = new Set(newlyOrderedKeys);
 
-            // Mantener los productos que no estaban en la pantalla actual (para no borrarlos)
             const hiddenKeys = oldOrder.filter(k => !newOrderSet.has(k));
             const finalOrder = [...newlyOrderedKeys, ...hiddenKeys];
 
@@ -1451,7 +1460,7 @@
                  }
             }
 
-            _showModal('Éxito', `Orden guardado perfectamente. Los productos con nombres idénticos ahora respetarán esta posición gracias a la firma compuesta.`, showInventarioSubMenu);
+            _showModal('Éxito', `Orden guardado perfectamente en todos los niveles.`, showInventarioSubMenu);
         } catch (error) {
             console.error("Error al guardar orden:", error);
             _showModal('Error', `Fallo al guardar: ${error.message}`);
