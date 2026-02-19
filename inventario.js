@@ -109,7 +109,7 @@
             try {
                 const prefRef = _doc(_db, `artifacts/${_appId}/users/${_userId}/config/productSortOrder`);
                 const prefSnap = await _getDoc(prefRef);
-                _globalSortCache.preference = prefSnap.exists() ? prefSnap.data().order : ['segmento', 'marca', 'presentacion'];
+                _globalSortCache.preference = prefSnap.exists() ? prefSnap.data().order : ['rubro', 'segmento', 'marca', 'presentacion'];
 
                 const [rSnap, sSnap, mSnap] = await Promise.all([
                     _getDocs(_collection(_db, `artifacts/${_appId}/users/${_userId}/rubros`)),
@@ -139,7 +139,7 @@
 
             } catch (e) { 
                 console.warn("Error cargando caché de orden:", e);
-                _globalSortCache.preference = ['segmento', 'marca', 'presentacion'];
+                _globalSortCache.preference = ['rubro', 'segmento', 'marca', 'presentacion'];
                 _globalSortCache.rubros = {}; _globalSortCache.segmentos = {}; _globalSortCache.marcas = {};
             }
         }
@@ -407,16 +407,20 @@
         const cols = readOnly ? 4 : 5;
         let tableHTML = `<table class="min-w-full bg-white text-sm"> <thead class="bg-gray-200 sticky top-0 z-10"> <tr> <th class="py-2 px-3 text-left font-semibold text-gray-600 uppercase tracking-wider">Presentación</th> <th class="py-2 px-3 text-left font-semibold text-gray-600 uppercase tracking-wider">Marca</th> <th class="py-2 px-3 text-right font-semibold text-gray-600 uppercase tracking-wider">Precio</th> <th class="py-2 px-3 text-center font-semibold text-gray-600 uppercase tracking-wider">Stock</th> ${!readOnly ? `<th class="py-2 px-3 text-center font-semibold text-gray-600 uppercase tracking-wider">Acciones</th>` : ''} </tr> </thead> <tbody>`;
         
-        let lastSegmento = null;
-        
-        const sortKeys = _globalSortCache.preference || ['segmento', 'marca', 'presentacion'];
-        const firstSortKey = sortKeys[0] || 'segmento';
+        let lastHeader = null;
 
         productosFiltrados.forEach(p => {
-            const currentHeaderValue = p[firstSortKey] || `Sin ${firstSortKey}`;
-            if (currentHeaderValue !== lastSegmento) {
-                lastSegmento = currentHeaderValue;
-                tableHTML += `<tr><td colspan="${cols}" class="py-2 px-4 bg-gray-300 font-bold text-gray-800 sticky top-[calc(theme(height.10))] z-[9]">${lastSegmento}</td></tr>`;
+            let currentHeaderValue = '';
+            if (_globalSortCache.preference && _globalSortCache.preference[0] === 'rubro' && _globalSortCache.preference[1] === 'segmento') {
+                currentHeaderValue = `${p.rubro || 'Sin Rubro'} > ${p.segmento || 'Sin Segmento'}`;
+            } else {
+                const firstSortKey = _globalSortCache.preference ? _globalSortCache.preference[0] : 'rubro';
+                currentHeaderValue = p[firstSortKey] || `Sin ${firstSortKey}`;
+            }
+
+            if (currentHeaderValue !== lastHeader) {
+                lastHeader = currentHeaderValue;
+                tableHTML += `<tr><td colspan="${cols}" class="py-2 px-4 bg-gray-300 font-bold text-gray-800 sticky top-[calc(theme(height.10))] z-[9]">${lastHeader}</td></tr>`;
             }
             
             const ventaPor = p.ventaPor || {und:true};
@@ -889,15 +893,20 @@
                 </thead>
                 <tbody>`;
         
-        let lastSegmento = null;
-        const sortKeys = _globalSortCache.preference || ['segmento', 'marca', 'presentacion'];
-        const firstSortKey = sortKeys[0] || 'segmento';
+        let lastHeader = null;
         
         productos.forEach(p => {
-            const currentSegmento = p[firstSortKey] || `Sin ${firstSortKey}`;
-            if (currentSegmento !== lastSegmento) { 
-                lastSegmento = currentSegmento; 
-                tableHTML += `<tr><td colspan="3" class="py-2 px-4 bg-gray-300 font-bold text-gray-800 sticky top-[calc(theme(height.10))] z-[9]">${lastSegmento}</td></tr>`; 
+            let currentHeaderValue = '';
+            if (_globalSortCache.preference && _globalSortCache.preference[0] === 'rubro' && _globalSortCache.preference[1] === 'segmento') {
+                currentHeaderValue = `${p.rubro || 'Sin Rubro'} > ${p.segmento || 'Sin Segmento'}`;
+            } else {
+                const firstSortKey = _globalSortCache.preference ? _globalSortCache.preference[0] : 'rubro';
+                currentHeaderValue = p[firstSortKey] || `Sin ${firstSortKey}`;
+            }
+
+            if (currentHeaderValue !== lastHeader) { 
+                lastHeader = currentHeaderValue; 
+                tableHTML += `<tr><td colspan="3" class="py-2 px-4 bg-gray-300 font-bold text-gray-800 sticky top-[calc(theme(height.10))] z-[9]">${lastHeader}</td></tr>`; 
             }
             
             const vPor = p.ventaPor || {und:true};
