@@ -93,21 +93,26 @@
     }
 
     // ==============================================================================
-    // --- NUEVO MOTOR INQUEBRANTABLE: FIRMA LEXICOGRÁFICA (SORT KEY) ---
+    // --- MOTOR INQUEBRANTABLE: FIRMA LEXICOGRÁFICA REFORZADA ---
     // ==============================================================================
     window.getGlobalProductSortFunction = async () => {
         return (a, b) => {
             const norm = s => (s || '').trim().toUpperCase();
             
-            // Construimos la firma de comparación dinámica: Rubro + FirmaGuardada
-            const prefixA = norm(a.rubro) || 'Z_OTROS';
-            const prefixB = norm(b.rubro) || 'Z_OTROS';
+            // 1. Agrupar obligatoriamente por Rubro para que la tabla nunca se rompa
+            const rA = norm(a.rubro) || 'Z_OTROS';
+            const rB = norm(b.rubro) || 'Z_OTROS';
             
-            // Si no tiene sortKey (producto nuevo), se le asigna un valor muy alto '9999' para que caiga al final de su rubro
-            const keyA = `${prefixA}_${a.sortKey || `9999_9999_9999_${norm(a.presentacion)}`}`;
-            const keyB = `${prefixB}_${b.sortKey || `9999_9999_9999_${norm(b.presentacion)}`}`;
+            // 2. Extraer la Firma generada en la vista de Ordenar (ej: "0000_0001_0005")
+            // Si el producto es nuevo o no se ha ordenado, le damos "Z_9999..." para enviarlo al final de su Rubro.
+            const kA = a.sortKey ? `A_${a.sortKey}` : `Z_9999_9999_9999_${norm(a.segmento)}_${norm(a.marca)}`;
+            const kB = b.sortKey ? `A_${b.sortKey}` : `Z_9999_9999_9999_${norm(b.segmento)}_${norm(b.marca)}`;
             
-            return keyA.localeCompare(keyB);
+            // 3. Unir las cadenas y comparar alfabéticamente de un solo golpe
+            const stringA = `${rA}_${kA}_${norm(a.presentacion)}`;
+            const stringB = `${rB}_${kB}_${norm(b.presentacion)}`;
+            
+            return stringA.localeCompare(stringB);
         };
     };
 
@@ -191,49 +196,24 @@
         });
     }
 
-    async function showModifyDeleteView() {
-         if (_floatingControls) _floatingControls.classList.add('hidden'); 
-         const isAdmin = _userRole === 'admin';
-        
-        _mainContent.innerHTML = `<div class="p-4 pt-8"> <div class="container mx-auto"> <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl"> <h2 class="text-2xl font-bold mb-6 text-center">Ver Productos / ${isAdmin?'Modificar Def.':'Consultar Stock'}</h2> ${getFiltrosHTML('modify')} <div id="productosListContainer" class="overflow-x-auto max-h-[60vh] border rounded-lg"> <p class="text-gray-500 text-center p-4">Cargando...</p> </div> <div class="mt-6 flex flex-col sm:flex-row gap-4"> <button id="backToInventarioBtn" class="w-full px-6 py-3 bg-gray-400 text-white rounded-lg shadow-md hover:bg-gray-500">Volver</button> ${isAdmin?`<button id="deleteAllProductosBtn" class="w-full px-6 py-3 bg-red-600 text-white rounded-lg shadow-md hover:bg-red-700">Eliminar Todos</button>`:''} </div> </div> </div> </div>`;
-
-        document.getElementById('backToInventarioBtn').addEventListener('click', showInventarioSubMenu);
-        if (isAdmin) document.getElementById('deleteAllProductosBtn')?.addEventListener('click', handleDeleteAllProductos);
-
-        const baseRender = () => renderProductosList('productosListContainer', !isAdmin);
-        const { updateDependentDropdowns } = setupFiltros('modify', baseRender);
-
-        let isFirstLoad = true;
-        const smartListenerCallback = async () => {
-            await baseRender();
-            populateMergedDropdown('rubros', 'modify-filter-rubro', 'rubro', 'Todos', _lastFilters.rubro); 
-            if (isFirstLoad && _inventarioCache.length > 0) {
-                updateDependentDropdowns('init');
-                await baseRender();
-                isFirstLoad = false;
-            }
-        };
-        startMainInventarioListener(smartListenerCallback);
-    }
-
     function getFiltrosHTML(prefix) {
         const currentSearch = _lastFilters.searchTerm || '';
         return `
-            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6 p-4 border rounded-lg bg-gray-50">
-                <input type="text" id="${prefix}-search-input" placeholder="Buscar por Presentación, Marca o Segmento..." class="md:col-span-4 w-full px-4 py-2 border rounded-lg text-sm" value="${currentSearch}">
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6 p-4 border rounded-lg bg-white shadow-sm">
+                <input type="text" id="${prefix}-search-input" placeholder="Buscar por Nombre, Marca o Segmento..." class="md:col-span-4 w-full px-4 py-3 border rounded-lg text-sm bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none transition" value="${currentSearch}">
                 <div>
-                    <label for="${prefix}-filter-rubro" class="text-xs font-medium text-gray-700">Rubro</label>
-                    <select id="${prefix}-filter-rubro" class="w-full mt-1 px-2 py-1 border rounded-lg text-sm bg-white focus:ring-blue-500 focus:border-blue-500"><option value="">Todos</option></select>
+                    <label for="${prefix}-filter-rubro" class="text-xs font-bold text-gray-500 uppercase tracking-wider">Rubro</label>
+                    <select id="${prefix}-filter-rubro" class="w-full mt-1 px-3 py-2 border rounded-lg text-sm bg-gray-50 outline-none focus:ring-2 focus:ring-blue-500"><option value="">Todos</option></select>
                 </div>
                 <div>
-                    <label for="${prefix}-filter-segmento" class="text-xs font-medium text-gray-700">Segmento</label>
-                    <select id="${prefix}-filter-segmento" class="w-full mt-1 px-2 py-1 border rounded-lg text-sm bg-white focus:ring-blue-500 focus:border-blue-500" disabled><option value="">Todos</option></select>
+                    <label for="${prefix}-filter-segmento" class="text-xs font-bold text-gray-500 uppercase tracking-wider">Segmento</label>
+                    <select id="${prefix}-filter-segmento" class="w-full mt-1 px-3 py-2 border rounded-lg text-sm bg-gray-50 outline-none focus:ring-2 focus:ring-blue-500" disabled><option value="">Todos</option></select>
                 </div>
                 <div>
-                    <label for="${prefix}-filter-marca" class="text-xs font-medium text-gray-700">Marca</label>
-                    <select id="${prefix}-filter-marca" class="w-full mt-1 px-2 py-1 border rounded-lg text-sm bg-white focus:ring-blue-500 focus:border-blue-500" disabled><option value="">Todos</option></select>
+                    <label for="${prefix}-filter-marca" class="text-xs font-bold text-gray-500 uppercase tracking-wider">Marca</label>
+                    <select id="${prefix}-filter-marca" class="w-full mt-1 px-3 py-2 border rounded-lg text-sm bg-gray-50 outline-none focus:ring-2 focus:ring-blue-500" disabled><option value="">Todos</option></select>
                 </div>
-                <button id="${prefix}-clear-filters-btn" class="bg-gray-300 text-xs font-semibold text-gray-700 rounded-lg self-end py-1.5 px-3 hover:bg-gray-400 transition duration-150">Limpiar</button>
+                <button id="${prefix}-clear-filters-btn" class="bg-gray-200 text-sm font-bold text-gray-700 rounded-lg self-end py-2 px-4 hover:bg-gray-300 transition-colors">Limpiar Filtros</button>
             </div>
         `;
     }
@@ -289,73 +269,184 @@
         return { updateDependentDropdowns };
     }
 
+    // =========================================================================================
+    // REESCRITURA TOTAL: VISTA "VER Y MODIFICAR PRODUCTOS"
+    // =========================================================================================
+
+    async function showModifyDeleteView() {
+        if (_floatingControls) _floatingControls.classList.add('hidden'); 
+        const isAdmin = _userRole === 'admin';
+       
+        // UI Completamente nueva y más estructurada
+        _mainContent.innerHTML = `
+           <div class="p-2 md:p-6 pt-8 max-w-7xl mx-auto"> 
+               <div class="bg-gray-100/95 backdrop-blur-md p-4 md:p-8 rounded-2xl shadow-2xl border border-gray-200"> 
+                   <div class="flex flex-col md:flex-row justify-between items-center mb-6 border-b border-gray-300 pb-4">
+                        <h2 class="text-3xl font-black text-gray-800 tracking-tight">
+                            ${isAdmin ? '⚙️ Gestión del Catálogo' : '📦 Consultar Inventario'}
+                        </h2>
+                        <button id="backToInventarioBtnTop" class="mt-4 md:mt-0 px-6 py-2 bg-gray-500 text-white font-bold rounded-lg shadow hover:bg-gray-600 transition-colors">
+                            ← Volver
+                        </button>
+                   </div>
+                   
+                   ${getFiltrosHTML('modify')} 
+                   
+                   <div id="productosListContainer" class="overflow-x-auto max-h-[65vh] border border-gray-300 rounded-xl shadow-inner bg-white"> 
+                        <p class="text-gray-500 text-center p-8 font-medium animate-pulse">Cargando y organizando inventario...</p>
+                   </div> 
+                   
+                   <div class="mt-6 flex flex-col sm:flex-row gap-4 justify-between"> 
+                       <button id="backToInventarioBtnBottom" class="w-full sm:w-auto px-8 py-3 bg-gray-500 text-white font-bold rounded-lg shadow hover:bg-gray-600 transition-colors">Volver al Menú</button> 
+                       ${isAdmin ? `<button id="deleteAllProductosBtn" class="w-full sm:w-auto px-8 py-3 bg-red-600 text-white font-bold rounded-lg shadow hover:bg-red-700 transition-colors">⚠️ Eliminar Todo el Catálogo</button>` : ''} 
+                   </div> 
+               </div> 
+           </div>`;
+
+        document.getElementById('backToInventarioBtnTop').addEventListener('click', showInventarioSubMenu);
+        document.getElementById('backToInventarioBtnBottom').addEventListener('click', showInventarioSubMenu);
+        
+        if (isAdmin) {
+            document.getElementById('deleteAllProductosBtn')?.addEventListener('click', handleDeleteAllProductos);
+        }
+
+        const baseRender = () => renderProductosList('productosListContainer', !isAdmin);
+        const { updateDependentDropdowns } = setupFiltros('modify', baseRender);
+
+        let isFirstLoad = true;
+        const smartListenerCallback = async () => {
+            await baseRender();
+            populateMergedDropdown('rubros', 'modify-filter-rubro', 'rubro', 'Todos', _lastFilters.rubro); 
+            if (isFirstLoad && _inventarioCache.length > 0) {
+                updateDependentDropdowns('init');
+                await baseRender();
+                isFirstLoad = false;
+            }
+        };
+        startMainInventarioListener(smartListenerCallback);
+    }
+
     async function renderProductosList(elementId, readOnly = false) {
         const container = document.getElementById(elementId);
-        if (!container) { return; }
+        if (!container) return;
 
-        let productosFiltrados = [..._inventarioCache];
-        productosFiltrados = productosFiltrados.filter(p => {
-            const searchTermLower = (_lastFilters.searchTerm || '').toLowerCase();
-            const textMatch = !searchTermLower ||
-                (p.presentacion && p.presentacion.toLowerCase().includes(searchTermLower)) ||
-                (p.marca && p.marca.toLowerCase().includes(searchTermLower)) ||
-                (p.segmento && p.segmento.toLowerCase().includes(searchTermLower));
-            const rubroMatch = !_lastFilters.rubro || p.rubro === _lastFilters.rubro;
-            const segmentoMatch = !_lastFilters.segmento || p.segmento === _lastFilters.segmento;
-            const marcaMatch = !_lastFilters.marca || p.marca === _lastFilters.marca;
-            return textMatch && rubroMatch && segmentoMatch && marcaMatch;
+        container.innerHTML = '<div class="flex justify-center items-center p-12 text-gray-500 font-bold animate-pulse">Procesando y Ordenando...</div>';
+
+        // 1. Aplicar Filtros Manuales
+        let filtrados = _inventarioCache.filter(p => {
+            const term = (_lastFilters.searchTerm || '').toLowerCase();
+            const textMatch = !term || 
+                (p.presentacion || '').toLowerCase().includes(term) ||
+                (p.marca || '').toLowerCase().includes(term) ||
+                (p.segmento || '').toLowerCase().includes(term);
+                
+            const rMatch = !_lastFilters.rubro || p.rubro === _lastFilters.rubro;
+            const sMatch = !_lastFilters.segmento || p.segmento === _lastFilters.segmento;
+            const mMatch = !_lastFilters.marca || p.marca === _lastFilters.marca;
+            
+            return textMatch && rMatch && sMatch && mMatch;
         });
 
-        const sortFunction = await window.getGlobalProductSortFunction();
-        productosFiltrados.sort(sortFunction);
+        // 2. Ordenamiento Global y Definitivo
+        const sortFn = await window.getGlobalProductSortFunction();
+        filtrados.sort(sortFn);
 
-        if (productosFiltrados.length === 0) {
-            container.innerHTML = `<p class="text-center text-gray-500 p-4">No hay productos que coincidan con los filtros seleccionados.</p>`;
+        if (filtrados.length === 0) {
+            container.innerHTML = `<div class="p-12 text-center text-gray-500 font-medium text-lg">No se encontraron productos con estos filtros.</div>`;
             return;
         }
 
-        const cols = readOnly ? 4 : 5;
-        let tableHTML = `<table class="min-w-full bg-white text-sm"> <thead class="bg-gray-200 sticky top-0 z-10"> <tr> <th class="py-2 px-3 text-left font-semibold text-gray-600 uppercase tracking-wider">Presentación</th> <th class="py-2 px-3 text-left font-semibold text-gray-600 uppercase tracking-wider">Marca</th> <th class="py-2 px-3 text-right font-semibold text-gray-600 uppercase tracking-wider">Precio</th> <th class="py-2 px-3 text-center font-semibold text-gray-600 uppercase tracking-wider">Stock</th> ${!readOnly ? `<th class="py-2 px-3 text-center font-semibold text-gray-600 uppercase tracking-wider">Acciones</th>` : ''} </tr> </thead> <tbody>`;
-        
-        let lastHeader = null;
+        // 3. Renderizar la tabla de forma lineal y limpia
+        const numCols = readOnly ? 4 : 5;
+        let html = `
+            <table class="min-w-full bg-white text-sm text-left whitespace-nowrap">
+                <thead class="bg-gray-800 text-white sticky top-0 z-20 shadow-md">
+                    <tr>
+                        <th class="py-3 px-4 uppercase font-semibold tracking-wider">Presentación</th>
+                        <th class="py-3 px-4 uppercase font-semibold tracking-wider hidden sm:table-cell">Marca</th>
+                        <th class="py-3 px-4 uppercase font-semibold tracking-wider text-right">Precio</th>
+                        <th class="py-3 px-4 uppercase font-semibold tracking-wider text-center">Stock Base</th>
+                        ${!readOnly ? `<th class="py-3 px-4 uppercase font-semibold tracking-wider text-center">Acciones</th>` : ''}
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-200">
+        `;
 
-        productosFiltrados.forEach(p => {
-            let currentHeaderValue = `${(p.rubro || 'Sin Rubro').toUpperCase()} > ${(p.segmento || 'Sin Segmento').toUpperCase()}`;
+        let currentGroup = null;
 
-            if (currentHeaderValue !== lastHeader) {
-                lastHeader = currentHeaderValue;
-                tableHTML += `<tr><td colspan="${cols}" class="py-2 px-4 bg-gray-300 font-bold text-gray-800 sticky top-[calc(theme(height.10))] z-[9]">${lastHeader}</td></tr>`;
+        filtrados.forEach(p => {
+            // Este es el grupo visual que imprimirá el encabezado en la tabla
+            const rName = (p.rubro || 'SIN RUBRO').toUpperCase();
+            const sName = (p.segmento || 'SIN SEGMENTO').toUpperCase();
+            const groupName = `${rName} > ${sName}`;
+
+            // Si detecta un cambio de grupo, imprime la fila oscura de separación
+            if (groupName !== currentGroup) {
+                currentGroup = groupName;
+                html += `
+                    <tr class="bg-blue-50/90 border-t-2 border-blue-200">
+                        <td colspan="${numCols}" class="py-2.5 px-4 font-extrabold text-blue-900 sticky top-[44px] z-10 backdrop-blur-sm shadow-sm tracking-wide">
+                            📁 ${currentGroup}
+                        </td>
+                    </tr>
+                `;
             }
+
+            // Preparación de los datos del producto
+            const vPor = p.ventaPor || {und:true};
+            const pre = p.precios || {und: p.precioPorUnidad || 0};
             
-            const ventaPor = p.ventaPor || {und:true};
-            const precios = p.precios || {und: p.precioPorUnidad || 0};
-            let displayPresentacion = p.presentacion || 'N/A';
-            let displayPrecio = '$0.00';
-            let displayStock = `${p.cantidadUnidades || 0} Und`;
-            let conversionFactorStock = 1;
-            let stockUnitType = 'Und';
+            let labelPres = p.presentacion || 'N/A';
+            let labelPrecio = '$0.00';
+            let stockSuffix = 'Und';
+            let factor = 1;
 
-            if (ventaPor.cj) {
-                if (p.unidadesPorCaja) displayPresentacion += ` (${p.unidadesPorCaja} und.)`;
-                displayPrecio = `$${(precios.cj || 0).toFixed(2)}`;
-                conversionFactorStock = Math.max(1, p.unidadesPorCaja || 1);
-                stockUnitType = 'Cj';
-            } else if (ventaPor.paq) {
-                if (p.unidadesPorPaquete) displayPresentacion += ` (${p.unidadesPorPaquete} und.)`;
-                displayPrecio = `$${(precios.paq || 0).toFixed(2)}`;
-                conversionFactorStock = Math.max(1, p.unidadesPorPaquete || 1);
-                stockUnitType = 'Paq';
+            if (vPor.cj) {
+                if (p.unidadesPorCaja > 1) labelPres += ` <span class="text-gray-400 text-xs">(${p.unidadesPorCaja}u)</span>`;
+                labelPrecio = `<span class="text-gray-500 text-xs">Cj</span> $${(pre.cj || 0).toFixed(2)}`;
+                factor = Math.max(1, p.unidadesPorCaja || 1);
+                stockSuffix = 'Cj';
+            } else if (vPor.paq) {
+                if (p.unidadesPorPaquete > 1) labelPres += ` <span class="text-gray-400 text-xs">(${p.unidadesPorPaquete}u)</span>`;
+                labelPrecio = `<span class="text-gray-500 text-xs">Pq</span> $${(pre.paq || 0).toFixed(2)}`;
+                factor = Math.max(1, p.unidadesPorPaquete || 1);
+                stockSuffix = 'Paq';
             } else {
-                displayPrecio = `$${(precios.und || 0).toFixed(2)}`;
+                labelPrecio = `<span class="text-gray-500 text-xs">Un</span> $${(pre.und || 0).toFixed(2)}`;
             }
-            displayStock = `${Math.floor((p.cantidadUnidades || 0) / conversionFactorStock)} ${stockUnitType}`;
-            const stockUnidadesBaseTitle = `${p.cantidadUnidades || 0} Und. Base`;
 
-            tableHTML += `<tr class="hover:bg-gray-50 border-b"> <td class="py-2 px-3 text-gray-800">${displayPresentacion}</td> <td class="py-2 px-3 text-gray-700">${p.marca || 'S/M'}</td> <td class="py-2 px-3 text-right font-medium text-gray-900">${displayPrecio}</td> <td class="py-2 px-3 text-center font-medium text-gray-900" title="${stockUnidadesBaseTitle}">${displayStock}</td> ${!readOnly ? `<td class="py-2 px-3 text-center space-x-1"> <button onclick="window.inventarioModule.editProducto('${p.id}')" class="px-2 py-1 bg-yellow-500 text-white text-xs rounded hover:bg-yellow-600 focus:outline-none focus:ring-2 focus:ring-yellow-400 focus:ring-opacity-50" title="Editar Definición">Edt</button> <button onclick="window.inventarioModule.deleteProducto('${p.id}')" class="px-2 py-1 bg-red-500 text-white text-xs rounded hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-400 focus:ring-opacity-50" title="Eliminar Producto">Del</button> </td>` : ''} </tr>`;
+            const stockStr = `${Math.floor((p.cantidadUnidades || 0) / factor)} ${stockSuffix}`;
+            const tooltip = `Stock Total Base: ${p.cantidadUnidades || 0} Und`;
+
+            // Dibujar la fila del producto
+            html += `
+                <tr class="hover:bg-amber-50 transition-colors duration-150">
+                    <td class="py-3 px-4 font-semibold text-gray-800">
+                        ${labelPres}
+                        <span class="block sm:hidden text-xs text-gray-500 font-normal mt-0.5">${p.marca || 'S/M'}</span>
+                    </td>
+                    <td class="py-3 px-4 text-gray-600 hidden sm:table-cell">${p.marca || 'S/M'}</td>
+                    <td class="py-3 px-4 font-bold text-gray-900 text-right">${labelPrecio}</td>
+                    <td class="py-3 px-4 font-bold text-gray-700 text-center" title="${tooltip}">${stockStr}</td>
+                    ${!readOnly ? `
+                    <td class="py-3 px-4">
+                        <div class="flex justify-center space-x-2">
+                            <button onclick="window.inventarioModule.editProducto('${p.id}')" class="px-3 py-1.5 bg-yellow-500 text-white font-medium text-xs rounded hover:bg-yellow-600 shadow-sm focus:outline-none focus:ring-2 focus:ring-yellow-400 transition-all">Editar</button>
+                            <button onclick="window.inventarioModule.deleteProducto('${p.id}')" class="px-3 py-1.5 bg-red-500 text-white font-medium text-xs rounded hover:bg-red-600 shadow-sm focus:outline-none focus:ring-2 focus:ring-red-400 transition-all">Borrar</button>
+                        </div>
+                    </td>
+                    ` : ''}
+                </tr>
+            `;
         });
-        tableHTML += `</tbody></table>`;
-        container.innerHTML = tableHTML;
+
+        html += `</tbody></table>`;
+        container.innerHTML = html;
     }
+
+    // =========================================================================================
+    // RESTO DEL MÓDULO (AGREGAR, RECARGAR, ORDENAR)
+    // =========================================================================================
 
     async function showAgregarProductoView() {
         if (_userRole !== 'admin') return;
@@ -440,7 +531,6 @@
         _showModal('Progreso', 'Creando producto en Catálogo Maestro...');
         try {
             const newId = _doc(_collection(_db, 'dummy')).id;
-            // Quitamos la llave para obligar al usuario a reordenarlo luego en la vista de Ordenar
             data.sortKey = null; 
             if (window.adminModule?.propagateProductChange) {
                 await window.adminModule.propagateProductChange(newId, data);
@@ -626,7 +716,6 @@
         if (!updatedData.rubro||!updatedData.segmento||!updatedData.marca||!updatedData.presentacion){_showModal('Error','Completa Rubro, Segmento, Marca y Presentación.');return;} if (!updatedData.ventaPor.und&&!updatedData.ventaPor.paq&&!updatedData.ventaPor.cj){_showModal('Error','Selecciona al menos una forma de venta.');return;} if (updatedData.manejaVacios&&!updatedData.tipoVacio){_showModal('Error','Si maneja vacío, selecciona el tipo.');document.getElementById('tipoVacioSelect')?.focus();return;} let precioValido=(updatedData.ventaPor.und&&updatedData.precios.und>0)||(updatedData.ventaPor.paq&&updatedData.precios.paq>0)||(updatedData.ventaPor.cj&&updatedData.precios.cj>0); if(!precioValido){_showModal('Error','Ingresa al menos un precio válido (> 0) para la forma de venta seleccionada.');document.querySelector('#preciosContainer input[required]')?.focus();return;}
         
         updatedData.cantidadUnidades = 0; 
-        // Forzamos nulidad de sortKey si se edita, para que tome el nuevo prefijo del Rubro automáticamente.
         updatedData.sortKey = null;
 
         _showModal('Progreso','Guardando cambios en Catálogo Maestro...'); 
@@ -1006,15 +1095,9 @@
                 prodsEnRubro = prodsEnRubro.filter(p => p.rubro === rubroFiltro);
             }
             
-            // Ordenar por la Firma Lexicográfica actual
-            prodsEnRubro.sort((a, b) => {
-                const norm = s => (s || '').trim().toUpperCase();
-                const prefixA = norm(a.rubro) || 'Z_OTROS';
-                const prefixB = norm(b.rubro) || 'Z_OTROS';
-                const keyA = `${prefixA}_${a.sortKey || `9999_9999_9999_${norm(a.presentacion)}`}`;
-                const keyB = `${prefixB}_${b.sortKey || `9999_9999_9999_${norm(b.presentacion)}`}`;
-                return keyA.localeCompare(keyB);
-            });
+            // Ordenar por la Firma Lexicográfica actual para dibujar el DOM
+            const sortFn = await window.getGlobalProductSortFunction();
+            prodsEnRubro.sort(sortFn);
 
             // Agrupar jerarquía para dibujarla
             const hierarchy = new Map(); 
@@ -1199,7 +1282,6 @@
         
         const updates = [];
         
-        // El Algoritmo: Lee la posición visual y le asigna un número (0001, 0002) que nunca fallará en el .sort()
         segConts.forEach((segCont, sIdx) => {
             const marcaItems = segCont.querySelectorAll('.marcas-list > .marca-container');
             marcaItems.forEach((mItem, mIdx) => {
@@ -1214,7 +1296,6 @@
                         const pStr = String(pIdx).padStart(4, '0');
                         const newSortKey = `${sStr}_${mStr}_${pStr}`;
                         
-                        // Evita escribir a base de datos si el producto ya está en la posición correcta
                         if (prod.sortKey !== newSortKey) {
                             updates.push({ pId: pId, sortKey: newSortKey });
                         }
@@ -1235,7 +1316,6 @@
             for (const u of updates) {
                 let fueActualizado = false;
 
-                // 1. Guardar en Catálogo Maestro
                 if (_masterCatalogCache[u.pId]) {
                     const refMaster = _doc(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/productos`, u.pId);
                     batch.set(refMaster, { sortKey: u.sortKey }, { merge: true });
@@ -1243,14 +1323,13 @@
                     fueActualizado = true;
                 }
                 
-                // 2. Guardar en Caché Privada (Legacy / Seguridad)
                 if (_userStockCache[u.pId] || !fueActualizado) {
                     const refStock = _doc(_db, `artifacts/${_appId}/users/${_userId}/inventario`, u.pId);
                     batch.set(refStock, { sortKey: u.sortKey }, { merge: true });
                     totalOps++;
                 }
                 
-                if (totalOps >= 490) { // Batch límite de Firestore
+                if (totalOps >= 490) { 
                     await batch.commit();
                     batch = _writeBatch(_db);
                     totalOps = 0;
