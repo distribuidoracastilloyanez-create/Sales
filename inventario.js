@@ -13,10 +13,11 @@
 
     let _lastFilters = { searchTerm: '', rubro: '', segmento: '', marca: '' };
     let _recargaTempState = {}; 
-    let _marcasCache = null; // <-- LÍNEA RESTAURADA PARA ARREGLAR EL ERROR
+    let _marcasCache = null; 
 
     // --- CACHÉ DE ORDENAMIENTO GLOBAL ---
     let _globalSortCache = {
+        preference: null,
         rubros: null,
         segmentos: null,
         marcas: null
@@ -49,7 +50,7 @@
         _getDoc = dependencies.getDoc;
         _increment = dependencies.increment; 
         
-        console.log("Módulo Inventario FASE 2 Inicializado. Public ID:", PUBLIC_DATA_ID);
+        console.log("Módulo Inventario Inicializado. Public ID:", PUBLIC_DATA_ID);
     };
 
     function startMainInventarioListener(callback) {
@@ -101,11 +102,15 @@
     }
 
     // ==============================================================================
-    // --- LÓGICA MAESTRA DE ORDENAMIENTO ESTRICTO (JERARQUÍA COMPLETA) ---
+    // --- LÓGICA MAESTRA DE ORDENAMIENTO (AHORA BASADA EN NOMBRES) ---
     // ==============================================================================
     window.getGlobalProductSortFunction = async () => {
-        if (!_globalSortCache.rubros || !_globalSortCache.segmentos || !_globalSortCache.marcas) {
+        if (!_globalSortCache.rubros || !_globalSortCache.segmentos || !_globalSortCache.marcas || !_globalSortCache.preference) {
             try {
+                const prefRef = _doc(_db, `artifacts/${_appId}/users/${_userId}/config/productSortOrder`);
+                const prefSnap = await _getDoc(prefRef);
+                _globalSortCache.preference = prefSnap.exists() ? prefSnap.data().order : ['segmento', 'marca', 'presentacion'];
+
                 const [rSnap, sSnap, mSnap] = await Promise.all([
                     _getDocs(_collection(_db, `artifacts/${_appId}/users/${_userId}/rubros`)),
                     _getDocs(_collection(_db, `artifacts/${_appId}/users/${_userId}/segmentos`)),
@@ -123,7 +128,6 @@
 
                 _globalSortCache.marcas = {};
                 
-                // CORRECCIÓN CRÍTICA: Fusionar arrays si hay marcas con el mismo nombre en diferentes segmentos
                 mSnap.forEach(d => {
                     const nameKey = (d.data().name || '').trim().toUpperCase();
                     if (!_globalSortCache.marcas[nameKey]) {
@@ -135,6 +139,7 @@
 
             } catch (e) { 
                 console.warn("Error cargando caché de orden:", e);
+                _globalSortCache.preference = ['segmento', 'marca', 'presentacion'];
                 _globalSortCache.rubros = {}; _globalSortCache.segmentos = {}; _globalSortCache.marcas = {};
             }
         }
@@ -143,67 +148,65 @@
             const safeA = a || {}; const safeB = b || {};
             let res = 0;
 
-            // 1. RUBRO
-            const rA = _globalSortCache.rubros[safeA.rubro] ?? 9999;
-            const rB = _globalSortCache.rubros[safeB.rubro] ?? 9999;
-            res = rA - rB;
-            if (res !== 0) return res;
-            res = (safeA.rubro || '').localeCompare(safeB.rubro || '');
-            if (res !== 0) return res;
-
-            // 2. SEGMENTO
-            const sA = _globalSortCache.segmentos[safeA.segmento]?.orden ?? 9999;
-            const sB = _globalSortCache.segmentos[safeB.segmento]?.orden ?? 9999;
-            res = sA - sB;
-            if (res !== 0) return res;
-            res = (safeA.segmento || '').localeCompare(safeB.segmento || '');
-            if (res !== 0) return res;
-
-            // 3. MARCA (Dentro del Segmento)
-            const segData = _globalSortCache.segmentos[safeA.segmento];
-            if (segData && segData.marcaOrder) {
-                const idxA = segData.marcaOrder.indexOf(safeA.marca);
-                const idxB = segData.marcaOrder.indexOf(safeB.marca);
-                if (idxA !== -1 && idxB !== -1) res = idxA - idxB;
-                else if (idxA !== -1) res = -1;
-                else if (idxB !== -1) res = 1;
-            }
-            if (res !== 0) return res;
-            res = (safeA.marca || '').localeCompare(safeB.marca || '');
-            if (res !== 0) return res;
-
-            // 4. PRESENTACIÓN (Dentro de la Marca)
-            const marcaKeyA = (safeA.marca || '').trim().toUpperCase();
-            const marcaKeyB = (safeB.marca || '').trim().toUpperCase();
-            
-            if (marcaKeyA === marcaKeyB) {
-                const marcaData = _globalSortCache.marcas[marcaKeyA];
-                if (marcaData && marcaData.productOrder) {
-                    const idxA = marcaData.productOrder.indexOf(safeA.id); // Usamos ID único
-                    const idxB = marcaData.productOrder.indexOf(safeB.id);
-                    if (idxA !== -1 && idxB !== -1) res = idxA - idxB;
-                    else if (idxA !== -1) res = -1;
-                    else if (idxB !== -1) res = 1;
+            for (const key of _globalSortCache.preference) {
+                if (key === 'rubro') {
+                    const rA = _globalSortCache.rubros[safeA.rubro] ?? 9999;
+                    const rB = _globalSortCache.rubros[safeB.rubro] ?? 9999;
+                    res = rA - rB;
+                    if (res === 0) res = (safeA.rubro || '').localeCompare(safeB.rubro || '');
+                } 
+                else if (key === 'segmento') {
+                    const sA = _globalSortCache.segmentos[safeA.segmento]?.orden ?? 9999;
+                    const sB = _globalSortCache.segmentos[safeB.segmento]?.orden ?? 9999;
+                    res = sA - sB;
+                    if (res === 0) res = (safeA.segmento || '').localeCompare(safeB.segmento || '');
+                } 
+                else if (key === 'marca') {
+                    if (safeA.segmento === safeB.segmento) {
+                        const segData = _globalSortCache.segmentos[safeA.segmento];
+                        if (segData && segData.marcaOrder) {
+                            const idxA = segData.marcaOrder.indexOf(safeA.marca);
+                            const idxB = segData.marcaOrder.indexOf(safeB.marca);
+                            if (idxA !== -1 && idxB !== -1) res = idxA - idxB;
+                            else if (idxA !== -1) res = -1;
+                            else if (idxB !== -1) res = 1;
+                        }
+                    }
+                    if (res === 0) res = (safeA.marca || '').localeCompare(safeB.marca || '');
+                } 
+                else if (key === 'presentacion') {
+                    if (safeA.marca === safeB.marca) {
+                        const marcaKeyA = (safeA.marca || '').trim().toUpperCase();
+                        const marcaData = _globalSortCache.marcas[marcaKeyA];
+                        
+                        if (marcaData && marcaData.productOrder) {
+                            // --- AQUÍ ESTÁ LA MAGIA: Búsqueda por Nombre de Presentación ---
+                            const presA = (safeA.presentacion || '').trim();
+                            const presB = (safeB.presentacion || '').trim();
+                            
+                            const idxA = marcaData.productOrder.indexOf(presA);
+                            const idxB = marcaData.productOrder.indexOf(presB);
+                            
+                            if (idxA !== -1 && idxB !== -1) res = idxA - idxB;
+                            else if (idxA !== -1) res = -1;
+                            else if (idxB !== -1) res = 1;
+                        }
+                    }
+                    if (res === 0) res = (safeA.presentacion || '').localeCompare(safeB.presentacion || '');
                 }
+                if (res !== 0) return res;
             }
-            if (res !== 0) return res;
-            
-            // 5. NOMBRES IDÉNTICOS (Tie-breaker)
-            res = (safeA.presentacion || '').localeCompare(safeB.presentacion || '');
-            if (res !== 0) return res;
-
-            // 6. SOLUCIÓN DEFINITIVA: Desempate por ID si tienen mismo nombre exacto
-            return (safeA.id || '').localeCompare(safeB.id || '');
+            return 0; 
         };
     };
 
     function invalidateSegmentOrderCache() {
-        _globalSortCache = { rubros: null, segmentos: null, marcas: null };
+        _globalSortCache = { preference: null, rubros: null, segmentos: null, marcas: null };
         if (window.catalogoModule?.invalidateCache) window.catalogoModule.invalidateCache();
         if (window.ventasModule?.invalidateCache) window.ventasModule.invalidateCache();
     }
 
-    // --- NUEVO: FUNCIÓN HÍBRIDA PARA POBLAR DROPDOWNS (Corrige error en Agregar Producto) ---
+    // --- FUNCIÓN HÍBRIDA PARA POBLAR DROPDOWNS ---
     async function populateMergedDropdown(collectionName, selectId, itemKey, defaultLabel, currentValParam = null) {
         const select = document.getElementById(selectId);
         if (!select) return;
@@ -211,12 +214,12 @@
         const currentVal = currentValParam !== null ? currentValParam : select.value;
         const uniqueValues = new Set();
         
-        // 1. Extraer nombres desde los productos cacheados (Importados de Excel)
+        // 1. Extraer nombres desde los productos (Importados de Excel)
         _inventarioCache.forEach(p => {
              if (p[itemKey]) uniqueValues.add((p[itemKey] || '').trim().toUpperCase());
         });
         
-        // 2. Extraer desde la base de datos Firestore (Categorías creadas a mano)
+        // 2. Extraer desde Firebase (Categorías creadas a mano)
         try {
             const snap = await _getDocs(_collection(_db, `artifacts/${_appId}/users/${_userId}/${collectionName}`));
             snap.docs.forEach(d => {
@@ -238,7 +241,7 @@
             select.appendChild(opt);
         });
         
-        if (currentVal && !uniqueValues.has(currentVal.toUpperCase())) select.value = "";
+        if (currentVal && !uniqueValues.has((currentVal || '').trim().toUpperCase())) select.value = "";
     }
 
     // --- VISTAS ---
@@ -298,7 +301,6 @@
         let isFirstLoad = true;
         const smartListenerCallback = async () => {
             await baseRender();
-            // Corrección: Usar la función robusta
             populateMergedDropdown('rubros', 'modify-filter-rubro', 'rubro', 'Todos'); 
             if (isFirstLoad && _inventarioCache.length > 0) {
                 updateDependentDropdowns('init');
@@ -399,7 +401,6 @@
             return textMatch && rubroMatch && segmentoMatch && marcaMatch;
         });
 
-        // Ordenamos toda la lista con el algoritmo reparado
         const sortFunction = await window.getGlobalProductSortFunction();
         productosFiltrados.sort(sortFunction);
 
@@ -412,12 +413,15 @@
         let tableHTML = `<table class="min-w-full bg-white text-sm"> <thead class="bg-gray-200 sticky top-0 z-10"> <tr> <th class="py-2 px-3 text-left font-semibold text-gray-600 uppercase tracking-wider">Presentación</th> <th class="py-2 px-3 text-left font-semibold text-gray-600 uppercase tracking-wider">Marca</th> <th class="py-2 px-3 text-right font-semibold text-gray-600 uppercase tracking-wider">Precio</th> <th class="py-2 px-3 text-center font-semibold text-gray-600 uppercase tracking-wider">Stock</th> ${!readOnly ? `<th class="py-2 px-3 text-center font-semibold text-gray-600 uppercase tracking-wider">Acciones</th>` : ''} </tr> </thead> <tbody>`;
         
         let lastSegmento = null;
+        
+        // Agrupación visual siempre por Segmento (como se muestra en la imagen)
+        const sortKeys = _globalSortCache.preference || ['segmento', 'marca', 'presentacion'];
+        const firstSortKey = sortKeys[0] || 'segmento';
 
         productosFiltrados.forEach(p => {
-            // Agrupación visual siempre por Segmento para mantener orden lógico
-            const currentSegmento = p.segmento || `Sin Segmento`;
-            if (currentSegmento !== lastSegmento) {
-                lastSegmento = currentSegmento;
+            const currentHeaderValue = p[firstSortKey] || `Sin ${firstSortKey}`;
+            if (currentHeaderValue !== lastSegmento) {
+                lastSegmento = currentHeaderValue;
                 tableHTML += `<tr><td colspan="${cols}" class="py-2 px-4 bg-gray-300 font-bold text-gray-800 sticky top-[calc(theme(height.10))] z-[9]">${lastSegmento}</td></tr>`;
             }
             
@@ -457,7 +461,6 @@
         
         _mainContent.innerHTML = `<div class="p-4 pt-8"> <div class="container mx-auto max-w-2xl"> <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl text-center"> <h2 class="text-2xl font-bold mb-6">Agregar Nuevo Producto</h2> <form id="addProductoForm" class="space-y-4 text-left"> <div class="grid grid-cols-1 md:grid-cols-2 gap-4"> <div> <label for="rubro">Rubro:</label> <div class="flex items-center space-x-2"> <select id="rubro" class="w-full px-4 py-2 border rounded-lg" required></select> <button type="button" onclick="window.inventarioModule.showAddCategoryModal('rubros','Rubro')" class="px-3 py-2 bg-blue-500 text-white rounded-lg text-xs hover:bg-blue-600">+</button> </div> </div> <div> <label for="segmento">Segmento:</label> <div class="flex items-center space-x-2"> <select id="segmento" class="w-full px-4 py-2 border rounded-lg" required></select> <button type="button" onclick="window.inventarioModule.showAddCategoryModal('segmentos','Segmento')" class="px-3 py-2 bg-blue-500 text-white rounded-lg text-xs hover:bg-blue-600">+</button> </div> </div> <div> <label for="marca">Marca:</label> <div class="flex items-center space-x-2"> <select id="marca" class="w-full px-4 py-2 border rounded-lg" required></select> <button type="button" onclick="window.inventarioModule.showAddCategoryModal('marcas','Marca')" class="px-3 py-2 bg-blue-500 text-white rounded-lg text-xs hover:bg-blue-600">+</button> </div> </div> <div> <label for="presentacion">Presentación:</label> <input type="text" id="presentacion" class="w-full px-4 py-2 border rounded-lg" required> </div> </div> <div class="border-t pt-4 mt-4"> <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4"> <div> <label class="block mb-2 font-medium">Venta por:</label> <div id="ventaPorContainer" class="flex space-x-4"> <label class="flex items-center"><input type="checkbox" id="ventaPorUnd" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> <span class="ml-2">Und.</span></label> <label class="flex items-center"><input type="checkbox" id="ventaPorPaq" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> <span class="ml-2">Paq.</span></label> <label class="flex items-center"><input type="checkbox" id="ventaPorCj" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> <span class="ml-2">Cj.</span></label> </div> </div> <div class="mt-4 md:mt-0"> <label class="flex items-center cursor-pointer"> <input type="checkbox" id="manejaVaciosCheck" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> <span class="ml-2 font-medium">Maneja Vacío</span> </label> <div id="tipoVacioContainer" class="mt-2 hidden"> <label for="tipoVacioSelect" class="block text-sm font-medium">Tipo:</label> <select id="tipoVacioSelect" class="w-full mt-1 px-2 py-1 border rounded-lg text-sm bg-gray-50"> <option value="">Seleccione...</option> <option value="1/4 - 1/3">1/4 - 1/3</option> <option value="ret 350 ml">Ret 350 ml</option> <option value="ret 1.25 Lts">Ret 1.25 Lts</option> </select> </div> </div> </div> <div id="empaquesContainer" class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4"></div> <div id="preciosContainer" class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4"></div> </div> <div class="border-t pt-4 mt-4"> <div class="grid grid-cols-1 md:grid-cols-2 gap-4"> <div> <label for="cantidadActual" class="block font-medium">Stock Inicial (Und. Base):</label> <input type="number" id="cantidadActual" value="0" min="0" class="w-full mt-1 px-4 py-2 border rounded-lg bg-white text-gray-700"> </div> <div> <label for="ivaTipo" class="block font-medium">IVA:</label> <select id="ivaTipo" class="w-full mt-1 px-4 py-2 border rounded-lg bg-white" required> <option value="16">16%</option> <option value="0">Exento 0%</option> </select> </div> </div> </div> <button type="submit" class="w-full px-6 py-3 bg-green-500 text-white font-semibold rounded-lg shadow-md hover:bg-green-600 transition duration-150">Agregar Producto</button> </form> <button id="backToMenuBtn" class="mt-4 w-full px-6 py-3 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500 transition duration-150">Volver</button> </div> </div> </div>`;
 
-        // CORRECCIÓN: Usar la función robusta para no perder categorías
         await Promise.all([
             populateMergedDropdown('rubros', 'rubro', 'rubro', 'Rubro'),
             populateMergedDropdown('segmentos', 'segmento', 'segmento', 'Segmento'),
@@ -626,7 +629,6 @@
         if (_userRole !== 'admin') { _showModal('Acceso Denegado', 'Solo administradores pueden editar definiciones.'); return; } const prod = _inventarioCache.find(p => p.id === productId); if (!prod) { _showModal('Error', 'Producto no encontrado en caché.'); return; } if (_floatingControls) _floatingControls.classList.add('hidden');
         _mainContent.innerHTML = `<div class="p-4 pt-8"> <div class="container mx-auto max-w-2xl"> <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl text-center"> <h2 class="text-2xl font-bold mb-6">Editar Producto</h2> <form id="editProductoForm" class="space-y-4 text-left"> <div class="grid grid-cols-1 md:grid-cols-2 gap-4"> <div> <label for="rubro">Rubro:</label> <div class="flex items-center space-x-2"> <select id="rubro" class="w-full px-4 py-2 border rounded-lg" required></select> <button type="button" onclick="window.inventarioModule.showAddCategoryModal('rubros','Rubro')" class="px-3 py-2 bg-blue-500 text-white rounded-lg text-xs hover:bg-blue-600">+</button> </div> </div> <div> <label for="segmento">Segmento:</label> <div class="flex items-center space-x-2"> <select id="segmento" class="w-full px-4 py-2 border rounded-lg" required></select> <button type="button" onclick="window.inventarioModule.showAddCategoryModal('segmentos','Segmento')" class="px-3 py-2 bg-blue-500 text-white rounded-lg text-xs hover:bg-blue-600">+</button> </div> </div> <div> <label for="marca">Marca:</label> <div class="flex items-center space-x-2"> <select id="marca" class="w-full px-4 py-2 border rounded-lg" required></select> <button type="button" onclick="window.inventarioModule.showAddCategoryModal('marcas','Marca')" class="px-3 py-2 bg-blue-500 text-white rounded-lg text-xs hover:bg-blue-600">+</button> </div> </div> <div> <label for="presentacion">Presentación:</label> <input type="text" id="presentacion" class="w-full px-4 py-2 border rounded-lg" required> </div> </div> <div class="border-t pt-4 mt-4"> <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4"> <div> <label class="block mb-2 font-medium">Venta por:</label> <div id="ventaPorContainer" class="flex space-x-4"> <label class="flex items-center"><input type="checkbox" id="ventaPorUnd" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> <span class="ml-2">Und.</span></label> <label class="flex items-center"><input type="checkbox" id="ventaPorPaq" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> <span class="ml-2">Paq.</span></label> <label class="flex items-center"><input type="checkbox" id="ventaPorCj" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> <span class="ml-2">Cj.</span></label> </div> </div> <div class="mt-4 md:mt-0"> <label class="flex items-center cursor-pointer"> <input type="checkbox" id="manejaVaciosCheck" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> <span class="ml-2 font-medium">Maneja Vacío</span> </label> <div id="tipoVacioContainer" class="mt-2 hidden"> <label for="tipoVacioSelect" class="block text-sm font-medium">Tipo:</label> <select id="tipoVacioSelect" class="w-full mt-1 px-2 py-1 border rounded-lg text-sm bg-gray-50"> <option value="">Seleccione...</option> <option value="1/4 - 1/3">1/4 - 1/3</option> <option value="ret 350 ml">Ret 350 ml</option> <option value="ret 1.25 Lts">Ret 1.25 Lts</option> </select> </div> </div> </div> <div id="empaquesContainer" class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4"></div> <div id="preciosContainer" class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4"></div> </div> <div class="border-t pt-4 mt-4"> <div class="grid grid-cols-1 md:grid-cols-2 gap-4"> <div> <label for="cantidadActual" class="block font-medium">Stock Actual (Und. Base):</label> <input type="number" id="cantidadActual" value="${prod.cantidadUnidades||0}" class="w-full mt-1 px-4 py-2 border rounded-lg bg-gray-100 text-gray-700" readonly title="La cantidad se modifica en 'Ajuste Masivo'"> <p class="text-xs text-gray-500 mt-1">Modificar en "Ajuste Masivo".</p> </div> <div> <label for="ivaTipo" class="block font-medium">IVA:</label> <select id="ivaTipo" class="w-full mt-1 px-4 py-2 border rounded-lg bg-white" required> <option value="16">16%</option> <option value="0">Exento 0%</option> </select> </div> </div> </div> <button type="submit" class="w-full px-6 py-3 bg-blue-500 text-white font-semibold rounded-lg shadow-md hover:bg-blue-600 transition duration-150">Guardar Cambios y Propagar</button> </form> <button id="backToModifyDeleteBtn" class="mt-4 w-full px-6 py-3 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500 transition duration-150">Volver</button> </div> </div> </div>`;
 
-        // CORRECCIÓN: Usar la función robusta
         await Promise.all([
              populateMergedDropdown('rubros', 'rubro', 'rubro', 'Rubro', prod.rubro),
              populateMergedDropdown('segmentos', 'segmento', 'segmento', 'Segmento', prod.segmento),
@@ -1084,7 +1086,6 @@
         try {
             const marcasRef = _collection(_db, `artifacts/${_appId}/users/${_userId}/marcas`);
             const snapshot = await _getDocs(marcasRef);
-            // Fetch productOrder as well
             _marcasCache = snapshot.docs.map(doc => ({ id: doc.id, name: doc.data().name, productOrder: doc.data().productOrder || [] }));
             return _marcasCache;
         } catch (error) { console.error("Error cargando marcas:", error); return []; }
@@ -1096,18 +1097,15 @@
         container.innerHTML = `<p class="text-gray-500 text-center">Cargando datos maestros...</p>`;
         
         try {
-            // 1. Obtener segmentos definidos en DB
             const segmentosRef = _collection(_db, `artifacts/${_appId}/users/${_userId}/segmentos`);
             let segSnapshot = await _getDocs(segmentosRef);
             let allSegments = segSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-            // 2. Obtener segmentos presentes en el inventario actual
             const inventorySegments = new Set();
             _inventarioCache.forEach(p => {
                 if (p.segmento) inventorySegments.add(p.segmento);
             });
 
-            // 3. Fusionar listas
             const segmentMap = new Map();
             allSegments.forEach(seg => segmentMap.set(seg.name, seg));
 
@@ -1124,15 +1122,12 @@
                 }
             });
 
-            // Ordenar Segmentos
             allSegments.sort((a, b) => (a.orden ?? 9999) - (b.orden ?? 9999));
 
             const allMarcas = await getAllMarcas();
             const marcasMap = new Map();
-            // Corrección: Usar uppercase para consistencia
             allMarcas.forEach(m => marcasMap.set((m.name || '').trim().toUpperCase(), m));
 
-            // Filtrar productos por rubro si aplica
             let prodsEnRubro = _inventarioCache;
             if (rubroFiltro) {
                 prodsEnRubro = prodsEnRubro.filter(p => p.rubro === rubroFiltro);
@@ -1203,33 +1198,39 @@
                         `;
 
                         const prodList = li.querySelector('.productos-list');
-                        // Filtrar asegurando el formato
                         const prods = prodsEnRubro.filter(p => p.segmento === seg.name && (p.marca || '').trim().toUpperCase() === marcaName);
                         
                         const prodOrderPref = marcaData.productOrder || [];
                         prods.sort((a, b) => {
-                            const indexA = prodOrderPref.indexOf(a.id);
-                            const indexB = prodOrderPref.indexOf(b.id);
+                            // --- AQUÍ ESTÁ LA MAGIA: Búsqueda por Nombre de Presentación ---
+                            const presA = (a.presentacion || '').trim();
+                            const presB = (b.presentacion || '').trim();
+                            
+                            const indexA = prodOrderPref.indexOf(presA);
+                            const indexB = prodOrderPref.indexOf(presB);
+                            
                             if (indexA !== -1 && indexB !== -1) return indexA - indexB;
                             if (indexA !== -1) return -1;
                             if (indexB !== -1) return 1;
-                            // EMPATE NOMBRES
-                            const nComp = (a.presentacion || '').localeCompare(b.presentacion || '');
+                            
+                            // Desempate alfabético si son nuevos o no están en el array
+                            const nComp = presA.localeCompare(presB);
                             if (nComp !== 0) return nComp;
-                            // DESEMPATE ID
+                            // En el raro caso de nombres idénticos, desempatar por ID (que no importará visualmente)
                             return (a.id || '').localeCompare(b.id || '');
                         });
 
                         prods.forEach(p => {
                             const pLi = document.createElement('li');
                             pLi.dataset.id = p.id;
+                            // NUEVO: Guardamos la presentación para usarla en el guardado
+                            pLi.dataset.presentacion = (p.presentacion || '').trim();
                             pLi.dataset.type = 'producto';
                             pLi.className = 'producto-item flex items-center p-2 bg-gray-50 border border-gray-200 rounded text-sm hover:bg-amber-50 transition-colors';
                             
                             pLi.innerHTML = `
                                 <span class="cursor-grab mr-3 drag-handle-prod px-2 py-1 bg-white hover:bg-gray-200 text-gray-400 hover:text-gray-700 rounded shadow-sm" draggable="true">↕</span>
                                 <span class="flex-grow font-medium text-gray-800">${p.presentacion}</span>
-                                <span class="text-[10px] text-gray-400 font-mono hidden md:block" title="ID Único">ID:${p.id.slice(0,5)}</span>
                             `;
                             prodList.appendChild(pLi);
                         });
@@ -1351,7 +1352,6 @@
         const orderedSegIds = []; 
         const tempToRealIdMap = {};
         
-        // --- FIX CRÍTICO: Acumulador robusto usando nombres de marca ---
         const brandAccumulator = new Map(); 
 
         // 1. Recorrer Segmentos
@@ -1377,13 +1377,12 @@
                 marcaOrder: marcaOrder 
             }, { merge: true });
 
-            // 3. Acumular orden de Productos por Marca (agrupando por nombre real)
+            // 3. Acumular orden de Productos por Marca (agrupando por nombre real de Presentación)
             marcaItems.forEach(mItem => {
                 const mName = mItem.dataset.name;
                 const nameKey = mName.trim().toUpperCase();
 
                 if (!brandAccumulator.has(nameKey)) {
-                    // Buscar ID real si existe
                     let mId = mItem.dataset.id;
                     if (mId.startsWith('temp_') && !tempToRealIdMap[mId]) {
                         tempToRealIdMap[mId] = _doc(_collection(_db, `artifacts/${_appId}/users/${_userId}/marcas`)).id;
@@ -1394,10 +1393,10 @@
                 }
 
                 const prodItems = mItem.querySelectorAll('.productos-list .producto-item');
-                const pIds = Array.from(prodItems).map(pi => pi.dataset.id);
+                // NUEVO Y CRÍTICO: Guardar el texto de presentacion, NO el ID de Firebase.
+                const pNames = Array.from(prodItems).map(pi => pi.dataset.presentacion);
                 
-                // Concatenar IDs al array maestro de esta marca
-                brandAccumulator.get(nameKey).order.push(...pIds);
+                brandAccumulator.get(nameKey).order.push(...pNames);
             });
         });
 
@@ -1405,7 +1404,7 @@
         brandAccumulator.forEach((data, nameKey) => {
             batch.set(_doc(_db, `artifacts/${_appId}/users/${_userId}/marcas`, data.id), { 
                 name: data.name, 
-                productOrder: data.order 
+                productOrder: data.order // Ahora guarda array de nombres
             }, { merge: true });
         });
 
@@ -1426,7 +1425,7 @@
                  }
             }
 
-            _showModal('Éxito', `Orden guardado perfectamente. Los productos con nombres idénticos ahora respetarán esta posición.`, showInventarioSubMenu);
+            _showModal('Éxito', `Orden guardado perfectamente. Las presentaciones resistirán futuras importaciones.`, showInventarioSubMenu);
         } catch (error) {
             console.error("Error al guardar orden:", error);
             _showModal('Error', `Fallo al guardar: ${error.message}`);
