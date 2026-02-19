@@ -154,16 +154,18 @@
                 _globalSortCache.segmentos = {};
                 sSnap.forEach(d => _globalSortCache.segmentos[d.data().name] = { 
                     orden: d.data().orden ?? 9999, 
-                    marcaOrder: d.data().marcaOrder || [] // Array de nombres de marcas ordenadas
+                    marcaOrder: d.data().marcaOrder || [] 
                 });
 
                 _globalSortCache.marcas = {};
-                mSnap.forEach(d => _globalSortCache.marcas[d.data().name] = { 
-                    productOrder: d.data().productOrder || [] // Array de IDs de productos ordenados
+                mSnap.forEach(d => {
+                    // FIX: Clave en mayúsculas para evitar problemas de espacios o capitalización
+                    const nameKey = (d.data().name || '').trim().toUpperCase();
+                    _globalSortCache.marcas[nameKey] = { 
+                        productOrder: d.data().productOrder || [] 
+                    };
                 });
                 
-                console.log("Sort Cache Loaded:", _globalSortCache); // DEBUG
-
             } catch (e) { 
                 console.warn("Error cargando datos de ordenamiento:", e);
                 // Fallback básico
@@ -199,11 +201,8 @@
                         if (segData && segData.marcaOrder) {
                             const idxA = segData.marcaOrder.indexOf(safeA.marca);
                             const idxB = segData.marcaOrder.indexOf(safeB.marca);
-                            // Si ambos están en la lista personalizada, usar índice
                             if (idxA !== -1 && idxB !== -1) res = idxA - idxB;
-                            // Si solo A está, va antes
                             else if (idxA !== -1) res = -1;
-                            // Si solo B está, va antes
                             else if (idxB !== -1) res = 1;
                         }
                     }
@@ -212,14 +211,14 @@
                 else if (key === 'presentacion') {
                     // Ordenar Productos dentro de su Marca (si comparten marca)
                     if (safeA.marca === safeB.marca) {
-                        const marcaData = _globalSortCache.marcas[safeA.marca];
+                        // FIX: Buscar asegurando el formato
+                        const marcaKey = (safeA.marca || '').trim().toUpperCase();
+                        const marcaData = _globalSortCache.marcas[marcaKey];
+                        
                         if (marcaData && marcaData.productOrder) {
                             const idxA = marcaData.productOrder.indexOf(safeA.id);
                             const idxB = marcaData.productOrder.indexOf(safeB.id);
                             
-                            // Debug log for checking why items are not sorting correctly
-                            // if (safeA.marca === 'POLAR') console.log(`Sorting ${safeA.presentacion} vs ${safeB.presentacion}: ${idxA} vs ${idxB}`);
-
                             if (idxA !== -1 && idxB !== -1) res = idxA - idxB;
                             else if (idxA !== -1) res = -1;
                             else if (idxB !== -1) res = 1;
@@ -506,7 +505,6 @@
                 <tbody>`;
 
         let lastHeaderKey = null;
-        // CORRECCIÓN: Usar la preferencia de la caché global, no una variable fantasma
         const firstSortKey = _globalSortCache.preference ? _globalSortCache.preference[0] : 'segmento';
 
         productosFiltrados.forEach(p => {
@@ -942,7 +940,7 @@
                         </div>
                         <div class="mt-6 flex flex-col sm:flex-row gap-4">
                             <button id="backToInventarioBtn" class="w-full px-6 py-3 bg-gray-400 text-white rounded-lg shadow-md hover:bg-gray-500">Volver</button>
-                            <button id="saveRecargaBtn" class="w-full px-6 py-3 bg-green-600 text-white font-bold rounded-lg shadow-md hover:bg-green-600">Confirmar Recarga</button>
+                            <button id="saveRecargaBtn" class="w-full px-6 py-3 bg-green-600 text-white font-bold rounded-lg shadow-md hover:bg-green-700">Confirmar Recarga</button>
                         </div>
                     </div>
                 </div>
@@ -1508,8 +1506,10 @@
         const orderedSegIds = []; 
         const currentSegmentDocs = {}; 
         
-        // --- FIX: Map to track temp IDs to real IDs for propagation ---
         const tempToRealIdMap = {};
+        
+        // --- FIX CRÍTICO: Acumulador para evitar sobreescribir marcas ---
+        const brandProductsAccumulator = new Map(); 
 
         try {
             const segsRef = _collection(_db, `artifacts/${_appId}/users/${_userId}/segmentos`);
@@ -1528,7 +1528,7 @@
             if (segId.startsWith('temp_')) {
                 segRef = _doc(_collection(_db, `artifacts/${_appId}/users/${_userId}/segmentos`));
                 const newId = segRef.id;
-                tempToRealIdMap[segId] = newId; // Track mapping
+                tempToRealIdMap[segId] = newId; 
                 segId = newId;
                 
                 batch.set(segRef, { name: segName, orden: index });
@@ -1558,28 +1558,37 @@
                 marcaOrderChanged = true;
             }
 
-            // 3. Order Products within Brands
+            // 3. Acumular Order Products within Brands
+            // (Para no sobreescribir si la marca existe en varios segmentos)
             marcaItems.forEach(mItem => {
                 let mId = mItem.dataset.marcaId;
                 const mName = mItem.dataset.marcaName;
                 const prodItems = mItem.querySelectorAll('.productos-sortable-list .producto-item');
                 const newProdOrder = Array.from(prodItems).map(pi => pi.dataset.productId);
                 
-                let mRef;
                 if (mId.startsWith('temp_')) {
-                    mRef = _doc(_collection(_db, `artifacts/${_appId}/users/${_userId}/marcas`));
-                    const newMId = mRef.id;
-                    tempToRealIdMap[mId] = newMId; // Track mapping
-                    mId = newMId;
-
-                    batch.set(mRef, { name: mName, productOrder: newProdOrder });
-                    productOrderChanged = true;
-                } else {
-                    mRef = _doc(_db, `artifacts/${_appId}/users/${_userId}/marcas`, mId);
-                    batch.update(mRef, { productOrder: newProdOrder });
-                    productOrderChanged = true;
+                    if (!tempToRealIdMap[mId]) {
+                        const mRef = _doc(_collection(_db, `artifacts/${_appId}/users/${_userId}/marcas`));
+                        tempToRealIdMap[mId] = mRef.id;
+                    }
+                    mId = tempToRealIdMap[mId];
                 }
+
+                // Guardar en el acumulador en lugar de ejecutar el batch directamente
+                if (!brandProductsAccumulator.has(mId)) {
+                    brandProductsAccumulator.set(mId, { name: mName, order: [] });
+                }
+                // Añadimos los productos de este segmento al orden maestro de la marca
+                brandProductsAccumulator.get(mId).order.push(...newProdOrder);
             });
+        });
+
+        // 4. Escribir las Marcas Acumuladas en el Batch
+        brandProductsAccumulator.forEach((data, mId) => {
+            const mRef = _doc(_db, `artifacts/${_appId}/users/${_userId}/marcas`, mId);
+            // set con merge es seguro tanto si el doc es nuevo como si ya existía
+            batch.set(mRef, { name: data.name, productOrder: data.order }, { merge: true });
+            productOrderChanged = true;
         });
 
         if (!segOrderChanged && !marcaOrderChanged && !productOrderChanged) {
@@ -1601,7 +1610,6 @@
                  
                  // 1. Propagate Segments
                  for (const segId of orderedSegIds) {
-                      // Note: orderedSegIds already has real IDs because we pushed the real ID in the loop above
                       try {
                           const segRef=_doc(_db,`artifacts/${_appId}/users/${_userId}/segmentos`,segId);
                           const segSnap=await _getDoc(segRef); 
@@ -1614,18 +1622,8 @@
                      }
                  }
 
-                 // 2. Propagate Brands
-                 const allMarcaItems = document.querySelectorAll('.marca-container');
-                 const uniqueBrandIdsToPropagate = new Set();
-
-                 for (const mItem of allMarcaItems) {
-                     const domId = mItem.dataset.marcaId;
-                     // Resolve ID using map if it was temp, otherwise use existing
-                     const realId = tempToRealIdMap[domId] || domId;
-                     uniqueBrandIdsToPropagate.add(realId);
-                 }
-                 
-                 for (const mId of uniqueBrandIdsToPropagate) {
+                 // 2. Propagate Brands (Usando las keys del acumulador que ya son IDs reales)
+                 for (const mId of brandProductsAccumulator.keys()) {
                      try {
                          const mRef=_doc(_db,`artifacts/${_appId}/users/${_userId}/marcas`,mId);
                          const mSnap=await _getDoc(mRef);
