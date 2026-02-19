@@ -13,6 +13,7 @@
 
     let _lastFilters = { searchTerm: '', rubro: '', segmento: '', marca: '' };
     let _recargaTempState = {}; 
+    let _marcasCache = null; // <-- LÍNEA RESTAURADA PARA ARREGLAR EL ERROR
 
     // --- CACHÉ DE ORDENAMIENTO GLOBAL ---
     let _globalSortCache = {
