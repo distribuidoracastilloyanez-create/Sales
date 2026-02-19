@@ -49,7 +49,7 @@
         _getDoc = dependencies.getDoc;
         _increment = dependencies.increment; 
         
-        console.log("Módulo Inventario FASE 2 Inicializado. Public ID:", PUBLIC_DATA_ID);
+        console.log("Módulo Inventario Inicializado. Public ID:", PUBLIC_DATA_ID);
     };
 
     function startMainInventarioListener(callback) {
@@ -101,7 +101,7 @@
     }
 
     // ==============================================================================
-    // --- LÓGICA DE ORDENAMIENTO (AHORA USA ID COMPUESTO: RUBRO|SEGMENTO|MARCA|PRES) ---
+    // --- LÓGICA MAESTRA DE ORDENAMIENTO (Basado 100% en ID único) ---
     // ==============================================================================
     window.getGlobalProductSortFunction = async () => {
         if (!_globalSortCache.rubros || !_globalSortCache.segmentos || !_globalSortCache.marcas || !_globalSortCache.preference) {
@@ -179,12 +179,9 @@
                         const marcaData = _globalSortCache.marcas[marcaKeyA];
                         
                         if (marcaData && marcaData.productOrder) {
-                            // --- AQUÍ ESTÁ LA SOLUCIÓN: Usar la Clave Compuesta para desempatar ---
-                            const compA = `${safeA.rubro || ''}|${safeA.segmento || ''}|${safeA.marca || ''}|${safeA.presentacion || ''}`.toUpperCase();
-                            const compB = `${safeB.rubro || ''}|${safeB.segmento || ''}|${safeB.marca || ''}|${safeB.presentacion || ''}`.toUpperCase();
-                            
-                            const idxA = marcaData.productOrder.indexOf(compA);
-                            const idxB = marcaData.productOrder.indexOf(compB);
+                            // MAGIA: Búsqueda exacta por ID Único para evitar empates de nombre
+                            const idxA = marcaData.productOrder.indexOf(safeA.id);
+                            const idxB = marcaData.productOrder.indexOf(safeB.id);
                             
                             if (idxA !== -1 && idxB !== -1) res = idxA - idxB;
                             else if (idxA !== -1) res = -1;
@@ -192,6 +189,7 @@
                         }
                     }
                     if (res === 0) res = (safeA.presentacion || '').localeCompare(safeB.presentacion || '');
+                    if (res === 0) res = (safeA.id || '').localeCompare(safeB.id || ''); // Desempate final
                 }
                 if (res !== 0) return res;
             }
@@ -205,7 +203,7 @@
         if (window.ventasModule?.invalidateCache) window.ventasModule.invalidateCache();
     }
 
-    // --- FUNCIÓN HÍBRIDA PARA POBLAR DROPDOWNS ---
+    // --- FUNCIÓN HÍBRIDA PARA POBLAR DROPDOWNS (SOLUCIONA EL SELECT VACÍO) ---
     async function populateMergedDropdown(collectionName, selectId, itemKey, defaultLabel, currentValParam = null) {
         const select = document.getElementById(selectId);
         if (!select) return;
@@ -294,13 +292,10 @@
         const baseRender = () => renderProductosList('productosListContainer', !isAdmin);
         const { updateDependentDropdowns } = setupFiltros('modify', baseRender);
 
-        const rubroSelect = document.getElementById('modify-filter-rubro');
-        if (rubroSelect) rubroSelect.value = _lastFilters.rubro || '';
-
         let isFirstLoad = true;
         const smartListenerCallback = async () => {
             await baseRender();
-            populateMergedDropdown('rubros', 'modify-filter-rubro', 'rubro', 'Todos'); 
+            populateMergedDropdown('rubros', 'modify-filter-rubro', 'rubro', 'Todos', _lastFilters.rubro); 
             if (isFirstLoad && _inventarioCache.length > 0) {
                 updateDependentDropdowns('init');
                 await baseRender();
@@ -400,7 +395,6 @@
             return textMatch && rubroMatch && segmentoMatch && marcaMatch;
         });
 
-        // Ordenamos toda la lista
         const sortFunction = await window.getGlobalProductSortFunction();
         productosFiltrados.sort(sortFunction);
 
@@ -414,7 +408,6 @@
         
         let lastSegmento = null;
         
-        // Agrupación visual siempre por Segmento (como se muestra en la imagen)
         const sortKeys = _globalSortCache.preference || ['segmento', 'marca', 'presentacion'];
         const firstSortKey = sortKeys[0] || 'segmento';
 
@@ -461,19 +454,11 @@
         
         _mainContent.innerHTML = `<div class="p-4 pt-8"> <div class="container mx-auto max-w-2xl"> <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl text-center"> <h2 class="text-2xl font-bold mb-6">Agregar Nuevo Producto</h2> <form id="addProductoForm" class="space-y-4 text-left"> <div class="grid grid-cols-1 md:grid-cols-2 gap-4"> <div> <label for="rubro">Rubro:</label> <div class="flex items-center space-x-2"> <select id="rubro" class="w-full px-4 py-2 border rounded-lg" required></select> <button type="button" onclick="window.inventarioModule.showAddCategoryModal('rubros','Rubro')" class="px-3 py-2 bg-blue-500 text-white rounded-lg text-xs hover:bg-blue-600">+</button> </div> </div> <div> <label for="segmento">Segmento:</label> <div class="flex items-center space-x-2"> <select id="segmento" class="w-full px-4 py-2 border rounded-lg" required></select> <button type="button" onclick="window.inventarioModule.showAddCategoryModal('segmentos','Segmento')" class="px-3 py-2 bg-blue-500 text-white rounded-lg text-xs hover:bg-blue-600">+</button> </div> </div> <div> <label for="marca">Marca:</label> <div class="flex items-center space-x-2"> <select id="marca" class="w-full px-4 py-2 border rounded-lg" required></select> <button type="button" onclick="window.inventarioModule.showAddCategoryModal('marcas','Marca')" class="px-3 py-2 bg-blue-500 text-white rounded-lg text-xs hover:bg-blue-600">+</button> </div> </div> <div> <label for="presentacion">Presentación:</label> <input type="text" id="presentacion" class="w-full px-4 py-2 border rounded-lg" required> </div> </div> <div class="border-t pt-4 mt-4"> <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4"> <div> <label class="block mb-2 font-medium">Venta por:</label> <div id="ventaPorContainer" class="flex space-x-4"> <label class="flex items-center"><input type="checkbox" id="ventaPorUnd" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> <span class="ml-2">Und.</span></label> <label class="flex items-center"><input type="checkbox" id="ventaPorPaq" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> <span class="ml-2">Paq.</span></label> <label class="flex items-center"><input type="checkbox" id="ventaPorCj" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> <span class="ml-2">Cj.</span></label> </div> </div> <div class="mt-4 md:mt-0"> <label class="flex items-center cursor-pointer"> <input type="checkbox" id="manejaVaciosCheck" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> <span class="ml-2 font-medium">Maneja Vacío</span> </label> <div id="tipoVacioContainer" class="mt-2 hidden"> <label for="tipoVacioSelect" class="block text-sm font-medium">Tipo:</label> <select id="tipoVacioSelect" class="w-full mt-1 px-2 py-1 border rounded-lg text-sm bg-gray-50"> <option value="">Seleccione...</option> <option value="1/4 - 1/3">1/4 - 1/3</option> <option value="ret 350 ml">Ret 350 ml</option> <option value="ret 1.25 Lts">Ret 1.25 Lts</option> </select> </div> </div> </div> <div id="empaquesContainer" class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4"></div> <div id="preciosContainer" class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4"></div> </div> <div class="border-t pt-4 mt-4"> <div class="grid grid-cols-1 md:grid-cols-2 gap-4"> <div> <label for="cantidadActual" class="block font-medium">Stock Inicial (Und. Base):</label> <input type="number" id="cantidadActual" value="0" min="0" class="w-full mt-1 px-4 py-2 border rounded-lg bg-white text-gray-700"> </div> <div> <label for="ivaTipo" class="block font-medium">IVA:</label> <select id="ivaTipo" class="w-full mt-1 px-4 py-2 border rounded-lg bg-white" required> <option value="16">16%</option> <option value="0">Exento 0%</option> </select> </div> </div> </div> <button type="submit" class="w-full px-6 py-3 bg-green-500 text-white font-semibold rounded-lg shadow-md hover:bg-green-600 transition duration-150">Agregar Producto</button> </form> <button id="backToMenuBtn" class="mt-4 w-full px-6 py-3 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500 transition duration-150">Volver</button> </div> </div> </div>`;
 
-        // CORRECCIÓN: Usar la función que lee tanto de base de datos como de Excel importado
-        const smartListenerCallback = async () => {
-            const rVal = document.getElementById('rubro')?.value || null;
-            const sVal = document.getElementById('segmento')?.value || null;
-            const mVal = document.getElementById('marca')?.value || null;
-            await Promise.all([
-                populateMergedDropdown('rubros', 'rubro', 'rubro', 'Rubro', rVal),
-                populateMergedDropdown('segmentos', 'segmento', 'segmento', 'Segmento', sVal),
-                populateMergedDropdown('marcas', 'marca', 'marca', 'Marca', mVal)
-            ]);
-        };
-
-        startMainInventarioListener(smartListenerCallback);
+        await Promise.all([
+            populateMergedDropdown('rubros', 'rubro', 'rubro', 'Rubro'),
+            populateMergedDropdown('segmentos', 'segmento', 'segmento', 'Segmento'),
+            populateMergedDropdown('marcas', 'marca', 'marca', 'Marca')
+        ]);
 
         const ventaPorContainer=document.getElementById('ventaPorContainer');
         const preciosContainer=document.getElementById('preciosContainer');
@@ -895,9 +880,11 @@
                 <tbody>`;
         
         let lastSegmento = null;
+        const sortKeys = _globalSortCache.preference || ['segmento', 'marca', 'presentacion'];
+        const firstSortKey = sortKeys[0] || 'segmento';
         
         productos.forEach(p => {
-            const currentSegmento = p.segmento || `Sin Segmento`;
+            const currentSegmento = p[firstSortKey] || `Sin ${firstSortKey}`;
             if (currentSegmento !== lastSegmento) { 
                 lastSegmento = currentSegmento; 
                 tableHTML += `<tr><td colspan="3" class="py-2 px-4 bg-gray-300 font-bold text-gray-800 sticky top-[calc(theme(height.10))] z-[9]">${lastSegmento}</td></tr>`; 
@@ -1210,7 +1197,7 @@
                         
                         const prodOrderPref = marcaData.productOrder || [];
                         prods.sort((a, b) => {
-                            // --- AQUÍ ESTÁ LA SOLUCIÓN: Identificador Compuesto para Ordenar ---
+                            // --- SOLUCIÓN: Identificador Compuesto Infalible ---
                             const compA = `${a.rubro || ''}|${a.segmento || ''}|${a.marca || ''}|${a.presentacion || ''}`.toUpperCase();
                             const compB = `${b.rubro || ''}|${b.segmento || ''}|${b.marca || ''}|${b.presentacion || ''}`.toUpperCase();
                             
@@ -1223,6 +1210,7 @@
                             
                             const nComp = (a.presentacion || '').localeCompare(b.presentacion || '');
                             if (nComp !== 0) return nComp;
+                            // En el raro caso de que TODO sea igual (hasta el nombre), desempatar por ID de Firestore
                             return (a.id || '').localeCompare(b.id || '');
                         });
 
@@ -1230,7 +1218,7 @@
                             const pLi = document.createElement('li');
                             pLi.dataset.id = p.id;
                             
-                            // NUEVO Y CRÍTICO: El dataset ahora guarda la clave compuesta completa
+                            // GUARDAMOS LA CLAVE COMPUESTA EN EL HTML
                             const compKey = `${p.rubro || ''}|${p.segmento || ''}|${p.marca || ''}|${p.presentacion || ''}`.toUpperCase();
                             pLi.dataset.compositekey = compKey;
                             
@@ -1361,6 +1349,15 @@
         const orderedSegIds = []; 
         const tempToRealIdMap = {};
         
+        // Obtener estado anterior de las marcas para evitar sobreescribir productos ocultos
+        const currentMarcaDocs = {};
+        try {
+            const marcasSnap = await _getDocs(_collection(_db, `artifacts/${_appId}/users/${_userId}/marcas`));
+            marcasSnap.docs.forEach(doc => { currentMarcaDocs[doc.id] = doc.data(); });
+        } catch (e) {
+            console.warn("No se pudieron precargar datos de marcas:", e);
+        }
+
         const brandAccumulator = new Map(); 
 
         // 1. Recorrer Segmentos
@@ -1386,7 +1383,7 @@
                 marcaOrder: marcaOrder 
             }, { merge: true });
 
-            // 3. Acumular orden de Productos por Marca (agrupando por nombre real de Presentación)
+            // 3. Acumular orden de Productos por Marca (usando la clave compuesta)
             marcaItems.forEach(mItem => {
                 const mName = mItem.dataset.name;
                 const nameKey = mName.trim().toUpperCase();
@@ -1402,18 +1399,28 @@
                 }
 
                 const prodItems = mItem.querySelectorAll('.productos-list .producto-item');
-                // NUEVO Y CRÍTICO: Recoger los IDs compuestos para no perder el orden nunca más
+                // Tomar Claves Compuestas del HTML
                 const pKeys = Array.from(prodItems).map(pi => pi.dataset.compositekey);
                 
                 brandAccumulator.get(nameKey).order.push(...pKeys);
             });
         });
 
-        // 4. Guardar Marcas acumuladas
+        // 4. Guardar Marcas acumuladas (preservando ocultos por el filtro de rubro)
         brandAccumulator.forEach((data, nameKey) => {
+            const oldData = currentMarcaDocs[data.id] || {};
+            const oldOrder = oldData.productOrder || [];
+            
+            const newlyOrderedKeys = data.order;
+            const newOrderSet = new Set(newlyOrderedKeys);
+
+            // Mantener los productos que no estaban en la pantalla actual (para no borrarlos)
+            const hiddenKeys = oldOrder.filter(k => !newOrderSet.has(k));
+            const finalOrder = [...newlyOrderedKeys, ...hiddenKeys];
+
             batch.set(_doc(_db, `artifacts/${_appId}/users/${_userId}/marcas`, data.id), { 
                 name: data.name, 
-                productOrder: data.order // Ahora guarda array de claves compuestas
+                productOrder: finalOrder
             }, { merge: true });
         });
 
@@ -1434,7 +1441,7 @@
                  }
             }
 
-            _showModal('Éxito', `Orden guardado perfectamente. El sistema ahora recuerda la jerarquía exacta de cada presentación.`, showInventarioSubMenu);
+            _showModal('Éxito', `Orden guardado perfectamente. Los productos con nombres idénticos ahora respetarán esta posición gracias a la firma compuesta.`, showInventarioSubMenu);
         } catch (error) {
             console.error("Error al guardar orden:", error);
             _showModal('Error', `Fallo al guardar: ${error.message}`);
