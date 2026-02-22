@@ -313,20 +313,18 @@
             const bgClass = amount > 0 ? 'bg-white' : 'bg-green-50';
             const safeName = client.name.replace(/'/g, "\\'").replace(/"/g, '&quot;');
             
-            // HTML para mostrar el total en bolívares en la lista principal, más compacto
+            // HTML para mostrar el total en bolívares en la lista principal
             let bsTotalHtml = '';
             if (currentRate > 0 && amount !== 0) {
                 const bsTotal = amount * currentRate;
                 bsTotalHtml = `<p class="text-[11px] text-gray-500 font-semibold leading-tight mt-0.5">Bs. ${bsTotal.toLocaleString('es-VE', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>`;
             }
 
-            // MODO COMPACTO: Padding reducido, texto ligeramente más pequeño, layout optimizado
             html += `
                 <div class="${bgClass} p-3 rounded-lg shadow-sm border border-gray-200 flex flex-col gap-2">
                     <div class="flex justify-between items-start">
                         <div class="max-w-[65%]">
                             <h3 class="font-bold text-gray-800 text-base leading-tight break-words">${client.name}</h3>
-                            ${client.sheetName ? `<span class="text-[10px] text-gray-400">Ref: ${client.sheetName}</span>` : ''}
                         </div>
                         <div class="text-right">
                             <p class="text-[9px] text-gray-500 uppercase font-bold tracking-wider">${amountLabel}</p>
@@ -371,10 +369,10 @@
 
                 if (t.type === 'F') {
                     typeLabel = '🛒 Venta';
-                    // MODO COMPACTO: Botón de lupa circular, sin texto.
+                    // MODO COMPACTO: Botón de lupa circular
                     actionButton = `
                         <button onclick="window.cxcModule.searchSaleDetails('${safeClientName}', '${t.date}', ${t.amount})" 
-                            class="p-1 bg-blue-100 text-blue-700 rounded-full border border-blue-200 hover:bg-blue-200 flex-shrink-0 transition-colors" title="Ver Detalle de Venta">
+                            class="p-1 bg-blue-100 text-blue-700 rounded-full border border-blue-200 hover:bg-blue-200 flex-shrink-0 transition-colors ml-1" title="Ver Detalle de Venta">
                             🔍
                         </button>
                     `;
@@ -403,13 +401,13 @@
                     }
                 }
 
-                // MODO COMPACTO: Fila más delgada (py-1.5), botón y precio en la misma línea.
+                // Fila más delgada (py-1.5), botón y precio en la misma línea superior
                 rowsHTML += `
                     <tr class="border-b hover:bg-gray-50 text-sm">
                         <td class="py-2 px-2 text-gray-600 whitespace-nowrap align-top text-xs">${t.date}</td>
                         <td class="py-2 px-2 font-medium align-top text-xs">${typeLabel}</td>
-                        <td class="py-2 px-2 align-top">
-                            <div class="flex justify-end items-center gap-1.5">
+                        <td class="py-2 px-2 align-top text-right">
+                            <div class="flex justify-end items-center">
                                 <span class="${amountClass} font-bold text-sm">${sign}$${t.amount.toFixed(2)}</span>
                                 ${actionButton}
                             </div>
@@ -422,18 +420,6 @@
             rowsHTML = '<tr><td colspan="3" class="p-4 text-center text-gray-500 text-sm">Sin movimientos detallados.</td></tr>';
         }
 
-        // Obtener la tasa más reciente para calcular el equivalente del Saldo Total
-        const availableDates = Object.keys(_tasasCache).sort();
-        const latestDate = availableDates.length > 0 ? availableDates[availableDates.length - 1] : null;
-        const currentRate = latestDate ? _tasasCache[latestDate] : 0;
-        
-        let clientTotalBsHtml = '';
-        if (currentRate > 0 && client.amount !== 0) {
-            const totalBsVal = client.amount * currentRate;
-            clientTotalBsHtml = `<div class="text-xs text-gray-500 font-semibold mt-0.5 text-right leading-tight">Eqv: Bs. ${totalBsVal.toLocaleString('es-VE', {minimumFractionDigits: 2, maximumFractionDigits: 2})} <span class="text-[9px] font-normal">(Tasa: ${currentRate.toFixed(2)})</span></div>`;
-        }
-
-        // Modal también compactado en el encabezado
         const modalHTML = `
             <div class="text-left">
                 <div class="bg-gray-100 p-3 rounded-lg mb-3 shadow-inner">
@@ -446,7 +432,6 @@
                                 $${client.amount.toLocaleString('en-US', {minimumFractionDigits: 2})}
                             </span>
                         </div>
-                        ${clientTotalBsHtml}
                     </div>
                 </div>
                 
@@ -731,19 +716,15 @@
         _showModal('Subiendo', `Guardando historial de ${clients.length} clientes...`);
         try {
             const updateDate = new Date();
-            // Guardamos localmente primero para asegurar disponibilidad offline inmediata
             await saveToLocalDB(clients); 
             _cxcDataCache = clients;
             localStorage.setItem(LS_KEY_DATE, updateDate.toISOString());
 
-            // Subir a Firebase (Metadata y Lista)
-            // NOTA: Si el archivo es muy grande, esto podría fallar en Firestore, pero ya tenemos la copia local segura en IndexedDB.
             const listRef = _doc(_db, CXC_COLLECTION_PATH, 'list');
             try {
                 await _setDoc(listRef, { clients: clients });
             } catch (docError) {
-                console.warn("No se pudo subir la lista completa a Firestore (posiblemente muy grande). Se mantiene localmente.", docError);
-                // No lanzamos error crítico para que el usuario pueda seguir trabajando con la data local
+                console.warn("No se pudo subir la lista completa a Firestore.", docError);
             }
 
             const metaRef = _doc(_db, CXC_COLLECTION_PATH, 'metadata');
@@ -756,7 +737,6 @@
         }
     }
 
-    // EXPORTAR AL FINAL
     window.cxcModule = {
         showClientDetailsByName,
         searchSaleDetails,
