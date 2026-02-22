@@ -1,9 +1,8 @@
-
 (function() {
     let _db, _userId, _userRole, _appId, _mainContent, _floatingControls;
     let _showMainMenu, _showModal, _activeListeners;
     let _collection, _onSnapshot, _doc, _getDoc, _addDoc, _setDoc, _deleteDoc, _getDocs, _writeBatch, _runTransaction, _query, _where;
-    let _increment; // NUEVO: Necesario para operaciones offline
+    let _increment;
 
     // --- VARIABLES FASE 2 ---
     const PUBLIC_DATA_ID = window.AppConfig.PUBLIC_DATA_ID; 
@@ -19,9 +18,6 @@
     let _tasaCOP = 0;
     let _tasaBs = 0;
     let _monedaActual = 'USD';
-
-    // NOTA ARQUITECTÓNICA: Se eliminó _localSortPreference
-    // El orden ahora es dictado 100% por la Firma Lexicográfica Global.
 
     // Usaremos window.TIPOS_VACIO_GLOBAL si existe, o un default
     const TIPOS_VACIO = window.TIPOS_VACIO_GLOBAL || ["1/4 - 1/3", "ret 350 ml", "ret 1.25 Lts"];
@@ -48,7 +44,7 @@
         _runTransaction = dependencies.runTransaction; 
         _query = dependencies.query;
         _where = dependencies.where;
-        _increment = dependencies.increment; // CRÍTICO: Recibimos increment
+        _increment = dependencies.increment;
 
         if (!_runTransaction) console.error("Error Crítico: 'runTransaction' no disponible en initVentas.");
         if (!_increment) console.warn("Advertencia: 'increment' no disponible. Ventas offline limitadas.");
@@ -108,7 +104,7 @@
         const unsubMaster = _onSnapshot(masterRef, snap => {
             _masterCatalogCache = {};
             snap.forEach(d => { _masterCatalogCache[d.id] = { id: d.id, ...d.data() }; });
-            mergeInventarioCache(); // Fusionar al recibir cambios del maestro
+            mergeInventarioCache(); 
         }, err => console.error("Error Maestro:", err));
 
         // 3. Stock Privado (Inventario Usuario)
@@ -119,10 +115,10 @@
                 const data = d.data();
                 _userStockCache[d.id] = {
                     cantidadUnidades: data.cantidadUnidades || 0,
-                    _legacyData: data // Guardamos todo por si acaso (backward compatibility)
+                    _legacyData: data 
                 };
             });
-            mergeInventarioCache(); // Fusionar al recibir cambios de stock
+            mergeInventarioCache(); 
         }, err => { 
             if (err.code === 'permission-denied' || err.code === 'unauthenticated') return;
             console.error("Error inventario stock:", err); 
@@ -141,14 +137,12 @@
             const stock = _userStockCache[id];
 
             if (master) {
-                // Caso Ideal FASE 2: Definición del Maestro + Stock Privado
                 _inventarioCache.push({
                     ...master,
                     cantidadUnidades: stock ? stock.cantidadUnidades : 0,
                     id: id
                 });
             } else if (stock && stock._legacyData) {
-                // Caso Legacy: Producto solo existe en local
                 _inventarioCache.push({ ...stock._legacyData, id: id });
             }
         });
@@ -185,12 +179,9 @@
         const body = document.getElementById('inventarioTableBody'), rF = document.getElementById('rubroFilter'); if (!body || !rF) return; body.innerHTML = `<tr><td colspan="4" class="text-center text-gray-500">Cargando...</td></tr>`;
         const selRubro = rF.value; const invFilt = _inventarioCache.filter(p => (p.cantidadUnidades || 0) > 0 || _ventaActual.productos[p.id]); let filtInv = selRubro ? invFilt.filter(p => p.rubro === selRubro) : invFilt;
         
-        // 1. Obtener función de ordenamiento global (Inquebrantable desde inventario.js)
         const sortFunc = await window.getGlobalProductSortFunction();
         filtInv.sort(sortFunc);
         
-        // 2. Pasamos el arreglo ya ordenado de manera perfecta a la UI. 
-        // Pasamos 'segmento' como default parameter para que la UI sepa cómo agrupar visualmente en la tabla.
         body.innerHTML = window.ventasUI.getInventoryTableRows(filtInv, _ventaActual.productos, _monedaActual, _tasaCOP, _tasaBs, 'segmento');
         
         updateVentaTotal();
@@ -203,7 +194,6 @@
         let invToShow = _inventarioCache.filter(p => _originalVentaForEdit.productos.some(oP => oP.id === p.id) || (p.cantidadUnidades || 0) > 0);
         if (selRubro) invToShow = invToShow.filter(p => p.rubro === selRubro);
         
-        // 1. Orden Universal
         const sortFunc = await window.getGlobalProductSortFunction(); 
         invToShow.sort(sortFunc);
         
@@ -296,33 +286,40 @@
     function showSharingOptions(venta, productos, vaciosDevueltosPorTipo, tipo, callbackFinal) {
         const modalContent = `<div class="text-center"><h3 class="text-xl font-bold mb-4">Generar ${tipo}</h3><p class="mb-6">Elige formato.</p><div class="space-y-4"><button id="printTextBtn" class="w-full px-6 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600">Imprimir (Texto)</button><button id="shareImageBtn" class="w-full px-6 py-3 bg-green-500 text-white rounded-lg hover:bg-green-600">Compartir (Imagen)</button></div></div>`;
         _showModal('Elige opción', modalContent, null, ''); 
-        document.getElementById('printTextBtn').addEventListener('click', () => { 
-            const rawText = window.ventasUI.getTicketRawText(venta, productos, vaciosDevueltosPorTipo); 
-            handleShareRawText(rawText, callbackFinal); 
-        });
-        document.getElementById('shareImageBtn').addEventListener('click', () => { 
-            const html = window.ventasUI.getTicketHTML(venta, productos, vaciosDevueltosPorTipo, tipo); 
-            handleShareTicket(html, callbackFinal); 
-        });
+        
+        setTimeout(() => {
+            const printBtn = document.getElementById('printTextBtn');
+            const shareBtn = document.getElementById('shareImageBtn');
+            
+            if (printBtn) {
+                printBtn.addEventListener('click', () => { 
+                    const rawText = window.ventasUI.getTicketRawText(venta, productos, vaciosDevueltosPorTipo); 
+                    handleShareRawText(rawText, callbackFinal); 
+                });
+            }
+            if (shareBtn) {
+                shareBtn.addEventListener('click', () => { 
+                    const html = window.ventasUI.getTicketHTML(venta, productos, vaciosDevueltosPorTipo, tipo); 
+                    handleShareTicket(html, callbackFinal); 
+                });
+            }
+        }, 150);
     }
 
     async function _processAndSaveVenta() {
         console.log("Starting _processAndSaveVenta...");
         
-        // 1. Snapshot Check (No crítico para venta, pero necesario para reporte)
         const SNAPSHOT_DOC_PATH = `artifacts/${_appId}/users/${_userId}/config/cargaInicialSnapshot`;
         const snapshotRef = _doc(_db, SNAPSHOT_DOC_PATH);
         try {
             const snapshotDoc = await _getDoc(snapshotRef);
             if (!snapshotDoc.exists()) {
                  if (_inventarioCache && _inventarioCache.length > 0) {
-                     // Si estamos offline, esto se encolará y está bien.
                      await _setDoc(snapshotRef, { inventario: _inventarioCache, fecha: new Date() });
                  }
             }
         } catch (e) { console.warn("Snapshot check failed (non-blocking)", e); }
 
-        // 2. Preparación de Datos
         const prodsParaGuardar = Object.values(_ventaActual.productos);
         if (prodsParaGuardar.length === 0 && Object.values(_ventaActual.vaciosDevueltosPorTipo).every(v => v === 0)) {
              throw new Error("No hay productos ni vacíos para guardar.");
@@ -331,7 +328,6 @@
         const ventaRef = _doc(_collection(_db, `artifacts/${_appId}/users/${_userId}/ventas`));
         const clientRef = _doc(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/clientes`, _ventaActual.cliente.id);
 
-        // 3. Determinar Modo (Online vs Offline)
         const isOffline = !navigator.onLine || localStorage.getItem('manualOfflineMode') === 'true';
         
         if (isOffline) {
@@ -343,15 +339,12 @@
             const itemsVenta = [];
             const vaciosChanges = {};
 
-            // Validación Local estricta contra caché
             for (const p of prodsParaGuardar) {
                 const stockLocal = p.cantidadUnidades || 0; 
                 const qtyNeeded = p.totalUnidadesVendidas || 0;
                 
                 if (qtyNeeded > 0) {
                     if (stockLocal < qtyNeeded) throw new Error(`Stock insuficiente localmente para: ${p.presentacion}`);
-                    
-                    // Restar inventario usando increment (Atómico al sincronizar)
                     const invRef = _doc(_db, `artifacts/${_appId}/users/${_userId}/inventario`, p.id);
                     batch.update(invRef, { cantidadUnidades: _increment(-qtyNeeded) });
                 }
@@ -375,13 +368,11 @@
                 }
             }
 
-            // Calcular cambios de vacíos
             for (const tV in _ventaActual.vaciosDevueltosPorTipo) {
                 const dev = _ventaActual.vaciosDevueltosPorTipo[tV] || 0;
                 if (dev > 0) vaciosChanges[tV] = (vaciosChanges[tV] || 0) - dev;
             }
 
-            // Aplicar cambios de vacíos usando increment
             for (const tV in vaciosChanges) {
                 const ch = vaciosChanges[tV];
                 if (ch !== 0) {
@@ -390,7 +381,6 @@
                 }
             }
 
-            // Guardar Venta
             const ventaDataToSave = {
                 clienteId: _ventaActual.cliente.id,
                 clienteNombre: _ventaActual.cliente.nombreComercial || _ventaActual.cliente.nombrePersonal,
@@ -407,7 +397,6 @@
             return { venta: ventaDataToSave, productos: itemsVenta, vaciosDevueltosPorTipo: ventaDataToSave.vaciosDevueltosPorTipo };
 
         } else {
-            // --- MODO ONLINE (TRANSACTION) ---
             if (!_runTransaction) throw new Error("Dependencia crítica 'runTransaction' no disponible.");
             console.log("Modo Online: Usando Transaction");
 
@@ -428,11 +417,11 @@
 
                     invRefs.forEach((item, index) => {
                         const invDoc = invDocs[index];
-                        if (!invDoc.exists()) throw `Producto ${item.presentacion} no existe en inventario.`;
+                        if (!invDoc.exists()) throw new Error(`Producto ${item.presentacion} no existe en inventario.`);
                         
                         const currentStock = invDoc.data().cantidadUnidades || 0;
                         if (currentStock < item.qty) {
-                            throw `Stock insuficiente para ${item.presentacion}. Disponible: ${currentStock}, Solicitado: ${item.qty}`;
+                            throw new Error(`Stock insuficiente para ${item.presentacion}. Disponible: ${currentStock}, Solicitado: ${item.qty}`);
                         }
 
                         if (item.qty > 0) {
@@ -500,23 +489,33 @@
         }
     }
 
+    // --- CORRECCIÓN CRÍTICA EN GENERACIÓN DE TICKET ---
     async function generarTicket() {
         if (!_ventaActual.cliente) { _showModal('Error', 'Selecciona cliente.'); return; }
         const prods = Object.values(_ventaActual.productos);
         const hayVac = Object.values(_ventaActual.vaciosDevueltosPorTipo).some(c => c > 0);
         if (prods.length === 0 && !hayVac) { _showModal('Error', 'Agrega productos o registra vacíos devueltos.'); return; }
 
+        // Aquí se pasaron de nuevo todos los argumentos correctos al modal
         _showModal('Confirmar Venta', '¿Guardar esta transacción?', async () => {
             _showModal('Progreso', 'Guardando transacción...', null, '', null, false); 
             try {
                 const savedData = await _processAndSaveVenta();
-                showSharingOptions(
-                    { cliente: _ventaActual.cliente, fecha: savedData.venta.fecha }, 
-                    savedData.productos, 
-                    savedData.vaciosDevueltosPorTipo, 
-                    'Nota de Entrega',
-                    () => { _showModal('Éxito', 'Venta registrada y ticket generado/compartido.', showNuevaVentaView); }
-                );
+                
+                // Ocultamos manualmente el modal de progreso antes de lanzar el siguiente
+                const pModal = document.getElementById('modalContainer');
+                if (pModal) pModal.classList.add('hidden');
+                
+                setTimeout(() => {
+                    showSharingOptions(
+                        { cliente: _ventaActual.cliente, fecha: savedData.venta.fecha }, 
+                        savedData.productos, 
+                        savedData.vaciosDevueltosPorTipo, 
+                        'Nota de Entrega',
+                        () => { _showModal('Éxito', 'Venta registrada y ticket generado/compartido.', showNuevaVentaView); }
+                    );
+                }, 300);
+
             } catch (saveError) {
                 console.error("Error al guardar venta:", saveError);
                  const progressModal = document.getElementById('modalContainer'); 
@@ -526,7 +525,7 @@
                 _showModal('Error', `Error al guardar la venta: ${saveError.message || saveError}`);
             }
             return false; 
-        }, 'Sí, guardar', () => { }, true); 
+        }, 'Sí, Generar Ticket', null, true); 
     }
 
     function showVentasTotalesView() {
@@ -894,7 +893,7 @@
                           const invDoc = invMap.get(pId);
                           
                           if (!invDoc) { 
-                              if (deltaU < 0) throw `Producto ${pId} no existe, imposible vender más.`; 
+                              if (deltaU < 0) throw new Error(`Producto ${pId} no existe, imposible vender más.`); 
                               if (deltaU > 0) {
                                   const ref = invRefs.find(r=>r.id===pId).ref;
                                   transaction.set(ref, { 
@@ -910,7 +909,7 @@
                               const pData = invDoc.data();
                               if (deltaU !== 0) {
                                   const currentStock = pData.cantidadUnidades || 0;
-                                  if ((currentStock + deltaU) < 0) throw `Stock insuficiente: ${pData.presentacion}`;
+                                  if ((currentStock + deltaU) < 0) throw new Error(`Stock insuficiente: ${pData.presentacion}`);
                                   transaction.update(invRefs.find(r=>r.id===pId).ref, { cantidadUnidades: currentStock + deltaU });
                               }
 
