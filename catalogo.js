@@ -13,7 +13,8 @@
     let _currentRubros = [];
     let _currentBgImage = '';
     
-    let _marcasCache = [];
+    // NUEVO: Variables para almacenar la jerarquía de grupos (Rubro > Segmento)
+    let _gruposCache = [];
     let _productosAgrupadosCache = {};
     
     // Control de listeners
@@ -39,7 +40,7 @@
         if (!_doc || !_setDoc || !_getDoc || !_showModal || !_onSnapshot) {
             console.error("Catalogo Init Error: Faltan dependencias críticas.");
         }
-        console.log("Módulo Catálogo (Alineado con Coordenadas) inicializado. Public ID:", PUBLIC_DATA_ID);
+        console.log("Módulo Catálogo (Jerárquico) inicializado. Public ID:", PUBLIC_DATA_ID);
     };
 
     window.showCatalogoSubMenu = function() {
@@ -47,12 +48,9 @@
         document.body.classList.remove('catalogo-active');
         document.body.style.removeProperty('--catalogo-bg-image');
         
-        // Limpieza de listeners al volver al menú
         _listenersUnsubscribes.forEach(u => u());
         _listenersUnsubscribes = [];
 
-        // NOTA ARQUITECTÓNICA: Se eliminó el botón "Configurar Orden" ya que ahora
-        // el orden se maneja de forma absoluta visualmente desde el menú de Inventario.
         _mainContent.innerHTML = `
             <div class="p-4 pt-8">
                 <div class="container mx-auto max-w-lg">
@@ -86,12 +84,12 @@
     // ==============================================================================
     window.getGlobalProductSortFunction = async () => {
         return (a, b) => {
-            // 1. Nivel Rubro: Siempre alfabético para que los rubros no se mezclen.
+            // 1. Nivel Rubro
             const rStrA = (a.rubro || 'SIN RUBRO').toUpperCase();
             const rStrB = (b.rubro || 'SIN RUBRO').toUpperCase();
             if (rStrA !== rStrB) return rStrA.localeCompare(rStrB);
 
-            // 2. Nivel Segmento: Por Coordenada visual, si no existe (9999), por orden alfabético estricto.
+            // 2. Nivel Segmento
             const sOrdA = a.ordenSegmento ?? 9999;
             const sOrdB = b.ordenSegmento ?? 9999;
             if (sOrdA !== sOrdB) return sOrdA - sOrdB;
@@ -99,7 +97,7 @@
             const sStrB = (b.segmento || 'SIN SEGMENTO').toUpperCase();
             if (sStrA !== sStrB) return sStrA.localeCompare(sStrB);
 
-            // 3. Nivel Marca: Por Coordenada visual, luego alfabético.
+            // 3. Nivel Marca
             const mOrdA = a.ordenMarca ?? 9999;
             const mOrdB = b.ordenMarca ?? 9999;
             if (mOrdA !== mOrdB) return mOrdA - mOrdB;
@@ -107,7 +105,7 @@
             const mStrB = (b.marca || 'S/M').toUpperCase();
             if (mStrA !== mStrB) return mStrA.localeCompare(mStrB);
 
-            // 4. Nivel Producto: Por Coordenada visual, luego por nombre.
+            // 4. Nivel Producto
             const pOrdA = a.ordenProducto ?? 9999;
             const pOrdB = b.ordenProducto ?? 9999;
             if (pOrdA !== pOrdB) return pOrdA - pOrdB;
@@ -126,7 +124,6 @@
         const tasaInput = document.getElementById('catalogoTasaCopInput'); if (tasaInput) { const savedTasa = localStorage.getItem('tasaCOP'); if (savedTasa) { _catalogoTasaCOP = parseFloat(savedTasa); tasaInput.value = _catalogoTasaCOP; } tasaInput.addEventListener('input', (e) => { _catalogoTasaCOP = parseFloat(e.target.value) || 0; localStorage.setItem('tasaCOP', _catalogoTasaCOP); if (_catalogoMonedaActual === 'COP') renderCatalogo(); }); }
         document.getElementById('backToCatalogoMenuBtn').addEventListener('click', showCatalogoSubMenu); document.getElementById('generateCatalogoImageBtn').addEventListener('click', handleGenerateCatalogoImage); 
         
-        // FASE 2: Iniciar Listeners Híbridos
         startHybridCatalogListener();
     }
 
@@ -155,7 +152,7 @@
                 const data = d.data();
                 _userStockCache[d.id] = {
                     cantidadUnidades: data.cantidadUnidades || 0,
-                    _legacyData: data // Guardamos todo por compatibilidad
+                    _legacyData: data 
                 };
             });
             mergeAndRender();
@@ -173,22 +170,19 @@
             let item = null;
 
             if (master) {
-                // Producto Fase 2: Definición Maestra + Stock Local
                 item = { 
                     ...master, 
                     cantidadUnidades: stock ? (stock.cantidadUnidades || 0) : 0, 
                     id: id 
                 };
             } else if (stock && stock._legacyData) {
-                // Producto Legacy: Definición Local completa
                 item = { ...stock._legacyData, id: id };
             } else if (stock) {
-                 // Fallback
                  item = { ...stock, id: id };
             }
 
-            // Filtrar: Solo mostrar si tiene stock positivo
-            if (item && (item.cantidadUnidades > 0)) {
+            // Mostrar TODOS los productos, independientemente del stock (Tengan 0 o más)
+            if (item) {
                 _inventarioCache.push(item);
             }
         });
@@ -202,45 +196,67 @@
             let prods = [..._inventarioCache]; 
             if (_currentRubros?.length > 0) prods = prods.filter(p => p.rubro && _currentRubros.includes(p.rubro));
             
-            const sortFunc = await window.getGlobalProductSortFunction(); prods.sort(sortFunc);
+            const sortFunc = await window.getGlobalProductSortFunction(); 
+            prods.sort(sortFunc);
             
-            if (prods.length === 0) { cont.innerHTML = `<p class="text-center text-gray-500 p-4">No hay productos con stock en esta categoría.</p>`; _marcasCache = []; _productosAgrupadosCache = {}; return; }
+            if (prods.length === 0) { 
+                cont.innerHTML = `<p class="text-center text-gray-500 p-4">No hay productos en esta categoría.</p>`; 
+                _gruposCache = []; 
+                _productosAgrupadosCache = {}; 
+                return; 
+            }
             
-            const pAgrupados = prods.reduce((acc, p) => { const m = p.marca || 'Sin Marca'; if (!acc[m]) acc[m] = []; acc[m].push(p); return acc; }, {}); 
-            const mOrdenadas = [...new Set(prods.map(p => p.marca || 'Sin Marca'))];
+            // NUEVO: Agrupar por Rubro > Segmento
+            const groupsMap = new Map();
+            prods.forEach(p => {
+                const rName = (p.rubro || 'SIN RUBRO').toUpperCase();
+                const sName = (p.segmento || 'SIN SEGMENTO').toUpperCase();
+                // Si la vista es de un solo rubro, mostrar solo el segmento en el título para que sea más limpio
+                const groupName = _currentRubros.length === 1 ? sName : `${rName} > ${sName}`;
+                
+                if (!groupsMap.has(groupName)) groupsMap.set(groupName, []);
+                groupsMap.get(groupName).push(p);
+            });
             
-            _marcasCache = mOrdenadas; _productosAgrupadosCache = pAgrupados;
+            _gruposCache = Array.from(groupsMap.keys());
+            _productosAgrupadosCache = Object.fromEntries(groupsMap);
             
-            let html = '<div class="space-y-2">'; 
+            let html = '<div class="space-y-4">'; 
             const monLabel = _catalogoMonedaActual === 'COP' ? 'PRECIO (COP)' : 'PRECIO (USD)';
             
-            mOrdenadas.forEach(marca => { 
-                html += `<table class="min-w-full bg-transparent text-sm"> 
+            _gruposCache.forEach(groupName => { 
+                html += `<table class="min-w-full bg-transparent text-sm mb-4"> 
                             <thead class="text-black"> 
-                                <tr><th colspan="2" class="py-1 px-2 md:px-4 bg-gray-100 font-bold text-left text-base rounded-t-lg">${marca}</th></tr> 
+                                <tr><th colspan="2" class="py-1.5 px-2 md:px-4 bg-gray-200 font-black text-left text-base rounded-t-lg border-b-2 border-gray-400 uppercase tracking-wider">${groupName}</th></tr> 
                                 <tr> 
-                                    <th class="py-0.5 px-2 md:px-4 text-left font-semibold text-xs border-b border-gray-300">PRESENTACIÓN (Segmento)</th> 
-                                    <th class="py-0.5 px-2 md:px-4 text-right font-semibold text-xs border-b border-gray-300 price-toggle" onclick="window.toggleCatalogoMoneda()" title="Clic para cambiar">${monLabel} <span class="text-xs">⇆</span></th> 
+                                    <th class="py-1 px-2 md:px-4 text-left font-bold text-xs border-b border-gray-300 text-gray-700 uppercase">Marca - Presentación</th> 
+                                    <th class="py-1 px-2 md:px-4 text-right font-bold text-xs border-b border-gray-300 price-toggle cursor-pointer hover:bg-gray-100 uppercase" onclick="window.toggleCatalogoMoneda()" title="Clic para cambiar">${monLabel} <span class="text-[10px]">⇆</span></th> 
                                 </tr> 
                             </thead> 
                             <tbody>`;
-                const prodsMarca = pAgrupados[marca] || []; 
-                prodsMarca.forEach(p => { 
-                    const vPor=p.ventaPor||{und:true}, precios=p.precios||{und:p.precioPorUnidad||0}; let pBaseUSD=0, dPres=`${p.presentacion||'N/A'}`, uInfo=''; 
+                
+                const prodsGroup = _productosAgrupadosCache[groupName] || []; 
+                prodsGroup.forEach(p => { 
+                    const vPor=p.ventaPor||{und:true}, precios=p.precios||{und:p.precioPorUnidad||0}; 
+                    let pBaseUSD=0, dPres=`${p.presentacion||'N/A'}`, uInfo=''; 
+                    
                     if(vPor.cj&&precios.cj>0){pBaseUSD=precios.cj;uInfo=`(Cj/${p.unidadesPorCaja||1} und)`;}
                     else if(vPor.paq&&precios.paq>0){pBaseUSD=precios.paq;uInfo=`(Paq/${p.unidadesPorPaquete||1} und)`;}
                     else{pBaseUSD=precios.und||0;uInfo=`(Und)`;} 
+                    
                     let pMostrado; 
                     if(_catalogoMonedaActual==='COP'&&_catalogoTasaCOP>0){pMostrado=`COP ${(Math.ceil((pBaseUSD*_catalogoTasaCOP)/100)*100).toLocaleString('es-CO')}`; }
                     else{pMostrado=`$${pBaseUSD.toFixed(2)}`;} 
-                    const sDisp=p.segmento?`<span class="text-xs text-gray-500 ml-1">(${p.segmento})</span>`:''; 
                     
-                    html+=`<tr class="border-b last:border-b-0">
-                                    <td class="py-0.5 px-2 align-top">
-                                        ${dPres} ${sDisp} 
-                                        ${uInfo?`<span class="inline-block ml-2 text-xs text-gray-500">${uInfo}</span>`:''}
+                    // Mostrar "Marca - Presentación"
+                    const marcaText = p.marca ? `<span class="font-bold text-gray-800">${p.marca}</span> - ` : '';
+                    
+                    html+=`<tr class="border-b border-gray-200 last:border-0 hover:bg-gray-50 transition-colors">
+                                    <td class="py-1 px-2 align-middle">
+                                        ${marcaText}${dPres} 
+                                        ${uInfo?`<span class="inline-block ml-1 text-[10px] text-gray-500 font-semibold">${uInfo}</span>`:''}
                                     </td>
-                                    <td class="py-0.5 px-2 text-right font-semibold align-top">${pMostrado}</td>
+                                    <td class="py-1 px-2 text-right font-bold align-middle text-gray-900">${pMostrado}</td>
                                </tr>`; 
                 }); 
                 html += `</tbody></table>`; 
@@ -251,11 +267,11 @@
     }
 
     async function handleGenerateCatalogoImage() {
-        const MAX_BRANDS_PER_PAGE = 8; 
+        // Reducido a 5 grupos por página para evitar cortes en imágenes si los segmentos son muy largos
+        const MAX_GROUPS_PER_PAGE = 5; 
         const shareBtn=document.getElementById('generateCatalogoImageBtn'), tasaCont=document.getElementById('tasa-input-container'), btnsCont=document.getElementById('catalogo-buttons-container');
-        if (!_marcasCache || _marcasCache.length === 0) { window.showModal('Aviso', 'No hay productos.'); return; }
+        if (!_gruposCache || _gruposCache.length === 0) { window.showModal('Aviso', 'No hay productos.'); return; }
         
-        // --- Pre-cargar imagen de fondo ---
         if (_currentBgImage) {
             _showModal('Progreso', 'Cargando imagen de fondo...');
             try {
@@ -268,7 +284,12 @@
             }
         }
         
-        const pages = []; for (let i = 0; i < _marcasCache.length; i += MAX_BRANDS_PER_PAGE) pages.push(_marcasCache.slice(i, i + MAX_BRANDS_PER_PAGE)); const totalP = pages.length;
+        const pages = []; 
+        for (let i = 0; i < _gruposCache.length; i += MAX_GROUPS_PER_PAGE) {
+            pages.push(_gruposCache.slice(i, i + MAX_GROUPS_PER_PAGE)); 
+        }
+        const totalP = pages.length;
+        
         if (shareBtn){shareBtn.textContent=`Generando ${totalP} imagen(es)...`; shareBtn.disabled=true;} if (tasaCont)tasaCont.classList.add('hidden'); if (btnsCont)btnsCont.classList.add('hidden'); 
         
         const progressModal = document.getElementById('modalContainer');
@@ -279,31 +300,34 @@
             const titleEl=document.querySelector('#catalogo-para-imagen h2');
             const title=titleEl?titleEl.textContent.trim():'Catálogo';
 
-            const imgFiles = await Promise.all(pages.map(async (brandsPage, idx) => { 
+            const imgFiles = await Promise.all(pages.map(async (groupsPage, idx) => { 
                 const pNum=idx+1; 
-                let contHtml='<div class="space-y-1">'; 
+                let contHtml='<div class="space-y-3">'; 
                 const monLabel=_catalogoMonedaActual==='COP'?'PRECIO (COP)':'PRECIO (USD)'; 
-                brandsPage.forEach(marca=>{
-                    contHtml+=`<table class="min-w-full bg-transparent text-sm"> 
+                
+                groupsPage.forEach(groupName=>{
+                    contHtml+=`<table class="min-w-full bg-transparent text-sm mb-2"> 
                                 <thead class="text-black"> 
-                                    <tr><th colspan="2" class="py-1 px-2 bg-gray-100 font-bold text-left text-base">${marca}</th></tr> 
-                                    <tr><th class="py-0.5 px-2 text-left font-semibold text-xs border-b">PRESENTACIÓN (Segmento)</th><th class="py-0.5 px-2 text-right font-semibold text-xs border-b">${monLabel}</th></tr> 
+                                    <tr><th colspan="2" class="py-1 px-2 bg-gray-200 font-black text-left text-base uppercase border-b-2 border-gray-400">${groupName}</th></tr> 
+                                    <tr><th class="py-0.5 px-2 text-left font-bold text-[11px] border-b border-gray-300 text-gray-700">MARCA - PRESENTACIÓN</th><th class="py-0.5 px-2 text-right font-bold text-[11px] border-b border-gray-300 text-gray-700">${monLabel}</th></tr> 
                                 </thead><tbody>`; 
-                    const prodsMarca=_productosAgrupadosCache[marca]||[]; 
-                    prodsMarca.forEach(p=>{ 
+                    const prodsGroup=_productosAgrupadosCache[groupName]||[]; 
+                    prodsGroup.forEach(p=>{ 
                         const vPor=p.ventaPor||{und:true}, precios=p.precios||{und:p.precioPorUnidad||0}; let pBaseUSD=0, dPres=`${p.presentacion||'N/A'}`, uInfo=''; 
                         if(vPor.cj&&precios.cj>0){pBaseUSD=precios.cj;uInfo=`(Cj/${p.unidadesPorCaja||1} und)`;}
                         else if(vPor.paq&&precios.paq>0){pBaseUSD=precios.paq;uInfo=`(Paq/${p.unidadesPorPaquete||1} und)`;}
                         else{pBaseUSD=precios.und||0;uInfo=`(Und)`;} 
-                        let pMostrado=_catalogoMonedaActual==='COP'&&_catalogoTasaCOP>0?`COP ${(Math.ceil((pBaseUSD*_catalogoTasaCOP)/100)*100).toLocaleString('es-CO')}`:`$${pBaseUSD.toFixed(2)}`; 
-                        const sDisp=p.segmento?`<span class="text-xs ml-1">(${p.segmento})</span>`:''; 
                         
-                        contHtml+=`<tr class="border-b last:border-b-0">
-                                        <td class="py-0.5 px-2 align-top">
-                                            ${dPres} ${sDisp} 
-                                            ${uInfo?`<span class="inline-block ml-2 text-xs text-gray-600">${uInfo}</span>`:''}
+                        let pMostrado=_catalogoMonedaActual==='COP'&&_catalogoTasaCOP>0?`COP ${(Math.ceil((pBaseUSD*_catalogoTasaCOP)/100)*100).toLocaleString('es-CO')}`:`$${pBaseUSD.toFixed(2)}`; 
+                        
+                        const marcaText = p.marca ? `<span class="font-bold text-gray-800">${p.marca}</span> - ` : '';
+                        
+                        contHtml+=`<tr class="border-b border-gray-200 last:border-0">
+                                        <td class="py-1 px-2 align-middle">
+                                            ${marcaText}${dPres} 
+                                            ${uInfo?`<span class="inline-block ml-1 text-[10px] text-gray-500 font-semibold">${uInfo}</span>`:''}
                                         </td>
-                                        <td class="py-0.5 px-2 text-right font-semibold align-top">${pMostrado}</td>
+                                        <td class="py-1 px-2 text-right font-bold align-middle text-gray-900">${pMostrado}</td>
                                    </tr>`; 
                     }); 
                     contHtml+=`</tbody></table>`;
@@ -313,9 +337,9 @@
                 const fPageHtml = `<div class="bg-white p-4" style="width: 800px; box-shadow: none; border: 1px solid #eee;"> 
                                         <h2 class="text-2xl font-bold mb-1 text-center">${title}</h2> 
                                         <p class="text-center mb-0.5 text-xs">DISTRIBUIDORA CASTILLO YAÑEZ C.A</p> 
-                                        <p class="text-center mb-1 text-xs italic">(Precios incluyen IVA)</p> 
+                                        <p class="text-center mb-2 text-xs italic">(Precios incluyen IVA)</p> 
                                         ${contHtml} 
-                                        <p class="text-center mt-2 text-xs">Página ${pNum} de ${totalP}</p> 
+                                        <p class="text-center mt-3 text-xs font-semibold text-gray-400">Página ${pNum} de ${totalP}</p> 
                                       </div>`;
                                       
                 const tempDiv=document.createElement('div'); tempDiv.style.position='absolute'; tempDiv.style.left='-9999px'; tempDiv.style.top='0'; tempDiv.innerHTML=fPageHtml; document.body.appendChild(tempDiv); const pWrap=tempDiv.firstElementChild; 
@@ -350,7 +374,7 @@
             }
 
         } catch (error) { 
-            console.error("Error generando imagen del catálogo: ", error); 
+            console.error("Error generating catalog image: ", error); 
             _showModal('Error Grave', `Error al generar: ${error.message || error}`); 
         } finally { 
             if(shareBtn){shareBtn.textContent='Generar Imagen'; shareBtn.disabled=false;} 
