@@ -2,6 +2,7 @@
     let _db, _userId, _userRole, _appId, _mainContent, _floatingControls;
     let _showMainMenu, _showModal, _populateDropdown;
     let _collection, _doc, _getDocs, _getDoc, _query, _where, _runTransaction, _addDoc, _orderBy, _limit, _startAfter;
+    let _writeBatch, _setDoc; // Añadidas dependencias necesarias para la limpieza
 
     // --- CONFIGURACIÓN CENTRALIZADA ---
     const PUBLIC_DATA_ID = window.AppConfig.PUBLIC_DATA_ID;
@@ -35,6 +36,8 @@
         _orderBy = dependencies.orderBy;
         _limit = dependencies.limit;
         _startAfter = dependencies.startAfter;
+        _writeBatch = dependencies.writeBatch; 
+        _setDoc = dependencies.setDoc;         
 
         if (!_runTransaction) console.error("Error Crítico: 'runTransaction' no disponible en initEditInventario.");
         console.log("Módulo Edit Inventario Inicializado. Public ID:", PUBLIC_DATA_ID);
@@ -129,17 +132,17 @@
         }
     }
 
-    // --- LÓGICA DE CORRECCIÓN (MODIFICADO PARA LECTURA HÍBRIDA) ---
+    // --- LÓGICA DE CORRECCIÓN (HÍBRIDA) ---
     async function loadUserInventory(targetUser) {
         _showModal('Cargando', `Obteniendo inventario de ${targetUser.email}...`, null, '', null, false);
         _correccionActualState = {}; 
-        _correctionFilters = { search: '', rubro: '', segmento: '', marca: '' }; // Reset filtros
+        _correctionFilters = { search: '', rubro: '', segmento: '', marca: '' };
 
         try {
             // 1. Obtener Stock Privado del Usuario
             const userInvRef = _collection(_db, `artifacts/${_appId}/users/${targetUser.id}/inventario`);
             
-            // 2. Obtener Catálogo Maestro Público (Para tener nombres, marcas, rubros)
+            // 2. Obtener Catálogo Maestro Público
             const masterRef = _collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/productos`);
 
             const [userSnap, masterSnap] = await Promise.all([
@@ -147,27 +150,22 @@
                 _getDocs(masterRef)
             ]);
 
-            // Crear mapa del maestro
             const masterMap = {};
             masterSnap.forEach(d => masterMap[d.id] = d.data());
 
             // 3. Fusionar datos (Hybrid Merge)
-            // Solo mostramos productos que el usuario tiene en su colección (aunque sea stock 0),
-            // pero enriquecidos con la data del maestro.
             _targetInventoryCache = userSnap.docs.map(d => {
                 const uData = d.data();
                 const mData = masterMap[d.id];
 
                 if (mData) {
-                    // Producto existe en maestro: Usar metadatos maestros + stock usuario
                     return {
                         id: d.id,
-                        ...mData, // presentacion, marca, rubro, etc.
+                        ...mData, 
                         cantidadUnidades: uData.cantidadUnidades || 0,
                         _legacyData: uData
                     };
                 } else {
-                    // Producto huérfano/legacy (solo existe en usuario): Usar data usuario
                     return {
                         id: d.id,
                         ...uData
@@ -175,7 +173,6 @@
                 }
             });
             
-            // Ordenar por presentación
             _targetInventoryCache.sort((a, b) => (a.presentacion || '').localeCompare(b.presentacion || ''));
 
             renderCorrectionTable(targetUser);
@@ -197,7 +194,11 @@
                             <h2 class="text-xl font-bold text-gray-800">Corregir Inventario</h2>
                             <p class="text-sm text-gray-600">Usuario: <span class="font-bold text-blue-600">${targetUser.email}</span></p>
                         </div>
-                        <div class="flex gap-2 w-full md:w-auto">
+                        <div class="flex flex-col md:flex-row gap-2 w-full md:w-auto">
+                            <!-- NUEVO BOTÓN DE LIMPIEZA -->
+                            <button id="btnWipeInventory" class="flex-1 md:flex-none px-4 py-2 bg-red-600 text-white font-bold rounded shadow hover:bg-red-700 text-sm" title="Limpiar todo el inventario del vendedor a cero">
+                                🧹 Limpiar Inventario
+                            </button>
                             <button id="btnApplyCorrections" class="flex-1 md:flex-none px-4 py-2 bg-green-600 text-white font-bold rounded shadow hover:bg-green-700 text-sm">
                                 Guardar Cambios
                             </button>
@@ -237,9 +238,73 @@
 
         document.getElementById('btnCancelCorrection').addEventListener('click', showUserSelectionView);
         document.getElementById('btnApplyCorrections').addEventListener('click', () => handleSaveCorrections(targetUser));
+        document.getElementById('btnWipeInventory').addEventListener('click', () => handleWipeInventory(targetUser));
 
-        // Configurar lógica de filtros en cascada
         setupCorrectionFilters();
+    }
+
+    // --- NUEVA FUNCIÓN DE LIMPIEZA PROFUNDA ---
+    async function handleWipeInventory(targetUser) {
+        _showModal('ADVERTENCIA EXTREMA', `¿Estás completamente seguro de borrar <b>TODO EL INVENTARIO</b> del vendedor <br><br><span class="text-blue-600 text-lg font-bold">${targetUser.email}</span>?<br><br>Esta acción eliminará todos los registros heredados y <b>dejará sus productos en CERO</b>. Es una acción IRREVERSIBLE.`, async () => {
+            _showModal('Progreso', 'Limpiando inventario del vendedor...', null, '', null, false);
+            try {
+                const invRef = _collection(_db, `artifacts/${_appId}/users/${targetUser.id}/inventario`);
+                const snap = await _getDocs(invRef);
+                
+                if (snap.empty) {
+                    _showModal('Aviso', 'El inventario de este vendedor ya está completamente vacío.');
+                    return;
+                }
+
+                let totalOps = 0;
+                let batch = _writeBatch(_db);
+
+                for (const docSnap of snap.docs) {
+                    batch.delete(docSnap.ref);
+                    totalOps++;
+                    // Límite de Firebase Batch es 500
+                    if (totalOps >= 490) {
+                        await batch.commit();
+                        batch = _writeBatch(_db);
+                        totalOps = 0;
+                    }
+                }
+                
+                if (totalOps > 0) {
+                    await batch.commit();
+                }
+
+                // Guardar Log de la limpieza en el historial
+                try {
+                    const logRef = _doc(_collection(_db, `artifacts/${_appId}/users/${_userId}/historial_correcciones`));
+                    await _setDoc(logRef, {
+                        fecha: new Date(),
+                        adminId: _userId,
+                        targetUserId: targetUser.id,
+                        targetUserEmail: targetUser.email,
+                        totalItemsAfectados: snap.docs.length,
+                        tipoAjuste: 'LIMPIEZA_PROFUNDA',
+                        detalles: [{
+                            productoId: 'ALL',
+                            presentacion: 'TODOS LOS PRODUCTOS',
+                            marca: 'N/A',
+                            stockAnterior: 'Varios',
+                            ajuste: 'LIMPIEZA TOTAL',
+                            stockNuevo: 0,
+                            observacion: 'Limpieza profunda de inventario ejecutada por admin'
+                        }]
+                    });
+                } catch(logErr) {
+                    console.warn("No se pudo guardar el log de limpieza en el historial:", logErr);
+                }
+
+                _showModal('Éxito', 'El inventario ha sido borrado y restablecido a cero exitosamente.', () => loadUserInventory(targetUser));
+
+            } catch (error) {
+                console.error("Error limpiando inventario:", error);
+                _showModal('Error', `Fallo al limpiar el inventario: ${error.message}`);
+            }
+        }, 'Sí, Borrar Todo', null, true);
     }
 
     function setupCorrectionFilters() {
@@ -248,7 +313,6 @@
         const marcaSel = document.getElementById('corrMarca');
         const searchInput = document.getElementById('corrSearch');
 
-        // Función auxiliar para renderizar opciones
         const renderOptions = (selectEl, valuesSet, label, currentVal) => {
             selectEl.innerHTML = `<option value="">${label}: Todos</option>`;
             [...valuesSet].sort().forEach(val => {
@@ -261,7 +325,6 @@
         };
 
         const updateDropdowns = (trigger) => {
-            // Actualizar estado global
             _correctionFilters.rubro = rubroSel.value;
             if (trigger === 'rubro') { _correctionFilters.segmento = ''; _correctionFilters.marca = ''; }
             if (trigger === 'segmento') { _correctionFilters.marca = ''; }
@@ -270,15 +333,12 @@
             _correctionFilters.marca = marcaSel.value;
             _correctionFilters.search = searchInput.value.toLowerCase();
 
-            // Lógica de cascada
-            // 1. Rubros (Siempre estático, se carga una vez o se mantiene)
             if (trigger === 'init') {
                 const rubros = new Set();
                 _targetInventoryCache.forEach(p => { if (p.rubro) rubros.add(p.rubro); });
                 renderOptions(rubroSel, rubros, 'Rubro', _correctionFilters.rubro);
             }
 
-            // 2. Segmentos (Depende de Rubro)
             if (trigger === 'init' || trigger === 'rubro') {
                 const segmentos = new Set();
                 _targetInventoryCache.forEach(p => {
@@ -290,7 +350,6 @@
                 segSel.disabled = segmentos.size === 0;
             }
 
-            // 3. Marcas (Depende de Rubro y Segmento)
             if (trigger === 'init' || trigger === 'rubro' || trigger === 'segmento') {
                 const marcas = new Set();
                 _targetInventoryCache.forEach(p => {
@@ -304,7 +363,6 @@
                 marcaSel.disabled = marcas.size === 0;
             }
 
-            // Redibujar tabla
             renderCorrectionRows();
         };
 
@@ -316,7 +374,6 @@
              renderCorrectionRows();
         });
 
-        // Inicializar
         updateDropdowns('init');
     }
 
@@ -354,9 +411,7 @@
                 if(resto > 0) stockDisplay += ` <span class="text-xs text-gray-500">+ ${resto}</span>`;
             }
 
-            // Recuperar estado si existe
             const state = _correccionActualState[p.id] || { ajuste: '', observacion: '' };
-            // Si ajuste es 0, mostrar vacío para placeholder
             const ajusteVal = state.ajuste !== 0 ? state.ajuste : '';
 
             return `
@@ -388,7 +443,6 @@
 
         tbody.innerHTML = html;
 
-        // Re-asignar listeners a los inputs recién creados
         tbody.querySelectorAll('.correction-input').forEach(input => {
             input.addEventListener('input', (e) => {
                 const pid = e.target.dataset.pid;
@@ -407,6 +461,7 @@
         });
     }
 
+    // --- CORRECCIÓN DEL ERROR DE TRANSACCIÓN DE FIREBASE ---
     async function handleSaveCorrections(targetUser) {
         const changes = Object.entries(_correccionActualState)
             .filter(([pid, data]) => data.ajuste !== 0)
@@ -435,17 +490,26 @@
                     const fecha = new Date();
                     const detallesLog = [];
 
+                    // --- FASE 1: TODAS LAS LECTURAS (READS) ---
+                    // Firebase obliga a que NINGUNA escritura suceda antes de que terminen todas las lecturas.
+                    const readData = [];
                     for (const item of changes) {
                         const invRef = _doc(_db, `artifacts/${_appId}/users/${targetUser.id}/inventario`, item.pid);
                         const invDoc = await transaction.get(invRef);
-                        // Si no existe, permitimos crear si es una corrección positiva (ej: inicializar stock)
-                        // Si es negativa y no existe, es un error lógico, pero asumiremos 0.
+                        readData.push({ item, invRef, invDoc });
+                    }
+
+                    // --- FASE 2: TODAS LAS ESCRITURAS (WRITES) ---
+                    for (const data of readData) {
+                        const { item, invRef, invDoc } = data;
                         const currentStock = invDoc.exists() ? (invDoc.data().cantidadUnidades || 0) : 0;
                         const newStock = currentStock + item.ajuste;
 
-                        if (newStock < 0) throw new Error(`El ajuste resulta en stock negativo para ${item.prod.presentacion}.`);
+                        if (newStock < 0) {
+                            throw new Error(`El ajuste resulta en stock negativo para ${item.prod.presentacion}.`);
+                        }
 
-                        // Escribir solo cantidad, preservando ID. La data maestra está en public.
+                        // Escribir solo cantidad, preservando la data maestra.
                         transaction.set(invRef, { cantidadUnidades: newStock }, { merge: true });
 
                         detallesLog.push({
@@ -459,6 +523,7 @@
                         });
                     }
 
+                    // Escritura final del Log
                     transaction.set(logRef, {
                         fecha: fecha,
                         adminId: _userId,
@@ -468,17 +533,17 @@
                         detalles: detallesLog
                     });
                 });
+                
                 _showModal('Éxito', 'Correcciones aplicadas correctamente.', showEditInventarioMenu);
             } catch (error) {
-                console.error(error);
+                console.error("Transaction Error:", error);
                 _showModal('Error', `Falló la corrección: ${error.message}`);
             }
         }, 'Sí, Aplicar', null, true);
     }
 
-    // --- VISTA 3: REPORTE DE RECARGAS (NUEVA) ---
+    // --- VISTA 3: REPORTE DE RECARGAS ---
     async function showRecargasHistoryView() {
-        // Asegurarse de tener usuarios cargados para el dropdown
         if (_usersCache.length === 0) {
             try {
                 const usersRef = _collection(_db, 'users');
@@ -551,13 +616,10 @@
         document.getElementById('btnExportRecargas').classList.add('hidden');
 
         try {
-            // Ajustar fechas para query (Inicio del día start, Fin del día end)
             const startDate = new Date(dateStartStr); startDate.setHours(0,0,0,0);
             const endDate = new Date(dateEndStr); endDate.setHours(23,59,59,999);
 
             const recargasRef = _collection(_db, `artifacts/${_appId}/users/${userId}/recargas`);
-            // Nota: Firestore requiere índice compuesto para where(fecha) + orderBy(fecha). 
-            // Si falla, el catch mostrará el link para crear índice.
             const q = _query(
                 recargasRef, 
                 _where('fecha', '>=', startDate.toISOString()), 
@@ -568,7 +630,7 @@
             const snap = await _getDocs(q);
             const recargas = snap.docs.map(d => ({ id: d.id, ...d.data() }));
             
-            _recargasSearchCache = recargas; // Guardar para exportación
+            _recargasSearchCache = recargas; 
 
             if (recargas.length === 0) {
                 container.innerHTML = '<p class="text-center text-gray-500">No se encontraron recargas en este periodo.</p>';
@@ -582,7 +644,6 @@
                 const fecha = new Date(r.fecha);
                 const fechaStr = fecha.toLocaleString();
                 
-                // Detalles colapsables
                 const detallesHtml = (r.detalles || []).map(d => `
                     <tr class="border-b text-xs hover:bg-gray-50">
                         <td class="p-1">${d.presentacion}</td>
@@ -621,7 +682,7 @@
 
         } catch (e) {
             console.error(e);
-            container.innerHTML = `<p class="text-red-500 text-center">Error: ${e.message}<br><small>Si es error de índice, ver consola.</small></p>`;
+            container.innerHTML = `<p class="text-red-500 text-center">Error: ${e.message}<br><small>Si es error de índice, ver consola para generar link de Firebase.</small></p>`;
         }
     }
 
@@ -634,18 +695,15 @@
             const workbook = new ExcelJS.Workbook();
             const sheet = workbook.addWorksheet('Reporte Recargas');
             
-            // Info Vendedor
             const userId = document.getElementById('recargaUserSelect').value;
             const userObj = _usersCache.find(u => u.id === userId);
             const userName = userObj ? `${userObj.nombre || ''} ${userObj.apellido || ''} (${userObj.email})` : 'Desconocido';
 
-            // --- ESTILOS ---
-            const headerFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F4E78' } }; // Azul oscuro
+            const headerFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F4E78' } }; 
             const headerFont = { color: { argb: 'FFFFFFFF' }, bold: true, size: 12 };
-            const subHeaderFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDDEBF7' } }; // Azul claro
+            const subHeaderFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDDEBF7' } }; 
             const borderStyle = { top: {style:'thin'}, left: {style:'thin'}, bottom: {style:'thin'}, right: {style:'thin'} };
 
-            // Encabezado Principal
             sheet.mergeCells('A1:E1');
             const titleCell = sheet.getCell('A1');
             titleCell.value = 'REPORTE DETALLADO DE RECARGAS DE INVENTARIO';
@@ -659,7 +717,6 @@
             sheet.mergeCells('A3:E3');
             sheet.getCell('A3').value = `Generado el: ${new Date().toLocaleString()}`;
 
-            // Configurar Columnas (Fila 5)
             sheet.getRow(5).values = ['Fecha Recarga', 'Producto', 'Stock Anterior', 'Cantidad Agregada', 'Stock Resultante'];
             sheet.columns = [
                 { key: 'fecha', width: 22 },
@@ -669,7 +726,6 @@
                 { key: 'res', width: 15 }
             ];
 
-            // Aplicar estilo al header de tabla
             ['A5','B5','C5','D5','E5'].forEach(cell => {
                 const c = sheet.getCell(cell);
                 c.fill = headerFill;
@@ -680,12 +736,10 @@
 
             let currentRow = 6;
 
-            // Iterar Recargas
             _recargasSearchCache.forEach(recarga => {
                 const fecha = new Date(recarga.fecha).toLocaleString();
                 const detalles = recarga.detalles || [];
 
-                // Fila separadora de Recarga (Agrupador)
                 sheet.mergeCells(`A${currentRow}:E${currentRow}`);
                 const groupCell = sheet.getCell(`A${currentRow}`);
                 groupCell.value = `RECARGA: ${fecha}  |  Items: ${recarga.totalProductos}  |  ID: ${recarga.id.substring(0,8)}...`;
@@ -694,18 +748,16 @@
                 groupCell.border = borderStyle;
                 currentRow++;
 
-                // Detalles
                 detalles.forEach(d => {
                     const row = sheet.getRow(currentRow);
                     row.values = {
-                        fecha: '', // Vacío para limpieza visual bajo el grupo
+                        fecha: '', 
                         prod: d.presentacion,
                         ant: d.unidadesAnteriores,
                         agg: d.diferenciaUnidades,
                         res: d.unidadesNuevas
                     };
                     
-                    // Estilos de celda
                     row.getCell('prod').border = borderStyle;
                     row.getCell('ant').border = borderStyle;
                     row.getCell('ant').alignment = { horizontal: 'center' };
@@ -713,7 +765,7 @@
                     const aggCell = row.getCell('agg');
                     aggCell.border = borderStyle;
                     aggCell.alignment = { horizontal: 'center' };
-                    aggCell.font = { bold: true, color: { argb: 'FF006100' } }; // Verde oscuro
+                    aggCell.font = { bold: true, color: { argb: 'FF006100' } }; 
 
                     row.getCell('res').border = borderStyle;
                     row.getCell('res').alignment = { horizontal: 'center' };
@@ -721,11 +773,9 @@
                     currentRow++;
                 });
                 
-                // Espacio entre recargas
                 currentRow++; 
             });
 
-            // Descargar
             const buffer = await workbook.xlsx.writeBuffer();
             const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
             const link = document.createElement('a');
@@ -741,7 +791,7 @@
         }
     }
 
-    // --- VISTA 4: HISTORIAL DE CORRECCIONES (Ya existente, mantenida) ---
+    // --- VISTA 4: HISTORIAL DE CORRECCIONES ---
     async function showHistorialView() {
         _mainContent.innerHTML = `
             <div class="p-4 pt-8">
@@ -804,7 +854,7 @@
                 `;
                 
                 (log.detalles || []).forEach(d => {
-                    const colorClass = d.ajuste < 0 ? 'text-red-600' : 'text-green-600';
+                    const colorClass = d.ajuste < 0 ? 'text-red-600' : (d.ajuste > 0 ? 'text-green-600' : 'text-gray-800');
                     const signo = d.ajuste > 0 ? '+' : '';
                     detallesHTML += `
                         <tr class="border-t border-gray-200">
@@ -825,7 +875,7 @@
                             <p class="font-bold text-blue-800">Usuario Afectado: ${log.targetUserEmail}</p>
                             <p class="text-xs text-gray-500">Fecha: ${fechaStr}</p>
                         </div>
-                        <span class="text-xs bg-gray-200 px-2 py-1 rounded">Items: ${log.totalItemsAfectados}</span>
+                        <span class="text-xs bg-gray-200 px-2 py-1 rounded font-bold">Tipo: ${log.tipoAjuste || 'MANUAL'} | Items: ${log.totalItemsAfectados}</span>
                     </div>
                     ${detallesHTML}
                 `;
@@ -881,7 +931,7 @@
                     });
                     
                     if (d.ajuste < 0) row.getCell('ajuste').font = { color: { argb: 'FFFF0000' } };
-                    else row.getCell('ajuste').font = { color: { argb: 'FF008000' } };
+                    else if (d.ajuste > 0) row.getCell('ajuste').font = { color: { argb: 'FF008000' } };
                 });
             });
 
