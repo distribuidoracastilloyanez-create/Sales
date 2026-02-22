@@ -208,7 +208,6 @@
         const cleanRec = document.getElementById('cleanRecargas').checked;
         
         const colsToDelPub = []; 
-        // CORRECCIÓN: Usar ID público centralizado
         const pubProjId = PUBLIC_DATA_ID; 
         let allUserIds = [];
         
@@ -265,9 +264,11 @@
         }
 
         if(cleanRec) {
-            // Logs de Correcciones Manuales (edit-inventario.js)
-            privColsToClean.push({sub:'historial_inventario', n:'Historial Correcciones'});
-            // Logs de Recargas de Productos (inventario.js) - DETECTADO
+            // Logs de Correcciones Manuales y Limpiezas Profundas (edit-inventario.js)
+            privColsToClean.push({sub:'historial_correcciones', n:'Historial Correcciones'});
+            // Mantenemos el antiguo por si hay datos legacy de versiones anteriores
+            privColsToClean.push({sub:'historial_inventario', n:'Historial Correcciones (Legacy)'});
+            // Logs de Recargas de Productos (inventario.js)
             privColsToClean.push({sub:'recargas', n:'Historial Recargas'});
         }
         
@@ -313,9 +314,6 @@
             console.log("Limpiando caché local de CXC...");
             localStorage.removeItem('cxc_local_data');
             localStorage.removeItem('cxc_local_date');
-            
-            // Si IndexedDB está en uso, también deberíamos limpiarlo aquí idealmente.
-            // Por ahora, recargar la página lo solucionará al fallar la lectura.
         }
         
         // Limpiar cachés globales en memoria para que la UI se actualice
