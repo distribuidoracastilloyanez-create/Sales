@@ -4,21 +4,18 @@
     // Variables locales del módulo que se inicializarán desde index.html
     let _db, _userId, _userRole, _appId, _mainContent, _floatingControls, _activeListeners;
     let _showMainMenu, _showModal, _showAddItemModal, _populateDropdown;
-    // CORRECCIÓN: Asegurarse de que _getDocs está declarado
-    let _collection, _onSnapshot, _doc, _addDoc, _setDoc, _deleteDoc, _getDoc, _getDocs, _query, _where, _writeBatch, _runTransaction, _limit; // Añadido _limit si se necesita en el futuro
+    let _collection, _onSnapshot, _doc, _addDoc, _setDoc, _deleteDoc, _getDoc, _getDocs, _query, _where, _writeBatch, _runTransaction, _limit; 
 
     let _clientesCache = []; // Caché local para búsquedas y ediciones rápidas
     let _clientesParaImportar = []; // Caché para la data del Excel a importar
 
     // Definir rutas usando la configuración global para datos públicos
-    // CORRECCIÓN: Usar ID global desde config.js
     const PUBLIC_DATA_ID = window.AppConfig.PUBLIC_DATA_ID;
     const CLIENTES_COLLECTION_PATH = `artifacts/${PUBLIC_DATA_ID}/public/data/clientes`;
     const SECTORES_COLLECTION_PATH = `artifacts/${PUBLIC_DATA_ID}/public/data/sectores`;
 
-    // --- CAMBIO: Tipos de Vacío ---
+    // --- Tipos de Vacío ---
     const TIPOS_VACIO = ["1/4 - 1/3", "ret 350 ml", "ret 1.25 Lts"];
-    // --- FIN CAMBIO ---
 
     /**
      * Inicializa el módulo con las dependencias necesarias desde la app principal.
@@ -27,7 +24,7 @@
         _db = dependencies.db;
         _userId = dependencies.userId;
         _userRole = dependencies.userRole;
-        _appId = dependencies.appId; // Se obtiene appId aquí
+        _appId = dependencies.appId; 
         _mainContent = dependencies.mainContent;
         _floatingControls = dependencies.floatingControls;
         _activeListeners = dependencies.activeListeners;
@@ -42,15 +39,13 @@
         _addDoc = dependencies.addDoc;
         _setDoc = dependencies.setDoc;
         _deleteDoc = dependencies.deleteDoc;
-        // CORRECCIÓN: Asignar getDocs a _getDocs
         _getDocs = dependencies.getDocs;
         _query = dependencies.query;
         _where = dependencies.where;
         _writeBatch = dependencies.writeBatch;
         _runTransaction = dependencies.runTransaction;
-        _limit = dependencies.limit; // Añadido por si acaso para deleteSector
+        _limit = dependencies.limit; 
 
-        // *** AÑADIR LOG DE CONFIRMACIÓN ***
         console.log("Módulo Clientes inicializado. Public ID:", PUBLIC_DATA_ID); 
     };
 
@@ -65,28 +60,190 @@
                     <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl text-center">
                         <h1 class="text-3xl font-bold text-gray-800 mb-6">Gestión de Clientes</h1>
                         <div class="space-y-4">
-                            <button id="verClientesBtn" class="w-full px-6 py-3 bg-indigo-500 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-600">Ver Clientes</button>
-                            <!-- REVERTIDO: Botón "Agregar Cliente" visible para todos -->
-                            <button id="agregarClienteBtn" class="w-full px-6 py-3 bg-indigo-500 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-600">Agregar Cliente</button>
-                            <button id="saldosVaciosBtn" class="w-full px-6 py-3 bg-cyan-500 text-white font-semibold rounded-lg shadow-md hover:bg-cyan-600">Consultar Saldos de Vacíos</button>
+                            <button id="verClientesBtn" class="w-full px-6 py-3 bg-indigo-500 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-600 transition">Ver Clientes</button>
+                            <button id="agregarClienteBtn" class="w-full px-6 py-3 bg-indigo-500 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-600 transition">Agregar Cliente</button>
+                            <button id="saldosVaciosBtn" class="w-full px-6 py-3 bg-cyan-500 text-white font-semibold rounded-lg shadow-md hover:bg-cyan-600 transition">Consultar Saldos de Vacíos</button>
                             ${_userRole === 'admin' ? `
-                            <button id="funcionesAvanzadasBtn" class="w-full px-6 py-3 bg-gray-700 text-white font-semibold rounded-lg shadow-md hover:bg-gray-800">Funciones Avanzadas</button>
+                            <button id="editarSaldosVaciosBtn" class="w-full px-6 py-3 bg-teal-600 text-white font-semibold rounded-lg shadow-md hover:bg-teal-700 transition border-2 border-teal-500">✏️ Editar Saldo de Vacíos</button>
+                            <button id="funcionesAvanzadasBtn" class="w-full px-6 py-3 bg-gray-700 text-white font-semibold rounded-lg shadow-md hover:bg-gray-800 mt-4 transition">Funciones Avanzadas</button>
                             ` : ''}
-                            <button id="backToMenuBtn" class="w-full px-6 py-3 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500">Volver al Menú Principal</button>
+                            <button id="backToMenuBtn" class="w-full px-6 py-3 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500 transition">Volver al Menú Principal</button>
                         </div>
                     </div>
                 </div>
             </div>
         `;
         document.getElementById('verClientesBtn').addEventListener('click', showVerClientesView);
-        // REVERTIDO: Listener de "Agregar Cliente" visible para todos
         document.getElementById('agregarClienteBtn')?.addEventListener('click', showAgregarClienteView);
         if (_userRole === 'admin') {
+            document.getElementById('editarSaldosVaciosBtn')?.addEventListener('click', showEditarSaldosVaciosView);
             document.getElementById('funcionesAvanzadasBtn')?.addEventListener('click', showFuncionesAvanzadasView);
         }
         document.getElementById('saldosVaciosBtn').addEventListener('click', showSaldosVaciosView);
         document.getElementById('backToMenuBtn').addEventListener('click', _showMainMenu);
     }
+
+    // ==========================================
+    // NUEVO: SECCIÓN EDITAR SALDO VACÍOS (ADMIN)
+    // ==========================================
+
+    function showEditarSaldosVaciosView() {
+        if (_userRole !== 'admin') return;
+        _floatingControls.classList.add('hidden');
+        _mainContent.innerHTML = `
+            <div class="p-4 pt-8">
+                <div class="container mx-auto max-w-5xl">
+                    <div class="bg-white/90 backdrop-blur-sm p-6 rounded-lg shadow-xl">
+                        <h2 class="text-2xl font-bold text-teal-800 mb-2 text-center">Editar Saldos de Vacíos</h2>
+                        <p class="text-center text-gray-500 mb-6 text-sm">Busca un cliente para sobrescribir (imponer) un número exacto en su saldo.</p>
+                        
+                        <input type="text" id="edit-saldo-search-input" placeholder="Buscar cliente por nombre..." class="w-full px-4 py-2 border border-teal-300 rounded-lg mb-4 focus:ring-2 focus:ring-teal-500 outline-none">
+                        
+                        <div id="editSaldosListContainer" class="overflow-x-auto max-h-[60vh] border rounded bg-gray-50">
+                            <p class="text-gray-500 text-center py-8 animate-pulse">Cargando todos los clientes...</p>
+                        </div>
+                        
+                        <button id="backToClientesFromEditSaldosBtn" class="mt-6 w-full px-6 py-3 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500 transition">Volver</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        document.getElementById('backToClientesFromEditSaldosBtn').addEventListener('click', showClientesSubMenu);
+        const searchInput = document.getElementById('edit-saldo-search-input');
+        if (searchInput) searchInput.addEventListener('input', renderEditSaldosList);
+
+        // Si la caché está vacía, iniciamos listener
+        if (_clientesCache.length === 0) {
+            const clientesRef = _collection(_db, CLIENTES_COLLECTION_PATH);
+            const unsubscribe = _onSnapshot(clientesRef, (snapshot) => {
+                _clientesCache = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                renderEditSaldosList(); 
+            }, (error) => {
+                if (error.code === 'permission-denied' || error.code === 'unauthenticated') return;
+                console.error("Error cargando clientes:", error);
+            });
+            _activeListeners.push(unsubscribe);
+        } else {
+            renderEditSaldosList();
+        }
+    }
+
+    function renderEditSaldosList() {
+        const container = document.getElementById('editSaldosListContainer');
+        const searchInput = document.getElementById('edit-saldo-search-input');
+        if (!container || !searchInput) return;
+
+        const searchTerm = searchInput.value.toLowerCase();
+        
+        // Mostrar TODOS los clientes, tengan o no saldo
+        let filteredClients = _clientesCache.filter(c => {
+             const nameMatch = (c.nombreComercial || '').toLowerCase().includes(searchTerm) || (c.nombrePersonal || '').toLowerCase().includes(searchTerm);
+             return nameMatch; 
+        });
+
+        filteredClients.sort((a, b) => (a.nombreComercial || '').localeCompare(b.nombreComercial || ''));
+
+        if (filteredClients.length === 0) {
+            container.innerHTML = `<p class="text-center text-gray-500 p-8">No se encontraron clientes.</p>`;
+            return;
+        }
+
+        let tableHTML = `<table class="min-w-full bg-white text-sm">
+            <thead class="bg-teal-100 text-teal-800 sticky top-0 z-10"><tr>
+                <th class="py-2 px-4 border-b text-left">Cliente</th>`;
+        
+        TIPOS_VACIO.forEach(tipo => {
+             tableHTML += `<th class="py-2 px-4 border-b text-center">${tipo}</th>`;
+        });
+        tableHTML += `<th class="py-2 px-4 border-b text-center w-24">Acción</th></tr></thead><tbody>`;
+
+        filteredClients.forEach(cliente => {
+            const saldoVacios = cliente.saldoVacios || {};
+            tableHTML += `<tr class="hover:bg-gray-50 transition">
+                <td class="py-2 px-4 border-b font-medium text-gray-800">${cliente.nombreComercial}</td>`;
+            
+            TIPOS_VACIO.forEach(tipo => {
+                const saldo = saldoVacios[tipo] || 0;
+                const saldoClass = saldo > 0 ? 'text-red-600 font-bold' : (saldo < 0 ? 'text-green-600 font-bold' : 'text-gray-400');
+                 tableHTML += `<td class="py-2 px-4 border-b text-center ${saldoClass}">${saldo}</td>`;
+            });
+
+            tableHTML += `
+                <td class="py-2 px-4 border-b text-center">
+                    <button onclick="window.clientesModule.showEditSaldoModal('${cliente.id}')" class="px-3 py-1.5 bg-teal-500 text-white text-xs font-bold rounded hover:bg-teal-600 shadow-sm transition">Modificar</button>
+                </td>
+            </tr>`;
+        });
+        tableHTML += `</tbody></table>`;
+        container.innerHTML = tableHTML;
+    }
+
+    function showEditSaldoModal(clienteId) {
+        const cliente = _clientesCache.find(c => c.id === clienteId);
+        if (!cliente) return;
+        const saldoVacios = cliente.saldoVacios || {};
+        
+        let inputsHTML = '';
+        TIPOS_VACIO.forEach(tipo => {
+            const currentVal = saldoVacios[tipo] || 0;
+            // Quitamos caracteres especiales para el id del input
+            const safeId = `override_vacio_${tipo.replace(/[\s\/-]/g, '')}`;
+            inputsHTML += `
+                <div class="flex justify-between items-center bg-white p-3 rounded border border-gray-200 mb-2 shadow-sm">
+                    <label class="font-semibold text-gray-700 w-1/2">${tipo}:</label>
+                    <input type="number" id="${safeId}" data-tipo="${tipo}" value="${currentVal}" class="override-vacio-input w-24 px-3 py-1.5 border border-teal-300 rounded focus:ring-2 focus:ring-teal-500 text-center font-bold text-lg">
+                </div>
+            `;
+        });
+
+        const modalContent = `
+            <div class="text-left">
+                <h3 class="text-xl font-bold text-gray-800 mb-1">Sobrescribir Saldos</h3>
+                <p class="text-sm text-gray-600 mb-4 border-b pb-2">Cliente: <span class="font-black text-teal-700">${cliente.nombreComercial}</span></p>
+                
+                <div class="bg-yellow-50 p-3 border-l-4 border-yellow-400 rounded mb-4">
+                    <p class="text-xs text-yellow-800 font-bold mb-1">⚠️ AJUSTE ABSOLUTO</p>
+                    <p class="text-xs text-yellow-700">Cambia los números para imponer el saldo exacto actual. Escribe 0 si el cliente no debe ni tiene cajas a favor.</p>
+                </div>
+                
+                <div class="bg-gray-50 p-2 rounded">
+                    ${inputsHTML}
+                </div>
+            </div>
+        `;
+        
+        _showModal('Editar Saldos', modalContent, async () => {
+            const newSaldos = {};
+            document.querySelectorAll('.override-vacio-input').forEach(input => {
+                const tipo = input.dataset.tipo;
+                const val = parseInt(input.value, 10);
+                newSaldos[tipo] = isNaN(val) ? 0 : val;
+            });
+            
+            _showModal('Progreso', 'Sobrescribiendo saldos en la base de datos...', null, '', null, false);
+            try {
+                const clienteRef = _doc(_db, CLIENTES_COLLECTION_PATH, clienteId);
+                await _setDoc(clienteRef, { saldoVacios: newSaldos }, { merge: true });
+                
+                const pModal = document.getElementById('modalContainer');
+                if(pModal && pModal.querySelector('h3')?.textContent.startsWith('Progreso')) pModal.classList.add('hidden');
+                
+                setTimeout(() => {
+                    _showModal('Éxito', 'Saldos actualizados correctamente.');
+                    renderEditSaldosList(); // Refrescar la tabla que está debajo
+                }, 300);
+
+            } catch(e) {
+                console.error(e);
+                _showModal('Error', 'No se pudieron actualizar los saldos: ' + e.message);
+            }
+            return false; // Evita el cierre automático si la validación asíncrona es lenta
+            
+        }, 'Guardar Cambios Absolutos', null, true);
+    }
+
+    // ==========================================
 
     /**
      * Muestra la vista de funciones avanzadas.
@@ -138,17 +295,12 @@
         document.getElementById('backToAdvancedFunctionsBtn').addEventListener('click', showFuncionesAvanzadasView);
     }
 
-    /**
-     * Función auxiliar para parsear CSV manualmente respetando comillas.
-     * Ejemplo: "Dato, con comas" se leerá como una sola celda.
-     */
     function parseCSV(text) {
         const rows = [];
         let currentRow = [];
         let currentCell = '';
         let insideQuotes = false;
 
-        // Normalizar saltos de línea y recorrer caracter por caracter
         text = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
         
         for (let i = 0; i < text.length; i++) {
@@ -157,19 +309,15 @@
 
             if (char === '"') {
                 if (insideQuotes && nextChar === '"') {
-                    // Doble comilla escapada dentro de comillas ("" -> ")
                     currentCell += '"';
                     i++; 
                 } else {
-                    // Alternar estado de comillas
                     insideQuotes = !insideQuotes;
                 }
             } else if (char === ',' && !insideQuotes) {
-                // Fin de celda
                 currentRow.push(currentCell.trim());
                 currentCell = '';
             } else if (char === '\n' && !insideQuotes) {
-                // Fin de fila
                 currentRow.push(currentCell.trim());
                 if (currentRow.length > 0 && (currentRow.length > 1 || currentRow[0] !== '')) {
                      rows.push(currentRow);
@@ -180,7 +328,6 @@
                 currentCell += char;
             }
         }
-        // Añadir última celda y fila si existen
         if (currentCell || currentRow.length > 0) {
              currentRow.push(currentCell.trim());
              rows.push(currentRow);
@@ -189,13 +336,10 @@
         return rows;
     }
 
-    /**
-     * Maneja la carga y parseo del archivo Excel o CSV.
-     */
     function handleFileUpload(event) {
         const file = event.target.files[0];
         if (!file) return;
-        _clientesParaImportar = []; // Reset cache
+        _clientesParaImportar = [];
 
         const fileName = file.name.toLowerCase();
         const isCSV = fileName.endsWith('.csv') || file.type === 'text/csv';
@@ -209,10 +353,8 @@
 
             try {
                 if (isCSV) {
-                    // Usar parser nativo para CSV
                     jsonData = parseCSV(data);
                 } else if (isExcel) {
-                    // Intentar usar librería XLSX si está disponible
                     if (typeof XLSX !== 'undefined') {
                         const workbook = XLSX.read(data, { type: 'binary' });
                         const firstSheetName = workbook.SheetNames[0];
@@ -226,7 +368,7 @@
                 }
             } catch (readError) {
                  _showModal('Error de Lectura', readError.message);
-                 renderPreviewTable([]); // Clear preview
+                 renderPreviewTable([]); 
                  return;
             }
 
@@ -236,10 +378,8 @@
                 return;
             }
 
-            // Procesar encabezados (fila 0)
             const headers = jsonData[0].map(h => (h ? h.toString().toLowerCase().trim().replace(/\s+/g, '') : ''));
             const requiredHeaders = ['sector', 'nombrecomercial', 'nombrepersonal', 'telefono', 'cep'];
-            // Añado más opciones para coordenadas para ser más robusto
             const optionalHeaders = ['coordenadas', 'x', 'y', 'latitud', 'longitud', 'lat', 'lon']; 
             const headerMap = {};
             let missingHeader = false;
@@ -265,19 +405,14 @@
                 }
             });
 
-            // Procesar filas de datos
             _clientesParaImportar = jsonData.slice(1).map((row, rowIndex) => {
-                // Protección contra filas vacías al final del CSV
                 if (row.length <= 1 && (!row[0] || row[0].trim() === '')) return null;
 
                 let coordenadas = '';
                 
-                // Prioridad 1: Columna 'coordenadas' explicita
                 if (headerMap['coordenadas'] !== undefined) {
-                    // Limpiar comillas extras si quedaron por el parser CSV manual en casos extremos
                     coordenadas = (row[headerMap['coordenadas']] || '').toString().trim().replace(/^"|"$/g, '');
                 } 
-                // Prioridad 2: Columnas 'latitud' y 'longitud' (o lat/lon)
                 else if ((headerMap['latitud'] !== undefined || headerMap['lat'] !== undefined) && 
                          (headerMap['longitud'] !== undefined || headerMap['lon'] !== undefined)) {
                     
@@ -291,19 +426,16 @@
                         coordenadas = `${lat}, ${lon}`;
                     }
                 }
-                // Prioridad 3: Columnas X e Y (Soporte Legacy/GIS)
                 else if (headerMap['x'] !== undefined && headerMap['y'] !== undefined) {
                     const x = (row[headerMap['x']] || '').toString().trim();
                     const y = (row[headerMap['y']] || '').toString().trim();
                     if (x && y) {
-                        coordenadas = `${y}, ${x}`; // Formato standard es Lat, Lon (Y suele ser Latitud en proyecciones planas simples, pero depende del origen)
+                        coordenadas = `${y}, ${x}`; 
                     }
                 }
 
-                // --- CAMBIO: Inicializar saldoVacios por tipo ---
                 const saldoVaciosInicial = {};
                 TIPOS_VACIO.forEach(tipo => saldoVaciosInicial[tipo] = 0);
-                // --- FIN CAMBIO ---
 
                 const cliente = {
                     sector: (row[headerMap['sector']] || '').toString().trim().toUpperCase(),
@@ -312,15 +444,15 @@
                     telefono: (row[headerMap['telefono']] || '').toString().trim(),
                     codigoCEP: (row[headerMap['cep']] || 'N/A').toString().trim(),
                     coordenadas: coordenadas,
-                    saldoVacios: saldoVaciosInicial // <-- CAMBIO
+                    saldoVacios: saldoVaciosInicial
                 };
                 if (!cliente.codigoCEP) cliente.codigoCEP = 'N/A';
                 if (!cliente.nombreComercial && !cliente.nombrePersonal) {
                       console.warn(`Fila ${rowIndex + 2}: Faltan Nombre Comercial y Nombre Personal. Fila ignorada.`);
-                      return null; // Ignorar fila si faltan ambos nombres
+                      return null; 
                 }
                 return cliente;
-            }).filter(c => c !== null); // Filtrar las filas ignoradas (null)
+            }).filter(c => c !== null); 
 
             renderPreviewTable(_clientesParaImportar);
         };
@@ -330,17 +462,13 @@
              renderPreviewTable([]);
         };
 
-        // Decidir cómo leer el archivo
         if (isCSV) {
-            reader.readAsText(file, 'UTF-8'); // Leer como texto para CSV
+            reader.readAsText(file, 'UTF-8');
         } else {
-            reader.readAsBinaryString(file); // Leer como binario para Excel (si estuviera soportado)
+            reader.readAsBinaryString(file); 
         }
     }
 
-    /**
-     * Muestra una tabla de vista previa con los datos del Excel.
-     */
     function renderPreviewTable(clientes) {
         const container = document.getElementById('preview-container');
         const actionsContainer = document.getElementById('import-actions');
@@ -353,7 +481,7 @@
         if (clientes.length === 0) {
             container.innerHTML = `<p class="text-center text-red-500 p-4">No se encontraron clientes válidos para importar o el archivo está vacío.</p>`;
             actionsContainer.classList.add('hidden');
-            backButton.classList.remove('hidden'); // Show back button if preview fails
+            backButton.classList.remove('hidden'); 
             return;
         }
 
@@ -383,20 +511,17 @@
         container.innerHTML = tableHTML;
 
         actionsContainer.classList.remove('hidden');
-        backButton.classList.add('hidden'); // Hide back button when preview is shown
+        backButton.classList.add('hidden'); 
         document.getElementById('confirmImportBtn').onclick = handleConfirmImport;
         document.getElementById('cancelImportBtn').onclick = () => {
              _clientesParaImportar = [];
-             uploadInput.value = ''; // Reset file input
+             uploadInput.value = ''; 
              container.innerHTML = '';
              actionsContainer.classList.add('hidden');
              backButton.classList.remove('hidden');
         };
     }
 
-    /**
-     * Confirma y guarda los clientes y sectores importados en Firestore.
-     */
     async function handleConfirmImport() {
         if (_clientesParaImportar.length === 0) {
             _showModal('Error', 'No hay clientes válidos para importar.');
@@ -406,38 +531,32 @@
         _showModal('Progreso', `Importando ${_clientesParaImportar.length} clientes...`);
 
         try {
-            // Get existing sectors
             const sectoresRef = _collection(_db, SECTORES_COLLECTION_PATH);
             const sectoresSnapshot = await _getDocs(sectoresRef);
             const existingSectores = new Map(sectoresSnapshot.docs.map(doc => [doc.data().name.toUpperCase(), doc.id]));
 
-            // Find new sectors to add
             const newSectores = new Set(
                 _clientesParaImportar
                     .map(c => c.sector)
-                    .filter(s => s && !existingSectores.has(s)) // Filter out empty and existing
+                    .filter(s => s && !existingSectores.has(s)) 
             );
 
-            // Prepare batch write
             const batch = _writeBatch(_db);
             let operations = 0;
-            const BATCH_LIMIT = 490; // Firestore batch limit (leave some margin)
+            const BATCH_LIMIT = 490; 
 
-            // Add new sectors
             newSectores.forEach(sectorName => {
                 const newSectorRef = _doc(sectoresRef);
                 batch.set(newSectorRef, { name: sectorName });
                 operations++;
             });
             if (operations > 0) {
-                 await batch.commit(); // Commit sectors first if any
+                 await batch.commit(); 
                  console.log(`Added ${newSectores.size} new sectors.`);
             }
 
-
-            // Add clients (might need multiple batches)
             const clientesRef = _collection(_db, CLIENTES_COLLECTION_PATH);
-            let clientBatch = _writeBatch(_db); // Start a new batch for clients
+            let clientBatch = _writeBatch(_db); 
             let clientOperations = 0;
             let clientsAdded = 0;
 
@@ -450,26 +569,24 @@
                  if (clientOperations >= BATCH_LIMIT) {
                      _showModal('Progreso', `Importando clientes (${clientsAdded}/${_clientesParaImportar.length})...`);
                      await clientBatch.commit();
-                     clientBatch = _writeBatch(_db); // Start a new batch
+                     clientBatch = _writeBatch(_db); 
                      clientOperations = 0;
                  }
             }
 
-            // Commit any remaining clients
             if (clientOperations > 0) {
                  _showModal('Progreso', `Finalizando importación (${clientsAdded}/${_clientesParaImportar.length})...`);
                  await clientBatch.commit();
             }
 
-
             _showModal('Éxito', `Se han importado ${clientsAdded} clientes y ${newSectores.size} nuevos sectores.`);
-            showFuncionesAvanzadasView(); // Go back after success
+            showFuncionesAvanzadasView(); 
 
         } catch (error) {
-            console.error("Error during import:", error); // Log detailed error
+            console.error("Error during import:", error); 
             _showModal('Error', `Ocurrió un error durante la importación: ${error.message}`);
         } finally {
-            _clientesParaImportar = []; // Clear cache regardless of success/failure
+            _clientesParaImportar = []; 
         }
     }
 
@@ -494,9 +611,9 @@
                 coordsInput.placeholder = originalPlaceholder;
                 coordsInput.disabled = false;
             }, {
-                 enableHighAccuracy: true, // Request higher accuracy
-                 timeout: 10000, // Wait up to 10 seconds
-                 maximumAge: 0 // Force fresh reading
+                 enableHighAccuracy: true, 
+                 timeout: 10000, 
+                 maximumAge: 0 
             });
         } else {
             _showModal('No Soportado', 'La geolocalización no es soportada por este navegador.');
@@ -504,9 +621,6 @@
     }
 
 
-    /**
-     * Muestra la vista de agregar cliente.
-     */
     function showAgregarClienteView() {
          _floatingControls.classList.add('hidden');
         _mainContent.innerHTML = `
@@ -573,7 +687,7 @@
 
         document.getElementById('clienteForm').addEventListener('submit', agregarCliente);
         document.getElementById('backToClientesBtn').addEventListener('click', showClientesSubMenu);
-        document.getElementById('addSectorBtn').addEventListener('click', () => _showAddItemModal(SECTORES_COLLECTION_PATH, 'Sector', 'sector')); // Pass dropdown ID
+        document.getElementById('addSectorBtn').addEventListener('click', () => _showAddItemModal(SECTORES_COLLECTION_PATH, 'Sector', 'sector')); 
         document.getElementById('getCoordsBtn').addEventListener('click', () => getCurrentCoordinates('coordenadas'));
     }
 
@@ -583,7 +697,7 @@
 
         const nombreComercial = form.nombreComercial.value.trim().toUpperCase();
         const nombrePersonal = form.nombrePersonal.value.trim().toUpperCase();
-        const sector = form.sector.value.toUpperCase(); // Ensure sector is taken from select
+        const sector = form.sector.value.toUpperCase(); 
         const telefono = form.telefono.value.trim();
         const codigoCEP = form.codigoCEP.value.trim();
         const coordenadas = form.coordenadas.value.trim();
@@ -597,7 +711,6 @@
         const normComercial = nombreComercial.toLowerCase();
         const normPersonal = nombrePersonal.toLowerCase();
 
-        // Check cache first for duplicates
          let duplicado = null;
          let motivo = "";
          for (const c of _clientesCache) {
@@ -607,7 +720,6 @@
              if (codigoCEP && codigoCEP.toLowerCase() !== 'n/a' && c.codigoCEP === codigoCEP) { duplicado = c; motivo = "código CEP"; break; }
          }
 
-        // If not found in cache, check Firestore (less likely but possible race condition)
         if (!duplicado) {
              try {
                 const clientesRef = _collection(_db, CLIENTES_COLLECTION_PATH);
@@ -617,7 +729,7 @@
                 const qCEP = codigoCEP && codigoCEP.toLowerCase() !== 'n/a' ? _query(clientesRef, _where("codigoCEP", "==", codigoCEP)) : null;
 
                 const [snapComercial, snapPersonal, snapTel, snapCEP] = await Promise.all([
-                     _getDocs(qComercial), // Use _getDocs here
+                     _getDocs(qComercial), 
                      _getDocs(qPersonal),
                      _getDocs(qTel),
                      qCEP ? _getDocs(qCEP) : { empty: true }
@@ -630,17 +742,13 @@
 
              } catch (queryError) {
                   console.error("Error checking for duplicates in Firestore:", queryError);
-                  // Decide how to proceed - maybe allow saving with a warning?
-                  // For now, let it proceed to the duplicate check below.
              }
         }
 
 
         const guardar = async () => {
-            // --- CAMBIO: Inicializar saldoVacios por tipo ---
             const saldoVaciosInicial = {};
             TIPOS_VACIO.forEach(tipo => saldoVaciosInicial[tipo] = 0);
-            // --- FIN CAMBIO ---
 
             const clienteData = {
                 sector: sector,
@@ -649,13 +757,13 @@
                 telefono: telefono,
                 codigoCEP: codigoCEP,
                 coordenadas: coordenadas,
-                saldoVacios: saldoVaciosInicial // <-- CAMBIO
+                saldoVacios: saldoVaciosInicial 
             };
             try {
                 const docRef = await _addDoc(_collection(_db, CLIENTES_COLLECTION_PATH), clienteData);
                 _showModal('Éxito', 'Cliente agregado correctamente.');
                 form.reset();
-                 _populateDropdown(SECTORES_COLLECTION_PATH, 'sector', 'Sector'); // Repopulate to ensure consistency
+                 _populateDropdown(SECTORES_COLLECTION_PATH, 'sector', 'Sector'); 
                 const cepNACheckbox = document.getElementById('cepNA');
                 if (cepNACheckbox) {
                     cepNACheckbox.checked = false;
@@ -671,13 +779,13 @@
             _showModal(
                 'Posible Duplicado',
                 `Ya existe un cliente con el mismo ${motivo}: "${duplicado.nombreComercial}". ¿Deseas agregarlo de todas formas?`,
-                guardar, // Pass the save function directly
+                guardar, 
                 'Sí, agregar',
-                 null, // No specific action on cancel
-                 true // Indicate this modal triggers the confirm logic
+                 null, 
+                 true 
             );
         } else {
-            await guardar(); // Save directly if no duplicate found
+            await guardar(); 
         }
     }
 
@@ -702,18 +810,17 @@
             </div>
         `;
         document.getElementById('backToClientesBtn').addEventListener('click', showClientesSubMenu);
-        setupFiltros('clientesListContainer'); // Pass container ID
+        setupFiltros('clientesListContainer'); 
 
         const container = document.getElementById('clientesListContainer');
         const clientesRef = _collection(_db, CLIENTES_COLLECTION_PATH);
         const unsubscribe = _onSnapshot(clientesRef, (snapshot) => {
             _clientesCache = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            renderClientesList('clientesListContainer', false); // Pass container ID and readOnly flag
+            renderClientesList('clientesListContainer', false); 
         }, (error) => {
-             // FIX: Ignorar errores de permisos/autenticación (comunes al cerrar sesión)
             if (error.code === 'permission-denied' || error.code === 'unauthenticated') { 
                 console.log(`Clientes listener error ignored (assumed logout): ${error.code}`); 
-                return; // Ignorar el error silenciosamente
+                return; 
             }
             console.error("Error al cargar clientes:", error);
             if (container) {
@@ -721,7 +828,7 @@
             }
         });
 
-        _activeListeners.push(unsubscribe); // Add listener to global array
+        _activeListeners.push(unsubscribe); 
     }
 
 
@@ -749,7 +856,6 @@
         const selectElement = document.getElementById('filter-sector');
         if (selectElement) {
             const collectionRef = _collection(_db, SECTORES_COLLECTION_PATH);
-            // CORRECCIÓN: Usar _getDocs en lugar de getDocs
              _getDocs(collectionRef).then(snapshot => {
                 const items = snapshot.docs.map(doc => doc.data().name).sort();
                 const currentValue = selectElement.value;
@@ -759,7 +865,6 @@
                 });
                 selectElement.value = currentValue;
              }).catch(error => {
-                // FIX: Ignorar errores de permisos/autenticación (comunes al cerrar sesión)
                 if (error.code === 'permission-denied' || error.code === 'unauthenticated') {
                     console.log("Error carga dropdown sectores ignorado (assumed logout).");
                     return;
@@ -793,9 +898,6 @@
     }
 
 
-    /**
-     * Muestra la lista de clientes con filtros aplicados.
-     */
     function renderClientesList(elementId, readOnly = false) {
         const container = document.getElementById(elementId);
         if (!container) return;
@@ -931,7 +1033,6 @@
         const editCepNACheckbox = document.getElementById('editCepNA');
 
         const syncEditCepState = () => {
-             // Robust check: handle null/undefined and trim
              const cepValue = (editCepInput.value || '').trim().toLowerCase();
             if (cepValue === 'n/a') {
                 editCepNACheckbox.checked = true;
@@ -947,12 +1048,12 @@
                 editCepInput.value = 'N/A';
                 editCepInput.disabled = true;
             } else {
-                editCepInput.value = ''; // Clear only if unchecked, don't assume original value
+                editCepInput.value = ''; 
                 editCepInput.disabled = false;
                 editCepInput.focus();
             }
         });
-        syncEditCepState(); // Initial state sync
+        syncEditCepState(); 
 
         document.getElementById('getEditCoordsBtn').addEventListener('click', () => getCurrentCoordinates('editCoordenadas'));
 
@@ -970,10 +1071,9 @@
                 telefono: document.getElementById('editTelefono').value || '',
                 codigoCEP: document.getElementById('editCodigoCEP').value || '',
                 coordenadas: (document.getElementById('editCoordenadas').value || '').trim(),
-                saldoVacios: cliente.saldoVacios || {} // Preserve existing saldoVacios
+                saldoVacios: cliente.saldoVacios || {} 
             };
 
-            // Basic validation
             if (!updatedData.nombreComercial || !updatedData.nombrePersonal || !updatedData.telefono) {
                  _showModal('Error', 'Nombre Comercial, Nombre Personal y Teléfono son requeridos.');
                  return;
@@ -984,7 +1084,7 @@
             try {
                 await _setDoc(_doc(_db, CLIENTES_COLLECTION_PATH, clienteId), updatedData, { merge: true });
                 _showModal('Éxito', 'Cliente modificado exitosamente.');
-                showVerClientesView(); // Go back to the list
+                showVerClientesView(); 
             } catch (error) {
                 console.error("Error al modificar el cliente:", error);
                 _showModal('Error', `Hubo un error al modificar el cliente: ${error.message}`);
@@ -996,23 +1096,16 @@
 
     function deleteCliente(clienteId) {
         _showModal('Confirmar Eliminación', '¿Estás seguro de que deseas eliminar este cliente?', async () => {
-            _showModal('Progreso', 'Eliminando cliente...'); // Show progress
+            _showModal('Progreso', 'Eliminando cliente...'); 
             try {
                 await _deleteDoc(_doc(_db, CLIENTES_COLLECTION_PATH, clienteId));
                 _showModal('Éxito', 'Cliente eliminado correctamente.');
-                // No need to call showVerClientesView if listener updates the list
-                // showVerClientesView(); // Keep if you prefer explicit refresh
             } catch (error) {
                 console.error("Error al eliminar el cliente:", error);
                 _showModal('Error', 'Hubo un error al eliminar el cliente.');
             }
-        }, 'Sí, Eliminar', null, true); // Trigger confirm logic
+        }, 'Sí, Eliminar', null, true); 
     };
-
-    // --- FUNCIÓN REDUNDANTE ELIMINADA ---
-    // La función 'showValidatedAddItemModal' se eliminó
-    // porque es una copia de 'showAddItemModal' (definida en index.html)
-    // que se recibe como la dependencia '_showAddItemModal'.
 
 
     function showDatosMaestrosSectoresView() {
@@ -1054,7 +1147,6 @@
                 </div>
             `).join('');
         }, (error) => {
-             // FIX: Ignorar errores de permisos/autenticación (comunes al cerrar sesión)
             if (error.code === 'permission-denied' || error.code === 'unauthenticated') { 
                 console.log(`Sectores listener error ignored (assumed logout): ${error.code}`); 
                 return;
@@ -1074,27 +1166,24 @@
             const nuevoNombreMayus = newName.trim().toUpperCase();
             _showModal('Progreso', 'Verificando y actualizando...');
             try {
-                // Check if new name already exists
                 const q = _query(_collection(_db, SECTORES_COLLECTION_PATH), _where("name", "==", nuevoNombreMayus));
-                const querySnapshot = await _getDocs(q); // Use _getDocs
-                if (!querySnapshot.empty && querySnapshot.docs[0].id !== sectorId) { // Check if it's not the same doc
+                const querySnapshot = await _getDocs(q); 
+                if (!querySnapshot.empty && querySnapshot.docs[0].id !== sectorId) { 
                     _showModal('Error', `El sector "${nuevoNombreMayus}" ya existe.`);
                     return;
                 }
 
-                // Update the sector name
-                await _setDoc(_doc(_db, SECTORES_COLLECTION_PATH, sectorId), { name: nuevoNombreMayus }); // Use _setDoc, _doc
+                await _setDoc(_doc(_db, SECTORES_COLLECTION_PATH, sectorId), { name: nuevoNombreMayus }); 
 
-                // Find and update clients using the old name
                 const clientesRef = _collection(_db, CLIENTES_COLLECTION_PATH);
                 const clientesQuery = _query(clientesRef, _where("sector", "==", currentName));
-                const clientesSnapshot = await _getDocs(clientesQuery); // Use _getDocs
+                const clientesSnapshot = await _getDocs(clientesQuery); 
                 let updatedClientsCount = 0;
 
                 if (!clientesSnapshot.empty) {
                       updatedClientsCount = clientesSnapshot.size;
                       _showModal('Progreso', `Actualizando ${updatedClientsCount} cliente(s)...`);
-                    const batch = _writeBatch(_db); // Use _writeBatch
+                    const batch = _writeBatch(_db); 
                     clientesSnapshot.docs.forEach(doc => {
                         batch.update(doc.ref, { sector: nuevoNombreMayus });
                     });
@@ -1106,7 +1195,7 @@
                  console.error("Error al renombrar sector:", error);
                 _showModal('Error', `Ocurrió un error al renombrar el sector: ${error.message}`);
             }
-        } else if (newName !== null) { // Handle case where user entered same name or empty
+        } else if (newName !== null) { 
             _showModal('Aviso', 'El nombre no cambió o está vacío.');
         }
     }
@@ -1115,11 +1204,10 @@
     async function deleteSector(sectorId, sectorName) {
          _showModal('Progreso', `Verificando uso del sector "${sectorName}"...`);
         const clientesRef = _collection(_db, CLIENTES_COLLECTION_PATH);
-        // CORRECCIÓN: Usar _limit
-        const q = _query(clientesRef, _where("sector", "==", sectorName), _limit(1)); // Only need to know if at least one exists
+        const q = _query(clientesRef, _where("sector", "==", sectorName), _limit(1)); 
 
         try {
-            const usageSnapshot = await _getDocs(q); // Use _getDocs
+            const usageSnapshot = await _getDocs(q); 
             if (!usageSnapshot.empty) {
                 _showModal('Error al Eliminar', `No se puede eliminar el sector "${sectorName}" porque está siendo utilizado por al menos un cliente.`);
                 return;
@@ -1128,13 +1216,13 @@
             _showModal('Confirmar Eliminación', `¿Estás seguro de que deseas eliminar el sector "${sectorName}"? Esta acción no se puede deshacer.`, async () => {
                  _showModal('Progreso', `Eliminando sector "${sectorName}"...`);
                  try {
-                     await _deleteDoc(_doc(_db, SECTORES_COLLECTION_PATH, sectorId)); // Use _deleteDoc, _doc
+                     await _deleteDoc(_doc(_db, SECTORES_COLLECTION_PATH, sectorId)); 
                      _showModal('Éxito', `El sector "${sectorName}" ha sido eliminado.`);
                  } catch (deleteError) {
                       console.error("Error al eliminar sector:", deleteError);
                       _showModal('Error', `Ocurrió un error al eliminar el sector: ${deleteError.message}`);
                  }
-            }, 'Sí, Eliminar', null, true); // Trigger confirm logic
+            }, 'Sí, Eliminar', null, true); 
 
         } catch (error) {
             console.error("Error verificando uso de sector:", error);
@@ -1148,15 +1236,14 @@
             _showModal('Progreso', 'Eliminando todos los clientes...');
             try {
                 const collectionRef = _collection(_db, CLIENTES_COLLECTION_PATH);
-                const snapshot = await _getDocs(collectionRef); // Use _getDocs
+                const snapshot = await _getDocs(collectionRef); 
                 if (snapshot.empty) {
                     _showModal('Aviso', 'No hay clientes para eliminar.');
                     return;
                 }
 
-                // Delete in batches
                 const BATCH_LIMIT = 490;
-                let batch = _writeBatch(_db); // Use _writeBatch
+                let batch = _writeBatch(_db); 
                 let count = 0;
                 let totalDeleted = 0;
 
@@ -1167,11 +1254,10 @@
                          _showModal('Progreso', `Eliminando clientes (${totalDeleted + count}/${snapshot.size})...`);
                          await batch.commit();
                          totalDeleted += count;
-                         batch = _writeBatch(_db); // Start new batch
+                         batch = _writeBatch(_db); 
                          count = 0;
                      }
                 }
-                // Commit the last batch
                 if (count > 0) {
                      _showModal('Progreso', `Finalizando eliminación (${totalDeleted + count}/${snapshot.size})...`);
                      await batch.commit();
@@ -1179,14 +1265,14 @@
                 }
 
                 _showModal('Éxito', `Todos los ${totalDeleted} clientes han sido eliminados.`);
-                 _clientesCache = []; // Clear local cache
-                 renderClientesList('clientesListContainer', false); // Re-render the (now empty) list
+                 _clientesCache = []; 
+                 renderClientesList('clientesListContainer', false); 
 
             } catch (error) {
                 console.error("Error al eliminar todos los clientes:", error);
                 _showModal('Error', `Hubo un error al eliminar los clientes: ${error.message}`);
             }
-        }, 'Sí, Eliminar Todos', null, true); // Trigger confirm logic
+        }, 'Sí, Eliminar Todos', null, true); 
     }
 
 
@@ -1217,18 +1303,17 @@
         const clientesRef = _collection(_db, CLIENTES_COLLECTION_PATH);
         const unsubscribe = _onSnapshot(clientesRef, (snapshot) => {
             _clientesCache = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            renderSaldosList(); // Re-render list on data change
+            renderSaldosList(); 
         }, (error) => {
-            // FIX: Ignorar errores de permisos/autenticación (comunes al cerrar sesión)
             if (error.code === 'permission-denied' || error.code === 'unauthenticated') { 
                 console.log(`Saldos listener error ignored (assumed logout): ${error.code}`);
-                return; // Ignorar el error silenciosamente
+                return; 
             }
             console.error("Error al cargar saldos:", error);
              const container = document.getElementById('saldosListContainer');
              if(container) container.innerHTML = '<p class="text-red-500 text-center">Error al cargar los saldos.</p>';
         });
-        _activeListeners.push(unsubscribe); // Add to global list
+        _activeListeners.push(unsubscribe); 
     }
 
 
@@ -1240,11 +1325,10 @@
 
         const searchTerm = searchInput.value.toLowerCase();
 
-        // Filter clients based on search term AND if they have any non-zero saldoVacios entry
         const filteredClients = _clientesCache.filter(c => {
              const nameMatch = (c.nombreComercial || '').toLowerCase().includes(searchTerm) || (c.nombrePersonal || '').toLowerCase().includes(searchTerm);
              const hasSaldo = c.saldoVacios && Object.values(c.saldoVacios).some(saldo => saldo !== 0);
-             return nameMatch && hasSaldo; // Show only clients with saldo and matching name
+             return nameMatch && hasSaldo; 
         });
 
         if (filteredClients.length === 0) {
@@ -1255,7 +1339,6 @@
         let tableHTML = `<table class="min-w-full bg-white text-sm">
             <thead class="bg-gray-200 sticky top-0 z-10"><tr>
                 <th class="py-2 px-4 border-b text-left">Cliente</th>`;
-        // Add headers for each TIPOS_VACIO
         TIPOS_VACIO.forEach(tipo => {
              tableHTML += `<th class="py-2 px-4 border-b text-center">${tipo}</th>`;
         });
@@ -1265,7 +1348,6 @@
             const saldoVacios = cliente.saldoVacios || {};
             tableHTML += `<tr class="hover:bg-gray-50">
                 <td class="py-2 px-4 border-b">${cliente.nombreComercial}</td>`;
-            // Add saldo data for each TIPOS_VACIO
             TIPOS_VACIO.forEach(tipo => {
                 const saldo = saldoVacios[tipo] || 0;
                 const saldoClass = saldo > 0 ? 'text-red-600 font-bold' : (saldo < 0 ? 'text-green-600 font-bold' : 'text-gray-500');
@@ -1282,16 +1364,13 @@
     }
 
     async function showSaldoDetalleModal(clienteId) {
-        // Use a stable reference from the cache
         const clienteIndex = _clientesCache.findIndex(c => c.id === clienteId);
         if (clienteIndex === -1) {
              _showModal('Error', 'Cliente no encontrado en la caché.');
              return;
         }
-        // Use the object from the cache array directly
         const cliente = _clientesCache[clienteIndex];
 
-        // --- CAMBIO: Mostrar saldos por tipo y ajustar por tipo ---
         const saldoVacios = cliente.saldoVacios || {};
         let detalleHTML = '<ul class="space-y-2 mb-4">';
         let hasSaldos = false;
@@ -1332,14 +1411,11 @@
                     <button id="ajusteDevolucionBtn" class="w-full px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 text-sm font-medium">Registrar Devolución (-)</button>
                     <button id="ajustePrestamoBtn" class="w-full px-4 py-2 bg-yellow-500 text-gray-800 rounded-lg hover:bg-yellow-600 text-sm font-medium">Registrar Préstamo (+)</button>
                 </div>
-                <p id="ajusteErrorMsg" class="text-red-500 text-xs h-4"></p> <!-- For error messages -->
+                <p id="ajusteErrorMsg" class="text-red-500 text-xs h-4"></p> 
             </div>
         `;
-        // --- FIN CAMBIO ---
-        // Mostrar modal SIN botón de confirmación por defecto, ya que los botones de ajuste están dentro
         _showModal('Detalle/Ajuste de Saldo', modalContentHTML, null, '');
 
-        // Añadir listeners DESPUÉS de mostrar el modal
         const devolucionBtn = document.getElementById('ajusteDevolucionBtn');
         const prestamoBtn = document.getElementById('ajustePrestamoBtn');
         const errorMsgP = document.getElementById('ajusteErrorMsg');
@@ -1347,7 +1423,7 @@
         const performAdjustment = (tipoAjuste) => {
              const tipoVacioSelect = document.getElementById('ajusteTipoVacio');
              const cantidadInput = document.getElementById('ajusteCantidad');
-             errorMsgP.textContent = ''; // Clear previous error
+             errorMsgP.textContent = ''; 
 
              const tipoVacio = tipoVacioSelect?.value;
              const cantidad = cantidadInput ? parseInt(cantidadInput.value, 10) : NaN;
@@ -1387,47 +1463,37 @@
                 }
 
                 const data = clienteDoc.data();
-                // Ensure saldoVacios is initialized correctly
                 const saldoVacios = data.saldoVacios && typeof data.saldoVacios === 'object' ? { ...data.saldoVacios } : {};
 
-                // --- CAMBIO: Usar tipoVacio como clave ---
                 const saldoActual = saldoVacios[tipoVacio] || 0;
                 let nuevoSaldo = saldoActual;
 
                 if (tipoAjuste === 'devolucion') {
                     nuevoSaldo -= cantidad;
-                } else { // prestamo
+                } else { 
                     nuevoSaldo += cantidad;
                 }
-                // Only update if the value changed
                  if (saldoVacios[tipoVacio] !== nuevoSaldo) {
                     saldoVacios[tipoVacio] = nuevoSaldo;
                     transaction.update(clienteRef, { saldoVacios: saldoVacios });
                  } else {
                       console.log(`Saldo for ${tipoVacio} already ${nuevoSaldo}, no update needed.`);
-                      // Optional: Throw an error or just skip if no change? Skipping for now.
                  }
 
-                // --- FIN CAMBIO ---
             });
-             // Close the "Progreso" modal before showing the success/updated modal
-            const progressModal = document.getElementById('modalContainer');
-            if(progressModal && progressModal.querySelector('h3')?.textContent.startsWith('Progreso')) {
+             const progressModal = document.getElementById('modalContainer');
+             if(progressModal && progressModal.querySelector('h3')?.textContent.startsWith('Progreso')) {
                  progressModal.classList.add('hidden');
-            }
+             }
              _showModal('Éxito', 'El saldo de vacíos se ha actualizado.');
-            // Re-render the detail modal to show the updated balance
             showSaldoDetalleModal(clienteId);
         } catch (error) {
             console.error("Error en el ajuste manual de vacíos:", error);
-             // Close the "Progreso" modal on error too
              const progressModal = document.getElementById('modalContainer');
             if(progressModal && progressModal.querySelector('h3')?.textContent.startsWith('Progreso')) {
                  progressModal.classList.add('hidden');
             }
             _showModal('Error', `No se pudo actualizar el saldo: ${error.message || error}`);
-            // Optionally, re-show the modal without changes if transaction failed
-            // showSaldoDetalleModal(clienteId);
         }
     }
 
@@ -1438,7 +1504,8 @@
         deleteCliente,
         editSector,
         deleteSector,
-        showSaldoDetalleModal
+        showSaldoDetalleModal,
+        showEditSaldoModal // Añadido para el botón del Admin
     };
 
 })();
