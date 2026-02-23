@@ -566,9 +566,9 @@
                 <table class="min-w-full bg-white text-sm rounded-lg overflow-hidden border border-gray-200">
                     <thead class="bg-gray-800 text-white">
                         <tr>
-                            <th class="py-2 px-2 text-left font-semibold">Fecha/Cliente</th>
-                            <th class="py-2 px-2 text-right font-semibold">Total</th>
-                            <th class="py-2 px-2 text-center font-semibold w-20">Acciones</th>
+                            <th class="py-2.5 px-3 text-left font-semibold">Fecha / Cliente</th>
+                            <th class="py-2.5 px-3 text-right font-semibold">Total por Rubro</th>
+                            <th class="py-2.5 px-3 text-center font-semibold">Acciones</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-gray-200">
@@ -603,7 +603,7 @@
                     subtotales[shortR] += sub;
                 });
 
-                // CONSTRUIR HTML DEL TOTAL BLOQUEANDO EL SALTO DE LÍNEA
+                // CONSTRUIR HTML DEL TOTAL
                 let totalHtml = '';
                 const rubrosKeys = Object.keys(subtotales);
                 const gTotal = v.total || 0;
@@ -613,33 +613,33 @@
                     totalHtml += `<div class="text-[11px] text-gray-500 mb-1 space-y-0.5">`;
                     rubrosKeys.forEach(rk => {
                         if (subtotales[rk] > 0) {
-                            totalHtml += `<div class="flex justify-end whitespace-nowrap gap-1"><span class="font-medium">${rk}:</span> <span class="text-gray-700">$${subtotales[rk].toFixed(2)}</span></div>`;
+                            totalHtml += `<div class="flex justify-end gap-2"><span class="font-medium">${rk}:</span> <span class="text-gray-700">$${subtotales[rk].toFixed(2)}</span></div>`;
                         }
                     });
-                    totalHtml += `</div><div class="font-black text-gray-900 border-t border-gray-200 pt-1 flex justify-end items-center whitespace-nowrap text-[15px]"><span>Total:</span> <span class="ml-1">$${gTotal.toFixed(2)}</span></div>`;
+                    totalHtml += `</div><div class="font-black text-gray-900 border-t border-gray-200 pt-1 text-right text-base">Total: $${gTotal.toFixed(2)}</div>`;
                 } else if (rubrosKeys.length === 1 && subtotales[rubrosKeys[0]] > 0) {
                     // Un solo rubro
-                    totalHtml = `<div class="text-[10px] text-gray-400 flex justify-end mb-0.5 uppercase tracking-wide font-bold whitespace-nowrap"><span>${rubrosKeys[0]}</span></div>
-                                 <div class="font-black text-gray-900 flex justify-end items-center whitespace-nowrap text-[15px]"><span>Total:</span> <span class="ml-1">$${gTotal.toFixed(2)}</span></div>`;
+                    totalHtml = `<div class="text-[10px] text-gray-400 flex justify-end mb-0.5 uppercase tracking-wide font-bold"><span>ÚNICO RUBRO (${rubrosKeys[0]})</span></div>
+                                 <div class="font-black text-gray-900 text-right text-base">Total: $${gTotal.toFixed(2)}</div>`;
                 } else {
                     // Fallback de seguridad (Vacíos, etc)
-                    totalHtml = `<div class="font-black text-gray-900 flex justify-end items-center whitespace-nowrap text-[15px]"><span>Total:</span> <span class="ml-1">$${gTotal.toFixed(2)}</span></div>`;
+                    totalHtml = `<div class="font-black text-gray-900 text-right text-base">Total: $${gTotal.toFixed(2)}</div>`;
                 }
 
                 tHTML += `
                     <tr class="hover:bg-blue-50 transition-colors">
-                        <td class="py-2 px-2">
+                        <td class="py-2 px-3">
                             <div class="font-bold text-gray-800 text-sm mb-0.5">${v.clienteNombre || 'Sin Nombre'}</div>
                             <div class="text-[11px] text-gray-500 font-medium">${fechaStr}</div>
                         </td>
-                        <td class="py-2 px-2 align-middle">
+                        <td class="py-2 px-3 align-middle">
                             ${totalHtml}
                         </td>
-                        <td class="py-1.5 px-2 align-middle text-center w-20">
-                            <div class="flex flex-col gap-1 items-center w-full">
-                                <button onclick="window.ventasModule.showPastSaleOptions('${v.id}')" class="w-full py-1.5 px-1 bg-blue-600 text-white font-medium text-xs rounded hover:bg-blue-700 shadow-sm transition">Ticket</button>
-                                <button onclick="window.ventasModule.editVenta('${v.id}')" class="w-full py-1.5 px-1 bg-yellow-500 text-white font-medium text-xs rounded hover:bg-yellow-600 shadow-sm transition">Editar</button>
-                                <button onclick="window.ventasModule.deleteVenta('${v.id}')" class="w-full py-1.5 px-1 bg-red-600 text-white font-medium text-xs rounded hover:bg-red-700 shadow-sm transition">Borrar</button>
+                        <td class="py-2 px-3 align-middle text-center w-28">
+                            <div class="flex flex-col sm:flex-row justify-center gap-1.5">
+                                <button onclick="window.ventasModule.showPastSaleOptions('${v.id}')" class="px-2.5 py-1.5 bg-blue-600 text-white font-medium text-xs rounded hover:bg-blue-700 shadow-sm transition">Ticket</button>
+                                <button onclick="window.ventasModule.editVenta('${v.id}')" class="px-2.5 py-1.5 bg-yellow-500 text-white font-medium text-xs rounded hover:bg-yellow-600 shadow-sm transition">Editar</button>
+                                <button onclick="window.ventasModule.deleteVenta('${v.id}')" class="px-2.5 py-1.5 bg-red-600 text-white font-medium text-xs rounded hover:bg-red-700 shadow-sm transition">Borrar</button>
                             </div>
                         </td>
                     </tr>
