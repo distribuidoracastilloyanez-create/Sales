@@ -566,9 +566,9 @@
                 <table class="min-w-full bg-white text-sm rounded-lg overflow-hidden border border-gray-200">
                     <thead class="bg-gray-800 text-white">
                         <tr>
-                            <th class="py-2.5 px-3 text-left font-semibold">Fecha / Cliente</th>
-                            <th class="py-2.5 px-3 text-right font-semibold">Total por Rubro</th>
-                            <th class="py-2.5 px-3 text-center font-semibold">Acciones</th>
+                            <th class="py-2.5 px-2 text-left font-semibold">Fecha / Cliente</th>
+                            <th class="py-2.5 px-2 text-right font-semibold">Total por Rubro</th>
+                            <th class="py-2.5 px-1 text-center font-semibold text-[11px] w-12 tracking-tighter">ACC</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-gray-200">
@@ -628,18 +628,18 @@
 
                 tHTML += `
                     <tr class="hover:bg-blue-50 transition-colors">
-                        <td class="py-2 px-3">
+                        <td class="py-2 px-2">
                             <div class="font-bold text-gray-800 text-sm mb-0.5">${v.clienteNombre || 'Sin Nombre'}</div>
                             <div class="text-[11px] text-gray-500 font-medium">${fechaStr}</div>
                         </td>
-                        <td class="py-2 px-3 align-middle">
+                        <td class="py-2 px-2 align-middle">
                             ${totalHtml}
                         </td>
-                        <td class="py-2 px-3 align-middle text-center w-28">
-                            <div class="flex flex-col sm:flex-row justify-center gap-1.5">
-                                <button onclick="window.ventasModule.showPastSaleOptions('${v.id}')" class="px-2.5 py-1.5 bg-blue-600 text-white font-medium text-xs rounded hover:bg-blue-700 shadow-sm transition">Ticket</button>
-                                <button onclick="window.ventasModule.editVenta('${v.id}')" class="px-2.5 py-1.5 bg-yellow-500 text-white font-medium text-xs rounded hover:bg-yellow-600 shadow-sm transition">Editar</button>
-                                <button onclick="window.ventasModule.deleteVenta('${v.id}')" class="px-2.5 py-1.5 bg-red-600 text-white font-medium text-xs rounded hover:bg-red-700 shadow-sm transition">Borrar</button>
+                        <td class="py-1.5 px-1 align-middle text-center w-12">
+                            <div class="flex flex-col gap-1 items-center w-full">
+                                <button onclick="window.ventasModule.showPastSaleOptions('${v.id}')" class="w-full py-1.5 bg-blue-600 text-white font-bold text-[9px] uppercase leading-none rounded shadow-sm transition">Ticket</button>
+                                <button onclick="window.ventasModule.editVenta('${v.id}')" class="w-full py-1.5 bg-yellow-500 text-white font-bold text-[9px] uppercase leading-none rounded shadow-sm transition">Edit</button>
+                                <button onclick="window.ventasModule.deleteVenta('${v.id}')" class="w-full py-1.5 bg-red-600 text-white font-bold text-[9px] uppercase leading-none rounded shadow-sm transition">Del</button>
                             </div>
                         </td>
                     </tr>
