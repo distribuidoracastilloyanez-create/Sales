@@ -111,12 +111,6 @@
 
         /**
          * Genera las filas de la tabla de inventario
-         * @param {Array} inventoryList - Lista de productos ya filtrada y ordenada
-         * @param {Object} ventaActualProductos - Estado actual de productos seleccionados en la venta { id: { cantCj: 0... } }
-         * @param {String} currentCurrency - 'USD', 'COP', 'Bs'
-         * @param {Number} tasaCOP 
-         * @param {Number} tasaBs 
-         * @param {String} sortKey - Clave de agrupamiento (ej: 'segmento')
          */
         getInventoryTableRows: (inventoryList, ventaActualProductos, currentCurrency, tasaCOP, tasaBs, sortKey = 'segmento') => {
             if (inventoryList.length === 0) return `<tr><td colspan="4" class="text-center text-gray-500">No hay productos disponibles.</td></tr>`;
@@ -125,20 +119,17 @@
             let lastHeaderKey = null;
 
             inventoryList.forEach(prod => {
-                // Header de Agrupación
                 const curHeaderVal = prod[sortKey] || `Sin ${sortKey}`; 
                 if (curHeaderVal !== lastHeaderKey) { 
                     lastHeaderKey = curHeaderVal; 
                     html += `<tr class="bg-gray-100"><td colspan="4" class="py-1 px-2 font-bold sticky top-[calc(theme(height.10))] z-[9]">${lastHeaderKey}</td></tr>`; 
                 }
 
-                // Datos del producto y estado actual en venta
                 const vPor = prod.ventaPor || { und: true };
                 const vActProd = ventaActualProductos[prod.id] || {};
                 const precios = prod.precios || { und: prod.precioPorUnidad || 0 };
                 const stockU = prod.cantidadUnidades || 0;
 
-                // Función interna para crear fila
                 const createRow = (type, currentQty, maxQty, price, stockText, descText) => `
                     <tr class="border-b hover:bg-gray-50">
                         <td class="py-2 px-2 text-center align-middle"> 
@@ -185,12 +176,18 @@
             
             let total = 0;
             let productosHTML = '';
+            
+            const entregadosPorTipo = {};
 
             productosVendidos.forEach(p => {
                 const precios = p.precios || { und: p.precioPorUnidad || 0 };
                 const cant = p.cantidadVendida || { cj: p.cantCj || 0, paq: p.cantPaq || 0, und: p.cantUnd || 0 };
                 let desc = `${p.segmento || ''} ${p.marca || ''} ${p.presentacion}`;
                 let qtyText = '', priceText = '', subtotal = 0;
+
+                if (p.manejaVacios && p.tipoVacio && cant.cj > 0) {
+                    entregadosPorTipo[p.tipoVacio] = (entregadosPorTipo[p.tipoVacio] || 0) + cant.cj;
+                }
 
                 if (cant.cj > 0) {
                     subtotal = (precios.cj || 0) * cant.cj; qtyText = `${cant.cj} CJ`; priceText = `$${(precios.cj || 0).toFixed(2)}`;
@@ -214,11 +211,30 @@
             let vaciosHTML = '';
             const tiposConDev = Object.entries(vaciosDevueltos || {}).filter(([t, c]) => c > 0);
             if (tiposConDev.length > 0) {
-                vaciosHTML = `<div class="text-3xl mt-6 border-t border-black border-dashed pt-4"> <p>ENVASES DEVUELTOS:</p> <table class="w-full text-3xl mt-2"><tbody>`;
+                vaciosHTML += `<div class="text-3xl mt-6 border-t border-black border-dashed pt-4"> <p>VACÍOS DEVUELTOS:</p> <table class="w-full text-3xl mt-2"><tbody>`;
                 tiposConDev.forEach(([t, c]) => {
                     vaciosHTML += `<tr><td class="py-1 pr-2 text-left" style="width: 70%;">${t}</td><td class="py-1 pl-2 text-right" style="width: 30%;">${c} CJ</td></tr>`;
                 });
                 vaciosHTML += `</tbody></table></div>`;
+            }
+
+            let prestadosHTML = '';
+            const prestados = [];
+            Object.keys(entregadosPorTipo).forEach(t => {
+                const ent = entregadosPorTipo[t] || 0;
+                const dev = (vaciosDevueltos || {})[t] || 0;
+                const dif = ent - dev;
+                if (dif > 0) { 
+                    prestados.push({ tipo: t, cant: dif });
+                }
+            });
+
+            if (prestados.length > 0) {
+                prestadosHTML += `<div class="text-3xl mt-4 border-t border-black border-dashed pt-4"> <p>VACÍOS PRESTADOS:</p> <table class="w-full text-3xl mt-2"><tbody>`;
+                prestados.forEach(p => {
+                    prestadosHTML += `<tr><td class="py-1 pr-2 text-left" style="width: 70%;">${p.tipo}</td><td class="py-1 pl-2 text-right" style="width: 30%;">${p.cant} CJ</td></tr>`;
+                });
+                prestadosHTML += `</tbody></table></div>`;
             }
 
             return `
@@ -246,6 +262,7 @@
                         <p class="border-t border-black pt-2 font-bold">TOTAL: $${total.toFixed(2)}</p>
                     </div>
                     ${vaciosHTML}
+                    ${prestadosHTML}
                     <div class="text-center mt-16">
                         <p class="border-t border-black w-96 mx-auto"></p>
                         <p class="mt-4 text-3xl">${clienteNombrePersonal}</p>
@@ -285,6 +302,8 @@
             wordWrap(`Cliente: ${clienteNombre}`, LINE_WIDTH).forEach(line => { ticket += line + '\n'; });
             ticket += `Fecha: ${fecha}\n` + '-'.repeat(LINE_WIDTH) + '\n';
 
+            const entregadosPorTipo = {};
+
             if (productosVendidos.length > 0) {
                 ticket += 'Producto'.padEnd(26) + 'Cant'.padStart(6) + 'Precio'.padStart(8) + 'Subt'.padStart(8) + '\n';
                 productosVendidos.forEach(p => {
@@ -292,6 +311,10 @@
                     const cant = p.cantidadVendida || { cj: p.cantCj || 0, paq: p.cantPaq || 0, und: p.cantUnd || 0 };
                     let desc = _toTitleCase(`${p.segmento || ''} ${p.marca || ''} ${p.presentacion}`);
                     let qtyText = '', priceText = '', subtotal = 0;
+
+                    if (p.manejaVacios && p.tipoVacio && cant.cj > 0) {
+                        entregadosPorTipo[p.tipoVacio] = (entregadosPorTipo[p.tipoVacio] || 0) + cant.cj;
+                    }
 
                     if (cant.cj > 0) {
                         subtotal = (precios.cj || 0) * cant.cj; qtyText = `${cant.cj} CJ`; priceText = `$${(precios.cj || 0).toFixed(2)}`;
@@ -314,9 +337,26 @@
 
             const tiposConDev = Object.entries(vaciosDevueltos || {}).filter(([t, c]) => c > 0);
             if (tiposConDev.length > 0) {
-                ticket += '-'.repeat(LINE_WIDTH) + '\n' + center('ENVASES DEVUELTOS') + '\n';
+                ticket += '-'.repeat(LINE_WIDTH) + '\n' + center('VACÍOS DEVUELTOS') + '\n';
                 tiposConDev.forEach(([t, c]) => {
                     ticket += t.padEnd(LINE_WIDTH - `${c} CJ`.length) + `${c} CJ` + '\n';
+                });
+            }
+
+            const prestados = [];
+            Object.keys(entregadosPorTipo).forEach(t => {
+                const ent = entregadosPorTipo[t] || 0;
+                const dev = (vaciosDevueltos || {})[t] || 0;
+                const dif = ent - dev;
+                if (dif > 0) {
+                    prestados.push({ tipo: t, cant: dif });
+                }
+            });
+
+            if (prestados.length > 0) {
+                ticket += '-'.repeat(LINE_WIDTH) + '\n' + center('VACÍOS PRESTADOS') + '\n';
+                prestados.forEach(p => {
+                    ticket += p.tipo.padEnd(LINE_WIDTH - `${p.cant} CJ`.length) + `${p.cant} CJ` + '\n';
                 });
             }
 
