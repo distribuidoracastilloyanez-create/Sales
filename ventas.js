@@ -489,20 +489,17 @@
         }
     }
 
-    // --- CORRECCIÓN CRÍTICA EN GENERACIÓN DE TICKET ---
     async function generarTicket() {
         if (!_ventaActual.cliente) { _showModal('Error', 'Selecciona cliente.'); return; }
         const prods = Object.values(_ventaActual.productos);
         const hayVac = Object.values(_ventaActual.vaciosDevueltosPorTipo).some(c => c > 0);
         if (prods.length === 0 && !hayVac) { _showModal('Error', 'Agrega productos o registra vacíos devueltos.'); return; }
 
-        // Aquí se pasaron de nuevo todos los argumentos correctos al modal
         _showModal('Confirmar Venta', '¿Guardar esta transacción?', async () => {
             _showModal('Progreso', 'Guardando transacción...', null, '', null, false); 
             try {
                 const savedData = await _processAndSaveVenta();
                 
-                // Ocultamos manualmente el modal de progreso antes de lanzar el siguiente
                 const pModal = document.getElementById('modalContainer');
                 if (pModal) pModal.classList.add('hidden');
                 
@@ -542,8 +539,8 @@
     function showVentasActualesView() {
         if (_floatingControls) _floatingControls.classList.add('hidden');
         _mainContent.innerHTML = `
-            <div class="p-4 w-full"> <div class="bg-white/90 backdrop-blur-sm p-6 rounded-lg shadow-xl">
-                <div class="flex justify-between items-center mb-6"> <h2 class="text-2xl font-bold">Ventas Actuales</h2> <button id="backToVentasTotalesBtn" class="px-4 py-2 bg-gray-400 text-white rounded-lg shadow-md hover:bg-gray-500">Volver</button> </div>
+            <div class="p-2 sm:p-4 w-full"> <div class="bg-white/90 backdrop-blur-sm p-4 sm:p-6 rounded-lg shadow-xl">
+                <div class="flex justify-between items-center mb-6"> <h2 class="text-2xl font-bold">Ventas Actuales</h2> <button id="backToVentasTotalesBtn" class="px-4 py-2 bg-gray-400 text-white rounded-lg shadow-md hover:bg-gray-500 transition">Volver</button> </div>
                 <div id="ventasListContainer" class="overflow-x-auto"><p class="text-center text-gray-500">Cargando...</p></div>
             </div> </div>
         `;
@@ -551,17 +548,113 @@
         renderVentasList();
     }
 
+    // --- REESCRITURA TOTAL DE LA TABLA DE VENTAS ---
     function renderVentasList() {
         const cont = document.getElementById('ventasListContainer'); if (!cont) return;
         const vRef = _collection(_db, `artifacts/${_appId}/users/${_userId}/ventas`); const q = _query(vRef);
+        
         const unsub = _onSnapshot(q, (snap) => {
-            _ventasGlobal = snap.docs.map(d => ({ id: d.id, ...d.data() })); _ventasGlobal.sort((a,b)=>(b.fecha?.toDate()??0)-(a.fecha?.toDate()??0));
-            cont.innerHTML = window.ventasUI.getSalesListTemplate(_ventasGlobal);
+            _ventasGlobal = snap.docs.map(d => ({ id: d.id, ...d.data() })); 
+            _ventasGlobal.sort((a,b) => (b.fecha?.toDate()??0) - (a.fecha?.toDate()??0));
+            
+            if (_ventasGlobal.length === 0) {
+                cont.innerHTML = `<p class="text-center text-gray-500 py-4 font-medium">No hay ventas registradas.</p>`;
+                return;
+            }
+
+            let tHTML = `
+                <table class="min-w-full bg-white text-sm rounded-lg overflow-hidden border border-gray-200">
+                    <thead class="bg-gray-800 text-white">
+                        <tr>
+                            <th class="py-2.5 px-3 text-left font-semibold">Fecha / Cliente</th>
+                            <th class="py-2.5 px-3 text-right font-semibold">Total por Rubro</th>
+                            <th class="py-2.5 px-3 text-center font-semibold">Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-200">
+            `;
+
+            _ventasGlobal.forEach(v => {
+                const fechaObj = v.fecha?.toDate ? v.fecha.toDate() : new Date(v.fecha);
+                const fechaStr = isNaN(fechaObj) ? 'Fecha inválida' : fechaObj.toLocaleString('es-ES', {day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit'});
+                
+                // CALCULAR SUBTOTALES POR RUBRO
+                let subtotales = {};
+                (v.productos || []).forEach(p => {
+                    const r = (p.rubro || 'OTROS').toUpperCase();
+                    
+                    // Abreviación Inteligente
+                    let shortR = r;
+                    if (r.includes('CERVE') || r.includes('VINO')) shortR = 'CERV';
+                    else if (r.includes('MALT') || r.includes('PEPSI')) shortR = 'PEPSI';
+                    else if (r.includes('ALIM')) shortR = 'ALIM';
+                    else if (r.includes('P&G') || r.includes('PROCTER')) shortR = 'P&G';
+                    else shortR = r.substring(0, 6); // Acortar si es desconocido
+
+                    const cC = p.cantidadVendida?.cj || 0;
+                    const cP = p.cantidadVendida?.paq || 0;
+                    const cU = p.cantidadVendida?.und || 0;
+                    const pC = p.precios?.cj || 0;
+                    const pP = p.precios?.paq || 0;
+                    const pU = p.precios?.und || 0;
+                    const sub = (cC * pC) + (cP * pP) + (cU * pU);
+
+                    if (!subtotales[shortR]) subtotales[shortR] = 0;
+                    subtotales[shortR] += sub;
+                });
+
+                // CONSTRUIR HTML DEL TOTAL
+                let totalHtml = '';
+                const rubrosKeys = Object.keys(subtotales);
+                const gTotal = v.total || 0;
+
+                if (rubrosKeys.length > 1) {
+                    // Múltiples rubros
+                    totalHtml += `<div class="text-[11px] text-gray-500 mb-1 space-y-0.5">`;
+                    rubrosKeys.forEach(rk => {
+                        if (subtotales[rk] > 0) {
+                            totalHtml += `<div class="flex justify-end gap-2"><span class="font-medium">${rk}:</span> <span class="text-gray-700">$${subtotales[rk].toFixed(2)}</span></div>`;
+                        }
+                    });
+                    totalHtml += `</div><div class="font-black text-gray-900 border-t border-gray-200 pt-1 text-right text-base">Total: $${gTotal.toFixed(2)}</div>`;
+                } else if (rubrosKeys.length === 1 && subtotales[rubrosKeys[0]] > 0) {
+                    // Un solo rubro
+                    totalHtml = `<div class="text-[10px] text-gray-400 flex justify-end mb-0.5 uppercase tracking-wide font-bold"><span>ÚNICO RUBRO (${rubrosKeys[0]})</span></div>
+                                 <div class="font-black text-gray-900 text-right text-base">Total: $${gTotal.toFixed(2)}</div>`;
+                } else {
+                    // Fallback de seguridad (Vacíos, etc)
+                    totalHtml = `<div class="font-black text-gray-900 text-right text-base">Total: $${gTotal.toFixed(2)}</div>`;
+                }
+
+                tHTML += `
+                    <tr class="hover:bg-blue-50 transition-colors">
+                        <td class="py-2 px-3">
+                            <div class="font-bold text-gray-800 text-sm mb-0.5">${v.clienteNombre || 'Sin Nombre'}</div>
+                            <div class="text-[11px] text-gray-500 font-medium">${fechaStr}</div>
+                        </td>
+                        <td class="py-2 px-3 align-middle">
+                            ${totalHtml}
+                        </td>
+                        <td class="py-2 px-3 align-middle text-center w-28">
+                            <div class="flex flex-col sm:flex-row justify-center gap-1.5">
+                                <button onclick="window.ventasModule.showPastSaleOptions('${v.id}')" class="px-2.5 py-1.5 bg-blue-600 text-white font-medium text-xs rounded hover:bg-blue-700 shadow-sm transition">Ticket</button>
+                                <button onclick="window.ventasModule.editVenta('${v.id}')" class="px-2.5 py-1.5 bg-yellow-500 text-white font-medium text-xs rounded hover:bg-yellow-600 shadow-sm transition">Editar</button>
+                                <button onclick="window.ventasModule.deleteVenta('${v.id}')" class="px-2.5 py-1.5 bg-red-600 text-white font-medium text-xs rounded hover:bg-red-700 shadow-sm transition">Borrar</button>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            });
+
+            tHTML += `</tbody></table>`;
+            cont.innerHTML = tHTML;
+            
         }, (err) => { 
             if (err.code === 'permission-denied' || err.code === 'unauthenticated') return;
             console.error("Error lista ventas:", err); 
             if(cont) cont.innerHTML = `<p class="text-red-500">Error al cargar.</p>`; 
         });
+        
         _activeListeners.push(unsub);
     }
 
