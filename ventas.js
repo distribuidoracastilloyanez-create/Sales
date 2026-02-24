@@ -744,9 +744,25 @@
             finalProductOrder.forEach(p=>{
                 let tQ=0; 
                 sortedClients.forEach(cli=>tQ+=clientData[cli].products[p.id]||0); 
-                const qtyDisplay = window.dataModule.getDisplayQty(tQ, p);
-                let dT = (tQ > 0) ? `${qtyDisplay.value} ${qtyDisplay.unit}` : '';
-                fHTML+=`<td class="p-1 border text-center">${dT}</td>`;
+                
+                let dT = '';
+                if (tQ > 0) {
+                    const vPor = p.ventaPor || { und: true };
+                    // Lógica solicitada: Priorizar siempre unidades si está habilitado
+                    if (vPor.und) {
+                        dT = `${tQ} Und`;
+                    } else if (vPor.paq) {
+                        const divisor = p.unidadesPorPaquete || 1;
+                        dT = `${Math.floor(tQ / divisor)} Pq`;
+                    } else if (vPor.cj) {
+                        const divisor = p.unidadesPorCaja || 1;
+                        dT = `${Math.floor(tQ / divisor)} Cj`;
+                    } else {
+                        dT = `${tQ} Und`; // Fallback
+                    }
+                }
+                
+                fHTML+=`<td class="p-1 border text-center whitespace-nowrap">${dT}</td>`;
             }); 
             fHTML+=`<td class="p-1 border text-right sticky right-0 z-10">$${grandTotalValue.toFixed(2)}</td></tr>`;
             
