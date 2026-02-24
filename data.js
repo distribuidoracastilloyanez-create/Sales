@@ -4,7 +4,7 @@
 
     let _consolidatedClientsCache = [];
     let _filteredClientsCache = [];
-    let _usersMapCache = new Map(); // NUEVO: Cache para nombres de vendedores
+    let _usersMapCache = new Map();
 
     let mapInstance = null;
     let mapMarkers = new Map();
@@ -14,8 +14,6 @@
     let _segmentoOrderMapCache = null;
     const SORT_CONFIG_PATH = 'config/productSortOrder'; 
 
-    // CONSTANTES DE RUTAS (Alineadas con clientes.js y ventas.js)
-    // CORRECCIÓN: Usar ID global desde config.js
     const PUBLIC_DATA_ID = window.AppConfig.PUBLIC_DATA_ID;
     const CLIENTES_COLLECTION_PATH = `artifacts/${PUBLIC_DATA_ID}/public/data/clientes`;
     const REPORTE_DESIGN_CONFIG_PATH = `artifacts/${PUBLIC_DATA_ID}/public/data/config/reporteCierreVentas`;
@@ -52,58 +50,39 @@
         }
     };
 
-    // --- Helper Function: getDisplayQty ---
+    // --- Helper Function: getDisplayQty (LÓGICA CORREGIDA) ---
     function getDisplayQty(qU, p) {
-        if (!qU || qU === 0) return { value: 0, unit: 'Unds' };
-        if (!p) return { value: qU, unit: 'Unds' };
+        if (!qU || qU === 0) return { value: 0, unit: 'Und' };
+        if (!p) return { value: qU, unit: 'Und' };
 
         const vP = p.ventaPor || {und: true};
         const uCj = p.unidadesPorCaja || 1;
         const uPaq = p.unidadesPorPaquete || 1;
         
-        if (vP.cj && uCj > 0 && Number.isInteger(qU / uCj)) {
-            return { value: (qU / uCj), unit: 'Cj' };
-        }
-        if (vP.paq && uPaq > 0 && Number.isInteger(qU / uPaq)) {
-            return { value: (qU / uPaq), unit: 'Paq' };
-        }
-        if (qU > 0 && (vP.cj || vP.paq) && vP.und) {
-             return { value: qU, unit: 'Unds' };
-        }
-        if (vP.cj && uCj > 0) {
+        // REGLA: Si se vende por unidades (así también se venda por cajas), mostrar Unidades.
+        if (vP.und) {
+            return { value: qU, unit: 'Und' };
+        } 
+        // REGLA: Si SOLO se vende por paquetes, mostrar Paquetes
+        else if (vP.paq && !vP.cj) {
+            return { value: parseFloat((qU / uPaq).toFixed(2)), unit: 'Pq' };
+        } 
+        // REGLA: Si SOLO se vende por cajas, mostrar Cajas
+        else if (vP.cj) {
             return { value: parseFloat((qU / uCj).toFixed(2)), unit: 'Cj' };
         }
-        if (vP.paq && uPaq > 0) {
-            return { value: parseFloat((qU / uPaq).toFixed(2)), unit: 'Paq' };
-        }
-        return { value: qU, unit: 'Unds' };
+        
+        // Fallback
+        return { value: qU, unit: 'Und' };
     }
 
     function buildExcelJSStyle(config, borderStyle, numFmt = null, horizontalAlign = 'left') {
         const style = {};
-        
-        style.font = {
-            bold: config.bold || false,
-            color: { argb: 'FF' + (config.fontColor || "#000000").substring(1) },
-            size: config.fontSize || 10
-        };
-
-        style.fill = {
-            type: 'pattern',
-            pattern: 'solid',
-            fgColor: { argb: 'FF' + (config.fillColor || "#FFFFFF").substring(1) }
-        };
-
-        if (config.border && borderStyle) {
-            style.border = borderStyle;
-        }
-
-        if (numFmt) {
-            style.numFmt = numFmt;
-        }
-        
+        style.font = { bold: config.bold || false, color: { argb: 'FF' + (config.fontColor || "#000000").substring(1) }, size: config.fontSize || 10 };
+        style.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF' + (config.fillColor || "#FFFFFF").substring(1) } };
+        if (config.border && borderStyle) { style.border = borderStyle; }
+        if (numFmt) { style.numFmt = numFmt; }
         style.alignment = { vertical: 'middle', horizontal: horizontalAlign };
-
         return style;
     }
 
@@ -128,9 +107,7 @@
     };
 
     window.showDataView = function() {
-        if (mapInstance) {
-            mapInstance.remove(); mapInstance = null;
-        }
+        if (mapInstance) { mapInstance.remove(); mapInstance = null; }
         _floatingControls.classList.add('hidden');
         _mainContent.innerHTML = `
             <div class="p-4 pt-8"> <div class="container mx-auto"> <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl text-center">
@@ -177,7 +154,6 @@
         if (!userFilterSelect) return;
         userFilterSelect.innerHTML = ''; 
         
-        // Opción predeterminada "Todos"
         const allOption = document.createElement('option');
         allOption.value = "all";
         allOption.textContent = "Todos los Vendedores";
@@ -187,13 +163,11 @@
         try {
             const usersRef = _collection(_db, "users");
             const snapshot = await _getDocs(usersRef);
-            
-            _usersMapCache.clear(); // Limpiar y reconstruir caché de nombres
+            _usersMapCache.clear();
 
             snapshot.docs.forEach(doc => {
                 const user = doc.data();
-                _usersMapCache.set(doc.id, user); // Guardar en caché
-
+                _usersMapCache.set(doc.id, user); 
                 const option = document.createElement('option');
                 option.value = doc.id;
                 option.textContent = `${user.nombre || ''} ${user.apellido || user.email} (${user.camion || 'N/A'})`;
@@ -275,13 +249,11 @@
                 </tr> </thead> <tbody>`;
         
         closings.forEach(cierre => {
-            // Lógica Mejorada para obtener nombre de Vendedor (Soporte Importación)
             const vendedorSnapshot = cierre.vendedorInfo || {};
             let vName = vendedorSnapshot.nombre;
             let vLast = vendedorSnapshot.apellido;
             let vCamion = vendedorSnapshot.camion;
 
-            // Si falta info en el snapshot (común en imports), buscar en caché global de usuarios
             if (!vName && vendedorSnapshot.userId) {
                 const userFromCache = _usersMapCache.get(vendedorSnapshot.userId);
                 if (userFromCache) {
@@ -293,7 +265,6 @@
                 }
             }
 
-            // Detectar si es importado para mostrar badge
             const isImported = cierre.source === 'excel_import' || (cierre.vendedorInfo && cierre.vendedorInfo.note && cierre.vendedorInfo.note.includes('Importado'));
             const importedBadge = isImported ? `<span class="ml-1 px-1.5 py-0.5 rounded bg-yellow-100 text-yellow-800 text-[10px] border border-yellow-200">Importado</span>` : '';
 
@@ -318,14 +289,21 @@
         const clientTotals = {}; 
         let grandTotalValue = 0;
         const allProductsMap = new Map();
-        const vaciosMovementsPorTipo = {};
-        const TIPOS_VACIO_GLOBAL = window.TIPOS_VACIO_GLOBAL || ["1/4 - 1/3", "ret 350 ml", "ret 1.25 Lts"];
         
-        console.log("_processSalesDataForModal: Fetching CURRENT inventory map...");
+        console.log("_processSalesDataForModal: Fetching CURRENT inventory map AND Master Catalog...");
         const targetUserId = userIdForInventario || _userId;
+        
         const inventarioRef = _collection(_db, `artifacts/${_appId}/users/${targetUserId}/inventario`);
-        const inventarioSnapshot = await _getDocs(inventarioRef);
+        const masterRef = _collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/productos`);
+
+        // NUEVO: Descargar Catálogo Maestro para asegurar configuraciones de venta
+        const [inventarioSnapshot, masterSnapshot] = await Promise.all([
+            _getDocs(inventarioRef),
+            _getDocs(masterRef)
+        ]);
+
         const inventarioMap = new Map(inventarioSnapshot.docs.map(doc => [doc.id, doc.data()]));
+        const masterMap = new Map(masterSnapshot.docs.map(doc => [doc.id, doc.data()]));
         
         const allData = [
             ...ventas.map(v => ({ tipo: 'venta', data: v })),
@@ -335,7 +313,6 @@
         for (const item of allData) {
             const clientName = item.data.clienteNombre || 'Cliente Desconocido';
             if (!clientData[clientName]) clientData[clientName] = { products: {}, totalValue: 0 };
-            if (!vaciosMovementsPorTipo[clientName]) { vaciosMovementsPorTipo[clientName] = {}; TIPOS_VACIO_GLOBAL.forEach(tipo => vaciosMovementsPorTipo[clientName][tipo] = { entregados: 0, devueltos: 0 }); }
             
             if (item.tipo === 'venta') {
                 const venta = item.data;
@@ -344,27 +321,29 @@
                 clientTotals[clientName] = (clientTotals[clientName] || 0) + ventaTotalCliente;
                 grandTotalValue += ventaTotalCliente;
                 
-                const vaciosDev = venta.vaciosDevueltosPorTipo || {};
-                for (const tipo in vaciosDev) { if (!vaciosMovementsPorTipo[clientName][tipo]) vaciosMovementsPorTipo[clientName][tipo] = { e: 0, d: 0 }; vaciosMovementsPorTipo[clientName][tipo].devueltos += (vaciosDev[tipo] || 0); }
-                
                 (venta.productos || []).forEach(p => {
-                    // FIX: Fallback crítico para productos Importados o Eliminados
-                    // Si no está en inventarioMap (actual), usamos 'p' que trae la data snapshot de la venta
-                    const prodComp = inventarioMap.get(p.id) || p; 
+                    // FIX: Enriquecimiento híbrido. Manda la configuración del maestro por encima
+                    const prodPrivado = inventarioMap.get(p.id) || {};
+                    const prodMaestro = masterMap.get(p.id) || {};
                     
-                    if (prodComp && prodComp.manejaVacios && prodComp.tipoVacio) { const tipoV = prodComp.tipoVacio; if (!vaciosMovementsPorTipo[clientName][tipoV]) vaciosMovementsPorTipo[clientName][tipoV] = { e: 0, d: 0 }; vaciosMovementsPorTipo[clientName][tipoV].entregados += p.cantidadVendida?.cj || 0; }
+                    const prodComp = { 
+                        ...p, 
+                        ...prodPrivado, 
+                        ...prodMaestro, 
+                        id: p.id 
+                    }; 
                     
-                    const rubro = prodComp?.rubro || 'SIN RUBRO'; 
-                    const seg = prodComp?.segmento || 'S/S';
-                    const marca = prodComp?.marca || 'S/M';
+                    const rubro = prodComp.rubro || 'SIN RUBRO'; 
+                    const seg = prodComp.segmento || 'S/S';
+                    const marca = prodComp.marca || 'S/M';
                     
-                    if (p.id && !allProductsMap.has(p.id)) allProductsMap.set(p.id, { ...prodComp, id: p.id, rubro: rubro, segmento: seg, marca: marca, presentacion: p.presentacion });
+                    if (p.id && !allProductsMap.has(p.id)) allProductsMap.set(p.id, { ...prodComp, rubro: rubro, segmento: seg, marca: marca });
                     if (p.id && !clientData[clientName].products[p.id]) clientData[clientName].products[p.id] = 0;
                     
                     let cantidadUnidades = 0;
                     if (p.cantidadVendida) { 
-                        const uCj = p.unidadesPorCaja || 1;
-                        const uPaq = p.unidadesPorPaquete || 1;
+                        const uCj = prodComp.unidadesPorCaja || 1;
+                        const uPaq = prodComp.unidadesPorPaquete || 1;
                         cantidadUnidades = (p.cantidadVendida.cj || 0) * uCj + (p.cantidadVendida.paq || 0) * uPaq + (p.cantidadVendida.und || 0);
                     } else if (p.totalUnidadesVendidas) { 
                         cantidadUnidades = p.totalUnidadesVendidas;
@@ -374,43 +353,27 @@
 
             } else if (item.tipo === 'obsequio') {
                 const obsequio = item.data;
-                const prodInventario = inventarioMap.get(obsequio.productoId);
+                const prodPrivado = inventarioMap.get(obsequio.productoId) || {};
+                const prodMaestro = masterMap.get(obsequio.productoId) || {};
 
-                let pComp; 
-
-                if (prodInventario) {
-                    pComp = { ...prodInventario, id: obsequio.productoId }; 
-                } else {
-                    // Fallback para obsequios eliminados
-                    pComp = {
-                        id: obsequio.productoId,
-                        presentacion: obsequio.productoNombre || 'Producto Eliminado',
-                        rubro: 'OBSEQUIOS (ELIMINADO)',
-                        segmento: 'N/A',
-                        marca: 'N/A',
-                        unidadesPorCaja: 1, 
-                        manejaVacios: !!obsequio.tipoVacio,
-                        tipoVacio: obsequio.tipoVacio || null
-                    };
-                }
+                let pComp = {
+                    id: obsequio.productoId,
+                    presentacion: obsequio.productoNombre || 'Producto Eliminado',
+                    rubro: 'OBSEQUIOS (ELIMINADO)',
+                    segmento: 'N/A',
+                    marca: 'N/A',
+                    unidadesPorCaja: 1, 
+                    precios: { und: 0, paq: 0, cj: 0 },
+                    ventaPor: { cj: true, paq: false, und: false }, // Obsequio = Caja
+                    ...prodPrivado,
+                    ...prodMaestro
+                };
+                pComp.precios = { und: 0, paq: 0, cj: 0 };
                 
                 const cantidadUnidades = (obsequio.cantidadCajas || 0) * (pComp.unidadesPorCaja || 1);
 
-                if (pComp.manejaVacios && pComp.tipoVacio) {
-                    const tV = pComp.tipoVacio; 
-                    if (!vaciosMovementsPorTipo[clientName][tV]) vaciosMovementsPorTipo[clientName][tV] = { entregados: 0, devueltos: 0 }; 
-                    vaciosMovementsPorTipo[clientName][tV].entregados += (obsequio.cantidadCajas || 0); 
-                }
-                
-                const vacDev = obsequio.vaciosRecibidos || 0;
-                const tipoVacDev = obsequio.tipoVacio;
-                if (vacDev > 0 && tipoVacDev) {
-                     if (!vaciosMovementsPorTipo[clientName][tipoVacDev]) vaciosMovementsPorTipo[clientName][tipoVacDev] = { entregados: 0, devueltos: 0 };
-                     vaciosMovementsPorTipo[clientName][tipoVacDev].devueltos += vacDev;
-                }
-
                 const rubro = pComp.rubro || 'Sin Rubro', seg = pComp.segmento || 'Sin Segmento', marca = pComp.marca || 'Sin Marca';
-                if (pComp.id && !allProductsMap.has(pComp.id)) allProductsMap.set(pComp.id, { ...pComp, id: pComp.id, rubro: rubro, segmento: seg, marca: marca, presentacion: pComp.presentacion });
+                if (pComp.id && !allProductsMap.has(pComp.id)) allProductsMap.set(pComp.id, { ...pComp, rubro: rubro, segmento: seg, marca: marca });
                 if (pComp.id && !clientData[clientName].products[pComp.id]) clientData[clientName].products[pComp.id] = 0;
                 clientData[clientName].products[pComp.id] += cantidadUnidades;
             }
@@ -419,7 +382,7 @@
         const sortedClients = Object.keys(clientData).sort();
         const sortFunction = await getGlobalProductSortFunction();
         const finalProductOrder = Array.from(allProductsMap.values()).sort(sortFunction);
-        return { clientData, clientTotals, grandTotalValue, sortedClients, finalProductOrder, vaciosMovementsPorTipo };
+        return { clientData, clientTotals, grandTotalValue, sortedClients, finalProductOrder };
     }
 
     async function showClosingDetail(closingId) {
@@ -427,7 +390,7 @@
         if (!closingData) { _showModal('Error', 'No se cargaron detalles.'); return; }
         _showModal('Progreso', 'Generando reporte detallado...');
         try {
-            const { clientData, clientTotals, grandTotalValue, sortedClients, finalProductOrder, vaciosMovementsPorTipo } = 
+            const { clientData, clientTotals, grandTotalValue, sortedClients, finalProductOrder } = 
                 await _processSalesDataForModal(
                     closingData.ventas || [], 
                     closingData.obsequios || [], 
@@ -461,26 +424,28 @@
                 bHTML+=`<td class="p-1 border text-right font-semibold bg-white sticky right-0 z-10">$${cCli.totalValue.toFixed(2)}</td></tr>`;
             });
 
+            // REGLA SOLICITADA EN TOTALES DE VENTAS.JS APLICADA EN DATA.JS
             let fHTML='<tr class="bg-gray-200 font-bold"><td class="p-1 border sticky left-0 z-10">TOTALES</td>'; 
             finalProductOrder.forEach(p=>{
                 let tQ=0; 
                 sortedClients.forEach(cli=>tQ+=clientData[cli].products[p.id]||0); 
+                
                 const qtyDisplay = getDisplayQty(tQ, p);
                 let dT = (tQ > 0) ? `${qtyDisplay.value} ${qtyDisplay.unit}` : '';
+                
                 fHTML+=`<td class="p-1 border text-center">${dT}</td>`;
             }); 
             fHTML+=`<td class="p-1 border text-right sticky right-0 z-10">$${grandTotalValue.toFixed(2)}</td></tr>`;
             
-            let vHTML=''; const cliVacios=Object.keys(vaciosMovementsPorTipo).filter(cli=>TIPOS_VACIO_GLOBAL.some(t=>(vaciosMovementsPorTipo[cli][t]?.entregados||0)>0||(vaciosMovementsPorTipo[cli][t]?.devueltos||0)>0)).sort(); if(cliVacios.length>0){ vHTML=`<h3 class="text-xl my-6">Reporte Vacíos</h3><div class="overflow-auto border"><table><thead><tr><th>Cliente</th><th>Tipo</th><th>Entregados</th><th>Devueltos</th><th>Neto</th></tr></thead><tbody>`; cliVacios.forEach(cli=>{const movs=vaciosMovementsPorTipo[cli]; TIPOS_VACIO_GLOBAL.forEach(t=>{const mov=movs[t]||{e:0,d:0}; if(mov.entregados>0||mov.devueltos>0){const neto=mov.entregados-mov.devueltos; const nClass=neto>0?'text-red-600':(neto<0?'text-green-600':''); vHTML+=`<tr><td>${cli}</td><td>${t}</td><td>${mov.entregados}</td><td>${mov.devueltos}</td><td class="${nClass}">${neto>0?`+${neto}`:neto}</td></tr>`;}});}); vHTML+='</tbody></table></div>';}
+            // VACIOS REESCRITO EN VENTAS.JS
             
             const vendedor = closingData.vendedorInfo || {};
-            // Intento de fallback de nombre para el modal
             let vNameModal = vendedor.nombre || 'Desconocido';
             if(!vendedor.nombre && vendedor.userId && _usersMapCache.has(vendedor.userId)){
                  vNameModal = _usersMapCache.get(vendedor.userId).nombre;
             }
 
-            const reportHTML = `<div class="text-left max-h-[80vh] overflow-auto"> <div class="mb-4"> <p><strong>Vendedor:</strong> ${vNameModal} ${vendedor.apellido||''}</p> <p><strong>Camión:</strong> ${vendedor.camion||'N/A'}</p> <p><strong>Fecha:</strong> ${closingData.fecha.toDate().toLocaleString('es-ES')}</p> </div> <h3 class="text-xl mb-4">Reporte Cierre</h3> <div class="overflow-auto border" style="max-height: 40vh;"> <table class="min-w-full bg-white text-xs"> <thead class="bg-gray-200">${hHTML}</thead> <tbody>${bHTML}</tbody> <tfoot>${fHTML}</tfoot> </table> </div> ${vHTML} </div>`;
+            const reportHTML = `<div class="text-left max-h-[80vh] overflow-auto"> <div class="mb-4"> <p><strong>Vendedor:</strong> ${vNameModal} ${vendedor.apellido||''}</p> <p><strong>Camión:</strong> ${vendedor.camion||'N/A'}</p> <p><strong>Fecha:</strong> ${closingData.fecha.toDate().toLocaleString('es-ES')}</p> </div> <h3 class="text-xl mb-4">Reporte Cierre</h3> <div class="overflow-auto border" style="max-height: 40vh;"> <table class="min-w-full bg-white text-xs"> <thead class="bg-gray-200">${hHTML}</thead> <tbody>${bHTML}</tbody> <tfoot>${fHTML}</tfoot> </table> </div> </div>`;
             _showModal(`Detalle Cierre`, reportHTML, null, 'Cerrar');
         } catch (error) { console.error("Error generando detalle:", error); _showModal('Error', `No se pudo generar: ${error.message}`); }
     }
@@ -496,11 +461,18 @@
         let inventarioMap;
         let hasSnapshot = cargaInicialInventario && cargaInicialInventario.length > 0;
         
-        console.log("processSalesDataForReport: Fetching CURRENT inventory map...");
+        console.log("processSalesDataForReport: Fetching CURRENT inventory map AND Master...");
         const targetUserId = userIdForInventario || _userId;
         const inventarioRef = _collection(_db, `artifacts/${_appId}/users/${targetUserId}/inventario`); 
-        const inventarioSnapshot = await _getDocs(inventarioRef); 
+        const masterRef = _collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/productos`);
+
+        const [inventarioSnapshot, masterSnapshot] = await Promise.all([
+            _getDocs(inventarioRef),
+            _getDocs(masterRef)
+        ]);
+
         inventarioMap = new Map(inventarioSnapshot.docs.map(doc => [doc.id, doc.data()]));
+        const masterMap = new Map(masterSnapshot.docs.map(doc => [doc.id, doc.data()]));
 
         let snapshotMap = new Map();
         if(hasSnapshot) {
@@ -536,14 +508,17 @@
                 }
 
                 (venta.productos || []).forEach(p => {
-                    const prodInventario = inventarioMap.get(p.id);
+                    const prodPrivado = inventarioMap.get(p.id) || {};
+                    const prodMaestro = masterMap.get(p.id) || {};
+                    
                     const prodParaReporte = {
-                        ...(prodInventario || {}), 
-                        ...p, 
+                        ...p,
+                        ...prodPrivado, 
+                        ...prodMaestro,
                         id: p.id,
-                        rubro: prodInventario?.rubro || p.rubro || 'SIN RUBRO',
-                        segmento: prodInventario?.segmento || p.segmento || 'S/S',
-                        marca: prodInventario?.marca || p.marca || 'S/M',
+                        rubro: prodMaestro.rubro || prodPrivado.rubro || p.rubro || 'SIN RUBRO',
+                        segmento: prodMaestro.segmento || prodPrivado.segmento || p.segmento || 'S/S',
+                        marca: prodMaestro.marca || prodPrivado.marca || p.marca || 'S/M',
                     };
                     
                     const rubro = prodParaReporte.rubro;
@@ -560,8 +535,8 @@
 
                     let cantidadUnidades = 0;
                     if (p.cantidadVendida) { 
-                        const uCj = p.unidadesPorCaja || 1;
-                        const uPaq = p.unidadesPorPaquete || 1;
+                        const uCj = prodParaReporte.unidadesPorCaja || 1;
+                        const uPaq = prodParaReporte.unidadesPorPaquete || 1;
                         cantidadUnidades = (p.cantidadVendida.cj || 0) * uCj + (p.cantidadVendida.paq || 0) * uPaq + (p.cantidadVendida.und || 0);
                     } else if (p.totalUnidadesVendidas) { 
                         cantidadUnidades = p.totalUnidadesVendidas;
@@ -582,27 +557,24 @@
 
             } else if (item.tipo === 'obsequio') {
                 const obsequio = item.data;
-                const prodInventario = inventarioMap.get(obsequio.productoId); 
+                const prodPrivado = inventarioMap.get(obsequio.productoId) || {}; 
+                const prodMaestro = masterMap.get(obsequio.productoId) || {};
 
-                let pComp; 
-
-                if (prodInventario) {
-                    pComp = { ...prodInventario, id: obsequio.productoId }; 
-                    pComp.precios = { und: 0, paq: 0, cj: 0 }; 
-                } else {
-                    pComp = {
-                        id: obsequio.productoId,
-                        productoNombre: obsequio.productoNombre,
-                        presentacion: obsequio.productoNombre || 'Producto Eliminado',
-                        rubro: 'OBSEQUIOS (ELIMINADO)',
-                        segmento: 'OBSEQUIOS (ELIMINADO)',
-                        marca: 'N/A',
-                        precios: { und: 0, paq: 0, cj: 0 },
-                        unidadesPorCaja: 1, 
-                        manejaVacios: !!obsequio.tipoVacio,
-                        tipoVacio: obsequio.tipoVacio || null
-                    };
-                }
+                let pComp = {
+                    id: obsequio.productoId,
+                    productoNombre: obsequio.productoNombre,
+                    presentacion: obsequio.productoNombre || 'Producto Eliminado',
+                    rubro: 'OBSEQUIOS (ELIMINADO)',
+                    segmento: 'OBSEQUIOS (ELIMINADO)',
+                    marca: 'N/A',
+                    unidadesPorCaja: 1, 
+                    manejaVacios: !!obsequio.tipoVacio,
+                    tipoVacio: obsequio.tipoVacio || null,
+                    ventaPor: { cj: true, paq: false, und: false }, // Fallback standard
+                    ...prodPrivado,
+                    ...prodMaestro,
+                };
+                pComp.precios = { und: 0, paq: 0, cj: 0 };
                 
                 const cantidadUnidades = (obsequio.cantidadCajas || 0) * (pComp.unidadesPorCaja || 1);
                 const rubro = pComp.rubro || 'SIN RUBRO';
