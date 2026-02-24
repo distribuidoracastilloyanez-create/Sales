@@ -748,17 +748,25 @@
                 let dT = '';
                 if (tQ > 0) {
                     const vPor = p.ventaPor || { und: true };
-                    // Lógica solicitada: Priorizar siempre unidades si está habilitado
+                    
+                    // Lógica estricta de totales: 
+                    // Si se vende por unidad, mostrar siempre la relación total en unidades.
                     if (vPor.und) {
                         dT = `${tQ} Und`;
-                    } else if (vPor.paq) {
+                    } 
+                    // Si NO se vende por unidad, pero sí por paquete, mostrar paquetes.
+                    else if (vPor.paq) {
                         const divisor = p.unidadesPorPaquete || 1;
                         dT = `${Math.floor(tQ / divisor)} Pq`;
-                    } else if (vPor.cj) {
+                    } 
+                    // Si SOLO se vende por cajas, mostrar cajas.
+                    else if (vPor.cj) {
                         const divisor = p.unidadesPorCaja || 1;
                         dT = `${Math.floor(tQ / divisor)} Cj`;
-                    } else {
-                        dT = `${tQ} Und`; // Fallback
+                    } 
+                    // Respaldo de seguridad
+                    else {
+                        dT = `${tQ} Und`;
                     }
                 }
                 
