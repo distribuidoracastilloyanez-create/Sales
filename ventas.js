@@ -165,16 +165,14 @@
     function selectCliente(cliente) {
         _ventaActual.cliente = cliente; 
         
-        // Ocultar teclado en móviles inmediatamente
         const searchInput = document.getElementById('clienteSearch');
         if (searchInput) searchInput.blur();
-        
+
         document.getElementById('client-search-container').classList.add('hidden'); 
         document.getElementById('clienteDropdown').classList.add('hidden');
         document.getElementById('selected-client-name').textContent = cliente.nombreComercial; 
         document.getElementById('client-display-container').classList.remove('hidden');
         
-        // Retrasar renderizado para evitar layout thrashing (parpadeo en móviles)
         setTimeout(() => {
             const invContainer = document.getElementById('inventarioTableContainer');
             const footerSection = document.getElementById('venta-footer-section');
@@ -713,7 +711,7 @@
                 throw new Error("Módulo de datos no disponible.");
             }
 
-            const { clientData, clientTotals, grandTotalValue, sortedClients, finalProductOrder, vaciosMovementsPorTipo } = 
+            const { clientData, clientTotals, grandTotalValue, sortedClients, finalProductOrder } = 
                 await window.dataModule._processSalesDataForModal(ventas, obsequios, cargaInicialInventario, _userId);
 
             let hHTML = `<tr class="sticky top-0 z-20 bg-gray-200"><th class="p-1 border sticky left-0 z-30 bg-gray-200">Cliente</th>`;
@@ -752,7 +750,84 @@
             }); 
             fHTML+=`<td class="p-1 border text-right sticky right-0 z-10">$${grandTotalValue.toFixed(2)}</td></tr>`;
             
-            let vHTML=''; const cliVacios=Object.keys(vaciosMovementsPorTipo).filter(cli=>TIPOS_VACIO.some(t=>(vaciosMovementsPorTipo[cli][t]?.entregados||0)>0||(vaciosMovementsPorTipo[cli][t]?.devueltos||0)>0)).sort(); if(cliVacios.length>0){ vHTML=`<h3 class="text-xl my-6">Reporte Vacíos</h3><div class="overflow-auto border"><table><thead><tr><th>Cliente</th><th>Tipo</th><th>Entregados</th><th>Devueltos</th><th>Neto</th></tr></thead><tbody>`; cliVacios.forEach(cli=>{const movs=vaciosMovementsPorTipo[cli]; TIPOS_VACIO.forEach(t=>{const mov=movs[t]||{e:0,d:0}; if(mov.entregados>0||mov.devueltos>0){const neto=mov.entregados-mov.devueltos; const nClass=neto>0?'text-red-600':(neto<0?'text-green-600':''); vHTML+=`<tr><td>${cli}</td><td>${t}</td><td>${mov.entregados}</td><td>${mov.devueltos}</td><td class="${nClass}">${neto>0?`+${neto}`:neto}</td></tr>`;}});}); vHTML+='</tbody></table></div>';}
+            // --- REESCRITURA DE LA LÓGICA DE VACÍOS PARA EVITAR BUGS DE data.js ---
+            const localVacios = {};
+            [...ventas, ...obsequios].forEach(v => {
+                const cName = v.clienteNombre || 'Desconocido';
+                if (!localVacios[cName]) localVacios[cName] = {};
+                
+                // 1. Calcular Entregados de cada producto
+                (v.productos || []).forEach(p => {
+                    if (p.manejaVacios && p.tipoVacio) {
+                        const cj = p.cantidadVendida?.cj || 0;
+                        if (cj > 0) {
+                            if (!localVacios[cName][p.tipoVacio]) localVacios[cName][p.tipoVacio] = { entregados: 0, devueltos: 0 };
+                            localVacios[cName][p.tipoVacio].entregados += cj;
+                        }
+                    }
+                });
+
+                // 2. Sumar Devueltos directamente de la venta
+                const devueltos = v.vaciosDevueltosPorTipo || {};
+                Object.entries(devueltos).forEach(([tipo, cant]) => {
+                    const cantNum = parseInt(cant, 10) || 0;
+                    if (cantNum > 0) {
+                        if (!localVacios[cName][tipo]) localVacios[cName][tipo] = { entregados: 0, devueltos: 0 };
+                        localVacios[cName][tipo].devueltos += cantNum;
+                    }
+                });
+            });
+
+            let vHTML=''; 
+            const cliVacios = Object.keys(localVacios).filter(cli => 
+                TIPOS_VACIO.some(t => (localVacios[cli][t]?.entregados || 0) > 0 || (localVacios[cli][t]?.devueltos || 0) > 0)
+            ).sort(); 
+            
+            if (cliVacios.length > 0) { 
+                vHTML = `
+                    <h3 class="text-lg font-bold text-gray-800 mt-6 mb-2 border-t pt-4">Resumen de Envases (Vacíos)</h3>
+                    <div class="overflow-hidden border border-gray-300 rounded-lg shadow-sm">
+                        <table class="min-w-full bg-white text-sm">
+                            <thead class="bg-gray-800 text-white">
+                                <tr>
+                                    <th class="py-2 px-3 text-left font-semibold">Cliente</th>
+                                    <th class="py-2 px-3 text-center font-semibold">Tipo</th>
+                                    <th class="py-2 px-3 text-center font-semibold">Entregados</th>
+                                    <th class="py-2 px-3 text-center font-semibold">Devueltos</th>
+                                    <th class="py-2 px-3 text-center font-semibold">Pendiente</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-gray-200">
+                `; 
+                
+                cliVacios.forEach(cli => {
+                    const movs = localVacios[cli]; 
+                    TIPOS_VACIO.forEach(t => {
+                        const mov = movs[t]; 
+                        if (mov && (mov.entregados > 0 || mov.devueltos > 0)) {
+                            const neto = mov.entregados - mov.devueltos; 
+                            const nClass = neto > 0 ? 'text-red-600 font-bold bg-red-50' : (neto < 0 ? 'text-green-600 font-bold bg-green-50' : 'text-gray-500'); 
+                            
+                            let netoText = neto;
+                            if (neto > 0) netoText = `+${neto} (Debe)`;
+                            else if (neto < 0) netoText = `${neto} (A favor)`;
+                            else netoText = `0 (Solvente)`;
+
+                            vHTML += `
+                                <tr class="hover:bg-gray-50">
+                                    <td class="py-2 px-3 text-gray-800 font-medium">${cli}</td>
+                                    <td class="py-2 px-3 text-center text-gray-600">${t}</td>
+                                    <td class="py-2 px-3 text-center font-semibold text-gray-700">${mov.entregados}</td>
+                                    <td class="py-2 px-3 text-center font-semibold text-gray-700">${mov.devueltos}</td>
+                                    <td class="py-2 px-3 text-center ${nClass}">${netoText}</td>
+                                </tr>
+                            `;
+                        }
+                    });
+                }); 
+                vHTML += '</tbody></table></div>';
+            }
+            // --- FIN REESCRITURA VACÍOS ---
             
             const reportHTML = `<div class="text-left max-h-[80vh] overflow-auto"> <h3 class="text-xl font-bold mb-4">Reporte Cierre</h3> <div class="overflow-auto border"> <table class="min-w-full bg-white text-xs"> <thead class="bg-gray-200">${hHTML}</thead> <tbody>${bHTML}</tbody> <tfoot>${fHTML}</tfoot> </table> </div> ${vHTML} </div>`;
             _showModal('Reporte de Cierre', reportHTML, null, 'Cerrar');
@@ -979,9 +1054,8 @@
         document.getElementById('saveChangesBtn').addEventListener('click', handleGuardarVentaEditada); 
         document.getElementById('backToVentasBtn').addEventListener('click', showVentasActualesView);
         
-        _showModal('Progreso', 'Cargando datos...', null, '', null, false);
+        _showModal('Progreso', 'Cargando datos de la venta...', null, '', null, false);
         try {
-            // FIX: Cargar el Catálogo Maestro Híbrido, no solo el stock local.
             await ensureHybridCacheLoaded();
             
             _ventaActual = { 
@@ -1001,11 +1075,17 @@
                 vaciosDevueltosPorTipo: venta.vaciosDevueltosPorTipo||{} 
             };
             TIPOS_VACIO.forEach(t => { if(!_ventaActual.vaciosDevueltosPorTipo[t]) _ventaActual.vaciosDevueltosPorTipo[t]=0; });
-            document.getElementById('rubroFilter').addEventListener('change', renderEditVentasInventario); populateRubroFilter(); document.getElementById('rubroFilter').value = '';
+            document.getElementById('rubroFilter').addEventListener('change', renderEditVentasInventario); 
+            populateRubroFilter(); 
+            document.getElementById('rubroFilter').value = '';
             
             renderEditVentasInventario(); 
             const m = document.getElementById('modalContainer'); if(m) m.classList.add('hidden');
-        } catch (error) { console.error("Error edit init:", error); _showModal('Error', `Error: ${error.message}`); showVentasActualesView(); }
+        } catch (error) { 
+            console.error("Error edit init:", error); 
+            _showModal('Error', `Error al inicializar edición: ${error.message}`); 
+            showVentasActualesView(); 
+        }
     }
 
     async function handleGuardarVentaEditada() {
