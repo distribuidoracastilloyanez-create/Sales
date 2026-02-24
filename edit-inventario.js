@@ -691,11 +691,6 @@
     };
 
     function setupDetalleFilters() {
-        const rubroSel = document.getElementById('detRubro');
-        const segSel = document.getElementById('detSegmento');
-        const marcaSel = document.getElementById('detMarca');
-        const searchInput = document.getElementById('detSearch');
-
         // Enriquecer los detalles con la data del maestro temporalmente
         const enrichedDetails = (_currentDetalleRecarga.detalles || []).map(d => {
             const masterData = _masterMapCache[d.productoId] || {};
@@ -708,7 +703,9 @@
             };
         });
 
-        const renderOptions = (selectEl, valuesSet, label, currentVal) => {
+        const renderOptions = (selectId, valuesSet, label, currentVal) => {
+            const selectEl = document.getElementById(selectId);
+            if (!selectEl) return;
             selectEl.innerHTML = `<option value="">${label}: Todos</option>`;
             [...valuesSet].sort().forEach(val => {
                 const opt = document.createElement('option');
@@ -719,18 +716,24 @@
         };
 
         const updateDropdowns = (trigger) => {
-            _detalleFilters.rubro = rubroSel.value;
+            // FIX: Tomar los valores directamente de los nodos vivos del DOM para evitar problemas de clonación
+            const liveRubro = document.getElementById('detRubro');
+            const liveSeg = document.getElementById('detSegmento');
+            const liveMarca = document.getElementById('detMarca');
+            const liveSearch = document.getElementById('detSearch');
+
+            _detalleFilters.rubro = liveRubro.value;
             if (trigger === 'rubro') { _detalleFilters.segmento = ''; _detalleFilters.marca = ''; }
             if (trigger === 'segmento') { _detalleFilters.marca = ''; }
             
-            _detalleFilters.segmento = segSel.value;
-            _detalleFilters.marca = marcaSel.value;
-            _detalleFilters.search = searchInput.value.toLowerCase();
+            _detalleFilters.segmento = trigger === 'rubro' ? '' : liveSeg.value;
+            _detalleFilters.marca = (trigger === 'rubro' || trigger === 'segmento') ? '' : liveMarca.value;
+            _detalleFilters.search = liveSearch.value.toLowerCase();
 
             if (trigger === 'init') {
                 const rubros = new Set();
                 enrichedDetails.forEach(p => { if (p.rubro) rubros.add(p.rubro); });
-                renderOptions(rubroSel, rubros, 'Rubro', _detalleFilters.rubro);
+                renderOptions('detRubro', rubros, 'Rubro', _detalleFilters.rubro);
             }
 
             if (trigger === 'init' || trigger === 'rubro') {
@@ -740,8 +743,8 @@
                         if (p.segmento) segmentos.add(p.segmento);
                     }
                 });
-                renderOptions(segSel, segmentos, 'Segmento', _detalleFilters.segmento);
-                segSel.disabled = segmentos.size === 0;
+                renderOptions('detSegmento', segmentos, 'Segmento', _detalleFilters.segmento);
+                document.getElementById('detSegmento').disabled = segmentos.size === 0;
             }
 
             if (trigger === 'init' || trigger === 'rubro' || trigger === 'segmento') {
@@ -751,23 +754,37 @@
                     const matchSeg = !_detalleFilters.segmento || p.segmento === _detalleFilters.segmento;
                     if (matchRubro && matchSeg && p.marca) { marcas.add(p.marca); }
                 });
-                renderOptions(marcaSel, marcas, 'Marca', _detalleFilters.marca);
-                marcaSel.disabled = marcas.size === 0;
+                renderOptions('detMarca', marcas, 'Marca', _detalleFilters.marca);
+                document.getElementById('detMarca').disabled = marcas.size === 0;
             }
 
             renderDetalleRows(enrichedDetails);
         };
 
-        // Eliminar listeners anteriores clonando los nodos
-        const newRubroSel = rubroSel.cloneNode(true); rubroSel.parentNode.replaceChild(newRubroSel, rubroSel);
-        const newSegSel = segSel.cloneNode(true); segSel.parentNode.replaceChild(newSegSel, segSel);
-        const newMarcaSel = marcaSel.cloneNode(true); marcaSel.parentNode.replaceChild(newMarcaSel, marcaSel);
-        const newSearchInput = searchInput.cloneNode(true); searchInput.parentNode.replaceChild(newSearchInput, searchInput);
+        // Eliminar listeners anteriores clonando los nodos (Reseteo seguro para SPAs)
+        const oldRubroSel = document.getElementById('detRubro');
+        const newRubroSel = oldRubroSel.cloneNode(true); oldRubroSel.parentNode.replaceChild(newRubroSel, oldRubroSel);
+        
+        const oldSegSel = document.getElementById('detSegmento');
+        const newSegSel = oldSegSel.cloneNode(true); oldSegSel.parentNode.replaceChild(newSegSel, oldSegSel);
+        
+        const oldMarcaSel = document.getElementById('detMarca');
+        const newMarcaSel = oldMarcaSel.cloneNode(true); oldMarcaSel.parentNode.replaceChild(newMarcaSel, oldMarcaSel);
+        
+        const oldSearchInput = document.getElementById('detSearch');
+        const newSearchInput = oldSearchInput.cloneNode(true); oldSearchInput.parentNode.replaceChild(newSearchInput, oldSearchInput);
 
+        // Añadir listeners a los nuevos nodos
         newRubroSel.addEventListener('change', () => updateDropdowns('rubro'));
         newSegSel.addEventListener('change', () => updateDropdowns('segmento'));
         newMarcaSel.addEventListener('change', () => updateDropdowns('marca'));
-        newSearchInput.addEventListener('input', () => { _detalleFilters.search = newSearchInput.value.toLowerCase(); renderDetalleRows(enrichedDetails); });
+        newSearchInput.addEventListener('input', () => { 
+            _detalleFilters.search = newSearchInput.value.toLowerCase(); 
+            renderDetalleRows(enrichedDetails); 
+        });
+
+        // Asegurar que el search box arranque vacío si es un nuevo detalle
+        newSearchInput.value = _detalleFilters.search;
 
         updateDropdowns('init');
     }
