@@ -714,8 +714,14 @@
             const { clientData, clientTotals, grandTotalValue, sortedClients, finalProductOrder } = 
                 await window.dataModule._processSalesDataForModal(ventas, obsequios, cargaInicialInventario, _userId);
 
+            // ENRIQUECER PRODUCTOS CON CACHÉ MAESTRA (Soluciona el problema de unidades vs cajas)
+            const enrichedProductOrder = finalProductOrder.map(p => {
+                const liveProd = _inventarioCache.find(inv => inv.id === p.id);
+                return liveProd ? { ...p, ventaPor: liveProd.ventaPor, unidadesPorCaja: liveProd.unidadesPorCaja, unidadesPorPaquete: liveProd.unidadesPorPaquete } : p;
+            });
+
             let hHTML = `<tr class="sticky top-0 z-20 bg-gray-200"><th class="p-1 border sticky left-0 z-30 bg-gray-200">Cliente</th>`;
-            finalProductOrder.forEach(p => { hHTML += `<th class="p-1 border whitespace-nowrap text-xs" title="${p.marca||''} - ${p.segmento||''}">${p.presentacion}</th>`; });
+            enrichedProductOrder.forEach(p => { hHTML += `<th class="p-1 border whitespace-nowrap text-xs" title="${p.marca||''} - ${p.segmento||''}">${p.presentacion}</th>`; });
             hHTML += `<th class="p-1 border sticky right-0 z-30 bg-gray-200">Total Cliente</th></tr>`;
             
             let bHTML=''; 
@@ -726,7 +732,7 @@
                 const clientNameDisplay = esSoloObsequio ? `${cli} (OBSEQUIO)` : cli;
 
                 bHTML+=`<tr class="${rowClass}"><td class="p-1 border font-medium bg-white sticky left-0 z-10">${clientNameDisplay}</td>`; 
-                finalProductOrder.forEach(p=>{
+                enrichedProductOrder.forEach(p=>{
                     const qU=cCli.products[p.id]||0; 
                     const qtyDisplay = window.dataModule.getDisplayQty(qU, p);
                     let dQ = (qU > 0) ? `${qtyDisplay.value}` : '';
@@ -741,7 +747,7 @@
             });
 
             let fHTML='<tr class="bg-gray-200 font-bold"><td class="p-1 border sticky left-0 z-10">TOTALES</td>'; 
-            finalProductOrder.forEach(p=>{
+            enrichedProductOrder.forEach(p=>{
                 let tQ=0; 
                 sortedClients.forEach(cli=>tQ+=clientData[cli].products[p.id]||0); 
                 
