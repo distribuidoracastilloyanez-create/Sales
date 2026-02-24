@@ -1283,15 +1283,19 @@
             const vPor = p.ventaPor || {und:true};
             const cStockU = p.cantidadUnidades||0; 
 
+            // CÁLCULO DE LA UNIDAD MENOR (PRIORIDAD: UND > PAQ > CJ)
             let factor = 1;
             let unitLabel = 'Und.';
 
-            if(vPor.cj){ 
-                factor = p.unidadesPorCaja||1; 
-                unitLabel = 'Cj.'; 
-            } else if(vPor.paq){ 
-                factor = p.unidadesPorPaquete||1; 
-                unitLabel = 'Paq.'; 
+            if (vPor.und) {
+                factor = 1;
+                unitLabel = 'Und.';
+            } else if (vPor.paq) {
+                factor = p.unidadesPorPaquete || 1;
+                unitLabel = 'Paq.';
+            } else if (vPor.cj) {
+                factor = p.unidadesPorCaja || 1;
+                unitLabel = 'Cj.';
             }
 
             const currentDisplayStock = Math.floor(cStockU / factor);
@@ -1354,9 +1358,16 @@
 
                 if (inputVal > 0) {
                     const vPor = p.ventaPor || {und:true};
+                    
+                    // CÁLCULO DE LA UNIDAD MENOR PARA MULTIPLICAR AL GUARDAR
                     let factor = 1;
-                    if(vPor.cj) factor = p.unidadesPorCaja||1;
-                    else if(vPor.paq) factor = p.unidadesPorPaquete||1;
+                    if (vPor.und) {
+                        factor = 1;
+                    } else if (vPor.paq) {
+                        factor = p.unidadesPorPaquete || 1;
+                    } else if (vPor.cj) {
+                        factor = p.unidadesPorCaja || 1;
+                    }
 
                     const currentBase = p.cantidadUnidades || 0;
                     const unitsToAdd = inputVal * factor;
@@ -1364,9 +1375,6 @@
 
                     const docRef = _doc(_db, `artifacts/${_appId}/users/${_userId}/inventario`, p.id);
                     
-                    // BUG CRÍTICO RESUELTO: Se usaba update, el cual fallaba si el vendedor
-                    // jamás había tenido stock de este producto (documento inexistente).
-                    // Ahora se usa set con merge: true para crearlo si no existe.
                     if (_increment) {
                          batch.set(docRef, { cantidadUnidades: _increment(unitsToAdd) }, { merge: true });
                     } else {
