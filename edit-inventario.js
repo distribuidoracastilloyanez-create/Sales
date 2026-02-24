@@ -2,7 +2,7 @@
     let _db, _userId, _userRole, _appId, _mainContent, _floatingControls;
     let _showMainMenu, _showModal, _populateDropdown;
     let _collection, _doc, _getDocs, _getDoc, _query, _where, _runTransaction, _addDoc, _orderBy, _limit, _startAfter;
-    let _writeBatch, _setDoc; // Añadidas dependencias necesarias para la limpieza
+    let _writeBatch, _setDoc; 
 
     // --- CONFIGURACIÓN CENTRALIZADA ---
     const PUBLIC_DATA_ID = window.AppConfig.PUBLIC_DATA_ID;
@@ -195,7 +195,6 @@
                             <p class="text-sm text-gray-600">Usuario: <span class="font-bold text-blue-600">${targetUser.email}</span></p>
                         </div>
                         <div class="flex flex-col md:flex-row gap-2 w-full md:w-auto">
-                            <!-- NUEVO BOTÓN DE LIMPIEZA -->
                             <button id="btnWipeInventory" class="flex-1 md:flex-none px-4 py-2 bg-red-600 text-white font-bold rounded shadow hover:bg-red-700 text-sm" title="Limpiar todo el inventario del vendedor a cero">
                                 🧹 Limpiar Inventario
                             </button>
@@ -491,7 +490,6 @@
                     const detallesLog = [];
 
                     // --- FASE 1: TODAS LAS LECTURAS (READS) ---
-                    // Firebase obliga a que NINGUNA escritura suceda antes de que terminen todas las lecturas.
                     const readData = [];
                     for (const item of changes) {
                         const invRef = _doc(_db, `artifacts/${_appId}/users/${targetUser.id}/inventario`, item.pid);
@@ -509,7 +507,6 @@
                             throw new Error(`El ajuste resulta en stock negativo para ${item.prod.presentacion}.`);
                         }
 
-                        // Escribir solo cantidad, preservando la data maestra.
                         transaction.set(invRef, { cantidadUnidades: newStock }, { merge: true });
 
                         detallesLog.push({
@@ -523,7 +520,6 @@
                         });
                     }
 
-                    // Escritura final del Log
                     transaction.set(logRef, {
                         fecha: fecha,
                         adminId: _userId,
@@ -616,24 +612,34 @@
         document.getElementById('btnExportRecargas').classList.add('hidden');
 
         try {
-            const startDate = new Date(dateStartStr); startDate.setHours(0,0,0,0);
-            const endDate = new Date(dateEndStr); endDate.setHours(23,59,59,999);
+            // BUG FIX QA: Construir las fechas en la zona horaria LOCAL 
+            // evitando el desfase de horas causado por UTC al usar "new Date('YYYY-MM-DD')"
+            const [sYear, sMonth, sDay] = dateStartStr.split('-');
+            const startDate = new Date(sYear, sMonth - 1, sDay, 0, 0, 0, 0);
+            
+            const [eYear, eMonth, eDay] = dateEndStr.split('-');
+            const endDate = new Date(eYear, eMonth - 1, eDay, 23, 59, 59, 999);
 
             const recargasRef = _collection(_db, `artifacts/${_appId}/users/${userId}/recargas`);
+            
+            // BUG FIX QA: Evitar Errores de Índices Compuestos en Firebase.
+            // Se realiza la consulta del rango, pero el ordenamiento se hace en memoria.
             const q = _query(
                 recargasRef, 
                 _where('fecha', '>=', startDate.toISOString()), 
-                _where('fecha', '<=', endDate.toISOString()),
-                _orderBy('fecha', 'desc')
+                _where('fecha', '<=', endDate.toISOString())
             );
 
             const snap = await _getDocs(q);
-            const recargas = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+            let recargas = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+            
+            // Ordenar de más reciente a más antiguo en memoria (Protección contra fallos de Firebase)
+            recargas.sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
             
             _recargasSearchCache = recargas; 
 
             if (recargas.length === 0) {
-                container.innerHTML = '<p class="text-center text-gray-500">No se encontraron recargas en este periodo.</p>';
+                container.innerHTML = '<p class="text-center text-gray-500 bg-gray-50 p-4 rounded border">No se encontraron recargas para este vendedor en el rango de fechas seleccionado.</p>';
                 return;
             }
 
@@ -644,14 +650,24 @@
                 const fecha = new Date(r.fecha);
                 const fechaStr = fecha.toLocaleString();
                 
-                const detallesHtml = (r.detalles || []).map(d => `
+                const detallesHtml = (r.detalles || []).map(d => {
+                    // Renderizado inteligente del factor de medida
+                    let unidadStr = 'Und';
+                    if (d.factorUtilizado > 1) {
+                        // Asumimos que si factorUtilizado coincide con las unidadesPorCaja suele ser caja
+                        // Pero para mantenerlo simple y blindado en el reporte de auditoría
+                        unidadStr = 'Und Base'; 
+                    }
+                    
+                    return `
                     <tr class="border-b text-xs hover:bg-gray-50">
                         <td class="p-1">${d.presentacion}</td>
-                        <td class="p-1 text-center text-gray-500">${d.unidadesAnteriores}</td>
-                        <td class="p-1 text-center font-bold text-green-700">+${d.diferenciaUnidades}</td>
-                        <td class="p-1 text-center font-bold">${d.unidadesNuevas}</td>
+                        <td class="p-1 text-center text-gray-500">${d.unidadesAnteriores} ${unidadStr}</td>
+                        <td class="p-1 text-center font-bold text-green-700">+${d.diferenciaUnidades} ${unidadStr}</td>
+                        <td class="p-1 text-center font-bold">${d.unidadesNuevas} ${unidadStr}</td>
                     </tr>
-                `).join('');
+                    `;
+                }).join('');
 
                 const card = document.createElement('div');
                 card.className = 'border rounded-lg shadow-sm bg-white overflow-hidden';
@@ -661,7 +677,7 @@
                             <span class="font-bold text-blue-800">📅 ${fechaStr}</span>
                             <span class="ml-4 text-xs text-gray-600 bg-white px-2 py-1 rounded border">Productos Afectados: ${r.totalProductos}</span>
                         </div>
-                        <span class="text-gray-500 text-xs">▼ Ver Detalles</span>
+                        <span class="text-gray-500 text-xs font-bold">▼ Ver Detalles</span>
                     </div>
                     <div class="details-body hidden p-2 bg-white">
                         <table class="w-full">
@@ -682,7 +698,7 @@
 
         } catch (e) {
             console.error(e);
-            container.innerHTML = `<p class="text-red-500 text-center">Error: ${e.message}<br><small>Si es error de índice, ver consola para generar link de Firebase.</small></p>`;
+            container.innerHTML = `<p class="text-red-500 text-center">Error: ${e.message}</p>`;
         }
     }
 
@@ -822,6 +838,7 @@
 
         try {
             const logRef = _collection(_db, `artifacts/${_appId}/users/${_userId}/historial_correcciones`);
+            // Nota: Aquí se usa orderBy, si falla, crear índice en Firebase
             const q = _query(logRef, _orderBy('fecha', 'desc'), _limit(50));
             const snap = await _getDocs(q);
             const logs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
