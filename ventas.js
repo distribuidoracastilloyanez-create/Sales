@@ -162,21 +162,19 @@
         filteredClients.forEach(cli => { const i = document.createElement('div'); i.className = 'autocomplete-item'; i.textContent = `${cli.nombreComercial} (${cli.nombrePersonal})`; i.addEventListener('click', () => selectCliente(cli)); cD.appendChild(i); });
     }
 
-    // --- CORRECCIÓN CRÍTICA DE VIBRACIÓN/RENDERIZADO EN ANDROID ---
     function selectCliente(cliente) {
         _ventaActual.cliente = cliente; 
         
-        // 1. Ocultar teclado inmediatamente
+        // Ocultar teclado en móviles inmediatamente
         const searchInput = document.getElementById('clienteSearch');
         if (searchInput) searchInput.blur();
-
+        
         document.getElementById('client-search-container').classList.add('hidden'); 
         document.getElementById('clienteDropdown').classList.add('hidden');
         document.getElementById('selected-client-name').textContent = cliente.nombreComercial; 
         document.getElementById('client-display-container').classList.remove('hidden');
         
-        // 2. PARCHE XIAOMI/ANDROID: Retrasar el renderizado de la tabla gigante
-        // Esto le da a la GPU del teléfono 250ms para ocultar el teclado y ajustar el viewport.
+        // Retrasar renderizado para evitar layout thrashing (parpadeo en móviles)
         setTimeout(() => {
             const invContainer = document.getElementById('inventarioTableContainer');
             const footerSection = document.getElementById('venta-footer-section');
@@ -841,6 +839,30 @@
         showSharingOptions(venta, productosFormateados, venta.vaciosDevueltosPorTipo || {}, tipo, showVentasActualesView);
     }
 
+    // --- NUEVA FUNCIÓN PARA ASEGURAR CARGA HÍBRIDA EN EDICIÓN ---
+    async function ensureHybridCacheLoaded() {
+        try {
+            const [masterSnap, stockSnap] = await Promise.all([
+                _getDocs(_collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/productos`)),
+                _getDocs(_collection(_db, `artifacts/${_appId}/users/${_userId}/inventario`))
+            ]);
+            
+            _masterCatalogCache = {};
+            masterSnap.forEach(d => { _masterCatalogCache[d.id] = { id: d.id, ...d.data() }; });
+            
+            _userStockCache = {};
+            stockSnap.forEach(d => { 
+                const data = d.data();
+                _userStockCache[d.id] = { cantidadUnidades: data.cantidadUnidades || 0, _legacyData: data };
+            });
+            
+            mergeInventarioCache();
+        } catch (err) {
+            console.error("Error al cargar caché híbrido para edición:", err);
+            throw err;
+        }
+    }
+
     function editVenta(ventaId) {
         const venta = _ventasGlobal.find(v => v.id === ventaId);
         if (!venta) { _showModal('Error', 'Venta no encontrada.'); return; }
@@ -959,8 +981,25 @@
         
         _showModal('Progreso', 'Cargando datos...', null, '', null, false);
         try {
-            const invSnap = await _getDocs(_collection(_db, `artifacts/${_appId}/users/${_userId}/inventario`)); _inventarioCache = invSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-            _ventaActual = { cliente: { id: venta.clienteId, nombreComercial: venta.clienteNombre, nombrePersonal: venta.clienteNombrePersonal }, productos: (venta.productos||[]).reduce((acc,p)=>{const pComp=_inventarioCache.find(inv=>inv.id===p.id)||p; const cant=p.cantidadVendida||{}; acc[p.id]={...pComp, cantCj:cant.cj||0, cantPaq:cant.paq||0, cantUnd:cant.und||0, totalUnidadesVendidas:p.totalUnidadesVendidas||0}; return acc;},{}), vaciosDevueltosPorTipo: venta.vaciosDevueltosPorTipo||{} };
+            // FIX: Cargar el Catálogo Maestro Híbrido, no solo el stock local.
+            await ensureHybridCacheLoaded();
+            
+            _ventaActual = { 
+                cliente: { id: venta.clienteId, nombreComercial: venta.clienteNombre, nombrePersonal: venta.clienteNombrePersonal }, 
+                productos: (venta.productos||[]).reduce((acc,p)=>{
+                    const pComp=_inventarioCache.find(inv=>inv.id===p.id)||p; 
+                    const cant=p.cantidadVendida||{}; 
+                    acc[p.id]={
+                        ...pComp, 
+                        cantCj:cant.cj||0, 
+                        cantPaq:cant.paq||0, 
+                        cantUnd:cant.und||0, 
+                        totalUnidadesVendidas:p.totalUnidadesVendidas||0
+                    }; 
+                    return acc;
+                },{}), 
+                vaciosDevueltosPorTipo: venta.vaciosDevueltosPorTipo||{} 
+            };
             TIPOS_VACIO.forEach(t => { if(!_ventaActual.vaciosDevueltosPorTipo[t]) _ventaActual.vaciosDevueltosPorTipo[t]=0; });
             document.getElementById('rubroFilter').addEventListener('change', renderEditVentasInventario); populateRubroFilter(); document.getElementById('rubroFilter').value = '';
             
