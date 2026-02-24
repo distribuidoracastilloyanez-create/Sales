@@ -746,6 +746,7 @@
                 bHTML+=`<td class="p-1 border text-right font-semibold bg-white sticky right-0 z-10">$${cCli.totalValue.toFixed(2)}</td></tr>`;
             });
 
+            // REGLA SOLICITADA EN TOTALES DE VENTAS.JS APLICADA MEDIANTE getDisplayQty
             let fHTML='<tr class="bg-gray-200 font-bold"><td class="p-1 border sticky left-0 z-10">TOTALES</td>'; 
             enrichedProductOrder.forEach(p=>{
                 let tQ=0; 
@@ -753,27 +754,8 @@
                 
                 let dT = '';
                 if (tQ > 0) {
-                    const vPor = p.ventaPor || { und: true };
-                    
-                    // Lógica estricta de totales: 
-                    // Si se vende por unidad, mostrar siempre la relación total en unidades.
-                    if (vPor.und) {
-                        dT = `${tQ} Und`;
-                    } 
-                    // Si NO se vende por unidad, pero sí por paquete, mostrar paquetes.
-                    else if (vPor.paq) {
-                        const divisor = p.unidadesPorPaquete || 1;
-                        dT = `${Math.floor(tQ / divisor)} Pq`;
-                    } 
-                    // Si SOLO se vende por cajas, mostrar cajas.
-                    else if (vPor.cj) {
-                        const divisor = p.unidadesPorCaja || 1;
-                        dT = `${Math.floor(tQ / divisor)} Cj`;
-                    } 
-                    // Respaldo de seguridad
-                    else {
-                        dT = `${tQ} Und`;
-                    }
+                    const qtyDisplay = window.dataModule.getDisplayQty(tQ, p);
+                    dT = `${qtyDisplay.value} ${qtyDisplay.unit}`;
                 }
                 
                 fHTML+=`<td class="p-1 border text-center whitespace-nowrap">${dT}</td>`;
