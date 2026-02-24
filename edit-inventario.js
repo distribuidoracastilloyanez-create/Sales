@@ -989,4 +989,163 @@
         }
     }
 
+    // --- VISTA 4: HISTORIAL DE CORRECCIONES (RESTAURADA) ---
+    async function showHistorialView() {
+        _mainContent.innerHTML = `
+            <div class="p-4 pt-8">
+                <div class="container mx-auto max-w-4xl">
+                    <div class="bg-white/90 backdrop-blur-sm p-6 rounded-lg shadow-xl">
+                        <div class="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
+                            <h2 class="text-2xl font-bold text-gray-800">Historial de Correcciones Manuales</h2>
+                            <div class="flex gap-2">
+                                <button id="btnExportHistorial" class="px-4 py-2 bg-green-600 text-white font-bold rounded shadow hover:bg-green-700 text-sm">
+                                    Descargar Excel
+                                </button>
+                                <button id="btnBackFromHist" class="px-4 py-2 bg-gray-400 text-white rounded shadow hover:bg-gray-500 text-sm">
+                                    Volver
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div id="historialListContainer" class="space-y-4 overflow-y-auto" style="max-height: 70vh;">
+                            <p class="text-center text-gray-500">Cargando historial...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        document.getElementById('btnBackFromHist').addEventListener('click', showEditInventarioMenu);
+        document.getElementById('btnExportHistorial').addEventListener('click', exportHistorialToExcel);
+
+        try {
+            const logRef = _collection(_db, `artifacts/${_appId}/users/${_userId}/historial_correcciones`);
+            const q = _query(logRef, _orderBy('fecha', 'desc'), _limit(50));
+            const snap = await _getDocs(q);
+            const logs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+            const container = document.getElementById('historialListContainer');
+            if (logs.length === 0) {
+                container.innerHTML = `<p class="text-center text-gray-500">No hay registros de correcciones.</p>`;
+                return;
+            }
+
+            container.innerHTML = '';
+            logs.forEach(log => {
+                const fechaStr = log.fecha?.toDate ? log.fecha.toDate().toLocaleString() : 'Fecha inválida';
+                
+                const card = document.createElement('div');
+                card.className = 'border rounded-lg p-4 bg-gray-50 shadow-sm';
+                
+                let detallesHTML = `
+                    <table class="w-full text-xs mt-2 border-collapse">
+                        <thead class="bg-gray-200">
+                            <tr>
+                                <th class="p-1 text-left">Producto</th>
+                                <th class="p-1 text-center">Ant.</th>
+                                <th class="p-1 text-center">Ajuste</th>
+                                <th class="p-1 text-center">Nuevo</th>
+                                <th class="p-1 text-left">Observación</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                `;
+                
+                (log.detalles || []).forEach(d => {
+                    const colorClass = d.ajuste < 0 ? 'text-red-600' : (d.ajuste > 0 ? 'text-green-600' : 'text-gray-800');
+                    const signo = d.ajuste > 0 ? '+' : '';
+                    detallesHTML += `
+                        <tr class="border-t border-gray-200">
+                            <td class="p-1 font-medium">${d.presentacion}</td>
+                            <td class="p-1 text-center text-gray-500">${d.stockAnterior}</td>
+                            <td class="p-1 text-center font-bold ${colorClass}">${signo}${d.ajuste}</td>
+                            <td class="p-1 text-center font-bold">${d.stockNuevo}</td>
+                            <td class="p-1 italic text-gray-600">${d.observacion}</td>
+                        </tr>
+                    `;
+                });
+                
+                detallesHTML += `</tbody></table>`;
+
+                card.innerHTML = `
+                    <div class="flex justify-between items-start mb-2">
+                        <div>
+                            <p class="font-bold text-blue-800">Usuario Afectado: ${log.targetUserEmail}</p>
+                            <p class="text-xs text-gray-500">Fecha: ${fechaStr}</p>
+                        </div>
+                        <span class="text-xs bg-gray-200 px-2 py-1 rounded font-bold">Tipo: ${log.tipoAjuste || 'MANUAL'} | Items: ${log.totalItemsAfectados}</span>
+                    </div>
+                    ${detallesHTML}
+                `;
+                container.appendChild(card);
+            });
+
+            window._tempHistorialLogs = logs;
+
+        } catch (e) {
+            console.error(e);
+            document.getElementById('historialListContainer').innerHTML = `<p class="text-red-500">Error cargando historial: ${e.message}</p>`;
+        }
+    }
+
+    async function exportHistorialToExcel() {
+        if (!window._tempHistorialLogs || window._tempHistorialLogs.length === 0) {
+            _showModal('Aviso', 'No hay datos para exportar.');
+            return;
+        }
+
+        _showModal('Progreso', 'Generando Excel...', null, '', null, false);
+
+        try {
+            const workbook = new ExcelJS.Workbook();
+            const worksheet = workbook.addWorksheet('Historial Correcciones');
+
+            worksheet.columns = [
+                { header: 'Fecha', key: 'fecha', width: 20 },
+                { header: 'Usuario Afectado', key: 'usuario', width: 25 },
+                { header: 'Producto', key: 'producto', width: 30 },
+                { header: 'Marca', key: 'marca', width: 20 },
+                { header: 'Stock Anterior', key: 'ant', width: 15 },
+                { header: 'Ajuste', key: 'ajuste', width: 10 },
+                { header: 'Stock Nuevo', key: 'nuevo', width: 15 },
+                { header: 'Observación', key: 'obs', width: 40 }
+            ];
+
+            worksheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
+            worksheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4F81BD' } };
+
+            window._tempHistorialLogs.forEach(log => {
+                const fechaStr = log.fecha?.toDate ? log.fecha.toDate().toLocaleString() : '';
+                (log.detalles || []).forEach(d => {
+                    const row = worksheet.addRow({
+                        fecha: fechaStr,
+                        usuario: log.targetUserEmail,
+                        producto: d.presentacion,
+                        marca: d.marca,
+                        ant: d.stockAnterior,
+                        ajuste: d.ajuste,
+                        nuevo: d.stockNuevo,
+                        obs: d.observacion
+                    });
+                    
+                    if (d.ajuste < 0) row.getCell('ajuste').font = { color: { argb: 'FFFF0000' } };
+                    else if (d.ajuste > 0) row.getCell('ajuste').font = { color: { argb: 'FF008000' } };
+                });
+            });
+
+            const buffer = await workbook.xlsx.writeBuffer();
+            const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = `Historial_Correcciones_${new Date().toISOString().slice(0,10)}.xlsx`;
+            link.click();
+
+            document.getElementById('modalContainer').classList.add('hidden');
+
+        } catch (e) {
+            console.error(e);
+            _showModal('Error', 'Falló la exportación a Excel.');
+        }
+    }
+
 })();
