@@ -553,7 +553,6 @@
         document.getElementById('backToVentasBtn').addEventListener('click', showVentasView);
     }
 
-    // --- AGREGADO: BOTÓN DE CIERRE PREVIO ---
     function showVentasActualesView() {
         if (_floatingControls) _floatingControls.classList.add('hidden');
         _mainContent.innerHTML = `
@@ -576,7 +575,6 @@
         renderVentasList();
     }
 
-    // --- NUEVO: FUNCIÓN PARA DESCARGAR CIERRE PREVIO (EXCEL) ---
     async function handleDescargarCierrePrevio() {
         _showModal('Progreso', 'Generando Cierre Previo (Excel)...');
         try {
@@ -609,17 +607,29 @@
             }
 
             const fechaCierre = new Date();
+            
+            // Re-calcular total si hay obsequios para que cuadre el dinero
+            const masterRef = _collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/productos`);
+            const masterSnap = await _getDocs(masterRef);
+            const masterMap = new Map(masterSnap.docs.map(doc => [doc.id, doc.data()]));
+            
+            let obsequiosTotal = 0;
+            obsequios.forEach(o => {
+                 const p = masterMap.get(o.productoId) || {};
+                 const precioCj = p.precios?.cj || 0;
+                 obsequiosTotal += (o.cantidadCajas || 0) * precioCj;
+            });
+            
             const cierreDataForExport = { 
                  fecha: { toDate: () => fechaCierre }, 
                  ventas: ventas.map(({id, ...rest}) => rest), 
                  obsequios: obsequios.map(({id, ...rest}) => rest),
-                 total: ventas.reduce((s, v) => s + (v.total || 0), 0),
+                 total: ventas.reduce((s, v) => s + (v.total || 0), 0) + obsequiosTotal,
                  cargaInicialInventario: cargaInicialInventario,
                  vendedorInfo: vendedorInfo
             }; 
 
             if (window.dataModule && typeof window.dataModule.exportSingleClosingToExcel === 'function') {
-                // Pasamos "true" como segundo parámetro para indicar que es un reporte PREVIO
                 await window.dataModule.exportSingleClosingToExcel(cierreDataForExport, true); 
                 
                 const pModal = document.getElementById('modalContainer');
@@ -794,20 +804,24 @@
             let bHTML=''; 
             sortedClients.forEach(cli=>{
                 const cCli = clientData[cli]; 
-                const esSoloObsequio = !clientTotals.hasOwnProperty(cli) && cCli.totalValue === 0 && Object.values(cCli.products).some(q => q > 0);
-                const rowClass = esSoloObsequio ? 'bg-blue-100 hover:bg-blue-200' : 'hover:bg-blue-50';
-                const clientNameDisplay = esSoloObsequio ? `${cli} (OBSEQUIO)` : cli;
-
-                bHTML+=`<tr class="${rowClass}"><td class="p-1 border font-medium bg-white sticky left-0 z-10">${clientNameDisplay}</td>`; 
+                const esSoloObsequio = cCli.isObsequioRow;
+                
+                // Color azul claro para distinguir obsequios
+                const rowClass = esSoloObsequio ? 'bg-blue-100 hover:bg-blue-200 text-blue-900' : 'hover:bg-blue-50';
+                
+                bHTML+=`<tr class="${rowClass}"><td class="p-1 border font-medium bg-white sticky left-0 z-10">${cli}</td>`; 
                 enrichedProductOrder.forEach(p=>{
                     const qU=cCli.products[p.id]||0; 
                     const qtyDisplay = window.dataModule.getDisplayQty(qU, p);
-                    let dQ = (qU > 0) ? `${qtyDisplay.value}` : '';
-                    let cellClass = '';
-                    if (qU > 0 && esSoloObsequio) {
-                        cellClass = 'font-bold';
-                        dQ += ` ${qtyDisplay.unit}`;
+                    
+                    let dQ = '';
+                    if (qU > 0) {
+                        dQ = `${qtyDisplay.value} ${qtyDisplay.unit}`;
+                        if (esSoloObsequio) dQ += ` <span class="text-[10px] text-blue-600 font-black ml-1">(Regalo)</span>`;
                     }
+                    
+                    let cellClass = esSoloObsequio && qU > 0 ? 'font-bold bg-blue-50 text-blue-800' : (qU > 0 ? 'font-bold' : '');
+                    
                     bHTML+=`<td class="p-1 border text-center ${cellClass}">${dQ}</td>`;
                 }); 
                 bHTML+=`<td class="p-1 border text-right font-semibold bg-white sticky right-0 z-10">$${cCli.totalValue.toFixed(2)}</td></tr>`;
@@ -828,6 +842,7 @@
             }); 
             fHTML+=`<td class="p-1 border text-right sticky right-0 z-10">$${grandTotalValue.toFixed(2)}</td></tr>`;
             
+            const TIPOS_VACIO_GLOBAL = window.TIPOS_VACIO_GLOBAL || ["1/4 - 1/3", "ret 350 ml", "ret 1.25 Lts"];
             const localVacios = {};
             [...ventas, ...obsequios].forEach(v => {
                 const cName = v.clienteNombre || 'Desconocido';
@@ -855,7 +870,7 @@
 
             let vHTML=''; 
             const cliVacios = Object.keys(localVacios).filter(cli => 
-                TIPOS_VACIO.some(t => (localVacios[cli][t]?.entregados || 0) > 0 || (localVacios[cli][t]?.devueltos || 0) > 0)
+                TIPOS_VACIO_GLOBAL.some(t => (localVacios[cli][t]?.entregados || 0) > 0 || (localVacios[cli][t]?.devueltos || 0) > 0)
             ).sort(); 
             
             if (cliVacios.length > 0) { 
@@ -877,7 +892,7 @@
                 
                 cliVacios.forEach(cli => {
                     const movs = localVacios[cli]; 
-                    TIPOS_VACIO.forEach(t => {
+                    TIPOS_VACIO_GLOBAL.forEach(t => {
                         const mov = movs[t]; 
                         if (mov && (mov.entregados > 0 || mov.devueltos > 0)) {
                             const neto = mov.entregados - mov.devueltos; 
@@ -945,11 +960,24 @@
                      vendedorInfo={userId:_userId,nombre:uData.nombre||'',apellido:uData.apellido||'',camion:uData.camion||'',email:uData.email||''};
                  }
                  const fechaCierre = new Date();
+                 
+                 // CÁLCULO ESTRICTO DE TOTALES INCLUYENDO EL VALOR DEL OBSEQUIO
+                 const masterRef = _collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/productos`);
+                 const masterSnap = await _getDocs(masterRef);
+                 const masterMap = new Map(masterSnap.docs.map(doc => [doc.id, doc.data()]));
+                 
+                 let obsequiosTotal = 0;
+                 obsequios.forEach(o => {
+                      const p = masterMap.get(o.productoId) || {};
+                      const precioCj = p.precios?.cj || 0;
+                      obsequiosTotal += (o.cantidadCajas || 0) * precioCj;
+                 });
+                 
                  const cierreData = { 
                      fecha: fechaCierre, 
                      ventas: ventas.map(({id,...rest})=>rest), 
                      obsequios: obsequios.map(({id,...rest})=>rest),
-                     total: ventas.reduce((s,v)=>s+(v.total||0),0),
+                     total: ventas.reduce((s,v)=>s+(v.total||0),0) + obsequiosTotal,
                      cargaInicialInventario: cargaInicialInventario,
                      vendedorInfo: vendedorInfo
                  }; 
