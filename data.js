@@ -12,6 +12,7 @@
     let _sortPreferenceCache = null;
     let _rubroOrderMapCache = null;
     let _segmentoOrderMapCache = null;
+    let _marcasOrderMapCache = null;
     const SORT_CONFIG_PATH = 'config/productSortOrder'; 
 
     const PUBLIC_DATA_ID = window.AppConfig.PUBLIC_DATA_ID;
@@ -50,29 +51,25 @@
         }
     };
 
-    // --- Helper Function: getDisplayQty (LÓGICA CORREGIDA) ---
+    // --- Helper Function: getDisplayQty (LÓGICA MATEMÁTICA ESTRICTA) ---
     function getDisplayQty(qU, p) {
-        if (!qU || qU === 0) return { value: 0, unit: 'Und' };
+        if (!qU || qU === 0) return { value: '', unit: '' };
         if (!p) return { value: qU, unit: 'Und' };
 
         const vP = p.ventaPor || {und: true};
         const uCj = p.unidadesPorCaja || 1;
         const uPaq = p.unidadesPorPaquete || 1;
         
-        // REGLA: Si se vende por unidades (así también se venda por cajas), mostrar Unidades.
         if (vP.und) {
             return { value: qU, unit: 'Und' };
         } 
-        // REGLA: Si SOLO se vende por paquetes, mostrar Paquetes
-        else if (vP.paq && !vP.cj) {
-            return { value: parseFloat((qU / uPaq).toFixed(2)), unit: 'Pq' };
+        else if (vP.paq) {
+            return { value: Math.floor(qU / uPaq), unit: 'Pq' };
         } 
-        // REGLA: Si SOLO se vende por cajas, mostrar Cajas
         else if (vP.cj) {
-            return { value: parseFloat((qU / uCj).toFixed(2)), unit: 'Cj' };
+            return { value: Math.floor(qU / uCj), unit: 'Cj' };
         }
         
-        // Fallback
         return { value: qU, unit: 'Und' };
     }
 
@@ -84,6 +81,34 @@
         if (numFmt) { style.numFmt = numFmt; }
         style.alignment = { vertical: 'middle', horizontal: horizontalAlign };
         return style;
+    }
+
+    // --- Funciones Helper para Fechas (Semanas ISO) ---
+    function getISOWeekString(d) {
+        const date = new Date(d.getTime());
+        date.setHours(0, 0, 0, 0);
+        date.setDate(date.getDate() + 3 - (date.getDay() + 6) % 7);
+        const week1 = new Date(date.getFullYear(), 0, 4);
+        const weekNumber = 1 + Math.round(((date.getTime() - week1.getTime()) / 86400000 - 3 + (week1.getDay() + 6) % 7) / 7);
+        return `${date.getFullYear()}-W${weekNumber.toString().padStart(2, '0')}`;
+    }
+
+    function getDatesFromWeekString(weekStr) {
+        const [yearStr, weekPart] = weekStr.split('-W');
+        const year = parseInt(yearStr, 10);
+        const week = parseInt(weekPart, 10);
+        const simple = new Date(year, 0, 1 + (week - 1) * 7);
+        const dow = simple.getDay();
+        const ISOweekStart = simple;
+        if (dow <= 4) ISOweekStart.setDate(simple.getDate() - simple.getDay() + 1);
+        else ISOweekStart.setDate(simple.getDate() + 8 - simple.getDay());
+        
+        const start = new Date(ISOweekStart);
+        start.setHours(0,0,0,0);
+        const end = new Date(start);
+        end.setDate(start.getDate() + 6);
+        end.setHours(23,59,59,999);
+        return { start, end };
     }
 
     window.initData = function(dependencies) {
@@ -116,7 +141,7 @@
                     <button id="closingDataBtn" class="w-full px-6 py-3 bg-indigo-600 text-white rounded-lg shadow-md hover:bg-indigo-700">Cierres de Ventas</button>
                     <button id="designReportBtn" class="w-full px-6 py-3 bg-purple-600 text-white rounded-lg shadow-md hover:bg-purple-700">Diseño de Reporte</button>
                     <button id="consolidatedClientsBtn" class="w-full px-6 py-3 bg-green-600 text-white rounded-lg shadow-md hover:bg-green-700">Clientes Consolidados</button>
-                    <button id="clientMapBtn" class="w-full px-6 py-3 bg-cyan-600 text-white rounded-lg shadow-md hover:bg-cyan-700">Mapa de Clientes</button>
+                    <button id="clientMapBtn" class="w-full px-6 py-3 bg-cyan-600 text-white rounded-lg shadow-md hover:bg-cyan-700">Mapa de Clientes / Asistencia</button>
                     <button id="backToMenuBtn" class="w-full px-6 py-3 bg-gray-400 text-white rounded-lg shadow-md hover:bg-gray-500">Volver Menú</button>
                 </div>
             </div> </div> </div>
@@ -290,13 +315,10 @@
         let grandTotalValue = 0;
         const allProductsMap = new Map();
         
-        console.log("_processSalesDataForModal: Fetching CURRENT inventory map AND Master Catalog...");
         const targetUserId = userIdForInventario || _userId;
-        
         const inventarioRef = _collection(_db, `artifacts/${_appId}/users/${targetUserId}/inventario`);
         const masterRef = _collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/productos`);
 
-        // NUEVO: Descargar Catálogo Maestro para asegurar configuraciones de venta
         const [inventarioSnapshot, masterSnapshot] = await Promise.all([
             _getDocs(inventarioRef),
             _getDocs(masterRef)
@@ -304,6 +326,20 @@
 
         const inventarioMap = new Map(inventarioSnapshot.docs.map(doc => [doc.id, doc.data()]));
         const masterMap = new Map(masterSnapshot.docs.map(doc => [doc.id, doc.data()]));
+
+        // Inyección Total para que salgan todos los productos en Cierre Previo y Excel
+        const allKnownIds = new Set([...inventarioMap.keys(), ...masterMap.keys()]);
+        for (const pId of allKnownIds) {
+            const prodPrivado = inventarioMap.get(pId) || {};
+            const prodMaestro = masterMap.get(pId) || {};
+            const prodComp = { ...prodPrivado, ...prodMaestro, id: pId }; 
+            const rubro = prodComp.rubro || 'SIN RUBRO'; 
+            const seg = prodComp.segmento || 'S/S';
+            const marca = prodComp.marca || 'S/M';
+            if (!allProductsMap.has(pId)) {
+                allProductsMap.set(pId, { ...prodComp, rubro: rubro, segmento: seg, marca: marca });
+            }
+        }
         
         const allData = [
             ...ventas.map(v => ({ tipo: 'venta', data: v })),
@@ -322,22 +358,10 @@
                 grandTotalValue += ventaTotalCliente;
                 
                 (venta.productos || []).forEach(p => {
-                    // FIX: Enriquecimiento híbrido. Manda la configuración del maestro por encima
                     const prodPrivado = inventarioMap.get(p.id) || {};
                     const prodMaestro = masterMap.get(p.id) || {};
+                    const prodComp = { ...p, ...prodPrivado, ...prodMaestro, id: p.id }; 
                     
-                    const prodComp = { 
-                        ...p, 
-                        ...prodPrivado, 
-                        ...prodMaestro, 
-                        id: p.id 
-                    }; 
-                    
-                    const rubro = prodComp.rubro || 'SIN RUBRO'; 
-                    const seg = prodComp.segmento || 'S/S';
-                    const marca = prodComp.marca || 'S/M';
-                    
-                    if (p.id && !allProductsMap.has(p.id)) allProductsMap.set(p.id, { ...prodComp, rubro: rubro, segmento: seg, marca: marca });
                     if (p.id && !clientData[clientName].products[p.id]) clientData[clientName].products[p.id] = 0;
                     
                     let cantidadUnidades = 0;
@@ -364,16 +388,13 @@
                     marca: 'N/A',
                     unidadesPorCaja: 1, 
                     precios: { und: 0, paq: 0, cj: 0 },
-                    ventaPor: { cj: true, paq: false, und: false }, // Obsequio = Caja
+                    ventaPor: { cj: true, paq: false, und: false },
                     ...prodPrivado,
                     ...prodMaestro
                 };
-                pComp.precios = { und: 0, paq: 0, cj: 0 };
                 
                 const cantidadUnidades = (obsequio.cantidadCajas || 0) * (pComp.unidadesPorCaja || 1);
 
-                const rubro = pComp.rubro || 'Sin Rubro', seg = pComp.segmento || 'Sin Segmento', marca = pComp.marca || 'Sin Marca';
-                if (pComp.id && !allProductsMap.has(pComp.id)) allProductsMap.set(pComp.id, { ...pComp, rubro: rubro, segmento: seg, marca: marca });
                 if (pComp.id && !clientData[clientName].products[pComp.id]) clientData[clientName].products[pComp.id] = 0;
                 clientData[clientName].products[pComp.id] += cantidadUnidades;
             }
@@ -417,14 +438,12 @@
                     let cellClass = '';
                     if (qU > 0 && esSoloObsequio) {
                         cellClass = 'font-bold';
-                        dQ += ` ${qtyDisplay.unit}`;
                     }
                     bHTML+=`<td class="p-1 border text-center ${cellClass}">${dQ}</td>`;
                 }); 
                 bHTML+=`<td class="p-1 border text-right font-semibold bg-white sticky right-0 z-10">$${cCli.totalValue.toFixed(2)}</td></tr>`;
             });
 
-            // REGLA SOLICITADA EN TOTALES DE VENTAS.JS APLICADA EN DATA.JS
             let fHTML='<tr class="bg-gray-200 font-bold"><td class="p-1 border sticky left-0 z-10">TOTALES</td>'; 
             finalProductOrder.forEach(p=>{
                 let tQ=0; 
@@ -433,11 +452,9 @@
                 const qtyDisplay = getDisplayQty(tQ, p);
                 let dT = (tQ > 0) ? `${qtyDisplay.value} ${qtyDisplay.unit}` : '';
                 
-                fHTML+=`<td class="p-1 border text-center">${dT}</td>`;
+                fHTML+=`<td class="p-1 border text-center whitespace-nowrap">${dT}</td>`;
             }); 
             fHTML+=`<td class="p-1 border text-right sticky right-0 z-10">$${grandTotalValue.toFixed(2)}</td></tr>`;
-            
-            // VACIOS REESCRITO EN VENTAS.JS
             
             const vendedor = closingData.vendedorInfo || {};
             let vNameModal = vendedor.nombre || 'Desconocido';
@@ -461,7 +478,6 @@
         let inventarioMap;
         let hasSnapshot = cargaInicialInventario && cargaInicialInventario.length > 0;
         
-        console.log("processSalesDataForReport: Fetching CURRENT inventory map AND Master...");
         const targetUserId = userIdForInventario || _userId;
         const inventarioRef = _collection(_db, `artifacts/${_appId}/users/${targetUserId}/inventario`); 
         const masterRef = _collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/productos`);
@@ -481,6 +497,28 @@
 
         const userDoc = await _getDoc(_doc(_db, "users", targetUserId));
         const userInfo = userDoc.exists() ? userDoc.data() : { email: 'Usuario Desconocido' };
+
+        const allKnownIds = new Set([...inventarioMap.keys(), ...masterMap.keys()]);
+        for (const pId of allKnownIds) {
+            const prodPrivado = inventarioMap.get(pId) || {};
+            const prodMaestro = masterMap.get(pId) || {};
+            const prodParaReporte = {
+                ...prodPrivado, 
+                ...prodMaestro,
+                id: pId,
+                rubro: prodMaestro.rubro || prodPrivado.rubro || 'SIN RUBRO',
+                segmento: prodMaestro.segmento || prodPrivado.segmento || 'S/S',
+                marca: prodMaestro.marca || prodPrivado.marca || 'S/M',
+            };
+            const rubro = prodParaReporte.rubro;
+            allRubros.add(rubro);
+            if (!dataByRubro[rubro]) {
+                dataByRubro[rubro] = { clients: {}, productsMap: new Map(), productTotals: {}, totalValue: 0, obsequiosMap: new Set() };
+            }
+            if (!dataByRubro[rubro].productsMap.has(pId)) {
+                dataByRubro[rubro].productsMap.set(pId, prodParaReporte); 
+            }
+        }
 
         const allData = [
             ...ventas.map(v => ({ tipo: 'venta', data: v })),
@@ -510,27 +548,11 @@
                 (venta.productos || []).forEach(p => {
                     const prodPrivado = inventarioMap.get(p.id) || {};
                     const prodMaestro = masterMap.get(p.id) || {};
-                    
-                    const prodParaReporte = {
-                        ...p,
-                        ...prodPrivado, 
-                        ...prodMaestro,
-                        id: p.id,
-                        rubro: prodMaestro.rubro || prodPrivado.rubro || p.rubro || 'SIN RUBRO',
-                        segmento: prodMaestro.segmento || prodPrivado.segmento || p.segmento || 'S/S',
-                        marca: prodMaestro.marca || prodPrivado.marca || p.marca || 'S/M',
-                    };
-                    
+                    const prodParaReporte = { ...p, ...prodPrivado, ...prodMaestro, id: p.id, rubro: prodMaestro.rubro || prodPrivado.rubro || p.rubro || 'SIN RUBRO' };
                     const rubro = prodParaReporte.rubro;
-                    allRubros.add(rubro);
-                    if (!dataByRubro[rubro]) {
-                        dataByRubro[rubro] = { clients: {}, productsMap: new Map(), productTotals: {}, totalValue: 0, obsequiosMap: new Set() };
-                    }
+                    
                     if (!dataByRubro[rubro].clients[clientName]) {
                         dataByRubro[rubro].clients[clientName] = { products: {}, totalValue: 0 };
-                    }
-                    if (p.id && !dataByRubro[rubro].productsMap.has(p.id)) {
-                        dataByRubro[rubro].productsMap.set(p.id, prodParaReporte); 
                     }
 
                     let cantidadUnidades = 0;
@@ -562,32 +584,17 @@
 
                 let pComp = {
                     id: obsequio.productoId,
-                    productoNombre: obsequio.productoNombre,
-                    presentacion: obsequio.productoNombre || 'Producto Eliminado',
                     rubro: 'OBSEQUIOS (ELIMINADO)',
-                    segmento: 'OBSEQUIOS (ELIMINADO)',
-                    marca: 'N/A',
                     unidadesPorCaja: 1, 
-                    manejaVacios: !!obsequio.tipoVacio,
-                    tipoVacio: obsequio.tipoVacio || null,
-                    ventaPor: { cj: true, paq: false, und: false }, // Fallback standard
                     ...prodPrivado,
                     ...prodMaestro,
                 };
-                pComp.precios = { und: 0, paq: 0, cj: 0 };
                 
                 const cantidadUnidades = (obsequio.cantidadCajas || 0) * (pComp.unidadesPorCaja || 1);
                 const rubro = pComp.rubro || 'SIN RUBRO';
                 
-                allRubros.add(rubro);
-                if (!dataByRubro[rubro]) {
-                    dataByRubro[rubro] = { clients: {}, productsMap: new Map(), productTotals: {}, totalValue: 0, obsequiosMap: new Set() };
-                }
                 if (!dataByRubro[rubro].clients[clientName]) {
                     dataByRubro[rubro].clients[clientName] = { products: {}, totalValue: 0 };
-                }
-                if (pComp.id && !dataByRubro[rubro].productsMap.has(pComp.id)) {
-                    dataByRubro[rubro].productsMap.set(pComp.id, pComp); 
                 }
                 dataByRubro[rubro].obsequiosMap.add(pComp.id);
 
@@ -653,7 +660,7 @@
         return { finalData, userInfo };
     }
 
-    async function exportSingleClosingToExcel(closingData) {
+    async function exportSingleClosingToExcel(closingData, isPreview = false) {
         if (typeof ExcelJS === 'undefined') {
             _showModal('Error', 'Librería ExcelJS no cargada. No se puede exportar.');
             return;
@@ -686,7 +693,6 @@
             const workbook = new ExcelJS.Workbook();
             
             const fechaObjeto = closingData.fecha;
-            
             const jsDate = (fechaObjeto && typeof fechaObjeto.toDate === 'function') 
                             ? fechaObjeto.toDate()  
                             : fechaObjeto;            
@@ -695,7 +701,6 @@
             
             const usuarioNombre = (userInfo.nombre || '') + ' ' + (userInfo.apellido || '');
             const usuarioDisplay = usuarioNombre.trim() || userInfo.email || 'Usuario Desconocido';
-
 
             const thinBorderStyle = { top: {style:"thin"}, bottom: {style:"thin"}, left: {style:"thin"}, right: {style:"thin"} };
             const s = settings.styles;
@@ -709,12 +714,9 @@
             const cargaInicialQtyStyle = buildExcelJSStyle(s.rowCargaInicial, s.rowCargaInicial.border ? thinBorderStyle : null, null, 'center');
             
             const clientDataStyle = buildExcelJSStyle(s.rowDataClients, s.rowDataClients.border ? thinBorderStyle : null, null, 'left');
-            const clientQtyStyle = buildExcelJSStyle(s.rowDataClients, s.rowDataClients.border ? thinBorderStyle : null, "0", 'center');
-            const clientSaleStyle = buildExcelJSStyle(s.rowDataClientsSale, s.rowDataClientsSale.border ? thinBorderStyle : null, "0", 'center');
-            const clientObsequioStyle = buildExcelJSStyle(s.rowDataClientsObsequio, s.rowDataClientsObsequio.border ? thinBorderStyle : null, "0", 'center');
+            const clientSaleStyle = buildExcelJSStyle(s.rowDataClientsSale, s.rowDataClientsSale.border ? thinBorderStyle : null, null, 'center');
+            const clientObsequioStyle = buildExcelJSStyle(s.rowDataClientsObsequio, s.rowDataClientsObsequio.border ? thinBorderStyle : null, null, 'center');
             
-            const clientPriceStyle = buildExcelJSStyle(s.rowDataClients, s.rowDataClients.border ? thinBorderStyle : null, "$#,##0.00", 'right');
-
             const cargaRestanteStyle = buildExcelJSStyle(s.rowCargaRestante, s.rowCargaRestante.border ? thinBorderStyle : null, null, 'left');
             const cargaRestanteQtyStyle = buildExcelJSStyle(s.rowCargaRestante, s.rowCargaRestante.border ? thinBorderStyle : null, null, 'center');
 
@@ -735,6 +737,11 @@
                 
                 const sheetName = rubroName.replace(/[\/\\?*\[\]]/g, '').substring(0, 31);
                 const worksheet = workbook.addWorksheet(sheetName);
+
+                // CONGELAR COLUMNA A Y FILAS SUPERIORES EN EL EXCEL
+                worksheet.views = [
+                    { state: 'frozen', xSplit: 1, ySplit: 6 }
+                ];
 
                 const colWidths = [ 
                     { width: settings.columnWidths.col_A_LabelsClientes },
@@ -821,9 +828,14 @@
                     sortedProducts.forEach((p, index) => {
                         const initialStock = productTotals[p.id]?.initialStock || 0;
                         const cell = cargaInicialRow.getCell(START_COL + index);
-                        const qtyDisplay = getDisplayQty(initialStock, p);
-                        cell.value = qtyDisplay.value;
-                        cell.style = { ...cargaInicialQtyStyle, numFmt: `0.## " ${qtyDisplay.unit}"` };
+                        if (initialStock > 0) {
+                            const qtyDisplay = getDisplayQty(initialStock, p);
+                            cell.value = qtyDisplay.value;
+                            cell.style = { ...cargaInicialQtyStyle, numFmt: `0 " ${qtyDisplay.unit}"` };
+                        } else {
+                            cell.value = '';
+                            cell.style = { ...cargaInicialQtyStyle };
+                        }
                     });
                     cargaInicialRow.getCell(subTotalCol).style = cargaInicialStyle;
                 }
@@ -852,9 +864,6 @@
                         const qU = clientSales.products[p.id] || 0;
                         const cell = clientRow.getCell(START_COL + index);
                         
-                        const qtyDisplay = getDisplayQty(qU, p);
-                        cell.value = qtyDisplay.value;
-                        
                         let cellStyleSettings;
                         
                         if (esSoloObsequio) {
@@ -868,11 +877,18 @@
                         const finalCellStyle = buildExcelJSStyle(
                             cellStyleSettings,
                             cellStyleSettings.border ? thinBorderStyle : null,
-                            "0", 
+                            null, 
                             'center' 
                         );
                         
-                        cell.style = finalCellStyle;
+                        if (qU > 0) {
+                            const qtyDisplay = getDisplayQty(qU, p);
+                            cell.value = qtyDisplay.value;
+                            cell.style = { ...finalCellStyle, numFmt: `0 " ${qtyDisplay.unit}"` };
+                        } else {
+                            cell.value = '';
+                            cell.style = finalCellStyle;
+                        }
                     });
                     
                     const subtotalCell = clientRow.getCell(subTotalCol);
@@ -897,9 +913,14 @@
                     sortedProducts.forEach((p, index) => {
                         const currentStock = productTotals[p.id]?.currentStock || 0;
                         const cell = cargaRestanteRow.getCell(START_COL + index);
-                        const qtyDisplay = getDisplayQty(currentStock, p);
-                        cell.value = qtyDisplay.value;
-                        cell.style = { ...cargaRestanteQtyStyle, numFmt: `0.## " ${qtyDisplay.unit}"` };
+                        if (currentStock > 0) {
+                            const qtyDisplay = getDisplayQty(currentStock, p);
+                            cell.value = qtyDisplay.value;
+                            cell.style = { ...cargaRestanteQtyStyle, numFmt: `0 " ${qtyDisplay.unit}"` };
+                        } else {
+                            cell.value = '';
+                            cell.style = { ...cargaRestanteQtyStyle };
+                        }
                     });
                     cargaRestanteRow.getCell(subTotalCol).style = cargaRestanteStyle;
                 }
@@ -910,9 +931,14 @@
                 sortedProducts.forEach((p, index) => {
                     const totalSold = productTotals[p.id]?.totalSold || 0;
                     const cell = totalesRow.getCell(START_COL + index);
-                    const qtyDisplay = getDisplayQty(totalSold, p);
-                    cell.value = qtyDisplay.value;
-                    cell.style = { ...totalsQtyStyle, numFmt: `0.## " ${qtyDisplay.unit}"` };
+                    if (totalSold > 0) {
+                        const qtyDisplay = getDisplayQty(totalSold, p);
+                        cell.value = qtyDisplay.value;
+                        cell.style = { ...totalsQtyStyle, numFmt: `0 " ${qtyDisplay.unit}"` };
+                    } else {
+                        cell.value = '';
+                        cell.style = { ...totalsQtyStyle };
+                    }
                 });
                 const totalCell = totalesRow.getCell(subTotalCol);
                 totalCell.value = rubroTotalValue;
@@ -925,6 +951,7 @@
             
             if (settings.showVaciosSheet && cliVacios.length > 0) { 
                 const wsVacios = workbook.addWorksheet('Reporte Vacíos');
+                wsVacios.views = [{ state: 'frozen', xSplit: 1, ySplit: 1 }]; 
                 wsVacios.columns = [ 
                     { width: settings.columnWidths.vaciosCliente }, 
                     { width: settings.columnWidths.vaciosTipo }, 
@@ -967,6 +994,7 @@
             const { clientTotals, grandTotalValue } = finalData;
             if (settings.showClienteTotalSheet) {
                 const wsClientes = workbook.addWorksheet('Total Por Cliente');
+                wsClientes.views = [{ state: 'frozen', xSplit: 1, ySplit: 1 }]; 
                 wsClientes.columns = [ 
                     { width: settings.columnWidths.totalCliente }, 
                     { width: settings.columnWidths.totalClienteValor } 
@@ -998,7 +1026,9 @@
             const vendedor = closingData.vendedorInfo || {}; 
             const fecha = jsDate ? jsDate.toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10);
             const vendNombre = (vendedor.nombre || 'Vendedor').replace(/\s/g, '_');
-            const fileName = `Cierre_${vendNombre}_${fecha}.xlsx`;
+            
+            const fileNamePre = isPreview ? '_PREVIO' : '';
+            const fileName = `Cierre${fileNamePre}_${vendNombre}_${fecha}.xlsx`;
 
             const buffer = await workbook.xlsx.writeBuffer();
             const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
@@ -1029,7 +1059,7 @@
 
         _showModal('Progreso', 'Cargando diseño y generando Excel...');
         try {
-            await exportSingleClosingToExcel(closingData);
+            await exportSingleClosingToExcel(closingData, false);
             
              const modalContainer = document.getElementById('modalContainer');
              if(modalContainer && !modalContainer.classList.contains('hidden') && modalContainer.querySelector('h3')?.textContent.startsWith('Progreso')) { modalContainer.classList.add('hidden'); }
@@ -1039,445 +1069,17 @@
         }
     }
 
-    function createZoneEditor(idPrefix, label, settings) {
-        const s = settings;
-        return `
-        <div class="p-3 border rounded-lg bg-gray-50">
-            <h4 class="font-semibold text-gray-700">${label}</h4>
-            <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mt-2 text-sm items-center">
-                <label class="flex items-center space-x-2 cursor-pointer"><input type="checkbox" id="${idPrefix}_bold" ${s.bold ? 'checked' : ''} class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"><span>Negrita</span></label>
-                <label class="flex items-center space-x-2 cursor-pointer"><input type="checkbox" id="${idPrefix}_border" ${s.border ? 'checked' : ''} class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"><span>Bordes</span></label>
-                <label class="flex items-center space-x-2"><span>Fondo:</span><input type="color" id="${idPrefix}_fillColor" value="${s.fillColor || '#FFFFFF'}" class="h-6 w-10 border cursor-pointer p-0"></label>
-                <label class="flex items-center space-x-2"><span>Texto:</span><input type="color" id="${idPrefix}_fontColor" value="${s.fontColor || '#000000'}" class="h-6 w-10 border cursor-pointer p-0"></label>
-                <label class="flex items-center space-x-2"><span>Tamaño:</span><input type="number" id="${idPrefix}_fontSize" value="${s.fontSize || 10}" min="8" max="16" class="h-7 w-12 border cursor-pointer p-1 text-sm rounded-md"></label>
-            </div>
-        </div>`;
-    }
-
-    function createWidthEditor(id, label, value) {
-        return `
-        <div class="flex items-center justify-between">
-            <label for="${id}" class="text-sm font-medium text-gray-700">${label}:</label>
-            <input type="number" id="${id}" value="${value}" min="5" max="50" step="1" class="w-20 px-2 py-1 border rounded-lg text-sm">
-        </div>`;
-    }
-
-    async function showReportDesignView() {
-        if (_floatingControls) _floatingControls.classList.add('hidden');
-        _mainContent.innerHTML = `
-            <style>
-                input[type="color"] { -webkit-appearance: none; -moz-appearance: none; appearance: none; background: none; border: 1px solid #ccc; padding: 0; }
-                input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
-                input[type="color"]::-webkit-color-swatch { border: none; border-radius: 2px; }
-                input[type="color"]::-moz-color-swatch { border: none; border-radius: 2px; }
-                .design-tab-btn {
-                    padding: 0.5rem 1rem;
-                    cursor: pointer;
-                    border: 1px solid transparent;
-                    border-bottom: none;
-                    margin-bottom: -1px;
-                    background-color: #f9fafb;
-                    color: #6b7280;
-                    border-radius: 0.375rem 0.375rem 0 0;
-                }
-                .design-tab-btn.active {
-                    background-color: #ffffff;
-                    color: #3b82f6;
-                    font-weight: 600;
-                    border-color: #e5e7eb;
-                }
-            </style>
-            <div class="p-4 pt-8">
-                <div class="container mx-auto max-w-3xl">
-                    <div class="bg-white/90 backdrop-blur-sm p-6 md:p-8 rounded-lg shadow-xl">
-                        <h1 class="text-3xl font-bold text-gray-800 mb-6 text-center">Diseño de Reporte de Cierre</h1>
-                        <p class="text-center text-gray-600 mb-6">Define los estilos visuales y la visibilidad de las secciones del reporte Excel.</p>
-                        
-                        <div id="design-loader" class="text-center text-gray-500 p-4">Cargando configuración...</div>
-                        
-                        <form id="design-form-container" class="hidden text-left">
-                            
-                            <div id="design-tabs" class="flex border-b border-gray-200 mb-4 overflow-x-auto text-sm">
-                                <button type="button" class="design-tab-btn active" data-tab="general">General</button>
-                                <button type="button" class="design-tab-btn" data-tab="rubro">Hoja Rubros</button>
-                                <button type="button" class="design-tab-btn" data-tab="vacios">Hoja Vacíos</button>
-                                <button type="button" class="design-tab-btn" data-tab="totales">Hoja Totales</button>
-                            </div>
-
-                            <div id="design-tab-content" class="space-y-6">
-
-                                <div id="tab-content-general" class="space-y-4">
-                                    <h3 class="text-lg font-semibold border-b pb-2 mt-4">Visibilidad de Secciones</h3>
-                                    <div class="space-y-2 mt-4">
-                                        <label class="flex items-center space-x-3 p-2 rounded-lg hover:bg-gray-100 cursor-pointer">
-                                            <input type="checkbox" id="chk_showCargaInicial" class="h-5 w-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500">
-                                            <span>Mostrar fila "CARGA INICIAL" (en Hojas Rubro)</span>
-                                        </label>
-                                        <label class="flex items-center space-x-3 p-2 rounded-lg hover:bg-gray-100 cursor-pointer">
-                                            <input type="checkbox" id="chk_showCargaRestante" class="h-5 w-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500">
-                                            <span>Mostrar fila "CARGA RESTANTE" (en Hojas Rubro)</span>
-                                        </label>
-                                        <label class="flex items-center space-x-3 p-2 rounded-lg hover:bg-gray-100 cursor-pointer">
-                                            <input type="checkbox" id="chk_showVaciosSheet" class="h-5 w-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500">
-                                            <span>Incluir hoja "Reporte Vacíos"</span>
-                                        </label>
-                                        <label class="flex items-center space-x-3 p-2 rounded-lg hover:bg-gray-100 cursor-pointer">
-                                            <input type="checkbox" id="chk_showClienteTotalSheet" class="h-5 w-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500">
-                                            <span>Incluir hoja "Total Por Cliente"</span>
-                                        </label>
-                                    </div>
-                                </div>
-
-                                <div id="tab-content-rubro" class="space-y-6 hidden">
-                                    <h3 class="text-lg font-semibold border-b pb-2">Ancho de Columnas (Hoja Rubros)</h3>
-                                    <div id="rubro-widths-container" class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3 mt-4 text-sm">
-                                        <p>Cargando anchos...</p>
-                                    </div>
-                                    <h3 class="text-lg font-semibold border-b pb-2 mt-4">Estilos de Zonas (Hoja Rubros)</h3>
-                                    <div id="style-zones-container" class="space-y-3 mt-4">
-                                        <p>Cargando estilos...</p>
-                                    </div>
-                                </div>
-
-                                <div id="tab-content-vacios" class="space-y-6 hidden">
-                                    <h3 class="text-lg font-semibold border-b pb-2">Ancho de Columnas (Hoja Vacíos)</h3>
-                                    <div id="vacios-widths-container" class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3 mt-4 text-sm">
-                                        <p>Cargando anchos...</p>
-                                    </div>
-                                    <h3 class="text-lg font-semibold border-b pb-2 mt-4">Estilos de Zonas (Hoja Vacíos)</h3>
-                                    <div id="vacios-styles-container" class="space-y-3 mt-4">
-                                        <p>Cargando estilos...</p>
-                                    </div>
-                                </div>
-
-                                <div id="tab-content-totales" class="space-y-6 hidden">
-                                    <h3 class="text-lg font-semibold border-b pb-2">Ancho de Columnas (Hoja Totales)</h3>
-                                    <div id="totales-widths-container" class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3 mt-4 text-sm">
-                                        <p>Cargando anchos...</p>
-                                    </div>
-                                    <h3 class="text-lg font-semibold border-b pb-2 mt-4">Estilos de Zonas (Hoja Totales)</h3>
-                                    <div id="totales-styles-container" class="space-y-3 mt-4">
-                                        <p>Cargando estilos...</p>
-                                    </div>
-                                </div>
-
-                            </div>
-
-                            <div class="flex flex-col sm:flex-row gap-4 pt-6 mt-6 border-t">
-                                <button type="button" id="saveDesignBtn" class="w-full px-6 py-3 bg-green-500 text-white font-semibold rounded-lg shadow-md hover:bg-green-600">Guardar Diseño</button>
-                                <button type="button" id="backToDataMenuBtn" class="w-full px-6 py-3 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500">Volver</button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            </div>
-        `;
-
-        document.getElementById('backToDataMenuBtn').addEventListener('click', showDataView);
-        document.getElementById('saveDesignBtn').addEventListener('click', handleSaveReportDesign);
-
-        const tabsContainer = document.getElementById('design-tabs');
-        const tabContents = document.querySelectorAll('#design-tab-content > div');
-        tabsContainer.addEventListener('click', (e) => {
-            const clickedTab = e.target.closest('.design-tab-btn');
-            if (!clickedTab) return;
-
-            const tabId = clickedTab.dataset.tab;
-            
-            tabsContainer.querySelectorAll('.design-tab-btn').forEach(btn => {
-                btn.classList.remove('active');
-            });
-            clickedTab.classList.add('active');
-            
-            tabContents.forEach(content => {
-                if (content.id === `tab-content-${tabId}`) {
-                    content.classList.remove('hidden');
-                } else {
-                    content.classList.add('hidden');
-                }
-            });
-        });
-
-        const loader = document.getElementById('design-loader');
-        const formContainer = document.getElementById('design-form-container');
-        
-        try {
-            const REPORTE_DESIGN_PATH = REPORTE_DESIGN_CONFIG_PATH;
-            const docRef = _doc(_db, REPORTE_DESIGN_PATH);
-            const docSnap = await _getDoc(docRef);
-            
-            let currentSettings = JSON.parse(JSON.stringify(DEFAULT_REPORTE_SETTINGS));
-            if (docSnap.exists()) {
-                const savedSettings = docSnap.data();
-                currentSettings = { ...currentSettings, ...savedSettings };
-                currentSettings.styles = { ...DEFAULT_REPORTE_SETTINGS.styles, ...(savedSettings.styles || {}) };
-                currentSettings.columnWidths = { ...DEFAULT_REPORTE_SETTINGS.columnWidths, ...(savedSettings.columnWidths || {}) };
-            }
-
-            document.getElementById('chk_showCargaInicial').checked = currentSettings.showCargaInicial;
-            document.getElementById('chk_showCargaRestante').checked = currentSettings.showCargaRestante;
-            document.getElementById('chk_showVaciosSheet').checked = currentSettings.showVaciosSheet;
-            document.getElementById('chk_showClienteTotalSheet').checked = currentSettings.showClienteTotalSheet;
-
-            const s = currentSettings.styles;
-            document.getElementById('style-zones-container').innerHTML = `
-                ${createZoneEditor('headerInfo', 'Info (Fecha/Usuario)', s.headerInfo)}
-                ${createZoneEditor('headerProducts', 'Cabecera Productos', s.headerProducts)}
-                ${createZoneEditor('rowCargaInicial', 'Fila "CARGA INICIAL"', s.rowCargaInicial)}
-                ${createZoneEditor('rowDataClients', 'Filas Clientes (Celdas Vacías)', s.rowDataClients)}
-                ${createZoneEditor('rowDataClientsSale', 'Filas Clientes (Venta > 0)', s.rowDataClientsSale)} 
-                ${createZoneEditor('rowDataClientsObsequio', 'Filas Clientes (Obsequio)', s.rowDataClientsObsequio)}
-                ${createZoneEditor('rowCargaRestante', 'Fila "CARGA RESTANTE"', s.rowCargaRestante)}
-                ${createZoneEditor('rowTotals', 'Fila "TOTALES"', s.rowTotals)}
-            `;
-            const w = currentSettings.columnWidths;
-            document.getElementById('rubro-widths-container').innerHTML = `
-                ${createWidthEditor('width_col_A_LabelsClientes', 'Col A (Etiquetas/Clientes)', w.col_A_LabelsClientes)}
-                ${createWidthEditor('width_products', 'Cols Producto (B, C...)', w.products)}
-                ${createWidthEditor('width_subtotal', 'Col Sub Total', w.subtotal)}
-            `;
-
-            document.getElementById('vacios-widths-container').innerHTML = `
-                ${createWidthEditor('width_vaciosCliente', 'Cliente', w.vaciosCliente)}
-                ${createWidthEditor('width_vaciosTipo', 'Tipo Vacío', w.vaciosTipo)}
-                ${createWidthEditor('width_vaciosQty', 'Cantidades (Ent/Dev/Neto)', w.vaciosQty)}
-                <div></div>
-            `;
-            document.getElementById('vacios-styles-container').innerHTML = `
-                ${createZoneEditor('vaciosHeader', 'Cabecera (Cliente, Tipo, etc.)', s.vaciosHeader)}
-                ${createZoneEditor('vaciosData', 'Filas de Datos', s.vaciosData)}
-            `;
-
-            document.getElementById('totales-widths-container').innerHTML = `
-                ${createWidthEditor('width_totalCliente', 'Cliente', w.totalCliente)}
-                ${createWidthEditor('width_totalClienteValor', 'Gasto Total', w.totalClienteValor)}
-            `;
-            document.getElementById('totales-styles-container').innerHTML = `
-                ${createZoneEditor('totalesHeader', 'Cabecera (Cliente, Gasto)', s.totalesHeader)}
-                ${createZoneEditor('totalesData', 'Filas de Clientes', s.totalesData)}
-                ${createZoneEditor('totalesTotalRow', 'Fila "GRAN TOTAL"', s.totalesTotalRow)}
-            `;
-
-            loader.classList.add('hidden');
-            formContainer.classList.remove('hidden');
-
-        } catch (error) {
-            console.error("Error cargando diseño:", error);
-            loader.textContent = 'Error al cargar la configuración.';
-            _showModal('Error', `No se pudo cargar la configuración: ${error.message}`);
-        }
-    }
-
-    function readZoneEditor(idPrefix) {
-        const boldEl = document.getElementById(`${idPrefix}_bold`);
-        const borderEl = document.getElementById(`${idPrefix}_border`);
-        const fillColorEl = document.getElementById(`${idPrefix}_fillColor`);
-        const fontColorEl = document.getElementById(`${idPrefix}_fontColor`);
-        const fontSizeEl = document.getElementById(`${idPrefix}_fontSize`);
-
-        const defaults = DEFAULT_REPORTE_SETTINGS.styles[idPrefix] || 
-                         (idPrefix === 'rowDataClientsSale' ? DEFAULT_REPORTE_SETTINGS.styles.rowDataClients : 
-                         (idPrefix === 'rowDataClientsObsequio' ? DEFAULT_REPORTE_SETTINGS.styles.rowDataClients :
-                         (DEFAULT_REPORTE_SETTINGS.styles[idPrefix] || {})));
-
-        return {
-            bold: boldEl ? boldEl.checked : (defaults.bold || false),
-            border: borderEl ? borderEl.checked : (defaults.border || false),
-            fillColor: fillColorEl ? fillColorEl.value : (defaults.fillColor || '#FFFFFF'),
-            fontColor: fontColorEl ? fontColorEl.value : (defaults.fontColor || '#000000'),
-            fontSize: fontSizeEl ? (parseInt(fontSizeEl.value, 10) || 10) : (defaults.fontSize || 10)
-        };
-    }
-
-    function readWidthInputs() {
-        const defaults = DEFAULT_REPORTE_SETTINGS.columnWidths;
-        const readVal = (id, def) => parseInt(document.getElementById(id)?.value, 10) || def;
-        
-        return {
-            col_A_LabelsClientes: readVal('width_col_A_LabelsClientes', defaults.col_A_LabelsClientes),
-            products: readVal('width_products', defaults.products),
-            subtotal: readVal('width_subtotal', defaults.subtotal),
-            vaciosCliente: readVal('width_vaciosCliente', defaults.vaciosCliente),
-            vaciosTipo: readVal('width_vaciosTipo', defaults.vaciosTipo),
-            vaciosQty: readVal('width_vaciosQty', defaults.vaciosQty),
-            totalCliente: readVal('width_totalCliente', defaults.totalCliente),
-            totalClienteValor: readVal('width_totalClienteValor', defaults.totalClienteValor)
-        };
-    }
-
-    async function handleSaveReportDesign() {
-        _showModal('Progreso', 'Guardando diseño...');
-
-        const newSettings = {
-            showCargaInicial: document.getElementById('chk_showCargaInicial').checked,
-            showCargaRestante: document.getElementById('chk_showCargaRestante').checked,
-            showVaciosSheet: document.getElementById('chk_showVaciosSheet').checked,
-            showClienteTotalSheet: document.getElementById('chk_showClienteTotalSheet').checked,
-            styles: {
-                headerInfo: readZoneEditor('headerInfo'),
-                headerProducts: readZoneEditor('headerProducts'),
-                rowCargaInicial: readZoneEditor('rowCargaInicial'),
-                rowDataClients: readZoneEditor('rowDataClients'),
-                rowDataClientsSale: readZoneEditor('rowDataClientsSale'), 
-                rowDataClientsObsequio: readZoneEditor('rowDataClientsObsequio'),
-                rowCargaRestante: readZoneEditor('rowCargaRestante'),
-                rowTotals: readZoneEditor('rowTotals'),
-                vaciosHeader: readZoneEditor('vaciosHeader'),
-                vaciosData: readZoneEditor('vaciosData'),
-                totalesHeader: readZoneEditor('totalesHeader'),
-                totalesData: readZoneEditor('totalesData'),
-                totalesTotalRow: readZoneEditor('totalesTotalRow')
-            },
-            columnWidths: readWidthInputs()
-        };
-
-        try {
-            const REPORTE_DESIGN_PATH = REPORTE_DESIGN_CONFIG_PATH;
-            const docRef = _doc(_db, REPORTE_DESIGN_PATH);
-            await _setDoc(docRef, newSettings);
-            _showModal('Éxito', 'Diseño guardado correctamente.', showDataView); 
-        } catch (error) {
-            console.error("Error guardando diseño:", error);
-            _showModal('Error', `No se pudo guardar: ${error.message}`);
-        }
-    }
-    
-    async function showConsolidatedClientsView() {
-        _mainContent.innerHTML = `
-            <div class="p-4 pt-8"> <div class="container mx-auto"> <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl text-center">
-                <h1 class="text-3xl font-bold text-gray-800 mb-6 text-center">Clientes Consolidados</h1>
-                <div id="consolidated-clients-filters"></div>
-                <div id="consolidated-clients-container" class="overflow-x-auto max-h-96"> <p class="text-center text-gray-500">Cargando...</p> </div>
-                <div class="mt-6 flex flex-col sm:flex-row gap-4"> <button id="backToDataMenuBtn" class="w-full px-6 py-3 bg-gray-400 text-white rounded-lg shadow-md hover:bg-gray-500">Volver</button> <button id="downloadClientsBtn" class="w-full px-6 py-3 bg-green-600 text-white rounded-lg shadow-md hover:bg-green-700 hidden">Descargar Lista</button> </div>
-            </div> </div> </div>
-        `;
-        document.getElementById('backToDataMenuBtn').addEventListener('click', showDataView); 
-        document.getElementById('downloadClientsBtn').addEventListener('click', handleDownloadFilteredClients);
-        await loadAndRenderConsolidatedClients();
-    }
-    async function loadAndRenderConsolidatedClients() {
-        const cont = document.getElementById('consolidated-clients-container'), filtCont = document.getElementById('consolidated-clients-filters'); if(!cont || !filtCont) return;
-        try {
-            const cliRef = _collection(_db, CLIENTES_COLLECTION_PATH); 
-            const cliSnaps = await _getDocs(cliRef);
-            _consolidatedClientsCache = cliSnaps.docs.map(d => ({id: d.id, ...d.data()}));
-            filtCont.innerHTML = `<div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 p-4 border rounded-lg bg-gray-50"> <input type="text" id="client-search-input" placeholder="Buscar..." class="md:col-span-2 w-full px-4 py-2 border rounded-lg text-sm"> <div> <label for="client-filter-sector" class="block text-xs mb-1">Sector</label> <select id="client-filter-sector" class="w-full px-2 py-1 border rounded-lg text-sm"><option value="">Todos</option></select> </div> <button id="clear-client-filters-btn" class="bg-gray-300 text-xs font-semibold text-gray-700 rounded-lg self-end py-1.5 px-3 hover:bg-gray-400 transition duration-150">Limpiar</button> </div>`;
-            const uSectors = [...new Set(_consolidatedClientsCache.map(c => c.sector).filter(Boolean))].sort(); const sFilt = document.getElementById('client-filter-sector'); uSectors.forEach(s => { const o=document.createElement('option'); o.value=s; o.textContent=s; sFilt.appendChild(o); });
-            document.getElementById('client-search-input').addEventListener('input', renderConsolidatedClientsList); sFilt.addEventListener('change', renderConsolidatedClientsList); document.getElementById('clear-client-filters-btn').addEventListener('click', () => { document.getElementById('client-search-input').value = ''; sFilt.value = ''; renderConsolidatedClientsList(); });
-            renderConsolidatedClientsList(); document.getElementById('downloadClientsBtn').classList.remove('hidden');
-        } catch (error) { console.error("Error clientes consolidados:", error); cont.innerHTML = `<p class="text-red-500">Error al cargar.</p>`; }
-    }
-    function renderConsolidatedClientsList() {
-        const cont=document.getElementById('consolidated-clients-container'), sInp=document.getElementById('client-search-input'), sFilt=document.getElementById('client-filter-sector'); if(!cont||!sInp||!sFilt) return;
-        const sTerm = sInp.value.toLowerCase(), selSec = sFilt.value;
-        _filteredClientsCache = _consolidatedClientsCache.filter(cli => { const nComL=(cli.nombreComercial||'').toLowerCase(), nPerL=(cli.nombrePersonal||'').toLowerCase(), cepL=(cli.codigoCEP||'').toLowerCase(); const searchM=!sTerm||nComL.includes(sTerm)||nPerL.includes(sTerm)||(cli.codigoCEP&&cepL.includes(sTerm)); const secM=!selSec||cli.sector===selSec; return searchM&&secM; });
-        if (_filteredClientsCache.length === 0) { cont.innerHTML = `<p class="text-center text-gray-500 p-4">No se encontraron clientes.</p>`; return; }
-        let tHTML = `<table class="min-w-full bg-white text-sm"> <thead class="bg-gray-200 sticky top-0 z-10"> <tr> <th class="py-2 px-3 border-b text-left">Sector</th> <th class="py-2 px-3 border-b text-left">N. Comercial</th> <th class="py-2 px-3 border-b text-left">N. Personal</th> <th class="py-2 px-3 border-b text-left">Teléfono</th> <th class="py-2 px-3 border-b text-left">CEP</th> </tr> </thead> <tbody>`;
-        _filteredClientsCache.sort((a,b)=>(a.nombreComercial||'').localeCompare(b.nombreComercial||'')).forEach(c=>{tHTML+=`<tr class="hover:bg-gray-50 border-b"><td class="py-2 px-3">${c.sector||'N/A'}</td><td class="py-2 px-3 font-semibold">${c.nombreComercial||'N/A'}</td><td class="py-2 px-3">${c.nombrePersonal||'N/A'}</td><td class="py-2 px-3">${c.telefono||'N/A'}</td><td class="py-2 px-3">${c.codigoCEP||'N/A'}</td></tr>`;});
-        tHTML += '</tbody></table>'; cont.innerHTML = tHTML;
-    }
-    
-    async function handleDownloadFilteredClients() {
-         if (typeof ExcelJS === 'undefined' || _filteredClientsCache.length === 0) { _showModal('Aviso', typeof ExcelJS === 'undefined'?'Librería ExcelJS no cargada.':'No hay clientes.'); return; }
-        
-        const dExport = _filteredClientsCache.map(c => ({
-            'Sector':c.sector||'',
-            'Nombre Comercial':c.nombreComercial||'',
-            'Nombre Personal':c.nombrePersonal||'',
-            'Telefono':c.telefono||'',
-            'CEP':c.codigoCEP||'',
-            'Coordenadas':c.coordenadas||''
-        }));
-        
-        const workbook = new ExcelJS.Workbook();
-        const worksheet = workbook.addWorksheet('Clientes Consolidados');
-
-        worksheet.columns = [
-            { header: 'Sector', key: 'Sector', width: 20 },
-            { header: 'Nombre Comercial', key: 'Nombre Comercial', width: 30 },
-            { header: 'Nombre Personal', key: 'Nombre Personal', width: 30 },
-            { header: 'Telefono', key: 'Telefono', width: 15 },
-            { header: 'CEP', key: 'CEP', width: 15 },
-            { header: 'Coordenadas', key: 'Coordenadas', width: 20 }
-        ];
-        worksheet.getRow(1).font = { bold: true };
-        worksheet.addRows(dExport);
-
-        const today = new Date().toISOString().slice(0, 10);
-        const fileName = `Clientes_Consolidados_${today}.xlsx`;
-
-        try {
-            const buffer = await workbook.xlsx.writeBuffer();
-            const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-            const link = document.createElement('a');
-            link.href = URL.createObjectURL(blob);
-            link.download = fileName;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            URL.revokeObjectURL(link.href);
-        } catch (error) {
-            console.error("Error al descargar clientes con ExcelJS:", error);
-            _showModal('Error', 'No se pudo generar el archivo de clientes.');
-        }
-    }
-
-    function showClientMapView() {
-        if (mapInstance) { mapInstance.remove(); mapInstance = null; } _floatingControls.classList.add('hidden');
-        _mainContent.innerHTML = `
-            <div class="p-4 pt-8"> <div class="container mx-auto"> <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl">
-                <h1 class="text-3xl font-bold text-gray-800 mb-4 text-center">Mapa Clientes</h1>
-                
-                <div class="mb-4 flex flex-col md:flex-row gap-4">
-                      <div class="relative w-full"> 
-                        <input type="text" id="map-search-input" placeholder="Buscar cliente..." class="w-full px-4 py-2 border rounded-lg"> 
-                        <div id="map-search-results" class="absolute z-[1000] w-full bg-white border rounded-lg mt-1 max-h-60 overflow-y-auto hidden shadow-lg"></div> 
-                      </div>
-                      <div class="w-full md:w-1/3">
-                        <select id="map-mode-select" class="w-full px-4 py-2 border rounded-lg shadow-sm bg-white">
-                            <option value="classic">Vista: Tipo Cliente (CEP)</option>
-                            <option value="weekly">Vista: Asistencia Semanal</option>
-                        </select>
-                      </div>
-                </div>
-
-                <div id="map-legend" class="mb-4 p-2 bg-gray-100 border rounded-lg text-xs flex flex-wrap justify-center items-center gap-x-4 gap-y-1"> 
-                    </div>
-                
-                <div id="client-map" class="w-full rounded-lg shadow-inner" style="height:65vh; border:1px solid #ccc; background-color:#e5e7eb;"> <p class="text-center text-gray-500 pt-10">Cargando mapa...</p> </div>
-                <button id="backToDataMenuBtn" class="mt-6 w-full px-6 py-3 bg-gray-400 text-white rounded-lg shadow-md hover:bg-gray-500">Volver</button>
-            </div> </div> </div>
-        `;
-        document.getElementById('backToDataMenuBtn').addEventListener('click', showDataView); 
-        
-        const modeSelect = document.getElementById('map-mode-select');
-        modeSelect.addEventListener('change', () => loadAndDisplayMap(modeSelect.value));
-        
-        loadAndDisplayMap('classic'); // Carga inicial
-    }
-
-    async function getAttendedClientsThisWeek() {
-        // Calcular inicio de semana (Lunes)
-        const now = new Date();
-        const day = now.getDay(); 
-        // day 0=Dom, 1=Lun... 
-        // Si es Domingo (0), restamos 6 días. Si es otro día, restamos (day - 1).
-        const diff = now.getDate() - day + (day === 0 ? -6 : 1); 
-        const monday = new Date(now.setDate(diff));
-        monday.setHours(0,0,0,0);
-
+    // --- NUEVO: OBTENER CLIENTES ATENDIDOS POR RANGO DE FECHA ---
+    async function getAttendedClientsByDateRange(startDate, endDate) {
         const attendedClients = new Set();
-
         try {
-            // Obtener todos los usuarios para buscar en sus cierres
             const usersRef = _collection(_db, "users");
             const usersSnap = await _getDocs(usersRef);
             const userIds = usersSnap.docs.map(d => d.id);
 
             const promises = userIds.map(async (uid) => {
                 const cierresRef = _collection(_db, `artifacts/${_appId}/users/${uid}/cierres`);
-                // Buscar cierres desde el lunes hasta hoy
-                const q = _query(cierresRef, _where("fecha", ">=", monday));
+                const q = _query(cierresRef, _where("fecha", ">=", startDate), _where("fecha", "<=", endDate));
                 const snap = await _getDocs(q);
                 return snap.docs.map(d => d.data());
             });
@@ -1488,37 +1090,170 @@
             allCierres.forEach(cierre => {
                 if (cierre.ventas && Array.isArray(cierre.ventas)) {
                     cierre.ventas.forEach(venta => {
-                        // Normalizar nombre para el Set (mejor usar ID si estuviera disponible y fiable en todos lados)
                         if (venta.clienteNombre) {
                             attendedClients.add(venta.clienteNombre.trim().toLowerCase());
                         }
                     });
                 }
             });
-
-        } catch (e) {
-            console.error("Error calculando asistencia semanal:", e);
-        }
+        } catch (e) { console.error("Error calculando asistencia en rango:", e); }
         return attendedClients;
+    }
+
+    async function downloadMissedClientsExcel() {
+        const weekInput = document.getElementById('missed-clients-week').value;
+        if (!weekInput) { _showModal('Aviso', 'Seleccione una semana válida.'); return; }
+        
+        _showModal('Progreso', 'Analizando ventas y cruzando con el catálogo de clientes...', null, '', null, false);
+        
+        try {
+            const { start: startDate, end: endDate } = getDatesFromWeekString(weekInput);
+            
+            if (_consolidatedClientsCache.length === 0) { 
+                const cliRef = _collection(_db, CLIENTES_COLLECTION_PATH); 
+                const cliSnaps = await _getDocs(cliRef); 
+                _consolidatedClientsCache = cliSnaps.docs.map(d => ({id: d.id, ...d.data()})); 
+            }
+
+            const attendedSet = await getAttendedClientsByDateRange(startDate, endDate);
+            
+            const missedClients = _consolidatedClientsCache.filter(cli => {
+                const nameKey = (cli.nombreComercial || '').trim().toLowerCase();
+                return !attendedSet.has(nameKey);
+            });
+
+            if (missedClients.length === 0) {
+                _showModal('Aviso', '¡Todos los clientes del catálogo fueron atendidos en esta semana!');
+                return;
+            }
+
+            const workbook = new ExcelJS.Workbook();
+            const worksheet = workbook.addWorksheet('Inasistencias');
+
+            worksheet.columns = [
+                { header: 'Sector', key: 'Sector', width: 20 },
+                { header: 'Nombre Comercial', key: 'Nombre Comercial', width: 35 },
+                { header: 'Nombre Personal', key: 'Nombre Personal', width: 30 },
+                { header: 'Teléfono', key: 'Telefono', width: 15 },
+                { header: 'CEP', key: 'CEP', width: 12 },
+                { header: 'Coordenadas (Lat, Lng)', key: 'Coordenadas', width: 25 }
+            ];
+
+            worksheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
+            worksheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD32F2F' } }; // Rojo oscuro
+
+            const dExport = missedClients.map(c => ({
+                'Sector': c.sector || 'S/S',
+                'Nombre Comercial': c.nombreComercial || '',
+                'Nombre Personal': c.nombrePersonal || '',
+                'Telefono': c.telefono || '',
+                'CEP': c.codigoCEP || '',
+                'Coordenadas': c.coordenadas || ''
+            }));
+
+            worksheet.addRows(dExport);
+
+            const buffer = await workbook.xlsx.writeBuffer();
+            const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = `Inasistencias_${weekInput}.xlsx`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(link.href);
+
+            _showModal('Éxito', `Se ha descargado el reporte de inasistencias de la semana ${weekInput}. Faltaron visitar ${missedClients.length} clientes.`);
+
+        } catch (err) {
+            console.error(err);
+            _showModal('Error', 'Fallo al generar el reporte de inasistencias: ' + err.message);
+        }
+    }
+
+
+    function showClientMapView() {
+        if (mapInstance) { mapInstance.remove(); mapInstance = null; } _floatingControls.classList.add('hidden');
+        
+        const currentWeekStr = getISOWeekString(new Date());
+
+        _mainContent.innerHTML = `
+            <div class="p-4 pt-8"> <div class="container mx-auto max-w-6xl"> <div class="bg-white/90 backdrop-blur-sm p-6 md:p-8 rounded-lg shadow-xl">
+                <h1 class="text-3xl font-bold text-gray-800 mb-6 text-center">Mapa de Clientes y Asistencia</h1>
+                
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+                    
+                    <div class="lg:col-span-2 space-y-4">
+                        <div class="p-4 bg-blue-50 border border-blue-200 rounded-lg shadow-sm">
+                            <h3 class="font-bold text-blue-900 mb-3 text-sm uppercase">Controles del Mapa</h3>
+                            <div class="flex flex-col sm:flex-row gap-3">
+                                <div class="relative flex-grow"> 
+                                    <input type="text" id="map-search-input" placeholder="Buscar cliente por nombre o CEP..." class="w-full px-4 py-2 border border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm"> 
+                                    <div id="map-search-results" class="absolute z-[1000] w-full bg-white border border-gray-300 rounded-lg mt-1 max-h-60 overflow-y-auto hidden shadow-2xl"></div> 
+                                </div>
+                                <select id="map-mode-select" class="w-full sm:w-1/2 px-4 py-2 border border-blue-300 rounded-lg shadow-sm bg-white text-sm font-semibold focus:ring-2 focus:ring-blue-500 outline-none">
+                                    <option value="classic">Clásico: Tipo de Cliente (CEP)</option>
+                                    <option value="weekly_all">Semanal: Todos (Visitados/Faltantes)</option>
+                                    <option value="weekly_attended">Semanal: Solo Visitados</option>
+                                    <option value="weekly_unattended">Semanal: Solo Faltantes (Ruta del día)</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="lg:col-span-1">
+                        <div class="p-4 bg-red-50 border border-red-200 rounded-lg shadow-sm h-full flex flex-col justify-center">
+                            <h3 class="font-bold text-red-900 mb-2 text-sm uppercase">Auditoría: Reporte de Inasistencias</h3>
+                            <div class="flex flex-col gap-2">
+                                <input type="week" id="missed-clients-week" value="${currentWeekStr}" class="border border-red-300 rounded p-2 text-sm w-full bg-white focus:ring-2 focus:ring-red-500 outline-none">
+                                <button id="btnDownloadMissed" class="bg-red-600 text-white font-bold py-2 px-4 rounded shadow-md hover:bg-red-700 transition">Generar Excel</button>
+                            </div>
+                            <p class="text-[10px] text-red-700 mt-2 font-medium leading-tight">Descarga un listado exacto de los clientes del catálogo a los que <b>NO se les vendió nada</b> en la semana seleccionada.</p>
+                        </div>
+                    </div>
+
+                </div>
+
+                <div id="map-legend" class="mb-4 p-2 bg-gray-100 border border-gray-300 rounded-lg text-xs flex flex-wrap justify-center items-center gap-x-6 gap-y-2 font-medium"> 
+                </div>
+                
+                <div id="client-map" class="w-full rounded-lg shadow-inner z-0" style="height:60vh; border:1px solid #ccc; background-color:#e5e7eb;"> <p class="text-center text-gray-500 pt-10 font-medium animate-pulse">Iniciando motor de mapas...</p> </div>
+                
+                <div class="mt-6 flex justify-end">
+                    <button id="backToDataMenuBtn" class="px-8 py-2.5 bg-gray-600 text-white font-bold rounded-lg shadow-md hover:bg-gray-700 transition">Volver al Menú</button>
+                </div>
+            </div> </div> </div>
+        `;
+        document.getElementById('backToDataMenuBtn').addEventListener('click', showDataView); 
+        document.getElementById('btnDownloadMissed').addEventListener('click', downloadMissedClientsExcel);
+        
+        const modeSelect = document.getElementById('map-mode-select');
+        modeSelect.addEventListener('change', () => loadAndDisplayMap(modeSelect.value));
+        
+        loadAndDisplayMap('classic'); 
     }
 
     async function loadAndDisplayMap(mode = 'classic') {
         const mapCont = document.getElementById('client-map'); 
         const legendCont = document.getElementById('map-legend');
 
-        if (!mapCont || typeof L === 'undefined') { mapCont.innerHTML = '<p class="text-red-500">Error: Leaflet no cargado.</p>'; return; }
+        if (!mapCont || typeof L === 'undefined') { mapCont.innerHTML = '<p class="text-red-500 font-bold p-4 text-center">Error Crítico: El motor de mapas Leaflet no pudo ser cargado. Revise su conexión a internet.</p>'; return; }
         
-        // Actualizar Leyenda
+        // Actualizar Leyenda Dinámica
         if (mode === 'classic') {
             legendCont.innerHTML = `
-                <span class="flex items-center"><img src="https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png" style="height:20px;margin-right:2px;"> Regular (Sin CEP)</span> 
-                <span class="flex items-center"><img src="https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png" style="height:20px;margin-right:2px;"> Con CEP</span>
+                <span class="flex items-center"><img src="https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png" style="height:22px;margin-right:4px;"> Cliente Regular (Sin CEP)</span> 
+                <span class="flex items-center"><img src="https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png" style="height:22px;margin-right:4px;"> Cliente Con CEP</span>
             `;
-        } else {
+        } else if (mode === 'weekly_all') {
              legendCont.innerHTML = `
-                <span class="flex items-center opacity-50"><img src="https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-grey.png" style="height:20px;margin-right:2px;"> No Atendido (Opaco)</span> 
-                <span class="flex items-center"><img src="https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png" style="height:20px;margin-right:2px;"> Atendido Semana (Brillante)</span>
+                <span class="flex items-center opacity-60"><img src="https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-grey.png" style="height:22px;margin-right:4px;"> Faltan por Visitar</span> 
+                <span class="flex items-center"><img src="https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png" style="height:22px;margin-right:4px;"> Visitados esta semana</span>
             `;
+        } else if (mode === 'weekly_attended') {
+            legendCont.innerHTML = `<span class="flex items-center"><img src="https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png" style="height:22px;margin-right:4px;"> Visitados esta semana</span>`;
+        } else if (mode === 'weekly_unattended') {
+            legendCont.innerHTML = `<span class="flex items-center"><img src="https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png" style="height:22px;margin-right:4px;"> Pendientes de Visita (Ruta Crítica)</span>`;
         }
 
         try {
@@ -1536,19 +1271,24 @@
                 return !isNaN(lat)&&!isNaN(lon)&&lat>=0&&lat<=13&&lon>=-74&&lon<=-59; 
             });
 
-            if (cliCoords.length === 0) { mapCont.innerHTML = '<p class="text-gray-500">No hay clientes con coordenadas válidas.</p>'; return; }
+            if (cliCoords.length === 0) { mapCont.innerHTML = '<p class="text-gray-500 font-bold p-10 text-center">El catálogo no tiene clientes con coordenadas válidas para graficar.</p>'; return; }
 
-            // Si es modo semanal, obtener datos de asistencia
+            // Si es modo semanal, obtener datos de asistencia de ESTA semana (Lunes a Domingo)
             let attendedSet = new Set();
-            if (mode === 'weekly') {
-                 // Mostrar indicador de carga pequeño en el mapa si tarda
-                if (mapInstance) {
-                     // Si ya existe mapa, quizás solo actualizamos markers, 
-                     // pero por simplicidad reconstruimos los markers.
-                } else {
-                    mapCont.innerHTML = '<p class="text-center text-gray-500 pt-10">Calculando asistencia...</p>'; 
+            if (mode.startsWith('weekly')) {
+                if (!mapInstance) {
+                    mapCont.innerHTML = '<p class="text-center text-blue-600 font-bold pt-10 animate-pulse">Analizando asistencias de la semana en curso...</p>'; 
                 }
-                attendedSet = await getAttendedClientsThisWeek();
+                const now = new Date();
+                const day = now.getDay(); 
+                const diff = now.getDate() - day + (day === 0 ? -6 : 1); 
+                const monday = new Date(now.setDate(diff));
+                monday.setHours(0,0,0,0);
+                const sunday = new Date(monday);
+                sunday.setDate(monday.getDate() + 6);
+                sunday.setHours(23,59,59,999);
+                
+                attendedSet = await getAttendedClientsByDateRange(monday, sunday);
             }
 
             // Inicializar mapa si no existe
@@ -1558,12 +1298,9 @@
                 mapInstance = L.map('client-map').setView(mapCenter, zoom); 
                 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OSM', maxZoom: 19 }).addTo(mapInstance);
             } else {
-                // Limpiar markers anteriores
                 if (mapMarkers.size > 0) {
                      mapMarkers.forEach(marker => mapInstance.removeLayer(marker));
                 }
-                // Si había un grupo de capas (featureGroup), también deberíamos limpiarlo, 
-                // pero aquí limpiamos markers individuales del mapa para simplificar.
                 mapInstance.eachLayer((layer) => {
                     if (layer instanceof L.Marker) {
                         mapInstance.removeLayer(layer);
@@ -1580,35 +1317,40 @@
             mapMarkers.clear(); 
             const mGroup=[]; 
 
-            cliCoords.forEach(cli=>{
+            cliCoords.forEach(cli => {
                 try {
-                    const coords=cli.coordenadas.split(',').map(p=>parseFloat(p)); 
+                    const coords = cli.coordenadas.split(',').map(p=>parseFloat(p)); 
                     let icon, opacity = 1.0;
+                    let shouldPlot = true;
 
                     if (mode === 'classic') {
                         const hasCEP = cli.codigoCEP && cli.codigoCEP.toLowerCase() !== 'n/a'; 
                         icon = hasCEP ? blueI : redI;
                     } else {
-                        // Modo Semanal
-                        // Usamos nombre comercial para comparar con el Set de asistencia
                         const nameKey = (cli.nombreComercial || '').trim().toLowerCase();
                         const isAttended = attendedSet.has(nameKey);
                         
-                        if (isAttended) {
-                            icon = greenI;
-                            opacity = 1.0;
-                        } else {
-                            icon = greyI;
-                            opacity = 0.5; // Opaco
+                        if (mode === 'weekly_all') {
+                            if (isAttended) { icon = greenI; opacity = 1.0; } 
+                            else { icon = greyI; opacity = 0.6; }
+                        } else if (mode === 'weekly_attended') {
+                            if (isAttended) { icon = greenI; opacity = 1.0; }
+                            else { shouldPlot = false; }
+                        } else if (mode === 'weekly_unattended') {
+                            // Uso icono rojo oscuro para resaltar la falta en vez del gris
+                            if (!isAttended) { icon = redI; opacity = 1.0; }
+                            else { shouldPlot = false; }
                         }
                     }
 
+                    if (!shouldPlot) return;
+
                     const hasCEP = cli.codigoCEP && cli.codigoCEP.toLowerCase()!=='n/a';
-                    const pCont=`<b>${cli.nombreComercial}</b><br><small>${cli.nombrePersonal||''}</small><br><small>Tel: ${cli.telefono||'N/A'}</small><br><small>Sector: ${cli.sector||'N/A'}</small>${hasCEP?`<br><b>CEP: ${cli.codigoCEP}</b>`:''}<br><a href="https://www.google.com/maps?q=${coords[0]},${coords[1]}" target="_blank" class="text-xs text-blue-600">Ver en Maps</a>`; 
+                    const pCont=`<b>${cli.nombreComercial}</b><br><small>${cli.nombrePersonal||''}</small><br><small>Tel: ${cli.telefono||'N/A'}</small><br><small>Sector: ${cli.sector||'N/A'}</small>${hasCEP?`<br><b>CEP: ${cli.codigoCEP}</b>`:''}<br><a href="https://www.google.com/maps?q=${coords[0]},${coords[1]}" target="_blank" class="text-xs text-blue-600 font-bold mt-1 inline-block">Ver en Google Maps</a>`; 
                     
-                    const marker = L.marker(coords, { icon: icon, opacity: opacity }).bindPopup(pCont, { minWidth: 150 }); 
+                    const marker = L.marker(coords, { icon: icon, opacity: opacity }).bindPopup(pCont, { minWidth: 160 }); 
                     
-                    marker.addTo(mapInstance); // Añadir directamente
+                    marker.addTo(mapInstance); 
                     mGroup.push(marker); 
                     mapMarkers.set(cli.id, marker);
                 } catch(coordErr) {
@@ -1620,24 +1362,25 @@
                 const group = L.featureGroup(mGroup);
                 mapInstance.fitBounds(group.getBounds().pad(0.1)); 
             } else { 
-                mapCont.innerHTML = '<p class="text-gray-500">No se pudieron mostrar clientes.</p>'; return; 
+                _showModal('Aviso', 'No hay clientes que cumplan con este filtro actualmente.');
+                if (!mapInstance.getCenter()) mapInstance.setView([7.77, -72.22], 13);
             }
+            
             setupMapSearch(cliCoords);
         } catch (error) { 
             console.error("Error mapa:", error); 
-            mapCont.innerHTML = `<p class="text-red-500">Error al cargar datos mapa.</p>`; 
+            mapCont.innerHTML = `<p class="text-red-500 font-bold p-10 text-center">Error al cargar datos del mapa.</p>`; 
         }
     }
 
     function setupMapSearch(clientsWithCoords) {
         const sInp = document.getElementById('map-search-input'), resCont = document.getElementById('map-search-results'); if (!sInp || !resCont) return;
-        sInp.addEventListener('input', () => { const sTerm = sInp.value.toLowerCase().trim(); if (sTerm.length<2){resCont.innerHTML=''; resCont.classList.add('hidden'); return;} const filtCli = clientsWithCoords.filter(cli => (cli.nombreComercial||'').toLowerCase().includes(sTerm) || (cli.nombrePersonal||'').toLowerCase().includes(sTerm) || (cli.codigoCEP&&cli.codigoCEP.toLowerCase().includes(sTerm))); if(filtCli.length===0){resCont.innerHTML='<div class="p-2 text-gray-500 text-sm">No encontrado.</div>'; resCont.classList.remove('hidden'); return;} resCont.innerHTML=filtCli.slice(0,10).map(cli=>`<div class="p-2 hover:bg-gray-100 cursor-pointer border-b" data-client-id="${cli.id}"><p class="font-semibold text-sm">${cli.nombreComercial}</p><p class="text-xs text-gray-600">${cli.nombrePersonal||''} ${cli.codigoCEP&&cli.codigoCEP!=='N/A'?`(${cli.codigoCEP})`:''}</p></div>`).join(''); resCont.classList.remove('hidden'); });
-        resCont.addEventListener('click', (e) => { const target = e.target.closest('[data-client-id]'); if (target&&mapInstance){ const cliId=target.dataset.clientId; const marker=mapMarkers.get(cliId); if(marker){mapInstance.flyTo(marker.getLatLng(),17); marker.openPopup();} sInp.value=''; resCont.innerHTML=''; resCont.classList.add('hidden'); } });
+        sInp.addEventListener('input', () => { const sTerm = sInp.value.toLowerCase().trim(); if (sTerm.length<2){resCont.innerHTML=''; resCont.classList.add('hidden'); return;} const filtCli = clientsWithCoords.filter(cli => (cli.nombreComercial||'').toLowerCase().includes(sTerm) || (cli.nombrePersonal||'').toLowerCase().includes(sTerm) || (cli.codigoCEP&&cli.codigoCEP.toLowerCase().includes(sTerm))); if(filtCli.length===0){resCont.innerHTML='<div class="p-2 text-gray-500 text-sm">No encontrado.</div>'; resCont.classList.remove('hidden'); return;} resCont.innerHTML=filtCli.slice(0,10).map(cli=>`<div class="p-2 hover:bg-blue-50 cursor-pointer border-b transition" data-client-id="${cli.id}"><p class="font-bold text-sm text-gray-800">${cli.nombreComercial}</p><p class="text-xs text-gray-500">${cli.nombrePersonal||''} ${cli.codigoCEP&&cli.codigoCEP!=='N/A'?`<span class="font-semibold text-blue-600">(${cli.codigoCEP})</span>`:''}</p></div>`).join(''); resCont.classList.remove('hidden'); });
+        resCont.addEventListener('click', (e) => { const target = e.target.closest('[data-client-id]'); if (target&&mapInstance){ const cliId=target.dataset.clientId; const marker=mapMarkers.get(cliId); if(marker){mapInstance.flyTo(marker.getLatLng(),18); marker.openPopup();} else {_showModal('Aviso', 'El cliente está filtrado por el modo actual o no tiene coordenadas.');} sInp.value=''; resCont.innerHTML=''; resCont.classList.add('hidden'); } });
         document.addEventListener('click', (ev)=>{ if(!resCont.contains(ev.target)&&ev.target!==sInp) resCont.classList.add('hidden'); });
     }
 
     // --- FUNCIÓN GLOBAL DE ORDENAMIENTO REESCRITA (VERSIÓN DATA.JS) ---
-    // Esta función lee los datos PÚBLICOS y respeta el orden estricto por ID
     async function getGlobalProductSortFunction() {
         if (!_sortPreferenceCache || !_rubroOrderMapCache || !_marcasOrderMapCache) {
             try { 
@@ -1722,7 +1465,6 @@
                     if (norm(safeA.marca) === norm(safeB.marca)) {
                         const mData = _marcasOrderMapCache?.[norm(safeA.marca)];
                         if (mData && mData.productOrder) {
-                            // --- SOLUCIÓN DEFINITIVA: Usar ID Único para reportes ---
                             const iA = mData.productOrder.indexOf(safeA.id);
                             const iB = mData.productOrder.indexOf(safeB.id);
                             if (iA !== -1 && iB !== -1) res = iA - iB;
@@ -1731,7 +1473,7 @@
                         }
                     }
                     if (res === 0) res = (safeA.presentacion||'').localeCompare(safeB.presentacion||''); 
-                    if (res === 0) res = (safeA.id || '').localeCompare(safeB.id || ''); // Desempate final
+                    if (res === 0) res = (safeA.id || '').localeCompare(safeB.id || ''); 
                 }
                 
                 if (res !== 0) return res;
