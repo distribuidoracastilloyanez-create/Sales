@@ -307,13 +307,15 @@
         container.innerHTML = tableHTML;
     }
 
-    // --- PROCESAMIENTO NÚCLEO (VENTAS Y OBSEQUIOS CON COSTO APLICADO) ---
+    // --- CEREBRO UNIFICADO DE PROCESAMIENTO (PANTALLA Y EXCEL) ---
     async function _processSalesDataForModal(ventas, obsequios, cargaInicialInventario, userIdForInventario) {
         const clientData = {};
         const clientTotals = {}; 
         let grandTotalValue = 0;
         const allProductsMap = new Map();
         const vaciosMovementsPorTipo = {};
+        const allRubros = new Set();
+        const dataByRubro = {}; // FIX: Declarado aquí para que el Excel pueda agrupar por pestañas
         const TIPOS_VACIO_GLOBAL = window.TIPOS_VACIO_GLOBAL || ["1/4 - 1/3", "ret 350 ml", "ret 1.25 Lts"];
         
         const targetUserId = userIdForInventario || _userId;
@@ -328,7 +330,16 @@
         const inventarioMap = new Map(inventarioSnapshot.docs.map(doc => [doc.id, doc.data()]));
         const masterMap = new Map(masterSnapshot.docs.map(doc => [doc.id, doc.data()]));
 
-        // Inyección Total para que salgan todos los productos en Cierre Previo y Excel
+        let hasSnapshot = cargaInicialInventario && cargaInicialInventario.length > 0;
+        let snapshotMap = new Map();
+        if(hasSnapshot) {
+             snapshotMap = new Map(cargaInicialInventario.map(doc => [doc.id, doc]));
+        }
+
+        const userDoc = await _getDoc(_doc(_db, "users", targetUserId));
+        const userInfo = userDoc.exists() ? userDoc.data() : { email: 'Usuario Desconocido' };
+
+        // 1. INYECCIÓN TOTAL: Forzar que TODOS los productos del catálogo estén presentes (ventas = 0)
         const allKnownIds = new Set([...inventarioMap.keys(), ...masterMap.keys()]);
         for (const pId of allKnownIds) {
             const prodPrivado = inventarioMap.get(pId) || {};
@@ -337,9 +348,17 @@
             const rubro = prodComp.rubro || 'SIN RUBRO'; 
             const seg = prodComp.segmento || 'S/S';
             const marca = prodComp.marca || 'S/M';
+            
             if (!allProductsMap.has(pId)) {
                 allProductsMap.set(pId, { ...prodComp, rubro: rubro, segmento: seg, marca: marca });
             }
+            if (!dataByRubro[rubro]) {
+                dataByRubro[rubro] = { clients: {}, productsMap: new Map(), productTotals: {}, totalValue: 0, obsequiosMap: new Set() };
+            }
+            if (!dataByRubro[rubro].productsMap.has(pId)) {
+                dataByRubro[rubro].productsMap.set(pId, prodComp); 
+            }
+            allRubros.add(rubro);
         }
         
         const allData = [
@@ -351,7 +370,7 @@
             const baseClientName = item.data.clienteNombre || 'Cliente Desconocido';
             const isObsequio = item.tipo === 'obsequio';
             
-            // Crear fila virtual distinta para el obsequio para no mezclar unidades en la misma línea
+            // Fila virtual distinta para obsequios
             const rowClientName = isObsequio ? `${baseClientName} (OBSEQUIO)` : baseClientName;
 
             if (!vaciosMovementsPorTipo[baseClientName]) { 
@@ -378,6 +397,7 @@
                     const prodPrivado = inventarioMap.get(p.id) || {};
                     const prodMaestro = masterMap.get(p.id) || {};
                     const prodComp = { ...p, ...prodPrivado, ...prodMaestro, id: p.id }; 
+                    const rubro = prodComp.rubro || 'SIN RUBRO';
                     
                     if (p.id && !clientData[rowClientName].products[p.id]) clientData[rowClientName].products[p.id] = 0;
                     
@@ -394,6 +414,16 @@
                     if (prodComp.manejaVacios && prodComp.tipoVacio) {
                         vaciosMovementsPorTipo[baseClientName][prodComp.tipoVacio].entregados += p.cantidadVendida?.cj || 0; 
                     }
+
+                    // Llenar datos para Excel (dataByRubro)
+                    if (!dataByRubro[rubro].clients[rowClientName]) {
+                        dataByRubro[rubro].clients[rowClientName] = { products: {}, totalValue: 0, isObsequioRow: false };
+                    }
+                    const subtotalProducto = (p.precios?.cj || 0) * (p.cantidadVendida?.cj || 0) + (p.precios?.paq || 0) * (p.cantidadVendida?.paq || 0) + (p.precios?.und || 0) * (p.cantidadVendida?.und || 0);
+                    
+                    if(p.id) dataByRubro[rubro].clients[rowClientName].products[p.id] = (dataByRubro[rubro].clients[rowClientName].products[p.id] || 0) + cantidadUnidades;
+                    dataByRubro[rubro].clients[rowClientName].totalValue += subtotalProducto;
+                    dataByRubro[rubro].totalValue += subtotalProducto;
                 });
 
             } else if (item.tipo === 'obsequio') {
@@ -401,10 +431,9 @@
                 const prodPrivado = inventarioMap.get(obsequio.productoId) || {};
                 const prodMaestro = masterMap.get(obsequio.productoId) || {};
 
-                // Conservar rubro original para que se muestre en su sección correspondiente
                 let pComp = {
                     id: obsequio.productoId,
-                    rubro: prodMaestro.rubro || prodPrivado.rubro || 'OBSEQUIOS',
+                    rubro: prodMaestro.rubro || prodPrivado.rubro || 'OBSEQUIOS (ELIMINADO)',
                     segmento: prodMaestro.segmento || prodPrivado.segmento || 'N/A',
                     marca: prodMaestro.marca || prodPrivado.marca || 'N/A',
                     unidadesPorCaja: prodMaestro.unidadesPorCaja || prodPrivado.unidadesPorCaja || 1, 
@@ -417,30 +446,13 @@
                 
                 const cantidadCajas = obsequio.cantidadCajas || 0;
                 const cantidadUnidades = cantidadCajas * (pComp.unidadesPorCaja || 1);
-                
-                // CALCULAR EL VALOR MONETARIO DEL OBSEQUIO COMO SI FUERA UNA VENTA NORMAL
                 const precioCj = pComp.precios?.cj || 0;
                 const subtotalObsequio = cantidadCajas * precioCj;
-
                 const rubro = pComp.rubro || 'SIN RUBRO';
-                
-                if (!dataByRubro[rubro]) {
-                    dataByRubro[rubro] = { clients: {}, productsMap: new Map(), productTotals: {}, totalValue: 0, obsequiosMap: new Set() };
-                }
-                if (!dataByRubro[rubro].clients[rowClientName]) {
-                    dataByRubro[rubro].clients[rowClientName] = { products: {}, totalValue: 0, isObsequioRow: true };
-                }
-                if (!dataByRubro[rubro].productsMap.has(pComp.id)) {
-                    dataByRubro[rubro].productsMap.set(pComp.id, pComp); 
-                }
-                dataByRubro[rubro].obsequiosMap.add(pComp.id);
 
-                if(pComp.id) dataByRubro[rubro].clients[rowClientName].products[pComp.id] = (dataByRubro[rubro].clients[rowClientName].products[pComp.id] || 0) + cantidadUnidades;
-                
-                // Sumar los valores monetarios para que el obsequio cueste en el reporte
-                dataByRubro[rubro].clients[rowClientName].totalValue += subtotalObsequio;
-                dataByRubro[rubro].totalValue += subtotalObsequio;
-                
+                if (pComp.id && !clientData[rowClientName].products[pComp.id]) clientData[rowClientName].products[pComp.id] = 0;
+                clientData[rowClientName].products[pComp.id] += cantidadUnidades;
+
                 clientData[rowClientName].totalValue += subtotalObsequio;
                 clientTotals[baseClientName] = (clientTotals[baseClientName] || 0) + subtotalObsequio;
                 grandTotalValue += subtotalObsequio;
@@ -450,17 +462,78 @@
                 }
 
                 const vacDev = obsequio.vaciosRecibidos || 0;
-                const tipoVacDev = obsequio.tipoVacio; 
-                if (vacDev > 0 && tipoVacDev) {
-                     vaciosMovementsPorTipo[baseClientName][tipoVacDev].devueltos += vacDev;
+                if (vacDev > 0 && pComp.tipoVacio) {
+                     vaciosMovementsPorTipo[baseClientName][pComp.tipoVacio].devueltos += vacDev;
                 }
+
+                // Llenar datos para Excel (dataByRubro)
+                if (!dataByRubro[rubro].clients[rowClientName]) {
+                    dataByRubro[rubro].clients[rowClientName] = { products: {}, totalValue: 0, isObsequioRow: true };
+                }
+                dataByRubro[rubro].obsequiosMap.add(pComp.id);
+                if(pComp.id) dataByRubro[rubro].clients[rowClientName].products[pComp.id] = (dataByRubro[rubro].clients[rowClientName].products[pComp.id] || 0) + cantidadUnidades;
+                dataByRubro[rubro].clients[rowClientName].totalValue += subtotalObsequio;
+                dataByRubro[rubro].totalValue += subtotalObsequio;
             }
         }
         
         const sortedClients = Object.keys(clientData).sort();
         const sortFunction = await getGlobalProductSortFunction();
         const finalProductOrder = Array.from(allProductsMap.values()).sort(sortFunction);
-        return { clientData, clientTotals, grandTotalValue, sortedClients, finalProductOrder, vaciosMovementsPorTipo };
+
+        // 2. CONSTRUIR FINAL DATA PARA EXCEL
+        const finalData = { rubros: {}, vaciosMovementsPorTipo: vaciosMovementsPorTipo, clientTotals: clientTotals, grandTotalValue: grandTotalValue };
+
+        for (const rubroName of Array.from(allRubros).sort()) {
+            const rubroData = dataByRubro[rubroName];
+            const sortedProducts = Array.from(rubroData.productsMap.values()).sort(sortFunction);
+            const sortedClientsExcel = Object.keys(rubroData.clients).sort();
+            const productTotals = {};
+
+            for (const p of sortedProducts) {
+                const productId = p.id;
+                let totalSoldUnits = 0;
+                for (const clientName of sortedClientsExcel) {
+                    totalSoldUnits += (rubroData.clients[clientName].products[productId] || 0);
+                }
+
+                const pInfoCurrent = inventarioMap.get(productId);
+                const pInfoSnapshot = snapshotMap.get(productId); 
+
+                let initialStockUnits = 0;
+                let currentStockUnits = 0;
+                
+                if (hasSnapshot) {
+                    initialStockUnits = pInfoSnapshot ? (pInfoSnapshot.cantidadUnidades || 0) : 0;
+                    currentStockUnits = initialStockUnits - totalSoldUnits;
+                } else {
+                    currentStockUnits = pInfoCurrent ? (pInfoCurrent.cantidadUnidades || 0) : 0;
+                    initialStockUnits = currentStockUnits + totalSoldUnits;
+                }
+
+                productTotals[productId] = { totalSold: totalSoldUnits, currentStock: currentStockUnits, initialStock: initialStockUnits };
+            }
+            
+            finalData.rubros[rubroName] = { 
+                clients: rubroData.clients, 
+                products: sortedProducts, 
+                sortedClients: sortedClientsExcel, 
+                totalValue: rubroData.totalValue, 
+                productTotals: productTotals,
+                obsequiosMap: rubroData.obsequiosMap || new Set()
+            };
+        }
+
+        return { 
+            clientData, 
+            clientTotals, 
+            grandTotalValue, 
+            sortedClients, 
+            finalProductOrder, 
+            vaciosMovementsPorTipo,
+            finalData,
+            userInfo
+        };
     }
 
     async function showClosingDetail(closingId) {
@@ -485,7 +558,7 @@
                 const cCli = clientData[cli]; 
                 const esSoloObsequio = cCli.isObsequioRow;
                 
-                // Destacar fila de obsequio visualmente
+                // Color azul claro para distinguir obsequios visualmente en pantalla
                 const rowClass = esSoloObsequio ? 'bg-blue-100 hover:bg-blue-200 text-blue-900' : 'hover:bg-blue-50';
                 
                 bHTML+=`<tr class="${rowClass}"><td class="p-1 border font-medium bg-white sticky left-0 z-10">${cli}</td>`; 
@@ -518,7 +591,6 @@
             }); 
             fHTML+=`<td class="p-1 border text-right sticky right-0 z-10">$${grandTotalValue.toFixed(2)}</td></tr>`;
             
-            // --- TABLA DE VACÍOS DESDE DATA ---
             const TIPOS_VACIO_GLOBAL = window.TIPOS_VACIO_GLOBAL || ["1/4 - 1/3", "ret 350 ml", "ret 1.25 Lts"];
             let vHTML=''; 
             const cliVacios = Object.keys(vaciosMovementsPorTipo).filter(cli => 
@@ -570,7 +642,6 @@
                 vHTML += '</tbody></table></div>';
             }
 
-
             const vendedor = closingData.vendedorInfo || {};
             let vNameModal = vendedor.nombre || 'Desconocido';
             if(!vendedor.nombre && vendedor.userId && _usersMapCache.has(vendedor.userId)){
@@ -605,7 +676,7 @@
         _showModal('Progreso', 'Generando Excel con su diseño...'); 
 
         try {
-            const { finalData, userInfo } = await processSalesDataForReport(
+            const { finalData, userInfo } = await _processSalesDataForModal(
                 closingData.ventas || [], 
                 closingData.obsequios || [], 
                 closingData.cargaInicialInventario || [], 
@@ -705,6 +776,7 @@
                     headerRowSegment.getCell(c).style = headerProductsStyle;
                     headerRowMarca.getCell(c).style = headerProductsStyle;
                     headerRowPresentacion.getCell(c).style = headerProductsStyle;
+                    
                     const esObsequio = obsequiosMap.has(p.id);
                     if (esObsequio && precio === 0) {
                         headerRowPrecio.getCell(c).style = headerProductsStyle;
@@ -888,7 +960,6 @@
                 
                 cliVacios.forEach(cli => {
                     const movs = vaciosMovementsPorTipo[cli]; 
-
                     TIPOS_VACIO_GLOBAL.forEach(t => {
                         const mov = movs[t] || {entregados:0, devueltos:0}; 
                         if (mov.entregados > 0 || mov.devueltos > 0) {
@@ -955,10 +1026,8 @@
         } catch (error) { 
             console.error("Error exportando con ExcelJS:", error); 
             _showModal('Error', `Error al generar Excel: ${error.message}`); 
-            throw error; 
         }
     }
-
 
     async function handleDownloadSingleClosing(closingId) {
         const closingData = window.tempClosingsData?.find(c => c.id === closingId);
@@ -1080,6 +1149,88 @@
         } catch (err) {
             console.error(err);
             _showModal('Error', 'Fallo al generar el reporte de inasistencias: ' + err.message);
+        }
+    }
+
+    async function showConsolidatedClientsView() {
+        _mainContent.innerHTML = `
+            <div class="p-4 pt-8"> <div class="container mx-auto"> <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl text-center">
+                <h1 class="text-3xl font-bold text-gray-800 mb-6 text-center">Clientes Consolidados</h1>
+                <div id="consolidated-clients-filters"></div>
+                <div id="consolidated-clients-container" class="overflow-x-auto max-h-96"> <p class="text-center text-gray-500">Cargando...</p> </div>
+                <div class="mt-6 flex flex-col sm:flex-row gap-4"> <button id="backToDataMenuBtn" class="w-full px-6 py-3 bg-gray-400 text-white rounded-lg shadow-md hover:bg-gray-500">Volver</button> <button id="downloadClientsBtn" class="w-full px-6 py-3 bg-green-600 text-white rounded-lg shadow-md hover:bg-green-700 hidden">Descargar Lista</button> </div>
+            </div> </div> </div>
+        `;
+        document.getElementById('backToDataMenuBtn').addEventListener('click', window.showDataView); 
+        document.getElementById('downloadClientsBtn').addEventListener('click', handleDownloadFilteredClients);
+        await loadAndRenderConsolidatedClients();
+    }
+
+    async function loadAndRenderConsolidatedClients() {
+        const cont = document.getElementById('consolidated-clients-container'), filtCont = document.getElementById('consolidated-clients-filters'); if(!cont || !filtCont) return;
+        try {
+            const cliRef = _collection(_db, CLIENTES_COLLECTION_PATH); 
+            const cliSnaps = await _getDocs(cliRef);
+            _consolidatedClientsCache = cliSnaps.docs.map(d => ({id: d.id, ...d.data()}));
+            filtCont.innerHTML = `<div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 p-4 border rounded-lg bg-gray-50"> <input type="text" id="client-search-input" placeholder="Buscar..." class="md:col-span-2 w-full px-4 py-2 border rounded-lg text-sm"> <div> <label for="client-filter-sector" class="block text-xs mb-1">Sector</label> <select id="client-filter-sector" class="w-full px-2 py-1 border rounded-lg text-sm"><option value="">Todos</option></select> </div> <button id="clear-client-filters-btn" class="bg-gray-300 text-xs font-semibold text-gray-700 rounded-lg self-end py-1.5 px-3 hover:bg-gray-400 transition duration-150">Limpiar</button> </div>`;
+            const uSectors = [...new Set(_consolidatedClientsCache.map(c => c.sector).filter(Boolean))].sort(); const sFilt = document.getElementById('client-filter-sector'); uSectors.forEach(s => { const o=document.createElement('option'); o.value=s; o.textContent=s; sFilt.appendChild(o); });
+            document.getElementById('client-search-input').addEventListener('input', renderConsolidatedClientsList); sFilt.addEventListener('change', renderConsolidatedClientsList); document.getElementById('clear-client-filters-btn').addEventListener('click', () => { document.getElementById('client-search-input').value = ''; sFilt.value = ''; renderConsolidatedClientsList(); });
+            renderConsolidatedClientsList(); document.getElementById('downloadClientsBtn').classList.remove('hidden');
+        } catch (error) { console.error("Error clientes consolidados:", error); cont.innerHTML = `<p class="text-red-500">Error al cargar.</p>`; }
+    }
+
+    function renderConsolidatedClientsList() {
+        const cont=document.getElementById('consolidated-clients-container'), sInp=document.getElementById('client-search-input'), sFilt=document.getElementById('client-filter-sector'); if(!cont||!sInp||!sFilt) return;
+        const sTerm = sInp.value.toLowerCase(), selSec = sFilt.value;
+        _filteredClientsCache = _consolidatedClientsCache.filter(cli => { const nComL=(cli.nombreComercial||'').toLowerCase(), nPerL=(cli.nombrePersonal||'').toLowerCase(), cepL=(cli.codigoCEP||'').toLowerCase(); const searchM=!sTerm||nComL.includes(sTerm)||nPerL.includes(sTerm)||(cli.codigoCEP&&cepL.includes(sTerm)); const secM=!selSec||cli.sector===selSec; return searchM&&secM; });
+        if (_filteredClientsCache.length === 0) { cont.innerHTML = `<p class="text-center text-gray-500 p-4">No se encontraron clientes.</p>`; return; }
+        let tHTML = `<table class="min-w-full bg-white text-sm"> <thead class="bg-gray-200 sticky top-0 z-10"> <tr> <th class="py-2 px-3 border-b text-left">Sector</th> <th class="py-2 px-3 border-b text-left">N. Comercial</th> <th class="py-2 px-3 border-b text-left">N. Personal</th> <th class="py-2 px-3 border-b text-left">Teléfono</th> <th class="py-2 px-3 border-b text-left">CEP</th> </tr> </thead> <tbody>`;
+        _filteredClientsCache.sort((a,b)=>(a.nombreComercial||'').localeCompare(b.nombreComercial||'')).forEach(c=>{tHTML+=`<tr class="hover:bg-gray-50 border-b"><td class="py-2 px-3">${c.sector||'N/A'}</td><td class="py-2 px-3 font-semibold">${c.nombreComercial||'N/A'}</td><td class="py-2 px-3">${c.nombrePersonal||'N/A'}</td><td class="py-2 px-3">${c.telefono||'N/A'}</td><td class="py-2 px-3">${c.codigoCEP||'N/A'}</td></tr>`;});
+        tHTML += '</tbody></table>'; cont.innerHTML = tHTML;
+    }
+    
+    async function handleDownloadFilteredClients() {
+         if (typeof ExcelJS === 'undefined' || _filteredClientsCache.length === 0) { _showModal('Aviso', typeof ExcelJS === 'undefined'?'Librería ExcelJS no cargada.':'No hay clientes.'); return; }
+        
+        const dExport = _filteredClientsCache.map(c => ({
+            'Sector':c.sector||'',
+            'Nombre Comercial':c.nombreComercial||'',
+            'Nombre Personal':c.nombrePersonal||'',
+            'Telefono':c.telefono||'',
+            'CEP':c.codigoCEP||'',
+            'Coordenadas':c.coordenadas||''
+        }));
+        
+        const workbook = new ExcelJS.Workbook();
+        const worksheet = workbook.addWorksheet('Clientes Consolidados');
+
+        worksheet.columns = [
+            { header: 'Sector', key: 'Sector', width: 20 },
+            { header: 'Nombre Comercial', key: 'Nombre Comercial', width: 30 },
+            { header: 'Nombre Personal', key: 'Nombre Personal', width: 30 },
+            { header: 'Telefono', key: 'Telefono', width: 15 },
+            { header: 'CEP', key: 'CEP', width: 15 },
+            { header: 'Coordenadas', key: 'Coordenadas', width: 20 }
+        ];
+        worksheet.getRow(1).font = { bold: true };
+        worksheet.addRows(dExport);
+
+        const today = new Date().toISOString().slice(0, 10);
+        const fileName = `Clientes_Consolidados_${today}.xlsx`;
+
+        try {
+            const buffer = await workbook.xlsx.writeBuffer();
+            const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = fileName;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(link.href);
+        } catch (error) {
+            console.error("Error al descargar clientes con ExcelJS:", error);
+            _showModal('Error', 'No se pudo generar el archivo de clientes.');
         }
     }
 
@@ -1390,8 +1541,9 @@
         }
     }
 
-    // Exponer explícitamente estas funciones para evitar ReferenceErrors
+    // Exponer explícitamente estas funciones para evitar ReferenceErrors en menús
     window.showReportDesignView = showReportDesignView;
+    window.showConsolidatedClientsView = showConsolidatedClientsView;
 
     window.dataModule = { 
         showClosingDetail, 
