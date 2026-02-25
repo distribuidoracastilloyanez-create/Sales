@@ -553,19 +553,87 @@
         document.getElementById('backToVentasBtn').addEventListener('click', showVentasView);
     }
 
+    // --- AGREGADO: BOTÓN DE CIERRE PREVIO ---
     function showVentasActualesView() {
         if (_floatingControls) _floatingControls.classList.add('hidden');
         _mainContent.innerHTML = `
             <div class="p-2 sm:p-4 w-full"> <div class="bg-white/90 backdrop-blur-sm p-4 sm:p-6 rounded-lg shadow-xl">
-                <div class="flex justify-between items-center mb-6"> <h2 class="text-2xl font-bold">Ventas Actuales</h2> <button id="backToVentasTotalesBtn" class="px-4 py-2 bg-gray-400 text-white rounded-lg shadow-md hover:bg-gray-500 transition">Volver</button> </div>
+                <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4"> 
+                    <h2 class="text-2xl font-bold text-gray-800">Ventas Actuales</h2> 
+                    <div class="flex gap-2 w-full md:w-auto">
+                        <button id="descargarCierrePrevioBtn" class="flex-1 md:flex-none px-4 py-2 bg-green-600 text-white rounded-lg shadow-md hover:bg-green-700 transition font-bold flex items-center justify-center gap-1">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                            Cierre Previo
+                        </button>
+                        <button id="backToVentasTotalesBtn" class="flex-1 md:flex-none px-4 py-2 bg-gray-400 text-white rounded-lg shadow-md hover:bg-gray-500 transition">Volver</button> 
+                    </div>
+                </div>
                 <div id="ventasListContainer" class="overflow-x-auto"><p class="text-center text-gray-500">Cargando...</p></div>
             </div> </div>
         `;
         document.getElementById('backToVentasTotalesBtn').addEventListener('click', showVentasTotalesView);
+        document.getElementById('descargarCierrePrevioBtn').addEventListener('click', handleDescargarCierrePrevio);
         renderVentasList();
     }
 
-    // --- REESCRITURA TOTAL DE LA TABLA DE VENTAS ---
+    // --- NUEVO: FUNCIÓN PARA DESCARGAR CIERRE PREVIO (EXCEL) ---
+    async function handleDescargarCierrePrevio() {
+        _showModal('Progreso', 'Generando Cierre Previo (Excel)...');
+        try {
+            const ventasRef = _collection(_db, `artifacts/${_appId}/users/${_userId}/ventas`); 
+            const ventasSnap = await _getDocs(ventasRef); 
+            const ventas = ventasSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+            
+            const obsequiosRef = _collection(_db, `artifacts/${_appId}/users/${_userId}/obsequios_entregados`);
+            const obsequiosSnap = await _getDocs(obsequiosRef);
+            const obsequios = obsequiosSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+            const SNAPSHOT_DOC_PATH = `artifacts/${_appId}/users/${_userId}/config/cargaInicialSnapshot`;
+            let cargaInicialInventario = [];
+            const snapshotRef = _doc(_db, SNAPSHOT_DOC_PATH);
+            try {
+                const snapshotDoc = await _getDoc(snapshotRef);
+                if (snapshotDoc.exists() && snapshotDoc.data().inventario) {
+                    cargaInicialInventario = snapshotDoc.data().inventario;
+                }
+            } catch (snapError) {
+                console.warn("Error al leer snapshot de Carga Inicial:", snapError);
+            }
+
+            let vendedorInfo = {};
+            if (window.userRole === 'user') {
+                 const uDocRef = _doc(_db, "users", _userId); 
+                 const uDoc = await _getDoc(uDocRef); 
+                 const uData = uDoc.exists() ? uDoc.data() : {};
+                 vendedorInfo = { userId: _userId, nombre: uData.nombre || '', apellido: uData.apellido || '', camion: uData.camion || '', email: uData.email || '' };
+            }
+
+            const fechaCierre = new Date();
+            const cierreDataForExport = { 
+                 fecha: { toDate: () => fechaCierre }, 
+                 ventas: ventas.map(({id, ...rest}) => rest), 
+                 obsequios: obsequios.map(({id, ...rest}) => rest),
+                 total: ventas.reduce((s, v) => s + (v.total || 0), 0),
+                 cargaInicialInventario: cargaInicialInventario,
+                 vendedorInfo: vendedorInfo
+            }; 
+
+            if (window.dataModule && typeof window.dataModule.exportSingleClosingToExcel === 'function') {
+                // Pasamos "true" como segundo parámetro para indicar que es un reporte PREVIO
+                await window.dataModule.exportSingleClosingToExcel(cierreDataForExport, true); 
+                
+                const pModal = document.getElementById('modalContainer');
+                if (pModal) pModal.classList.add('hidden');
+                
+            } else {
+                throw new Error("El módulo de reportes (Excel) no está cargado.");
+            }
+        } catch(e) { 
+            console.error("Error Cierre Previo:", e); 
+            _showModal('Error', `Fallo al generar Cierre Previo: ${e.message}`); 
+        }
+    }
+
     function renderVentasList() {
         const cont = document.getElementById('ventasListContainer'); if (!cont) return;
         const vRef = _collection(_db, `artifacts/${_appId}/users/${_userId}/ventas`); const q = _query(vRef);
@@ -714,7 +782,6 @@
             const { clientData, clientTotals, grandTotalValue, sortedClients, finalProductOrder } = 
                 await window.dataModule._processSalesDataForModal(ventas, obsequios, cargaInicialInventario, _userId);
 
-            // ENRIQUECER PRODUCTOS CON CACHÉ MAESTRA (Soluciona el problema de unidades vs cajas)
             const enrichedProductOrder = finalProductOrder.map(p => {
                 const liveProd = _inventarioCache.find(inv => inv.id === p.id);
                 return liveProd ? { ...p, ventaPor: liveProd.ventaPor, unidadesPorCaja: liveProd.unidadesPorCaja, unidadesPorPaquete: liveProd.unidadesPorPaquete } : p;
@@ -746,7 +813,6 @@
                 bHTML+=`<td class="p-1 border text-right font-semibold bg-white sticky right-0 z-10">$${cCli.totalValue.toFixed(2)}</td></tr>`;
             });
 
-            // REGLA SOLICITADA EN TOTALES DE VENTAS.JS APLICADA MEDIANTE getDisplayQty
             let fHTML='<tr class="bg-gray-200 font-bold"><td class="p-1 border sticky left-0 z-10">TOTALES</td>'; 
             enrichedProductOrder.forEach(p=>{
                 let tQ=0; 
@@ -762,13 +828,11 @@
             }); 
             fHTML+=`<td class="p-1 border text-right sticky right-0 z-10">$${grandTotalValue.toFixed(2)}</td></tr>`;
             
-            // --- REESCRITURA DE LA LÓGICA DE VACÍOS PARA EVITAR BUGS DE data.js ---
             const localVacios = {};
             [...ventas, ...obsequios].forEach(v => {
                 const cName = v.clienteNombre || 'Desconocido';
                 if (!localVacios[cName]) localVacios[cName] = {};
                 
-                // 1. Calcular Entregados de cada producto
                 (v.productos || []).forEach(p => {
                     if (p.manejaVacios && p.tipoVacio) {
                         const cj = p.cantidadVendida?.cj || 0;
@@ -779,7 +843,6 @@
                     }
                 });
 
-                // 2. Sumar Devueltos directamente de la venta
                 const devueltos = v.vaciosDevueltosPorTipo || {};
                 Object.entries(devueltos).forEach(([tipo, cant]) => {
                     const cantNum = parseInt(cant, 10) || 0;
@@ -839,7 +902,6 @@
                 }); 
                 vHTML += '</tbody></table></div>';
             }
-            // --- FIN REESCRITURA VACÍOS ---
             
             const reportHTML = `<div class="text-left max-h-[80vh] overflow-auto"> <h3 class="text-xl font-bold mb-4">Reporte Cierre</h3> <div class="overflow-auto border"> <table class="min-w-full bg-white text-xs"> <thead class="bg-gray-200">${hHTML}</thead> <tbody>${bHTML}</tbody> <tfoot>${fHTML}</tfoot> </table> </div> ${vHTML} </div>`;
             _showModal('Reporte de Cierre', reportHTML, null, 'Cerrar');
@@ -926,7 +988,6 @@
         showSharingOptions(venta, productosFormateados, venta.vaciosDevueltosPorTipo || {}, tipo, showVentasActualesView);
     }
 
-    // --- NUEVA FUNCIÓN PARA ASEGURAR CARGA HÍBRIDA EN EDICIÓN ---
     async function ensureHybridCacheLoaded() {
         try {
             const [masterSnap, stockSnap] = await Promise.all([
