@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v13'; // ACTUALIZADO A v13 PARA FORZAR LIMPIEZA
+const CACHE_NAME = 'ventas-app-cache-v14'; // ACTUALIZADO A v14 PARA FORZAR LIMPIEZA Y CORRECCIÓN
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
@@ -69,6 +69,9 @@ self.addEventListener('fetch', event => {
     // Solo procesar peticiones GET
     if (event.request.method !== 'GET') return;
 
+    // FIX QA: Ignorar peticiones de extensiones de Chrome (chrome-extension://) o protocolos locales que no se pueden cachear
+    if (!event.request.url.startsWith('http')) return;
+
     const url = new URL(event.request.url);
 
     // 1. Ignorar peticiones a Firebase/Google APIs (Firebase SDK maneja su propia persistencia)
@@ -78,7 +81,7 @@ self.addEventListener('fetch', event => {
         return;
     }
 
-    // 2. NUEVA ESTRATEGIA: Network First (Red primero, Caché como respaldo)
+    // 2. ESTRATEGIA: Network First (Red primero, Caché como respaldo)
     // Esto garantiza que siempre veas el código más nuevo si tienes internet.
     event.respondWith(
         fetch(event.request)
@@ -88,6 +91,8 @@ self.addEventListener('fetch', event => {
                     const responseToCache = networkResponse.clone();
                     caches.open(CACHE_NAME).then(cache => {
                         cache.put(event.request, responseToCache);
+                    }).catch(cacheErr => {
+                        console.warn('[Service Worker] Falló escritura en caché:', cacheErr);
                     });
                 }
                 return networkResponse; // Entregamos la versión fresca
