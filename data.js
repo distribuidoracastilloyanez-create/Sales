@@ -51,7 +51,6 @@
         }
     };
 
-    // --- Helper Function: getDisplayQty (LÓGICA MATEMÁTICA ESTRICTA) ---
     function getDisplayQty(qU, p) {
         if (!qU || qU === 0) return { value: '', unit: '' };
         if (!p) return { value: qU, unit: 'Und' };
@@ -83,7 +82,6 @@
         return style;
     }
 
-    // --- Funciones Helper para Fechas (Semanas ISO) ---
     function getISOWeekString(d) {
         const date = new Date(d.getTime());
         date.setHours(0, 0, 0, 0);
@@ -138,11 +136,11 @@
             <div class="p-4 pt-8"> <div class="container mx-auto"> <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl text-center">
                 <h1 class="text-3xl font-bold text-gray-800 mb-6">Módulo de Datos</h1>
                 <div class="space-y-4">
-                    <button id="closingDataBtn" class="w-full px-6 py-3 bg-indigo-600 text-white rounded-lg shadow-md hover:bg-indigo-700">Cierres de Ventas</button>
-                    <button id="designReportBtn" class="w-full px-6 py-3 bg-purple-600 text-white rounded-lg shadow-md hover:bg-purple-700">Diseño de Reporte</button>
-                    <button id="consolidatedClientsBtn" class="w-full px-6 py-3 bg-green-600 text-white rounded-lg shadow-md hover:bg-green-700">Clientes Consolidados</button>
-                    <button id="clientMapBtn" class="w-full px-6 py-3 bg-cyan-600 text-white rounded-lg shadow-md hover:bg-cyan-700">Mapa de Clientes / Asistencia</button>
-                    <button id="backToMenuBtn" class="w-full px-6 py-3 bg-gray-400 text-white rounded-lg shadow-md hover:bg-gray-500">Volver Menú</button>
+                    <button id="closingDataBtn" class="w-full px-6 py-3 bg-indigo-600 text-white rounded-lg shadow-md hover:bg-indigo-700 transition">Cierres de Ventas</button>
+                    <button id="designReportBtn" class="w-full px-6 py-3 bg-purple-600 text-white rounded-lg shadow-md hover:bg-purple-700 transition">Diseño de Reporte</button>
+                    <button id="consolidatedClientsBtn" class="w-full px-6 py-3 bg-green-600 text-white rounded-lg shadow-md hover:bg-green-700 transition">Clientes Consolidados</button>
+                    <button id="clientMapBtn" class="w-full px-6 py-3 bg-cyan-600 text-white rounded-lg shadow-md hover:bg-cyan-700 transition">Mapa de Clientes / Asistencia</button>
+                    <button id="backToMenuBtn" class="w-full px-6 py-3 bg-gray-400 text-white rounded-lg shadow-md hover:bg-gray-500 transition">Volver Menú</button>
                 </div>
             </div> </div> </div>
         `;
@@ -167,7 +165,7 @@
                 <button id="backToDataMenuBtn" class="mt-6 w-full px-6 py-3 bg-gray-400 text-white rounded-lg shadow-md hover:bg-gray-500">Volver</button>
             </div> </div> </div>
         `;
-        document.getElementById('backToDataMenuBtn').addEventListener('click', showDataView);
+        document.getElementById('backToDataMenuBtn').addEventListener('click', window.showDataView);
         document.getElementById('searchCierresBtn').addEventListener('click', handleSearchClosings);
         const today = new Date().toISOString().split('T')[0];
         document.getElementById('fechaDesde').value = today; document.getElementById('fechaHasta').value = today;
@@ -309,11 +307,14 @@
         container.innerHTML = tableHTML;
     }
 
+    // --- PROCESAMIENTO NÚCLEO (VENTAS Y OBSEQUIOS CON COSTO APLICADO) ---
     async function _processSalesDataForModal(ventas, obsequios, cargaInicialInventario, userIdForInventario) {
         const clientData = {};
         const clientTotals = {}; 
         let grandTotalValue = 0;
         const allProductsMap = new Map();
+        const vaciosMovementsPorTipo = {};
+        const TIPOS_VACIO_GLOBAL = window.TIPOS_VACIO_GLOBAL || ["1/4 - 1/3", "ret 350 ml", "ret 1.25 Lts"];
         
         const targetUserId = userIdForInventario || _userId;
         const inventarioRef = _collection(_db, `artifacts/${_appId}/users/${targetUserId}/inventario`);
@@ -347,22 +348,38 @@
         ];
 
         for (const item of allData) {
-            const clientName = item.data.clienteNombre || 'Cliente Desconocido';
-            if (!clientData[clientName]) clientData[clientName] = { products: {}, totalValue: 0 };
+            const baseClientName = item.data.clienteNombre || 'Cliente Desconocido';
+            const isObsequio = item.tipo === 'obsequio';
+            
+            // Crear fila virtual distinta para el obsequio para no mezclar unidades en la misma línea
+            const rowClientName = isObsequio ? `${baseClientName} (OBSEQUIO)` : baseClientName;
+
+            if (!vaciosMovementsPorTipo[baseClientName]) { 
+                vaciosMovementsPorTipo[baseClientName] = {}; 
+                TIPOS_VACIO_GLOBAL.forEach(t => vaciosMovementsPorTipo[baseClientName][t] = { entregados: 0, devueltos: 0 }); 
+            }
+
+            if (!clientData[rowClientName]) clientData[rowClientName] = { products: {}, totalValue: 0, isObsequioRow: isObsequio };
             
             if (item.tipo === 'venta') {
                 const venta = item.data;
                 const ventaTotalCliente = venta.total || 0;
-                clientData[clientName].totalValue += ventaTotalCliente;
-                clientTotals[clientName] = (clientTotals[clientName] || 0) + ventaTotalCliente;
+                clientData[rowClientName].totalValue += ventaTotalCliente;
+                
+                clientTotals[baseClientName] = (clientTotals[baseClientName] || 0) + ventaTotalCliente;
                 grandTotalValue += ventaTotalCliente;
+
+                const vacDev = venta.vaciosDevueltosPorTipo || {};
+                for (const t in vacDev) { 
+                    vaciosMovementsPorTipo[baseClientName][t].devueltos += (vacDev[t] || 0); 
+                }
                 
                 (venta.productos || []).forEach(p => {
                     const prodPrivado = inventarioMap.get(p.id) || {};
                     const prodMaestro = masterMap.get(p.id) || {};
                     const prodComp = { ...p, ...prodPrivado, ...prodMaestro, id: p.id }; 
                     
-                    if (p.id && !clientData[clientName].products[p.id]) clientData[clientName].products[p.id] = 0;
+                    if (p.id && !clientData[rowClientName].products[p.id]) clientData[rowClientName].products[p.id] = 0;
                     
                     let cantidadUnidades = 0;
                     if (p.cantidadVendida) { 
@@ -372,7 +389,11 @@
                     } else if (p.totalUnidadesVendidas) { 
                         cantidadUnidades = p.totalUnidadesVendidas;
                     }
-                    if(p.id) clientData[clientName].products[p.id] += cantidadUnidades;
+                    if(p.id) clientData[rowClientName].products[p.id] += cantidadUnidades;
+
+                    if (prodComp.manejaVacios && prodComp.tipoVacio) {
+                        vaciosMovementsPorTipo[baseClientName][prodComp.tipoVacio].entregados += p.cantidadVendida?.cj || 0; 
+                    }
                 });
 
             } else if (item.tipo === 'obsequio') {
@@ -380,30 +401,66 @@
                 const prodPrivado = inventarioMap.get(obsequio.productoId) || {};
                 const prodMaestro = masterMap.get(obsequio.productoId) || {};
 
+                // Conservar rubro original para que se muestre en su sección correspondiente
                 let pComp = {
                     id: obsequio.productoId,
-                    presentacion: obsequio.productoNombre || 'Producto Eliminado',
-                    rubro: 'OBSEQUIOS (ELIMINADO)',
-                    segmento: 'N/A',
-                    marca: 'N/A',
-                    unidadesPorCaja: 1, 
-                    precios: { und: 0, paq: 0, cj: 0 },
-                    ventaPor: { cj: true, paq: false, und: false },
-                    ...prodPrivado,
-                    ...prodMaestro
+                    rubro: prodMaestro.rubro || prodPrivado.rubro || 'OBSEQUIOS',
+                    segmento: prodMaestro.segmento || prodPrivado.segmento || 'N/A',
+                    marca: prodMaestro.marca || prodPrivado.marca || 'N/A',
+                    unidadesPorCaja: prodMaestro.unidadesPorCaja || prodPrivado.unidadesPorCaja || 1, 
+                    precios: prodMaestro.precios || prodPrivado.precios || { und: 0, paq: 0, cj: 0 },
+                    ventaPor: prodMaestro.ventaPor || prodPrivado.ventaPor || { cj: true, paq: false, und: false },
+                    presentacion: obsequio.productoNombre || prodMaestro.presentacion || prodPrivado.presentacion || 'Producto Eliminado',
+                    manejaVacios: !!obsequio.tipoVacio,
+                    tipoVacio: obsequio.tipoVacio || null,
                 };
                 
-                const cantidadUnidades = (obsequio.cantidadCajas || 0) * (pComp.unidadesPorCaja || 1);
+                const cantidadCajas = obsequio.cantidadCajas || 0;
+                const cantidadUnidades = cantidadCajas * (pComp.unidadesPorCaja || 1);
+                
+                // CALCULAR EL VALOR MONETARIO DEL OBSEQUIO COMO SI FUERA UNA VENTA NORMAL
+                const precioCj = pComp.precios?.cj || 0;
+                const subtotalObsequio = cantidadCajas * precioCj;
 
-                if (pComp.id && !clientData[clientName].products[pComp.id]) clientData[clientName].products[pComp.id] = 0;
-                clientData[clientName].products[pComp.id] += cantidadUnidades;
+                const rubro = pComp.rubro || 'SIN RUBRO';
+                
+                if (!dataByRubro[rubro]) {
+                    dataByRubro[rubro] = { clients: {}, productsMap: new Map(), productTotals: {}, totalValue: 0, obsequiosMap: new Set() };
+                }
+                if (!dataByRubro[rubro].clients[rowClientName]) {
+                    dataByRubro[rubro].clients[rowClientName] = { products: {}, totalValue: 0, isObsequioRow: true };
+                }
+                if (!dataByRubro[rubro].productsMap.has(pComp.id)) {
+                    dataByRubro[rubro].productsMap.set(pComp.id, pComp); 
+                }
+                dataByRubro[rubro].obsequiosMap.add(pComp.id);
+
+                if(pComp.id) dataByRubro[rubro].clients[rowClientName].products[pComp.id] = (dataByRubro[rubro].clients[rowClientName].products[pComp.id] || 0) + cantidadUnidades;
+                
+                // Sumar los valores monetarios para que el obsequio cueste en el reporte
+                dataByRubro[rubro].clients[rowClientName].totalValue += subtotalObsequio;
+                dataByRubro[rubro].totalValue += subtotalObsequio;
+                
+                clientData[rowClientName].totalValue += subtotalObsequio;
+                clientTotals[baseClientName] = (clientTotals[baseClientName] || 0) + subtotalObsequio;
+                grandTotalValue += subtotalObsequio;
+
+                if (pComp.manejaVacios && pComp.tipoVacio) {
+                    vaciosMovementsPorTipo[baseClientName][pComp.tipoVacio].entregados += cantidadCajas; 
+                }
+
+                const vacDev = obsequio.vaciosRecibidos || 0;
+                const tipoVacDev = obsequio.tipoVacio; 
+                if (vacDev > 0 && tipoVacDev) {
+                     vaciosMovementsPorTipo[baseClientName][tipoVacDev].devueltos += vacDev;
+                }
             }
         }
         
         const sortedClients = Object.keys(clientData).sort();
         const sortFunction = await getGlobalProductSortFunction();
         const finalProductOrder = Array.from(allProductsMap.values()).sort(sortFunction);
-        return { clientData, clientTotals, grandTotalValue, sortedClients, finalProductOrder };
+        return { clientData, clientTotals, grandTotalValue, sortedClients, finalProductOrder, vaciosMovementsPorTipo };
     }
 
     async function showClosingDetail(closingId) {
@@ -411,7 +468,7 @@
         if (!closingData) { _showModal('Error', 'No se cargaron detalles.'); return; }
         _showModal('Progreso', 'Generando reporte detallado...');
         try {
-            const { clientData, clientTotals, grandTotalValue, sortedClients, finalProductOrder } = 
+            const { clientData, clientTotals, grandTotalValue, sortedClients, finalProductOrder, vaciosMovementsPorTipo } = 
                 await _processSalesDataForModal(
                     closingData.ventas || [], 
                     closingData.obsequios || [], 
@@ -426,19 +483,24 @@
             let bHTML=''; 
             sortedClients.forEach(cli=>{
                 const cCli = clientData[cli]; 
-                const esSoloObsequio = !clientTotals.hasOwnProperty(cli) && cCli.totalValue === 0 && Object.values(cCli.products).some(q => q > 0);
-                const rowClass = esSoloObsequio ? 'bg-blue-100 hover:bg-blue-200' : 'hover:bg-blue-50';
-                const clientNameDisplay = esSoloObsequio ? `${cli} (OBSEQUIO)` : cli;
-
-                bHTML+=`<tr class="${rowClass}"><td class="p-1 border font-medium bg-white sticky left-0 z-10">${clientNameDisplay}</td>`; 
+                const esSoloObsequio = cCli.isObsequioRow;
+                
+                // Destacar fila de obsequio visualmente
+                const rowClass = esSoloObsequio ? 'bg-blue-100 hover:bg-blue-200 text-blue-900' : 'hover:bg-blue-50';
+                
+                bHTML+=`<tr class="${rowClass}"><td class="p-1 border font-medium bg-white sticky left-0 z-10">${cli}</td>`; 
                 finalProductOrder.forEach(p=>{
                     const qU=cCli.products[p.id]||0; 
                     const qtyDisplay = getDisplayQty(qU, p);
-                    let dQ = (qU > 0) ? `${qtyDisplay.value}` : '';
-                    let cellClass = '';
-                    if (qU > 0 && esSoloObsequio) {
-                        cellClass = 'font-bold';
+                    
+                    let dQ = '';
+                    if (qU > 0) {
+                        dQ = `${qtyDisplay.value} ${qtyDisplay.unit}`;
+                        if (esSoloObsequio) dQ += ` <span class="text-[10px] text-blue-600 font-black ml-1">(Regalo)</span>`;
                     }
+                    
+                    let cellClass = esSoloObsequio && qU > 0 ? 'font-bold bg-blue-50 text-blue-800' : (qU > 0 ? 'font-bold' : '');
+                    
                     bHTML+=`<td class="p-1 border text-center ${cellClass}">${dQ}</td>`;
                 }); 
                 bHTML+=`<td class="p-1 border text-right font-semibold bg-white sticky right-0 z-10">$${cCli.totalValue.toFixed(2)}</td></tr>`;
@@ -456,210 +518,70 @@
             }); 
             fHTML+=`<td class="p-1 border text-right sticky right-0 z-10">$${grandTotalValue.toFixed(2)}</td></tr>`;
             
+            // --- TABLA DE VACÍOS DESDE DATA ---
+            const TIPOS_VACIO_GLOBAL = window.TIPOS_VACIO_GLOBAL || ["1/4 - 1/3", "ret 350 ml", "ret 1.25 Lts"];
+            let vHTML=''; 
+            const cliVacios = Object.keys(vaciosMovementsPorTipo).filter(cli => 
+                TIPOS_VACIO_GLOBAL.some(t => (vaciosMovementsPorTipo[cli][t]?.entregados || 0) > 0 || (vaciosMovementsPorTipo[cli][t]?.devueltos || 0) > 0)
+            ).sort(); 
+            
+            if (cliVacios.length > 0) { 
+                vHTML = `
+                    <h3 class="text-lg font-bold text-gray-800 mt-6 mb-2 border-t pt-4">Resumen de Envases (Vacíos)</h3>
+                    <div class="overflow-hidden border border-gray-300 rounded-lg shadow-sm">
+                        <table class="min-w-full bg-white text-sm">
+                            <thead class="bg-gray-800 text-white">
+                                <tr>
+                                    <th class="py-2 px-3 text-left font-semibold">Cliente</th>
+                                    <th class="py-2 px-3 text-center font-semibold">Tipo</th>
+                                    <th class="py-2 px-3 text-center font-semibold">Entregados</th>
+                                    <th class="py-2 px-3 text-center font-semibold">Devueltos</th>
+                                    <th class="py-2 px-3 text-center font-semibold">Pendiente</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-gray-200">
+                `; 
+                
+                cliVacios.forEach(cli => {
+                    const movs = vaciosMovementsPorTipo[cli]; 
+                    TIPOS_VACIO_GLOBAL.forEach(t => {
+                        const mov = movs[t]; 
+                        if (mov && (mov.entregados > 0 || mov.devueltos > 0)) {
+                            const neto = mov.entregados - mov.devueltos; 
+                            const nClass = neto > 0 ? 'text-red-600 font-bold bg-red-50' : (neto < 0 ? 'text-green-600 font-bold bg-green-50' : 'text-gray-500'); 
+                            
+                            let netoText = neto;
+                            if (neto > 0) netoText = `+${neto} (Debe)`;
+                            else if (neto < 0) netoText = `${neto} (A favor)`;
+                            else netoText = `0 (Solvente)`;
+
+                            vHTML += `
+                                <tr class="hover:bg-gray-50">
+                                    <td class="py-2 px-3 text-gray-800 font-medium">${cli}</td>
+                                    <td class="py-2 px-3 text-center text-gray-600">${t}</td>
+                                    <td class="py-2 px-3 text-center font-semibold text-gray-700">${mov.entregados}</td>
+                                    <td class="py-2 px-3 text-center font-semibold text-gray-700">${mov.devueltos}</td>
+                                    <td class="py-2 px-3 text-center ${nClass}">${netoText}</td>
+                                </tr>
+                            `;
+                        }
+                    });
+                }); 
+                vHTML += '</tbody></table></div>';
+            }
+
+
             const vendedor = closingData.vendedorInfo || {};
             let vNameModal = vendedor.nombre || 'Desconocido';
             if(!vendedor.nombre && vendedor.userId && _usersMapCache.has(vendedor.userId)){
                  vNameModal = _usersMapCache.get(vendedor.userId).nombre;
             }
 
-            const reportHTML = `<div class="text-left max-h-[80vh] overflow-auto"> <div class="mb-4"> <p><strong>Vendedor:</strong> ${vNameModal} ${vendedor.apellido||''}</p> <p><strong>Camión:</strong> ${vendedor.camion||'N/A'}</p> <p><strong>Fecha:</strong> ${closingData.fecha.toDate().toLocaleString('es-ES')}</p> </div> <h3 class="text-xl mb-4">Reporte Cierre</h3> <div class="overflow-auto border" style="max-height: 40vh;"> <table class="min-w-full bg-white text-xs"> <thead class="bg-gray-200">${hHTML}</thead> <tbody>${bHTML}</tbody> <tfoot>${fHTML}</tfoot> </table> </div> </div>`;
+            const reportHTML = `<div class="text-left max-h-[80vh] overflow-auto"> <div class="mb-4"> <p><strong>Vendedor:</strong> ${vNameModal} ${vendedor.apellido||''}</p> <p><strong>Camión:</strong> ${vendedor.camion||'N/A'}</p> <p><strong>Fecha:</strong> ${closingData.fecha.toDate().toLocaleString('es-ES')}</p> </div> <h3 class="text-xl mb-4">Reporte Cierre</h3> <div class="overflow-auto border" style="max-height: 40vh;"> <table class="min-w-full bg-white text-xs"> <thead class="bg-gray-200">${hHTML}</thead> <tbody>${bHTML}</tbody> <tfoot>${fHTML}</tfoot> </table> </div> ${vHTML} </div>`;
             _showModal(`Detalle Cierre`, reportHTML, null, 'Cerrar');
         } catch (error) { console.error("Error generando detalle:", error); _showModal('Error', `No se pudo generar: ${error.message}`); }
     }
     
-    async function processSalesDataForReport(ventas, obsequios, cargaInicialInventario, userIdForInventario) {
-        const dataByRubro = {};
-        const clientTotals = {}; 
-        let grandTotalValue = 0;
-        const vaciosMovementsPorTipo = {};
-        const allRubros = new Set();
-        const TIPOS_VACIO_GLOBAL = window.TIPOS_VACIO_GLOBAL || ["1/4 - 1/3", "ret 350 ml", "ret 1.25 Lts"];
-        
-        let inventarioMap;
-        let hasSnapshot = cargaInicialInventario && cargaInicialInventario.length > 0;
-        
-        const targetUserId = userIdForInventario || _userId;
-        const inventarioRef = _collection(_db, `artifacts/${_appId}/users/${targetUserId}/inventario`); 
-        const masterRef = _collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/productos`);
-
-        const [inventarioSnapshot, masterSnapshot] = await Promise.all([
-            _getDocs(inventarioRef),
-            _getDocs(masterRef)
-        ]);
-
-        inventarioMap = new Map(inventarioSnapshot.docs.map(doc => [doc.id, doc.data()]));
-        const masterMap = new Map(masterSnapshot.docs.map(doc => [doc.id, doc.data()]));
-
-        let snapshotMap = new Map();
-        if(hasSnapshot) {
-             snapshotMap = new Map(cargaInicialInventario.map(doc => [doc.id, doc]));
-        }
-
-        const userDoc = await _getDoc(_doc(_db, "users", targetUserId));
-        const userInfo = userDoc.exists() ? userDoc.data() : { email: 'Usuario Desconocido' };
-
-        const allKnownIds = new Set([...inventarioMap.keys(), ...masterMap.keys()]);
-        for (const pId of allKnownIds) {
-            const prodPrivado = inventarioMap.get(pId) || {};
-            const prodMaestro = masterMap.get(pId) || {};
-            const prodParaReporte = {
-                ...prodPrivado, 
-                ...prodMaestro,
-                id: pId,
-                rubro: prodMaestro.rubro || prodPrivado.rubro || 'SIN RUBRO',
-                segmento: prodMaestro.segmento || prodPrivado.segmento || 'S/S',
-                marca: prodMaestro.marca || prodPrivado.marca || 'S/M',
-            };
-            const rubro = prodParaReporte.rubro;
-            allRubros.add(rubro);
-            if (!dataByRubro[rubro]) {
-                dataByRubro[rubro] = { clients: {}, productsMap: new Map(), productTotals: {}, totalValue: 0, obsequiosMap: new Set() };
-            }
-            if (!dataByRubro[rubro].productsMap.has(pId)) {
-                dataByRubro[rubro].productsMap.set(pId, prodParaReporte); 
-            }
-        }
-
-        const allData = [
-            ...ventas.map(v => ({ tipo: 'venta', data: v })),
-            ...(obsequios || []).map(o => ({ tipo: 'obsequio', data: o }))
-        ];
-
-        for (const item of allData) {
-            const clientName = item.data.clienteNombre || 'Cliente Desconocido';
-            
-            if (!vaciosMovementsPorTipo[clientName]) { 
-                vaciosMovementsPorTipo[clientName] = {}; 
-                TIPOS_VACIO_GLOBAL.forEach(t => vaciosMovementsPorTipo[clientName][t] = { entregados: 0, devueltos: 0 }); 
-            }
-
-            if (item.tipo === 'venta') {
-                const venta = item.data;
-                const ventaTotalCliente = venta.total || 0;
-                clientTotals[clientName] = (clientTotals[clientName] || 0) + ventaTotalCliente;
-                grandTotalValue += ventaTotalCliente;
-
-                const vacDev = venta.vaciosDevueltosPorTipo || {};
-                for (const t in vacDev) { 
-                    if (!vaciosMovementsPorTipo[clientName][t]) vaciosMovementsPorTipo[clientName][t] = { entregados: 0, devueltos: 0 }; 
-                    vaciosMovementsPorTipo[clientName][t].devueltos += (vacDev[t] || 0); 
-                }
-
-                (venta.productos || []).forEach(p => {
-                    const prodPrivado = inventarioMap.get(p.id) || {};
-                    const prodMaestro = masterMap.get(p.id) || {};
-                    const prodParaReporte = { ...p, ...prodPrivado, ...prodMaestro, id: p.id, rubro: prodMaestro.rubro || prodPrivado.rubro || p.rubro || 'SIN RUBRO' };
-                    const rubro = prodParaReporte.rubro;
-                    
-                    if (!dataByRubro[rubro].clients[clientName]) {
-                        dataByRubro[rubro].clients[clientName] = { products: {}, totalValue: 0 };
-                    }
-
-                    let cantidadUnidades = 0;
-                    if (p.cantidadVendida) { 
-                        const uCj = prodParaReporte.unidadesPorCaja || 1;
-                        const uPaq = prodParaReporte.unidadesPorPaquete || 1;
-                        cantidadUnidades = (p.cantidadVendida.cj || 0) * uCj + (p.cantidadVendida.paq || 0) * uPaq + (p.cantidadVendida.und || 0);
-                    } else if (p.totalUnidadesVendidas) { 
-                        cantidadUnidades = p.totalUnidadesVendidas;
-                    }
-                    
-                    const subtotalProducto = (p.precios?.cj || 0) * (p.cantidadVendida?.cj || 0) + (p.precios?.paq || 0) * (p.cantidadVendida?.paq || 0) + (p.precios?.und || 0) * (p.cantidadVendida?.und || 0);
-                    
-                    if(p.id) dataByRubro[rubro].clients[clientName].products[p.id] = (dataByRubro[rubro].clients[clientName].products[p.id] || 0) + cantidadUnidades;
-                    dataByRubro[rubro].clients[clientName].totalValue += subtotalProducto;
-                    dataByRubro[rubro].totalValue += subtotalProducto;
-                    
-                    if (prodParaReporte.manejaVacios && prodParaReporte.tipoVacio) {
-                        const tV = prodParaReporte.tipoVacio; 
-                        if (!vaciosMovementsPorTipo[clientName][tV]) vaciosMovementsPorTipo[clientName][tV] = { entregados: 0, devueltos: 0 }; 
-                        vaciosMovementsPorTipo[clientName][tV].entregados += p.cantidadVendida?.cj || 0; 
-                    }
-                });
-
-            } else if (item.tipo === 'obsequio') {
-                const obsequio = item.data;
-                const prodPrivado = inventarioMap.get(obsequio.productoId) || {}; 
-                const prodMaestro = masterMap.get(obsequio.productoId) || {};
-
-                let pComp = {
-                    id: obsequio.productoId,
-                    rubro: 'OBSEQUIOS (ELIMINADO)',
-                    unidadesPorCaja: 1, 
-                    ...prodPrivado,
-                    ...prodMaestro,
-                };
-                
-                const cantidadUnidades = (obsequio.cantidadCajas || 0) * (pComp.unidadesPorCaja || 1);
-                const rubro = pComp.rubro || 'SIN RUBRO';
-                
-                if (!dataByRubro[rubro].clients[clientName]) {
-                    dataByRubro[rubro].clients[clientName] = { products: {}, totalValue: 0 };
-                }
-                dataByRubro[rubro].obsequiosMap.add(pComp.id);
-
-                if(pComp.id) dataByRubro[rubro].clients[clientName].products[pComp.id] = (dataByRubro[rubro].clients[clientName].products[pComp.id] || 0) + cantidadUnidades;
-                
-                if (pComp.manejaVacios && pComp.tipoVacio) {
-                    const tV = pComp.tipoVacio; 
-                    if (!vaciosMovementsPorTipo[clientName][tV]) vaciosMovementsPorTipo[clientName][tV] = { entregados: 0, devueltos: 0 }; 
-                    vaciosMovementsPorTipo[clientName][tV].entregados += (obsequio.cantidadCajas || 0); 
-                }
-
-                const vacDev = obsequio.vaciosRecibidos || 0;
-                const tipoVacDev = obsequio.tipoVacio; 
-                if (vacDev > 0 && tipoVacDev) {
-                     if (!vaciosMovementsPorTipo[clientName][tipoVacDev]) vaciosMovementsPorTipo[clientName][tipoVacDev] = { entregados: 0, devueltos: 0 };
-                     vaciosMovementsPorTipo[clientName][tipoVacDev].devueltos += vacDev;
-                }
-            }
-        }
-        
-        const sortFunction = await getGlobalProductSortFunction();
-        const finalData = { rubros: {}, vaciosMovementsPorTipo: vaciosMovementsPorTipo, clientTotals: clientTotals, grandTotalValue: grandTotalValue };
-
-        for (const rubroName of Array.from(allRubros).sort()) {
-            const rubroData = dataByRubro[rubroName];
-            const sortedProducts = Array.from(rubroData.productsMap.values()).sort(sortFunction);
-            const sortedClients = Object.keys(rubroData.clients).sort();
-            const productTotals = {};
-
-            for (const p of sortedProducts) {
-                const productId = p.id;
-                let totalSoldUnits = 0;
-                for (const clientName of sortedClients) {
-                    totalSoldUnits += (rubroData.clients[clientName].products[productId] || 0);
-                }
-
-                const pInfoCurrent = inventarioMap.get(productId);
-                const pInfoSnapshot = snapshotMap.get(productId); 
-
-                let initialStockUnits = 0;
-                let currentStockUnits = 0;
-                
-                if (hasSnapshot) {
-                    initialStockUnits = pInfoSnapshot ? (pInfoSnapshot.cantidadUnidades || 0) : 0;
-                    currentStockUnits = initialStockUnits - totalSoldUnits;
-                } else {
-                    currentStockUnits = pInfoCurrent ? (pInfoCurrent.cantidadUnidades || 0) : 0;
-                    initialStockUnits = currentStockUnits + totalSoldUnits;
-                }
-
-                productTotals[productId] = { totalSold: totalSoldUnits, currentStock: currentStockUnits, initialStock: initialStockUnits };
-            }
-            
-            finalData.rubros[rubroName] = { 
-                clients: rubroData.clients, 
-                products: sortedProducts, 
-                sortedClients: sortedClients, 
-                totalValue: rubroData.totalValue, 
-                productTotals: productTotals,
-                obsequiosMap: rubroData.obsequiosMap || new Set()
-            };
-        }
-        return { finalData, userInfo };
-    }
-
     async function exportSingleClosingToExcel(closingData, isPreview = false) {
         if (typeof ExcelJS === 'undefined') {
             _showModal('Error', 'Librería ExcelJS no cargada. No se puede exportar.');
@@ -846,8 +768,7 @@
                     const clientRow = worksheet.getRow(currentRowNum++);
                     
                     const clientSales = clientData[clientName];
-                    const esSoloObsequio = !finalData.clientTotals.hasOwnProperty(clientName) && clientSales.totalValue === 0 && Object.values(clientSales.products).some(q => q > 0);
-                    const clientNameDisplay = esSoloObsequio ? `${clientName} (OBSEQUIO)` : clientName;
+                    const esSoloObsequio = clientSales.isObsequioRow;
 
                     const rowBaseStyleSettings = esSoloObsequio ? s.rowDataClientsObsequio : s.rowDataClients;
 
@@ -857,22 +778,14 @@
                         null, 
                         'left' 
                     );
-                    clientRow.getCell(1).value = clientNameDisplay;
+                    clientRow.getCell(1).value = clientName;
                     clientRow.getCell(1).style = clientNameStyle;
                     
                     sortedProducts.forEach((p, index) => {
                         const qU = clientSales.products[p.id] || 0;
                         const cell = clientRow.getCell(START_COL + index);
                         
-                        let cellStyleSettings;
-                        
-                        if (esSoloObsequio) {
-                            cellStyleSettings = s.rowDataClientsObsequio;
-                        } else if (qU > 0) {
-                            cellStyleSettings = s.rowDataClientsSale;
-                        } else {
-                            cellStyleSettings = s.rowDataClients;
-                        }
+                        let cellStyleSettings = esSoloObsequio ? s.rowDataClientsObsequio : (qU > 0 ? s.rowDataClientsSale : s.rowDataClients);
                         
                         const finalCellStyle = buildExcelJSStyle(
                             cellStyleSettings,
@@ -883,8 +796,9 @@
                         
                         if (qU > 0) {
                             const qtyDisplay = getDisplayQty(qU, p);
+                            const suffix = esSoloObsequio ? ' (Obs)' : '';
                             cell.value = qtyDisplay.value;
-                            cell.style = { ...finalCellStyle, numFmt: `0 " ${qtyDisplay.unit}"` };
+                            cell.style = { ...finalCellStyle, numFmt: `0 " ${qtyDisplay.unit}${suffix}"` };
                         } else {
                             cell.value = '';
                             cell.style = finalCellStyle;
@@ -974,13 +888,11 @@
                 
                 cliVacios.forEach(cli => {
                     const movs = vaciosMovementsPorTipo[cli]; 
-                    const clienteTuvoVenta = finalData.clientTotals.hasOwnProperty(cli);
-                    const clientNameDisplay = clienteTuvoVenta ? cli : `${cli} (OBSEQUIO)`;
 
                     TIPOS_VACIO_GLOBAL.forEach(t => {
                         const mov = movs[t] || {entregados:0, devueltos:0}; 
                         if (mov.entregados > 0 || mov.devueltos > 0) {
-                            const dataRow = wsVacios.addRow([clientNameDisplay, t, mov.entregados, mov.devueltos, mov.entregados - mov.devueltos]);
+                            const dataRow = wsVacios.addRow([cli, t, mov.entregados, mov.devueltos, mov.entregados - mov.devueltos]);
                             dataRow.getCell(1).style = vaciosDataStyle;
                             dataRow.getCell(2).style = vaciosDataStyle;
                             dataRow.getCell(3).style = vaciosDataNumStyle;
@@ -1140,7 +1052,7 @@
             ];
 
             worksheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
-            worksheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD32F2F' } }; // Rojo oscuro
+            worksheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD32F2F' } }; 
 
             const dExport = missedClients.map(c => ({
                 'Sector': c.sector || 'S/S',
@@ -1171,316 +1083,315 @@
         }
     }
 
-
-    function showClientMapView() {
-        if (mapInstance) { mapInstance.remove(); mapInstance = null; } _floatingControls.classList.add('hidden');
-        
-        const currentWeekStr = getISOWeekString(new Date());
-
+    function showReportDesignView() {
+        if (_floatingControls) _floatingControls.classList.add('hidden');
         _mainContent.innerHTML = `
-            <div class="p-4 pt-8"> <div class="container mx-auto max-w-6xl"> <div class="bg-white/90 backdrop-blur-sm p-6 md:p-8 rounded-lg shadow-xl">
-                <h1 class="text-3xl font-bold text-gray-800 mb-6 text-center">Mapa de Clientes y Asistencia</h1>
-                
-                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-                    
-                    <div class="lg:col-span-2 space-y-4">
-                        <div class="p-4 bg-blue-50 border border-blue-200 rounded-lg shadow-sm">
-                            <h3 class="font-bold text-blue-900 mb-3 text-sm uppercase">Controles del Mapa</h3>
-                            <div class="flex flex-col sm:flex-row gap-3">
-                                <div class="relative flex-grow"> 
-                                    <input type="text" id="map-search-input" placeholder="Buscar cliente por nombre o CEP..." class="w-full px-4 py-2 border border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm"> 
-                                    <div id="map-search-results" class="absolute z-[1000] w-full bg-white border border-gray-300 rounded-lg mt-1 max-h-60 overflow-y-auto hidden shadow-2xl"></div> 
+            <style>
+                input[type="color"] { -webkit-appearance: none; -moz-appearance: none; appearance: none; background: none; border: 1px solid #ccc; padding: 0; }
+                input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+                input[type="color"]::-webkit-color-swatch { border: none; border-radius: 2px; }
+                input[type="color"]::-moz-color-swatch { border: none; border-radius: 2px; }
+                .design-tab-btn {
+                    padding: 0.5rem 1rem;
+                    cursor: pointer;
+                    border: 1px solid transparent;
+                    border-bottom: none;
+                    margin-bottom: -1px;
+                    background-color: #f9fafb;
+                    color: #6b7280;
+                    border-radius: 0.375rem 0.375rem 0 0;
+                }
+                .design-tab-btn.active {
+                    background-color: #ffffff;
+                    color: #3b82f6;
+                    font-weight: 600;
+                    border-color: #e5e7eb;
+                }
+            </style>
+            <div class="p-4 pt-8">
+                <div class="container mx-auto max-w-3xl">
+                    <div class="bg-white/90 backdrop-blur-sm p-6 md:p-8 rounded-lg shadow-xl">
+                        <h1 class="text-3xl font-bold text-gray-800 mb-6 text-center">Diseño de Reporte de Cierre</h1>
+                        <p class="text-center text-gray-600 mb-6">Define los estilos visuales y la visibilidad de las secciones del reporte Excel.</p>
+                        
+                        <div id="design-loader" class="text-center text-gray-500 p-4">Cargando configuración...</div>
+                        
+                        <form id="design-form-container" class="hidden text-left">
+                            
+                            <div id="design-tabs" class="flex border-b border-gray-200 mb-4 overflow-x-auto text-sm">
+                                <button type="button" class="design-tab-btn active" data-tab="general">General</button>
+                                <button type="button" class="design-tab-btn" data-tab="rubro">Hoja Rubros</button>
+                                <button type="button" class="design-tab-btn" data-tab="vacios">Hoja Vacíos</button>
+                                <button type="button" class="design-tab-btn" data-tab="totales">Hoja Totales</button>
+                            </div>
+
+                            <div id="design-tab-content" class="space-y-6">
+
+                                <div id="tab-content-general" class="space-y-4">
+                                    <h3 class="text-lg font-semibold border-b pb-2 mt-4">Visibilidad de Secciones</h3>
+                                    <div class="space-y-2 mt-4">
+                                        <label class="flex items-center space-x-3 p-2 rounded-lg hover:bg-gray-100 cursor-pointer">
+                                            <input type="checkbox" id="chk_showCargaInicial" class="h-5 w-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+                                            <span>Mostrar fila "CARGA INICIAL" (en Hojas Rubro)</span>
+                                        </label>
+                                        <label class="flex items-center space-x-3 p-2 rounded-lg hover:bg-gray-100 cursor-pointer">
+                                            <input type="checkbox" id="chk_showCargaRestante" class="h-5 w-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+                                            <span>Mostrar fila "CARGA RESTANTE" (en Hojas Rubro)</span>
+                                        </label>
+                                        <label class="flex items-center space-x-3 p-2 rounded-lg hover:bg-gray-100 cursor-pointer">
+                                            <input type="checkbox" id="chk_showVaciosSheet" class="h-5 w-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+                                            <span>Incluir hoja "Reporte Vacíos"</span>
+                                        </label>
+                                        <label class="flex items-center space-x-3 p-2 rounded-lg hover:bg-gray-100 cursor-pointer">
+                                            <input type="checkbox" id="chk_showClienteTotalSheet" class="h-5 w-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+                                            <span>Incluir hoja "Total Por Cliente"</span>
+                                        </label>
+                                    </div>
                                 </div>
-                                <select id="map-mode-select" class="w-full sm:w-1/2 px-4 py-2 border border-blue-300 rounded-lg shadow-sm bg-white text-sm font-semibold focus:ring-2 focus:ring-blue-500 outline-none">
-                                    <option value="classic">Clásico: Tipo de Cliente (CEP)</option>
-                                    <option value="weekly_all">Semanal: Todos (Visitados/Faltantes)</option>
-                                    <option value="weekly_attended">Semanal: Solo Visitados</option>
-                                    <option value="weekly_unattended">Semanal: Solo Faltantes (Ruta del día)</option>
-                                </select>
+
+                                <div id="tab-content-rubro" class="space-y-6 hidden">
+                                    <h3 class="text-lg font-semibold border-b pb-2">Ancho de Columnas (Hoja Rubros)</h3>
+                                    <div id="rubro-widths-container" class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3 mt-4 text-sm">
+                                        <p>Cargando anchos...</p>
+                                    </div>
+                                    <h3 class="text-lg font-semibold border-b pb-2 mt-4">Estilos de Zonas (Hoja Rubros)</h3>
+                                    <div id="style-zones-container" class="space-y-3 mt-4">
+                                        <p>Cargando estilos...</p>
+                                    </div>
+                                </div>
+
+                                <div id="tab-content-vacios" class="space-y-6 hidden">
+                                    <h3 class="text-lg font-semibold border-b pb-2">Ancho de Columnas (Hoja Vacíos)</h3>
+                                    <div id="vacios-widths-container" class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3 mt-4 text-sm">
+                                        <p>Cargando anchos...</p>
+                                    </div>
+                                    <h3 class="text-lg font-semibold border-b pb-2 mt-4">Estilos de Zonas (Hoja Vacíos)</h3>
+                                    <div id="vacios-styles-container" class="space-y-3 mt-4">
+                                        <p>Cargando estilos...</p>
+                                    </div>
+                                </div>
+
+                                <div id="tab-content-totales" class="space-y-6 hidden">
+                                    <h3 class="text-lg font-semibold border-b pb-2">Ancho de Columnas (Hoja Totales)</h3>
+                                    <div id="totales-widths-container" class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3 mt-4 text-sm">
+                                        <p>Cargando anchos...</p>
+                                    </div>
+                                    <h3 class="text-lg font-semibold border-b pb-2 mt-4">Estilos de Zonas (Hoja Totales)</h3>
+                                    <div id="totales-styles-container" class="space-y-3 mt-4">
+                                        <p>Cargando estilos...</p>
+                                    </div>
+                                </div>
+
                             </div>
-                        </div>
-                    </div>
 
-                    <div class="lg:col-span-1">
-                        <div class="p-4 bg-red-50 border border-red-200 rounded-lg shadow-sm h-full flex flex-col justify-center">
-                            <h3 class="font-bold text-red-900 mb-2 text-sm uppercase">Auditoría: Reporte de Inasistencias</h3>
-                            <div class="flex flex-col gap-2">
-                                <input type="week" id="missed-clients-week" value="${currentWeekStr}" class="border border-red-300 rounded p-2 text-sm w-full bg-white focus:ring-2 focus:ring-red-500 outline-none">
-                                <button id="btnDownloadMissed" class="bg-red-600 text-white font-bold py-2 px-4 rounded shadow-md hover:bg-red-700 transition">Generar Excel</button>
+                            <div class="flex flex-col sm:flex-row gap-4 pt-6 mt-6 border-t">
+                                <button type="button" id="saveDesignBtn" class="w-full px-6 py-3 bg-green-500 text-white font-semibold rounded-lg shadow-md hover:bg-green-600">Guardar Diseño</button>
+                                <button type="button" id="backToDataMenuBtn" class="w-full px-6 py-3 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500">Volver</button>
                             </div>
-                            <p class="text-[10px] text-red-700 mt-2 font-medium leading-tight">Descarga un listado exacto de los clientes del catálogo a los que <b>NO se les vendió nada</b> en la semana seleccionada.</p>
-                        </div>
+                        </form>
                     </div>
-
                 </div>
-
-                <div id="map-legend" class="mb-4 p-2 bg-gray-100 border border-gray-300 rounded-lg text-xs flex flex-wrap justify-center items-center gap-x-6 gap-y-2 font-medium"> 
-                </div>
-                
-                <div id="client-map" class="w-full rounded-lg shadow-inner z-0" style="height:60vh; border:1px solid #ccc; background-color:#e5e7eb;"> <p class="text-center text-gray-500 pt-10 font-medium animate-pulse">Iniciando motor de mapas...</p> </div>
-                
-                <div class="mt-6 flex justify-end">
-                    <button id="backToDataMenuBtn" class="px-8 py-2.5 bg-gray-600 text-white font-bold rounded-lg shadow-md hover:bg-gray-700 transition">Volver al Menú</button>
-                </div>
-            </div> </div> </div>
+            </div>
         `;
-        document.getElementById('backToDataMenuBtn').addEventListener('click', showDataView); 
-        document.getElementById('btnDownloadMissed').addEventListener('click', downloadMissedClientsExcel);
-        
-        const modeSelect = document.getElementById('map-mode-select');
-        modeSelect.addEventListener('change', () => loadAndDisplayMap(modeSelect.value));
-        
-        loadAndDisplayMap('classic'); 
+
+        document.getElementById('backToDataMenuBtn').addEventListener('click', window.showDataView);
+        document.getElementById('saveDesignBtn').addEventListener('click', handleSaveReportDesign);
+
+        const tabsContainer = document.getElementById('design-tabs');
+        const tabContents = document.querySelectorAll('#design-tab-content > div');
+        tabsContainer.addEventListener('click', (e) => {
+            const clickedTab = e.target.closest('.design-tab-btn');
+            if (!clickedTab) return;
+
+            const tabId = clickedTab.dataset.tab;
+            
+            tabsContainer.querySelectorAll('.design-tab-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            clickedTab.classList.add('active');
+            
+            tabContents.forEach(content => {
+                if (content.id === `tab-content-${tabId}`) {
+                    content.classList.remove('hidden');
+                } else {
+                    content.classList.add('hidden');
+                }
+            });
+        });
+
+        loadDesignConfiguration();
     }
 
-    async function loadAndDisplayMap(mode = 'classic') {
-        const mapCont = document.getElementById('client-map'); 
-        const legendCont = document.getElementById('map-legend');
-
-        if (!mapCont || typeof L === 'undefined') { mapCont.innerHTML = '<p class="text-red-500 font-bold p-4 text-center">Error Crítico: El motor de mapas Leaflet no pudo ser cargado. Revise su conexión a internet.</p>'; return; }
+    async function loadDesignConfiguration() {
+        const loader = document.getElementById('design-loader');
+        const formContainer = document.getElementById('design-form-container');
         
-        // Actualizar Leyenda Dinámica
-        if (mode === 'classic') {
-            legendCont.innerHTML = `
-                <span class="flex items-center"><img src="https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png" style="height:22px;margin-right:4px;"> Cliente Regular (Sin CEP)</span> 
-                <span class="flex items-center"><img src="https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png" style="height:22px;margin-right:4px;"> Cliente Con CEP</span>
+        try {
+            const REPORTE_DESIGN_PATH = REPORTE_DESIGN_CONFIG_PATH;
+            const docRef = _doc(_db, REPORTE_DESIGN_PATH);
+            const docSnap = await _getDoc(docRef);
+            
+            let currentSettings = JSON.parse(JSON.stringify(DEFAULT_REPORTE_SETTINGS));
+            if (docSnap.exists()) {
+                const savedSettings = docSnap.data();
+                currentSettings = { ...currentSettings, ...savedSettings };
+                currentSettings.styles = { ...DEFAULT_REPORTE_SETTINGS.styles, ...(savedSettings.styles || {}) };
+                currentSettings.columnWidths = { ...DEFAULT_REPORTE_SETTINGS.columnWidths, ...(savedSettings.columnWidths || {}) };
+            }
+
+            document.getElementById('chk_showCargaInicial').checked = currentSettings.showCargaInicial;
+            document.getElementById('chk_showCargaRestante').checked = currentSettings.showCargaRestante;
+            document.getElementById('chk_showVaciosSheet').checked = currentSettings.showVaciosSheet;
+            document.getElementById('chk_showClienteTotalSheet').checked = currentSettings.showClienteTotalSheet;
+
+            const s = currentSettings.styles;
+            document.getElementById('style-zones-container').innerHTML = `
+                ${createZoneEditor('headerInfo', 'Info (Fecha/Usuario)', s.headerInfo)}
+                ${createZoneEditor('headerProducts', 'Cabecera Productos', s.headerProducts)}
+                ${createZoneEditor('rowCargaInicial', 'Fila "CARGA INICIAL"', s.rowCargaInicial)}
+                ${createZoneEditor('rowDataClients', 'Filas Clientes (Celdas Vacías)', s.rowDataClients)}
+                ${createZoneEditor('rowDataClientsSale', 'Filas Clientes (Venta > 0)', s.rowDataClientsSale)} 
+                ${createZoneEditor('rowDataClientsObsequio', 'Filas Clientes (Obsequio)', s.rowDataClientsObsequio)}
+                ${createZoneEditor('rowCargaRestante', 'Fila "CARGA RESTANTE"', s.rowCargaRestante)}
+                ${createZoneEditor('rowTotals', 'Fila "TOTALES"', s.rowTotals)}
             `;
-        } else if (mode === 'weekly_all') {
-             legendCont.innerHTML = `
-                <span class="flex items-center opacity-60"><img src="https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-grey.png" style="height:22px;margin-right:4px;"> Faltan por Visitar</span> 
-                <span class="flex items-center"><img src="https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png" style="height:22px;margin-right:4px;"> Visitados esta semana</span>
+            const w = currentSettings.columnWidths;
+            document.getElementById('rubro-widths-container').innerHTML = `
+                ${createWidthEditor('width_col_A_LabelsClientes', 'Col A (Etiquetas/Clientes)', w.col_A_LabelsClientes)}
+                ${createWidthEditor('width_products', 'Cols Producto (B, C...)', w.products)}
+                ${createWidthEditor('width_subtotal', 'Col Sub Total', w.subtotal)}
             `;
-        } else if (mode === 'weekly_attended') {
-            legendCont.innerHTML = `<span class="flex items-center"><img src="https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png" style="height:22px;margin-right:4px;"> Visitados esta semana</span>`;
-        } else if (mode === 'weekly_unattended') {
-            legendCont.innerHTML = `<span class="flex items-center"><img src="https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png" style="height:22px;margin-right:4px;"> Pendientes de Visita (Ruta Crítica)</span>`;
+
+            document.getElementById('vacios-widths-container').innerHTML = `
+                ${createWidthEditor('width_vaciosCliente', 'Cliente', w.vaciosCliente)}
+                ${createWidthEditor('width_vaciosTipo', 'Tipo Vacío', w.vaciosTipo)}
+                ${createWidthEditor('width_vaciosQty', 'Cantidades (Ent/Dev/Neto)', w.vaciosQty)}
+                <div></div>
+            `;
+            document.getElementById('vacios-styles-container').innerHTML = `
+                ${createZoneEditor('vaciosHeader', 'Cabecera (Cliente, Tipo, etc.)', s.vaciosHeader)}
+                ${createZoneEditor('vaciosData', 'Filas de Datos', s.vaciosData)}
+            `;
+
+            document.getElementById('totales-widths-container').innerHTML = `
+                ${createWidthEditor('width_totalCliente', 'Cliente', w.totalCliente)}
+                ${createWidthEditor('width_totalClienteValor', 'Gasto Total', w.totalClienteValor)}
+            `;
+            document.getElementById('totales-styles-container').innerHTML = `
+                ${createZoneEditor('totalesHeader', 'Cabecera (Cliente, Gasto)', s.totalesHeader)}
+                ${createZoneEditor('totalesData', 'Filas de Clientes', s.totalesData)}
+                ${createZoneEditor('totalesTotalRow', 'Fila "GRAN TOTAL"', s.totalesTotalRow)}
+            `;
+
+            loader.classList.add('hidden');
+            formContainer.classList.remove('hidden');
+
+        } catch (error) {
+            console.error("Error cargando diseño:", error);
+            loader.textContent = 'Error al cargar la configuración.';
+            _showModal('Error', `No se pudo cargar la configuración: ${error.message}`);
         }
+    }
+
+    function createZoneEditor(idPrefix, label, settings) {
+        const s = settings;
+        return `
+        <div class="p-3 border rounded-lg bg-gray-50">
+            <h4 class="font-semibold text-gray-700">${label}</h4>
+            <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mt-2 text-sm items-center">
+                <label class="flex items-center space-x-2 cursor-pointer"><input type="checkbox" id="${idPrefix}_bold" ${s.bold ? 'checked' : ''} class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"><span>Negrita</span></label>
+                <label class="flex items-center space-x-2 cursor-pointer"><input type="checkbox" id="${idPrefix}_border" ${s.border ? 'checked' : ''} class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"><span>Bordes</span></label>
+                <label class="flex items-center space-x-2"><span>Fondo:</span><input type="color" id="${idPrefix}_fillColor" value="${s.fillColor || '#FFFFFF'}" class="h-6 w-10 border cursor-pointer p-0"></label>
+                <label class="flex items-center space-x-2"><span>Texto:</span><input type="color" id="${idPrefix}_fontColor" value="${s.fontColor || '#000000'}" class="h-6 w-10 border cursor-pointer p-0"></label>
+                <label class="flex items-center space-x-2"><span>Tamaño:</span><input type="number" id="${idPrefix}_fontSize" value="${s.fontSize || 10}" min="8" max="16" class="h-7 w-12 border cursor-pointer p-1 text-sm rounded-md"></label>
+            </div>
+        </div>`;
+    }
+
+    function createWidthEditor(id, label, value) {
+        return `
+        <div class="flex items-center justify-between">
+            <label for="${id}" class="text-sm font-medium text-gray-700">${label}:</label>
+            <input type="number" id="${id}" value="${value}" min="5" max="50" step="1" class="w-20 px-2 py-1 border rounded-lg text-sm">
+        </div>`;
+    }
+
+    function readZoneEditor(idPrefix) {
+        const boldEl = document.getElementById(`${idPrefix}_bold`);
+        const borderEl = document.getElementById(`${idPrefix}_border`);
+        const fillColorEl = document.getElementById(`${idPrefix}_fillColor`);
+        const fontColorEl = document.getElementById(`${idPrefix}_fontColor`);
+        const fontSizeEl = document.getElementById(`${idPrefix}_fontSize`);
+
+        const defaults = DEFAULT_REPORTE_SETTINGS.styles[idPrefix] || 
+                         (idPrefix === 'rowDataClientsSale' ? DEFAULT_REPORTE_SETTINGS.styles.rowDataClients : 
+                         (idPrefix === 'rowDataClientsObsequio' ? DEFAULT_REPORTE_SETTINGS.styles.rowDataClients :
+                         (DEFAULT_REPORTE_SETTINGS.styles[idPrefix] || {})));
+
+        return {
+            bold: boldEl ? boldEl.checked : (defaults.bold || false),
+            border: borderEl ? borderEl.checked : (defaults.border || false),
+            fillColor: fillColorEl ? fillColorEl.value : (defaults.fillColor || '#FFFFFF'),
+            fontColor: fontColorEl ? fontColorEl.value : (defaults.fontColor || '#000000'),
+            fontSize: fontSizeEl ? (parseInt(fontSizeEl.value, 10) || 10) : (defaults.fontSize || 10)
+        };
+    }
+
+    function readWidthInputs() {
+        const defaults = DEFAULT_REPORTE_SETTINGS.columnWidths;
+        const readVal = (id, def) => parseInt(document.getElementById(id)?.value, 10) || def;
+        
+        return {
+            col_A_LabelsClientes: readVal('width_col_A_LabelsClientes', defaults.col_A_LabelsClientes),
+            products: readVal('width_products', defaults.products),
+            subtotal: readVal('width_subtotal', defaults.subtotal),
+            vaciosCliente: readVal('width_vaciosCliente', defaults.vaciosCliente),
+            vaciosTipo: readVal('width_vaciosTipo', defaults.vaciosTipo),
+            vaciosQty: readVal('width_vaciosQty', defaults.vaciosQty),
+            totalCliente: readVal('width_totalCliente', defaults.totalCliente),
+            totalClienteValor: readVal('width_totalClienteValor', defaults.totalClienteValor)
+        };
+    }
+
+    async function handleSaveReportDesign() {
+        _showModal('Progreso', 'Guardando diseño...');
+
+        const newSettings = {
+            showCargaInicial: document.getElementById('chk_showCargaInicial').checked,
+            showCargaRestante: document.getElementById('chk_showCargaRestante').checked,
+            showVaciosSheet: document.getElementById('chk_showVaciosSheet').checked,
+            showClienteTotalSheet: document.getElementById('chk_showClienteTotalSheet').checked,
+            styles: {
+                headerInfo: readZoneEditor('headerInfo'),
+                headerProducts: readZoneEditor('headerProducts'),
+                rowCargaInicial: readZoneEditor('rowCargaInicial'),
+                rowDataClients: readZoneEditor('rowDataClients'),
+                rowDataClientsSale: readZoneEditor('rowDataClientsSale'), 
+                rowDataClientsObsequio: readZoneEditor('rowDataClientsObsequio'),
+                rowCargaRestante: readZoneEditor('rowCargaRestante'),
+                rowTotals: readZoneEditor('rowTotals'),
+                vaciosHeader: readZoneEditor('vaciosHeader'),
+                vaciosData: readZoneEditor('vaciosData'),
+                totalesHeader: readZoneEditor('totalesHeader'),
+                totalesData: readZoneEditor('totalesData'),
+                totalesTotalRow: readZoneEditor('totalesTotalRow')
+            },
+            columnWidths: readWidthInputs()
+        };
 
         try {
-            if (_consolidatedClientsCache.length === 0) { 
-                const cliRef = _collection(_db, CLIENTES_COLLECTION_PATH); 
-                const cliSnaps = await _getDocs(cliRef); 
-                _consolidatedClientsCache = cliSnaps.docs.map(d => ({id: d.id, ...d.data()})); 
-            }
-            
-            const cliCoords = _consolidatedClientsCache.filter(c => { 
-                if(!c.coordenadas)return false; 
-                const p=c.coordenadas.split(','); 
-                if(p.length!==2)return false; 
-                const lat=parseFloat(p[0]), lon=parseFloat(p[1]); 
-                return !isNaN(lat)&&!isNaN(lon)&&lat>=0&&lat<=13&&lon>=-74&&lon<=-59; 
-            });
-
-            if (cliCoords.length === 0) { mapCont.innerHTML = '<p class="text-gray-500 font-bold p-10 text-center">El catálogo no tiene clientes con coordenadas válidas para graficar.</p>'; return; }
-
-            // Si es modo semanal, obtener datos de asistencia de ESTA semana (Lunes a Domingo)
-            let attendedSet = new Set();
-            if (mode.startsWith('weekly')) {
-                if (!mapInstance) {
-                    mapCont.innerHTML = '<p class="text-center text-blue-600 font-bold pt-10 animate-pulse">Analizando asistencias de la semana en curso...</p>'; 
-                }
-                const now = new Date();
-                const day = now.getDay(); 
-                const diff = now.getDate() - day + (day === 0 ? -6 : 1); 
-                const monday = new Date(now.setDate(diff));
-                monday.setHours(0,0,0,0);
-                const sunday = new Date(monday);
-                sunday.setDate(monday.getDate() + 6);
-                sunday.setHours(23,59,59,999);
-                
-                attendedSet = await getAttendedClientsByDateRange(monday, sunday);
-            }
-
-            // Inicializar mapa si no existe
-            if (!mapInstance) {
-                let mapCenter = [7.77, -72.22]; 
-                let zoom = 13; 
-                mapInstance = L.map('client-map').setView(mapCenter, zoom); 
-                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OSM', maxZoom: 19 }).addTo(mapInstance);
-            } else {
-                if (mapMarkers.size > 0) {
-                     mapMarkers.forEach(marker => mapInstance.removeLayer(marker));
-                }
-                mapInstance.eachLayer((layer) => {
-                    if (layer instanceof L.Marker) {
-                        mapInstance.removeLayer(layer);
-                    }
-                });
-            }
-
-            // Iconos
-            const redI = new L.Icon({iconUrl:'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png', shadowUrl:'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png', iconSize:[25,41],iconAnchor:[12,41],popupAnchor:[1,-34],shadowSize:[41,41]}); 
-            const blueI = new L.Icon({iconUrl:'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png', shadowUrl:'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png', iconSize:[25,41],iconAnchor:[12,41],popupAnchor:[1,-34],shadowSize:[41,41]});
-            const greenI = new L.Icon({iconUrl:'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png', shadowUrl:'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png', iconSize:[25,41],iconAnchor:[12,41],popupAnchor:[1,-34],shadowSize:[41,41]});
-            const greyI = new L.Icon({iconUrl:'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-grey.png', shadowUrl:'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png', iconSize:[25,41],iconAnchor:[12,41],popupAnchor:[1,-34],shadowSize:[41,41]});
-
-            mapMarkers.clear(); 
-            const mGroup=[]; 
-
-            cliCoords.forEach(cli => {
-                try {
-                    const coords = cli.coordenadas.split(',').map(p=>parseFloat(p)); 
-                    let icon, opacity = 1.0;
-                    let shouldPlot = true;
-
-                    if (mode === 'classic') {
-                        const hasCEP = cli.codigoCEP && cli.codigoCEP.toLowerCase() !== 'n/a'; 
-                        icon = hasCEP ? blueI : redI;
-                    } else {
-                        const nameKey = (cli.nombreComercial || '').trim().toLowerCase();
-                        const isAttended = attendedSet.has(nameKey);
-                        
-                        if (mode === 'weekly_all') {
-                            if (isAttended) { icon = greenI; opacity = 1.0; } 
-                            else { icon = greyI; opacity = 0.6; }
-                        } else if (mode === 'weekly_attended') {
-                            if (isAttended) { icon = greenI; opacity = 1.0; }
-                            else { shouldPlot = false; }
-                        } else if (mode === 'weekly_unattended') {
-                            // Uso icono rojo oscuro para resaltar la falta en vez del gris
-                            if (!isAttended) { icon = redI; opacity = 1.0; }
-                            else { shouldPlot = false; }
-                        }
-                    }
-
-                    if (!shouldPlot) return;
-
-                    const hasCEP = cli.codigoCEP && cli.codigoCEP.toLowerCase()!=='n/a';
-                    const pCont=`<b>${cli.nombreComercial}</b><br><small>${cli.nombrePersonal||''}</small><br><small>Tel: ${cli.telefono||'N/A'}</small><br><small>Sector: ${cli.sector||'N/A'}</small>${hasCEP?`<br><b>CEP: ${cli.codigoCEP}</b>`:''}<br><a href="https://www.google.com/maps?q=${coords[0]},${coords[1]}" target="_blank" class="text-xs text-blue-600 font-bold mt-1 inline-block">Ver en Google Maps</a>`; 
-                    
-                    const marker = L.marker(coords, { icon: icon, opacity: opacity }).bindPopup(pCont, { minWidth: 160 }); 
-                    
-                    marker.addTo(mapInstance); 
-                    mGroup.push(marker); 
-                    mapMarkers.set(cli.id, marker);
-                } catch(coordErr) {
-                    console.warn(`Error coords cli ${cli.nombreComercial}: ${cli.coordenadas}`, coordErr);
-                }
-            });
-            
-            if(mGroup.length > 0) { 
-                const group = L.featureGroup(mGroup);
-                mapInstance.fitBounds(group.getBounds().pad(0.1)); 
-            } else { 
-                _showModal('Aviso', 'No hay clientes que cumplan con este filtro actualmente.');
-                if (!mapInstance.getCenter()) mapInstance.setView([7.77, -72.22], 13);
-            }
-            
-            setupMapSearch(cliCoords);
-        } catch (error) { 
-            console.error("Error mapa:", error); 
-            mapCont.innerHTML = `<p class="text-red-500 font-bold p-10 text-center">Error al cargar datos del mapa.</p>`; 
+            const REPORTE_DESIGN_PATH = REPORTE_DESIGN_CONFIG_PATH;
+            const docRef = _doc(_db, REPORTE_DESIGN_PATH);
+            await _setDoc(docRef, newSettings);
+            _showModal('Éxito', 'Diseño guardado correctamente.', window.showDataView); 
+        } catch (error) {
+            console.error("Error guardando diseño:", error);
+            _showModal('Error', `No se pudo guardar: ${error.message}`);
         }
     }
 
-    function setupMapSearch(clientsWithCoords) {
-        const sInp = document.getElementById('map-search-input'), resCont = document.getElementById('map-search-results'); if (!sInp || !resCont) return;
-        sInp.addEventListener('input', () => { const sTerm = sInp.value.toLowerCase().trim(); if (sTerm.length<2){resCont.innerHTML=''; resCont.classList.add('hidden'); return;} const filtCli = clientsWithCoords.filter(cli => (cli.nombreComercial||'').toLowerCase().includes(sTerm) || (cli.nombrePersonal||'').toLowerCase().includes(sTerm) || (cli.codigoCEP&&cli.codigoCEP.toLowerCase().includes(sTerm))); if(filtCli.length===0){resCont.innerHTML='<div class="p-2 text-gray-500 text-sm">No encontrado.</div>'; resCont.classList.remove('hidden'); return;} resCont.innerHTML=filtCli.slice(0,10).map(cli=>`<div class="p-2 hover:bg-blue-50 cursor-pointer border-b transition" data-client-id="${cli.id}"><p class="font-bold text-sm text-gray-800">${cli.nombreComercial}</p><p class="text-xs text-gray-500">${cli.nombrePersonal||''} ${cli.codigoCEP&&cli.codigoCEP!=='N/A'?`<span class="font-semibold text-blue-600">(${cli.codigoCEP})</span>`:''}</p></div>`).join(''); resCont.classList.remove('hidden'); });
-        resCont.addEventListener('click', (e) => { const target = e.target.closest('[data-client-id]'); if (target&&mapInstance){ const cliId=target.dataset.clientId; const marker=mapMarkers.get(cliId); if(marker){mapInstance.flyTo(marker.getLatLng(),18); marker.openPopup();} else {_showModal('Aviso', 'El cliente está filtrado por el modo actual o no tiene coordenadas.');} sInp.value=''; resCont.innerHTML=''; resCont.classList.add('hidden'); } });
-        document.addEventListener('click', (ev)=>{ if(!resCont.contains(ev.target)&&ev.target!==sInp) resCont.classList.add('hidden'); });
-    }
-
-    // --- FUNCIÓN GLOBAL DE ORDENAMIENTO REESCRITA (VERSIÓN DATA.JS) ---
-    async function getGlobalProductSortFunction() {
-        if (!_sortPreferenceCache || !_rubroOrderMapCache || !_marcasOrderMapCache) {
-            try { 
-                const dRef=_doc(_db, `artifacts/${_appId}/users/${_userId}/${SORT_CONFIG_PATH}`); 
-                const dSnap=await _getDoc(dRef); 
-                if(dSnap.exists()&&dSnap.data().order){ 
-                    _sortPreferenceCache=dSnap.data().order; 
-                } else {
-                    _sortPreferenceCache=['segmento','marca','presentacion','rubro'];
-                } 
-
-                const publicPath = `artifacts/${PUBLIC_DATA_ID}/public/data`;
-                _rubroOrderMapCache = {};
-                _segmentoOrderMapCache = {};
-                _marcasOrderMapCache = {}; 
-
-                const [rSnap, sSnap, mSnap] = await Promise.all([
-                    _getDocs(_collection(_db, `${publicPath}/rubros`)),
-                    _getDocs(_collection(_db, `${publicPath}/segmentos`)),
-                    _getDocs(_collection(_db, `${publicPath}/marcas`))
-                ]);
-
-                const norm = (s) => (s||'').trim().toUpperCase();
-
-                rSnap.forEach(d => { const dat=d.data(); if(dat.name) _rubroOrderMapCache[norm(dat.name)] = dat.orden ?? 9999; });
-                sSnap.forEach(d => { 
-                    const dat=d.data(); 
-                    if(dat.name) _segmentoOrderMapCache[norm(dat.name)] = {
-                        orden: dat.orden ?? 9999,
-                        marcaOrder: (dat.marcaOrder || []).map(m => norm(m))
-                    };
-                });
-                mSnap.forEach(d => {
-                    const dat=d.data();
-                    if(dat.name) _marcasOrderMapCache[norm(dat.name)] = {
-                        productOrder: dat.productOrder || []
-                    };
-                });
-
-            } catch (error) { 
-                console.error("Error cargando pref orden (Data):", error); 
-                _sortPreferenceCache=['segmento','marca','presentacion','rubro']; 
-                _rubroOrderMapCache={}; _segmentoOrderMapCache={}; _marcasOrderMapCache={};
-            }
-        }
-
-        const norm = (s) => (s||'').trim().toUpperCase();
-
-        return (a, b) => {
-            const safeA = a || {}; const safeB = b || {};
-
-            for (const key of _sortPreferenceCache) { 
-                let res = 0;
-                if (key === 'rubro') {
-                    const kA = norm(safeA.rubro); const kB = norm(safeB.rubro);
-                    const oA = _rubroOrderMapCache[kA] ?? 9999; 
-                    const oB = _rubroOrderMapCache[kB] ?? 9999; 
-                    res = oA - oB; 
-                    if (res === 0) res = kA.localeCompare(kB); 
-                }
-                else if (key === 'segmento') { 
-                    const kA = norm(safeA.segmento); const kB = norm(safeB.segmento);
-                    const sA = _segmentoOrderMapCache[kA];
-                    const sB = _segmentoOrderMapCache[kB];
-                    res = (sA?.orden ?? 9999) - (sB?.orden ?? 9999); 
-                    if (res === 0) res = kA.localeCompare(kB); 
-                }
-                else if (key === 'marca') { 
-                    if (norm(safeA.segmento) === norm(safeB.segmento)) {
-                        const segData = _segmentoOrderMapCache[norm(safeA.segmento)];
-                        if (segData && segData.marcaOrder) {
-                            const iA = segData.marcaOrder.indexOf(norm(safeA.marca));
-                            const iB = segData.marcaOrder.indexOf(norm(safeB.marca));
-                            if (iA !== -1 && iB !== -1) res = iA - iB;
-                            else if (iA !== -1) res = -1;
-                            else if (iB !== -1) res = 1;
-                        }
-                    }
-                    if (res === 0) res = (safeA.marca||'').localeCompare(safeB.marca||''); 
-                }
-                else if (key === 'presentacion') { 
-                    if (norm(safeA.marca) === norm(safeB.marca)) {
-                        const mData = _marcasOrderMapCache?.[norm(safeA.marca)];
-                        if (mData && mData.productOrder) {
-                            const iA = mData.productOrder.indexOf(safeA.id);
-                            const iB = mData.productOrder.indexOf(safeB.id);
-                            if (iA !== -1 && iB !== -1) res = iA - iB;
-                            else if (iA !== -1) res = -1;
-                            else if (iB !== -1) res = 1;
-                        }
-                    }
-                    if (res === 0) res = (safeA.presentacion||'').localeCompare(safeB.presentacion||''); 
-                    if (res === 0) res = (safeA.id || '').localeCompare(safeB.id || ''); 
-                }
-                
-                if (res !== 0) return res;
-            } 
-            return 0;
-        };
-    };
+    // Exponer explícitamente estas funciones para evitar ReferenceErrors
+    window.showReportDesignView = showReportDesignView;
 
     window.dataModule = { 
         showClosingDetail, 
