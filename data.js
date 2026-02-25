@@ -307,7 +307,6 @@
         container.innerHTML = tableHTML;
     }
 
-    // --- CEREBRO UNIFICADO DE PROCESAMIENTO (PANTALLA Y EXCEL) ---
     async function _processSalesDataForModal(ventas, obsequios, cargaInicialInventario, userIdForInventario) {
         const clientData = {};
         const clientTotals = {}; 
@@ -315,7 +314,7 @@
         const allProductsMap = new Map();
         const vaciosMovementsPorTipo = {};
         const allRubros = new Set();
-        const dataByRubro = {}; // FIX: Declarado aquí para que el Excel pueda agrupar por pestañas
+        const dataByRubro = {}; // ESENCIAL: Estructura base para el Excel
         const TIPOS_VACIO_GLOBAL = window.TIPOS_VACIO_GLOBAL || ["1/4 - 1/3", "ret 350 ml", "ret 1.25 Lts"];
         
         const targetUserId = userIdForInventario || _userId;
@@ -339,7 +338,7 @@
         const userDoc = await _getDoc(_doc(_db, "users", targetUserId));
         const userInfo = userDoc.exists() ? userDoc.data() : { email: 'Usuario Desconocido' };
 
-        // 1. INYECCIÓN TOTAL: Forzar que TODOS los productos del catálogo estén presentes (ventas = 0)
+        // 1. INYECCIÓN TOTAL: Forzar que TODOS los productos del catálogo estén presentes
         const allKnownIds = new Set([...inventarioMap.keys(), ...masterMap.keys()]);
         for (const pId of allKnownIds) {
             const prodPrivado = inventarioMap.get(pId) || {};
@@ -385,6 +384,7 @@
                 const ventaTotalCliente = venta.total || 0;
                 clientData[rowClientName].totalValue += ventaTotalCliente;
                 
+                // Totales globales al cliente base
                 clientTotals[baseClientName] = (clientTotals[baseClientName] || 0) + ventaTotalCliente;
                 grandTotalValue += ventaTotalCliente;
 
@@ -446,13 +446,24 @@
                 
                 const cantidadCajas = obsequio.cantidadCajas || 0;
                 const cantidadUnidades = cantidadCajas * (pComp.unidadesPorCaja || 1);
+                
+                // CALCULAR EL VALOR MONETARIO DEL OBSEQUIO COMO VENTA NORMAL
                 const precioCj = pComp.precios?.cj || 0;
                 const subtotalObsequio = cantidadCajas * precioCj;
+
                 const rubro = pComp.rubro || 'SIN RUBRO';
+                
+                if (!dataByRubro[rubro].clients[rowClientName]) {
+                    dataByRubro[rubro].clients[rowClientName] = { products: {}, totalValue: 0, isObsequioRow: true };
+                }
+                dataByRubro[rubro].obsequiosMap.add(pComp.id);
 
-                if (pComp.id && !clientData[rowClientName].products[pComp.id]) clientData[rowClientName].products[pComp.id] = 0;
-                clientData[rowClientName].products[pComp.id] += cantidadUnidades;
-
+                if(pComp.id) dataByRubro[rubro].clients[rowClientName].products[pComp.id] = (dataByRubro[rubro].clients[rowClientName].products[pComp.id] || 0) + cantidadUnidades;
+                
+                // Sumar los valores monetarios
+                dataByRubro[rubro].clients[rowClientName].totalValue += subtotalObsequio;
+                dataByRubro[rubro].totalValue += subtotalObsequio;
+                
                 clientData[rowClientName].totalValue += subtotalObsequio;
                 clientTotals[baseClientName] = (clientTotals[baseClientName] || 0) + subtotalObsequio;
                 grandTotalValue += subtotalObsequio;
@@ -465,15 +476,6 @@
                 if (vacDev > 0 && pComp.tipoVacio) {
                      vaciosMovementsPorTipo[baseClientName][pComp.tipoVacio].devueltos += vacDev;
                 }
-
-                // Llenar datos para Excel (dataByRubro)
-                if (!dataByRubro[rubro].clients[rowClientName]) {
-                    dataByRubro[rubro].clients[rowClientName] = { products: {}, totalValue: 0, isObsequioRow: true };
-                }
-                dataByRubro[rubro].obsequiosMap.add(pComp.id);
-                if(pComp.id) dataByRubro[rubro].clients[rowClientName].products[pComp.id] = (dataByRubro[rubro].clients[rowClientName].products[pComp.id] || 0) + cantidadUnidades;
-                dataByRubro[rubro].clients[rowClientName].totalValue += subtotalObsequio;
-                dataByRubro[rubro].totalValue += subtotalObsequio;
             }
         }
         
@@ -652,7 +654,7 @@
             _showModal(`Detalle Cierre`, reportHTML, null, 'Cerrar');
         } catch (error) { console.error("Error generando detalle:", error); _showModal('Error', `No se pudo generar: ${error.message}`); }
     }
-    
+
     async function exportSingleClosingToExcel(closingData, isPreview = false) {
         if (typeof ExcelJS === 'undefined') {
             _showModal('Error', 'Librería ExcelJS no cargada. No se puede exportar.');
@@ -1029,6 +1031,7 @@
         }
     }
 
+
     async function handleDownloadSingleClosing(closingId) {
         const closingData = window.tempClosingsData?.find(c => c.id === closingId);
         if (!closingData) { _showModal('Error', 'Datos no encontrados.'); return; }
@@ -1232,6 +1235,209 @@
             console.error("Error al descargar clientes con ExcelJS:", error);
             _showModal('Error', 'No se pudo generar el archivo de clientes.');
         }
+    }
+
+    function showClientMapView() {
+        if (mapInstance) { mapInstance.remove(); mapInstance = null; } _floatingControls.classList.add('hidden');
+        
+        const currentWeekStr = getISOWeekString(new Date());
+
+        _mainContent.innerHTML = `
+            <div class="p-4 pt-8"> <div class="container mx-auto max-w-6xl"> <div class="bg-white/90 backdrop-blur-sm p-6 md:p-8 rounded-lg shadow-xl">
+                <h1 class="text-3xl font-bold text-gray-800 mb-6 text-center">Mapa de Clientes y Asistencia</h1>
+                
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+                    
+                    <div class="lg:col-span-2 space-y-4">
+                        <div class="p-4 bg-blue-50 border border-blue-200 rounded-lg shadow-sm">
+                            <h3 class="font-bold text-blue-900 mb-3 text-sm uppercase">Controles del Mapa</h3>
+                            <div class="flex flex-col sm:flex-row gap-3">
+                                <div class="relative flex-grow"> 
+                                    <input type="text" id="map-search-input" placeholder="Buscar cliente por nombre o CEP..." class="w-full px-4 py-2 border border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm"> 
+                                    <div id="map-search-results" class="absolute z-[1000] w-full bg-white border border-gray-300 rounded-lg mt-1 max-h-60 overflow-y-auto hidden shadow-2xl"></div> 
+                                </div>
+                                <select id="map-mode-select" class="w-full sm:w-1/2 px-4 py-2 border border-blue-300 rounded-lg shadow-sm bg-white text-sm font-semibold focus:ring-2 focus:ring-blue-500 outline-none">
+                                    <option value="classic">Clásico: Tipo de Cliente (CEP)</option>
+                                    <option value="weekly_all">Semanal: Todos (Visitados/Faltantes)</option>
+                                    <option value="weekly_attended">Semanal: Solo Visitados</option>
+                                    <option value="weekly_unattended">Semanal: Solo Faltantes (Ruta del día)</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="lg:col-span-1">
+                        <div class="p-4 bg-red-50 border border-red-200 rounded-lg shadow-sm h-full flex flex-col justify-center">
+                            <h3 class="font-bold text-red-900 mb-2 text-sm uppercase">Auditoría: Reporte de Inasistencias</h3>
+                            <div class="flex flex-col gap-2">
+                                <input type="week" id="missed-clients-week" value="${currentWeekStr}" class="border border-red-300 rounded p-2 text-sm w-full bg-white focus:ring-2 focus:ring-red-500 outline-none">
+                                <button id="btnDownloadMissed" class="bg-red-600 text-white font-bold py-2 px-4 rounded shadow-md hover:bg-red-700 transition">Generar Excel</button>
+                            </div>
+                            <p class="text-[10px] text-red-700 mt-2 font-medium leading-tight">Descarga un listado exacto de los clientes del catálogo a los que <b>NO se les vendió nada</b> en la semana seleccionada.</p>
+                        </div>
+                    </div>
+
+                </div>
+
+                <div id="map-legend" class="mb-4 p-2 bg-gray-100 border border-gray-300 rounded-lg text-xs flex flex-wrap justify-center items-center gap-x-6 gap-y-2 font-medium"> 
+                </div>
+                
+                <div id="client-map" class="w-full rounded-lg shadow-inner z-0" style="height:60vh; border:1px solid #ccc; background-color:#e5e7eb;"> <p class="text-center text-gray-500 pt-10 font-medium animate-pulse">Iniciando motor de mapas...</p> </div>
+                
+                <div class="mt-6 flex justify-end">
+                    <button id="backToDataMenuBtn" class="px-8 py-2.5 bg-gray-600 text-white font-bold rounded-lg shadow-md hover:bg-gray-700 transition">Volver al Menú</button>
+                </div>
+            </div> </div> </div>
+        `;
+        document.getElementById('backToDataMenuBtn').addEventListener('click', window.showDataView); 
+        document.getElementById('btnDownloadMissed').addEventListener('click', downloadMissedClientsExcel);
+        
+        const modeSelect = document.getElementById('map-mode-select');
+        modeSelect.addEventListener('change', () => loadAndDisplayMap(modeSelect.value));
+        
+        loadAndDisplayMap('classic'); 
+    }
+
+    async function loadAndDisplayMap(mode = 'classic') {
+        const mapCont = document.getElementById('client-map'); 
+        const legendCont = document.getElementById('map-legend');
+
+        if (!mapCont || typeof L === 'undefined') { mapCont.innerHTML = '<p class="text-red-500 font-bold p-4 text-center">Error Crítico: El motor de mapas Leaflet no pudo ser cargado. Revise su conexión a internet.</p>'; return; }
+        
+        if (mode === 'classic') {
+            legendCont.innerHTML = `
+                <span class="flex items-center"><img src="https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png" style="height:22px;margin-right:4px;"> Cliente Regular (Sin CEP)</span> 
+                <span class="flex items-center"><img src="https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png" style="height:22px;margin-right:4px;"> Cliente Con CEP</span>
+            `;
+        } else if (mode === 'weekly_all') {
+             legendCont.innerHTML = `
+                <span class="flex items-center opacity-60"><img src="https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-grey.png" style="height:22px;margin-right:4px;"> Faltan por Visitar</span> 
+                <span class="flex items-center"><img src="https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png" style="height:22px;margin-right:4px;"> Visitados esta semana</span>
+            `;
+        } else if (mode === 'weekly_attended') {
+            legendCont.innerHTML = `<span class="flex items-center"><img src="https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png" style="height:22px;margin-right:4px;"> Visitados esta semana</span>`;
+        } else if (mode === 'weekly_unattended') {
+            legendCont.innerHTML = `<span class="flex items-center"><img src="https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png" style="height:22px;margin-right:4px;"> Pendientes de Visita (Ruta Crítica)</span>`;
+        }
+
+        try {
+            if (_consolidatedClientsCache.length === 0) { 
+                const cliRef = _collection(_db, CLIENTES_COLLECTION_PATH); 
+                const cliSnaps = await _getDocs(cliRef); 
+                _consolidatedClientsCache = cliSnaps.docs.map(d => ({id: d.id, ...d.data()})); 
+            }
+            
+            const cliCoords = _consolidatedClientsCache.filter(c => { 
+                if(!c.coordenadas)return false; 
+                const p=c.coordenadas.split(','); 
+                if(p.length!==2)return false; 
+                const lat=parseFloat(p[0]), lon=parseFloat(p[1]); 
+                return !isNaN(lat)&&!isNaN(lon)&&lat>=0&&lat<=13&&lon>=-74&&lon<=-59; 
+            });
+
+            if (cliCoords.length === 0) { mapCont.innerHTML = '<p class="text-gray-500 font-bold p-10 text-center">El catálogo no tiene clientes con coordenadas válidas para graficar.</p>'; return; }
+
+            let attendedSet = new Set();
+            if (mode.startsWith('weekly')) {
+                if (!mapInstance) {
+                    mapCont.innerHTML = '<p class="text-center text-blue-600 font-bold pt-10 animate-pulse">Analizando asistencias de la semana en curso...</p>'; 
+                }
+                const now = new Date();
+                const day = now.getDay(); 
+                const diff = now.getDate() - day + (day === 0 ? -6 : 1); 
+                const monday = new Date(now.setDate(diff));
+                monday.setHours(0,0,0,0);
+                const sunday = new Date(monday);
+                sunday.setDate(monday.getDate() + 6);
+                sunday.setHours(23,59,59,999);
+                
+                attendedSet = await getAttendedClientsByDateRange(monday, sunday);
+            }
+
+            if (!mapInstance) {
+                let mapCenter = [7.77, -72.22]; 
+                let zoom = 13; 
+                mapInstance = L.map('client-map').setView(mapCenter, zoom); 
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OSM', maxZoom: 19 }).addTo(mapInstance);
+            } else {
+                if (mapMarkers.size > 0) {
+                     mapMarkers.forEach(marker => mapInstance.removeLayer(marker));
+                }
+                mapInstance.eachLayer((layer) => {
+                    if (layer instanceof L.Marker) {
+                        mapInstance.removeLayer(layer);
+                    }
+                });
+            }
+
+            const redI = new L.Icon({iconUrl:'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png', shadowUrl:'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png', iconSize:[25,41],iconAnchor:[12,41],popupAnchor:[1,-34],shadowSize:[41,41]}); 
+            const blueI = new L.Icon({iconUrl:'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png', shadowUrl:'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png', iconSize:[25,41],iconAnchor:[12,41],popupAnchor:[1,-34],shadowSize:[41,41]});
+            const greenI = new L.Icon({iconUrl:'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png', shadowUrl:'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png', iconSize:[25,41],iconAnchor:[12,41],popupAnchor:[1,-34],shadowSize:[41,41]});
+            const greyI = new L.Icon({iconUrl:'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-grey.png', shadowUrl:'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png', iconSize:[25,41],iconAnchor:[12,41],popupAnchor:[1,-34],shadowSize:[41,41]});
+
+            mapMarkers.clear(); 
+            const mGroup=[]; 
+
+            cliCoords.forEach(cli => {
+                try {
+                    const coords = cli.coordenadas.split(',').map(p=>parseFloat(p)); 
+                    let icon, opacity = 1.0;
+                    let shouldPlot = true;
+
+                    if (mode === 'classic') {
+                        const hasCEP = cli.codigoCEP && cli.codigoCEP.toLowerCase() !== 'n/a'; 
+                        icon = hasCEP ? blueI : redI;
+                    } else {
+                        const nameKey = (cli.nombreComercial || '').trim().toLowerCase();
+                        const isAttended = attendedSet.has(nameKey);
+                        
+                        if (mode === 'weekly_all') {
+                            if (isAttended) { icon = greenI; opacity = 1.0; } 
+                            else { icon = greyI; opacity = 0.6; }
+                        } else if (mode === 'weekly_attended') {
+                            if (isAttended) { icon = greenI; opacity = 1.0; }
+                            else { shouldPlot = false; }
+                        } else if (mode === 'weekly_unattended') {
+                            if (!isAttended) { icon = redI; opacity = 1.0; }
+                            else { shouldPlot = false; }
+                        }
+                    }
+
+                    if (!shouldPlot) return;
+
+                    const hasCEP = cli.codigoCEP && cli.codigoCEP.toLowerCase()!=='n/a';
+                    const pCont=`<b>${cli.nombreComercial}</b><br><small>${cli.nombrePersonal||''}</small><br><small>Tel: ${cli.telefono||'N/A'}</small><br><small>Sector: ${cli.sector||'N/A'}</small>${hasCEP?`<br><b>CEP: ${cli.codigoCEP}</b>`:''}<br><a href="https://www.google.com/maps?q=${coords[0]},${coords[1]}" target="_blank" class="text-xs text-blue-600 font-bold mt-1 inline-block">Ver en Google Maps</a>`; 
+                    
+                    const marker = L.marker(coords, { icon: icon, opacity: opacity }).bindPopup(pCont, { minWidth: 160 }); 
+                    
+                    marker.addTo(mapInstance); 
+                    mGroup.push(marker); 
+                    mapMarkers.set(cli.id, marker);
+                } catch(coordErr) {
+                    console.warn(`Error coords cli ${cli.nombreComercial}: ${cli.coordenadas}`, coordErr);
+                }
+            });
+            
+            if(mGroup.length > 0) { 
+                const group = L.featureGroup(mGroup);
+                mapInstance.fitBounds(group.getBounds().pad(0.1)); 
+            } else { 
+                _showModal('Aviso', 'No hay clientes que cumplan con este filtro actualmente.');
+                if (!mapInstance.getCenter()) mapInstance.setView([7.77, -72.22], 13);
+            }
+            
+            setupMapSearch(cliCoords);
+        } catch (error) { 
+            console.error("Error mapa:", error); 
+            mapCont.innerHTML = `<p class="text-red-500 font-bold p-10 text-center">Error al cargar datos del mapa.</p>`; 
+        }
+    }
+
+    function setupMapSearch(clientsWithCoords) {
+        const sInp = document.getElementById('map-search-input'), resCont = document.getElementById('map-search-results'); if (!sInp || !resCont) return;
+        sInp.addEventListener('input', () => { const sTerm = sInp.value.toLowerCase().trim(); if (sTerm.length<2){resCont.innerHTML=''; resCont.classList.add('hidden'); return;} const filtCli = clientsWithCoords.filter(cli => (cli.nombreComercial||'').toLowerCase().includes(sTerm) || (cli.nombrePersonal||'').toLowerCase().includes(sTerm) || (cli.codigoCEP&&cli.codigoCEP.toLowerCase().includes(sTerm))); if(filtCli.length===0){resCont.innerHTML='<div class="p-2 text-gray-500 text-sm">No encontrado.</div>'; resCont.classList.remove('hidden'); return;} resCont.innerHTML=filtCli.slice(0,10).map(cli=>`<div class="p-2 hover:bg-blue-50 cursor-pointer border-b transition" data-client-id="${cli.id}"><p class="font-bold text-sm text-gray-800">${cli.nombreComercial}</p><p class="text-xs text-gray-500">${cli.nombrePersonal||''} ${cli.codigoCEP&&cli.codigoCEP!=='N/A'?`<span class="font-semibold text-blue-600">(${cli.codigoCEP})</span>`:''}</p></div>`).join(''); resCont.classList.remove('hidden'); });
+        resCont.addEventListener('click', (e) => { const target = e.target.closest('[data-client-id]'); if (target&&mapInstance){ const cliId=target.dataset.clientId; const marker=mapMarkers.get(cliId); if(marker){mapInstance.flyTo(marker.getLatLng(),18); marker.openPopup();} else {_showModal('Aviso', 'El cliente está filtrado por el modo actual o no tiene coordenadas.');} sInp.value=''; resCont.innerHTML=''; resCont.classList.add('hidden'); } });
+        document.addEventListener('click', (ev)=>{ if(!resCont.contains(ev.target)&&ev.target!==sInp) resCont.classList.add('hidden'); });
     }
 
     function showReportDesignView() {
@@ -1541,9 +1747,111 @@
         }
     }
 
+    async function getGlobalProductSortFunction() {
+        if (!_sortPreferenceCache || !_rubroOrderMapCache || !_marcasOrderMapCache) {
+            try { 
+                const dRef=_doc(_db, `artifacts/${_appId}/users/${_userId}/${SORT_CONFIG_PATH}`); 
+                const dSnap=await _getDoc(dRef); 
+                if(dSnap.exists()&&dSnap.data().order){ 
+                    _sortPreferenceCache=dSnap.data().order; 
+                } else {
+                    _sortPreferenceCache=['segmento','marca','presentacion','rubro'];
+                } 
+
+                const publicPath = `artifacts/${PUBLIC_DATA_ID}/public/data`;
+                _rubroOrderMapCache = {};
+                _segmentoOrderMapCache = {};
+                _marcasOrderMapCache = {}; 
+
+                const [rSnap, sSnap, mSnap] = await Promise.all([
+                    _getDocs(_collection(_db, `${publicPath}/rubros`)),
+                    _getDocs(_collection(_db, `${publicPath}/segmentos`)),
+                    _getDocs(_collection(_db, `${publicPath}/marcas`))
+                ]);
+
+                const norm = (s) => (s||'').trim().toUpperCase();
+
+                rSnap.forEach(d => { const dat=d.data(); if(dat.name) _rubroOrderMapCache[norm(dat.name)] = dat.orden ?? 9999; });
+                sSnap.forEach(d => { 
+                    const dat=d.data(); 
+                    if(dat.name) _segmentoOrderMapCache[norm(dat.name)] = {
+                        orden: dat.orden ?? 9999,
+                        marcaOrder: (dat.marcaOrder || []).map(m => norm(m))
+                    };
+                });
+                mSnap.forEach(d => {
+                    const dat=d.data();
+                    if(dat.name) _marcasOrderMapCache[norm(dat.name)] = {
+                        productOrder: dat.productOrder || []
+                    };
+                });
+
+            } catch (error) { 
+                console.error("Error cargando pref orden (Data):", error); 
+                _sortPreferenceCache=['segmento','marca','presentacion','rubro']; 
+                _rubroOrderMapCache={}; _segmentoOrderMapCache={}; _marcasOrderMapCache={};
+            }
+        }
+
+        const norm = (s) => (s||'').trim().toUpperCase();
+
+        return (a, b) => {
+            const safeA = a || {}; const safeB = b || {};
+
+            for (const key of _sortPreferenceCache) { 
+                let res = 0;
+                if (key === 'rubro') {
+                    const kA = norm(safeA.rubro); const kB = norm(safeB.rubro);
+                    const oA = _rubroOrderMapCache[kA] ?? 9999; 
+                    const oB = _rubroOrderMapCache[kB] ?? 9999; 
+                    res = oA - oB; 
+                    if (res === 0) res = kA.localeCompare(kB); 
+                }
+                else if (key === 'segmento') { 
+                    const kA = norm(safeA.segmento); const kB = norm(safeB.segmento);
+                    const sA = _segmentoOrderMapCache[kA];
+                    const sB = _segmentoOrderMapCache[kB];
+                    res = (sA?.orden ?? 9999) - (sB?.orden ?? 9999); 
+                    if (res === 0) res = kA.localeCompare(kB); 
+                }
+                else if (key === 'marca') { 
+                    if (norm(safeA.segmento) === norm(safeB.segmento)) {
+                        const segData = _segmentoOrderMapCache[norm(safeA.segmento)];
+                        if (segData && segData.marcaOrder) {
+                            const iA = segData.marcaOrder.indexOf(norm(safeA.marca));
+                            const iB = segData.marcaOrder.indexOf(norm(safeB.marca));
+                            if (iA !== -1 && iB !== -1) res = iA - iB;
+                            else if (iA !== -1) res = -1;
+                            else if (iB !== -1) res = 1;
+                        }
+                    }
+                    if (res === 0) res = (safeA.marca||'').localeCompare(safeB.marca||''); 
+                }
+                else if (key === 'presentacion') { 
+                    if (norm(safeA.marca) === norm(safeB.marca)) {
+                        const mData = _marcasOrderMapCache?.[norm(safeA.marca)];
+                        if (mData && mData.productOrder) {
+                            const iA = mData.productOrder.indexOf(safeA.id);
+                            const iB = mData.productOrder.indexOf(safeB.id);
+                            if (iA !== -1 && iB !== -1) res = iA - iB;
+                            else if (iA !== -1) res = -1;
+                            else if (iB !== -1) res = 1;
+                        }
+                    }
+                    if (res === 0) res = (safeA.presentacion||'').localeCompare(safeB.presentacion||''); 
+                    if (res === 0) res = (safeA.id || '').localeCompare(safeB.id || ''); 
+                }
+                
+                if (res !== 0) return res;
+            } 
+            return 0;
+        };
+    };
+
     // Exponer explícitamente estas funciones para evitar ReferenceErrors en menús
     window.showReportDesignView = showReportDesignView;
     window.showConsolidatedClientsView = showConsolidatedClientsView;
+    window.showClientMapView = showClientMapView;
 
     window.dataModule = { 
         showClosingDetail, 
