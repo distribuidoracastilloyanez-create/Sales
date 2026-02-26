@@ -80,6 +80,9 @@
                             <button id="btnVerRecargas" class="w-full px-6 py-3 bg-teal-600 text-white font-semibold rounded-lg shadow-md hover:bg-teal-700 transition">
                                 📥 Ver Reporte de Recargas
                             </button>
+                            <button id="btnVerAperturaCierre" class="w-full px-6 py-3 bg-indigo-600 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-700 transition">
+                                ☀️/🌙 Apertura y Cierre Inventario
+                            </button>
                             <button id="btnVerHistorial" class="w-full px-6 py-3 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 transition">
                                 📜 Historial de Correcciones
                             </button>
@@ -94,6 +97,7 @@
 
         document.getElementById('btnNuevaCorreccion').addEventListener('click', showUserSelectionView);
         document.getElementById('btnVerRecargas').addEventListener('click', showRecargasHistoryView);
+        document.getElementById('btnVerAperturaCierre').addEventListener('click', showAperturaCierreView);
         document.getElementById('btnVerHistorial').addEventListener('click', showHistorialView);
         document.getElementById('btnVolverMenu').addEventListener('click', _showMainMenu);
     };
@@ -551,7 +555,6 @@
         _mainContent.innerHTML = `
             <div class="p-2 md:p-4 pt-8 h-screen flex flex-col">
                 
-                <!-- CONTENEDOR PRINCIPAL: BUSCADOR DE RECARGAS -->
                 <div id="recargasMainContainer" class="container mx-auto max-w-5xl flex flex-col flex-grow">
                     <div class="bg-white/95 backdrop-blur-sm p-4 md:p-6 rounded-lg shadow-xl flex flex-col flex-grow overflow-hidden border border-gray-200">
                         <div class="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
@@ -559,7 +562,6 @@
                             <button id="btnBackFromRecargas" class="px-4 py-2 bg-gray-400 text-white rounded shadow hover:bg-gray-500 font-bold transition">Volver al Menú</button>
                         </div>
 
-                        <!-- Filtros -->
                         <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200 shadow-inner">
                             <div>
                                 <label class="block text-xs font-bold text-gray-700 mb-1 uppercase tracking-wider">Vendedor:</label>
@@ -582,14 +584,12 @@
                             </div>
                         </div>
                         
-                        <!-- Resultados -->
                         <div id="recargasListContainer" class="space-y-3 overflow-y-auto flex-grow pr-2 pb-4">
                             <p class="text-center text-gray-500 py-8 font-medium">Seleccione los filtros y presione "Buscar".</p>
                         </div>
                     </div>
                 </div>
 
-                <!-- CONTENEDOR DE DETALLES DE RECARGA (OCULTO INICIALMENTE) -->
                 <div id="recargasDetailContainer" class="container mx-auto max-w-5xl hidden flex-col flex-grow">
                     <div class="bg-white/95 backdrop-blur-sm p-4 md:p-6 rounded-lg shadow-2xl flex flex-col flex-grow overflow-hidden border border-blue-200">
                         <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 border-b border-gray-200 pb-4 gap-4">
@@ -600,7 +600,6 @@
                             <button id="btnCerrarDetalle" class="w-full sm:w-auto px-6 py-2 bg-gray-500 text-white font-bold rounded shadow hover:bg-gray-600 transition">← Volver a la Búsqueda</button>
                         </div>
 
-                        <!-- Filtros del Detalle -->
                         <div class="grid grid-cols-2 md:grid-cols-4 gap-2 mb-4 p-3 bg-blue-50 rounded-lg border border-blue-100 shadow-inner">
                             <input type="text" id="detSearch" placeholder="Buscar producto..." class="col-span-2 md:col-span-1 w-full border border-blue-300 rounded p-1.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
                             <select id="detRubro" class="w-full border border-blue-300 rounded p-1.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none"><option value="">Rubro: Todos</option></select>
@@ -608,7 +607,6 @@
                             <select id="detMarca" class="w-full border border-blue-300 rounded p-1.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none" disabled><option value="">Marca: Todas</option></select>
                         </div>
 
-                        <!-- Tabla de Detalles (Agrupada) -->
                         <div class="flex-grow overflow-auto border border-gray-300 rounded-lg bg-gray-50 relative">
                             <table class="min-w-full bg-white text-sm relative">
                                 <thead class="bg-gray-800 text-white sticky top-0 z-10 shadow-md">
@@ -1029,6 +1027,217 @@
         } catch (e) {
             console.error(e);
             _showModal('Error', 'Falló la generación del Excel: ' + e.message);
+        }
+    }
+
+    // =========================================================================
+    // VISTA 5: APERTURA Y CIERRE DE INVENTARIO (NUEVO)
+    // =========================================================================
+    async function showAperturaCierreView() {
+        if (_usersCache.length === 0) {
+            try {
+                const usersRef = _collection(_db, 'users');
+                const q = _query(usersRef, _where('role', '==', 'user'));
+                const snap = await _getDocs(q);
+                _usersCache = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+            } catch(e) { console.error("Error loading users", e); }
+        }
+
+        const today = new Date().toISOString().split('T')[0];
+
+        _mainContent.innerHTML = `
+            <div class="p-2 md:p-4 pt-8 h-screen flex flex-col">
+                <div id="aperturaCierreMainContainer" class="container mx-auto max-w-5xl flex flex-col flex-grow">
+                    <div class="bg-white/95 backdrop-blur-sm p-4 md:p-6 rounded-lg shadow-xl flex flex-col flex-grow overflow-hidden border border-gray-200">
+                        <div class="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
+                            <h2 class="text-2xl font-bold text-gray-800">Apertura y Cierre de Inventario</h2>
+                            <button id="btnBackFromApCierre" class="px-4 py-2 bg-gray-400 text-white rounded shadow hover:bg-gray-500 font-bold transition">Volver al Menú</button>
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6 p-4 bg-indigo-50 rounded-lg border border-indigo-100 shadow-inner">
+                            <div>
+                                <label class="block text-xs font-bold text-indigo-900 mb-1 uppercase tracking-wider">Vendedor:</label>
+                                <select id="apCierreUserSelect" class="w-full border border-indigo-300 rounded-md p-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+                                    <option value="">Seleccione Vendedor...</option>
+                                    ${_usersCache.map(u => `<option value="${u.id}">${u.nombre || ''} ${u.apellido || ''} (${u.email})</option>`).join('')}
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-indigo-900 mb-1 uppercase tracking-wider">Fecha:</label>
+                                <input type="date" id="apCierreDate" value="${today}" class="w-full border border-indigo-300 rounded-md p-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-indigo-900 mb-1 uppercase tracking-wider">Momento:</label>
+                                <select id="apCierreType" class="w-full border border-indigo-300 rounded-md p-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+                                    <option value="apertura">☀️ Apertura (Inicio del día)</option>
+                                    <option value="cierre">🌙 Cierre (Fin del día)</option>
+                                </select>
+                            </div>
+                            <div class="flex items-end">
+                                <button id="btnBuscarApCierre" class="w-full bg-indigo-600 text-white py-2 rounded-md shadow hover:bg-indigo-700 text-sm font-bold transition">Buscar Inventario</button>
+                            </div>
+                        </div>
+
+                        <div id="snapshotInfo" class="mb-4 hidden p-3 bg-blue-100 text-blue-900 rounded border border-blue-300 font-medium text-sm">
+                        </div>
+
+                        <div class="flex-grow overflow-auto border border-gray-300 rounded-lg bg-gray-50 relative hidden" id="snapshotTableContainer">
+                            <table class="min-w-full bg-white text-sm relative">
+                                <thead class="bg-indigo-800 text-white sticky top-0 z-10 shadow-md">
+                                    <tr>
+                                        <th class="py-2.5 px-3 text-left font-semibold tracking-wider">Producto</th>
+                                        <th class="py-2.5 px-3 text-left font-semibold tracking-wider">Marca</th>
+                                        <th class="py-2.5 px-3 text-center font-semibold tracking-wider w-32">Stock</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="snapshotTableBody" class="divide-y divide-gray-200"></tbody>
+                            </table>
+                        </div>
+                        <div id="apCierreEmptyState" class="text-center p-8 text-gray-500 font-medium bg-gray-50 mt-4 rounded border">Seleccione filtros y presione "Buscar".</div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        document.getElementById('btnBackFromApCierre').addEventListener('click', showEditInventarioMenu);
+        document.getElementById('btnBuscarApCierre').addEventListener('click', handleSearchAperturaCierre);
+    }
+
+    async function handleSearchAperturaCierre() {
+        const userId = document.getElementById('apCierreUserSelect').value;
+        const dateStr = document.getElementById('apCierreDate').value;
+        const type = document.getElementById('apCierreType').value;
+
+        if (!userId) { _showModal('Error', 'Seleccione un vendedor.'); return; }
+        if (!dateStr) { _showModal('Error', 'Seleccione una fecha.'); return; }
+
+        const emptyState = document.getElementById('apCierreEmptyState');
+        const tableContainer = document.getElementById('snapshotTableContainer');
+        const infoBox = document.getElementById('snapshotInfo');
+        const tbody = document.getElementById('snapshotTableBody');
+
+        emptyState.innerHTML = 'Buscando registros...';
+        emptyState.classList.remove('hidden');
+        tableContainer.classList.add('hidden');
+        infoBox.classList.add('hidden');
+        tbody.innerHTML = '';
+
+        try {
+            if (!_masterMapCache) await loadMasterCatalog();
+
+            const targetDate = new Date(dateStr + 'T00:00:00');
+            const nextDay = new Date(targetDate);
+            nextDay.setDate(targetDate.getDate() + 1);
+
+            // Buscamos los últimos 15 cierres del vendedor para evaluar heuristicamente los horarios
+            const cierresRef = _collection(_db, `artifacts/${_appId}/users/${userId}/cierres`);
+            const q = _query(cierresRef, _where('fecha', '<=', nextDay.toISOString()), _orderBy('fecha', 'desc'), _limit(15));
+            const snap = await _getDocs(q);
+
+            let closures = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+            // Separar cierres del día objetivo y los anteriores
+            const todayClosures = closures.filter(c => {
+                const d = new Date(c.fecha || c.createdAt);
+                return d >= targetDate && d < nextDay;
+            });
+            const beforeClosures = closures.filter(c => {
+                const d = new Date(c.fecha || c.createdAt);
+                return d < targetDate;
+            });
+
+            let targetClosure = null;
+
+            if (type === 'cierre') {
+                if (todayClosures.length === 0) {
+                    emptyState.innerHTML = `No se encontró ningún cierre registrado el <b>${targetDate.toLocaleDateString()}</b> para este vendedor.`;
+                    return;
+                }
+                
+                targetClosure = todayClosures[0]; // El último registrado ese día
+                const d = new Date(targetClosure.fecha || targetClosure.createdAt);
+                if (todayClosures.length === 1 && d.getHours() < 12) {
+                    console.warn("El único cierre del día es en la mañana. Podría ser una apertura retrasada, pero se mostrará como el último estado de inventario del día.");
+                }
+
+            } else { // Apertura
+                if (todayClosures.length > 1) {
+                    // Si hizo múltiples cierres hoy, el primero del día es la apertura real de su jornada
+                    targetClosure = todayClosures[todayClosures.length - 1]; 
+                } else if (todayClosures.length === 1) {
+                    const d = new Date(todayClosures[0].fecha || todayClosures[0].createdAt);
+                    if (d.getHours() < 14) {
+                        // Si hizo un solo cierre y fue en la mañana, asumimos que fue la apertura (cierre retrasado del día anterior)
+                        targetClosure = todayClosures[0]; 
+                    } else {
+                        // Si el cierre fue en la tarde/noche, la apertura debe ser el cierre del día anterior trabajado
+                        targetClosure = beforeClosures.length > 0 ? beforeClosures[0] : null; 
+                    }
+                } else {
+                    // Si no hubo actividad de cierre hoy, la apertura es el estado con el que dejó el inventario su último día laborado
+                    targetClosure = beforeClosures.length > 0 ? beforeClosures[0] : null;
+                }
+
+                if (!targetClosure) {
+                    emptyState.innerHTML = `No se encontró inventario de apertura para el <b>${targetDate.toLocaleDateString()}</b> (No hay registros de cierre en días previos).`;
+                    return;
+                }
+            }
+
+            const closureDate = new Date(targetClosure.fecha || targetClosure.createdAt);
+            infoBox.innerHTML = `Mostrando inventario de <b>${type.toUpperCase()}</b> correspondiente a la jornada del ${targetDate.toLocaleDateString()}. <br>
+                                 <span class="text-xs">Basado en el registro guardado el: <b>${closureDate.toLocaleString()}</b> (Ref: ${targetClosure.id.substring(0,8)}...)</span>`;
+            infoBox.classList.remove('hidden');
+
+            const items = targetClosure.inventario || targetClosure.productos || targetClosure.stockFinal || targetClosure.detalles || [];
+            
+            if (items.length === 0) {
+                emptyState.innerHTML = 'El registro de inventario guardado en este cierre se encuentra vacío (0 productos).';
+                return;
+            }
+
+            items.sort((a, b) => {
+                const nameA = (a.presentacion || a.productoNombre || '').toLowerCase();
+                const nameB = (b.presentacion || b.productoNombre || '').toLowerCase();
+                return nameA.localeCompare(nameB);
+            });
+
+            let html = '';
+            items.forEach(item => {
+                const pid = item.productoId || item.id;
+                const pMaster = _masterMapCache[pid] || {};
+                const presentacion = item.presentacion || item.productoNombre || pMaster.presentacion || 'Desconocido';
+                const marca = pMaster.marca || item.marca || '';
+                const vPor = pMaster.ventaPor || {und: true};
+                const stock = item.cantidadUnidades !== undefined ? item.cantidadUnidades : (item.stock || item.cantidad || 0);
+
+                let stockDisplay = `<span class="font-bold text-gray-800">${stock} Und</span>`;
+                if (vPor.cj && pMaster.unidadesPorCaja > 1) {
+                    const cjas = Math.floor(stock / pMaster.unidadesPorCaja);
+                    const resto = stock % pMaster.unidadesPorCaja;
+                    stockDisplay = resto > 0 ? `<span class="font-bold text-gray-800">${cjas} Cj</span> <span class="text-[10px] text-gray-500 font-semibold ml-1">+${resto}u</span>` : `<span class="font-bold text-gray-800">${cjas} Cj</span>`;
+                } else if (vPor.paq && pMaster.unidadesPorPaquete > 1) {
+                    const paqs = Math.floor(stock / pMaster.unidadesPorPaquete);
+                    const resto = stock % pMaster.unidadesPorPaquete;
+                    stockDisplay = resto > 0 ? `<span class="font-bold text-gray-800">${paqs} Pq</span> <span class="text-[10px] text-gray-500 font-semibold ml-1">+${resto}u</span>` : `<span class="font-bold text-gray-800">${paqs} Pq</span>`;
+                }
+
+                html += `
+                <tr class="hover:bg-indigo-50 border-b border-gray-200 transition-colors">
+                    <td class="py-2.5 px-3 font-medium text-gray-800 leading-tight">${presentacion}</td>
+                    <td class="py-2.5 px-3 text-gray-600 text-[11px] uppercase font-semibold">${marca}</td>
+                    <td class="py-2.5 px-3 text-center align-middle">${stockDisplay}</td>
+                </tr>`;
+            });
+
+            tbody.innerHTML = html;
+            tableContainer.classList.remove('hidden');
+            emptyState.classList.add('hidden');
+
+        } catch (error) {
+            console.error("Error fetching apertura/cierre:", error);
+            emptyState.innerHTML = `<span class="text-red-600 font-bold">Ocurrió un error al buscar los datos: ${error.message}</span>`;
+            emptyState.classList.remove('hidden');
         }
     }
 
