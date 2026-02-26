@@ -1129,81 +1129,100 @@
             const nextDay = new Date(targetDate);
             nextDay.setDate(targetDate.getDate() + 1);
 
-            // Buscamos los últimos 15 cierres del vendedor para evaluar heuristicamente los horarios
+            // CORRECCIÓN 1: Solicitamos los últimos 20 cierres en lugar de buscar por fecha (Evita errores de Index/Timestamp)
             const cierresRef = _collection(_db, `artifacts/${_appId}/users/${userId}/cierres`);
-            const q = _query(cierresRef, _where('fecha', '<=', nextDay.toISOString()), _orderBy('fecha', 'desc'), _limit(15));
+            const q = _query(cierresRef, _orderBy('fecha', 'desc'), _limit(20));
             const snap = await _getDocs(q);
 
-            let closures = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+            let closures = snap.docs.map(d => {
+                const data = d.data();
+                // Conversión nativa segura de Firestore Timestamp a Date JS
+                const dObj = data.fecha?.toDate ? data.fecha.toDate() : new Date(data.fecha || data.createdAt);
+                return { id: d.id, ...data, parsedDate: dObj };
+            });
 
-            // Separar cierres del día objetivo y los anteriores
-            const todayClosures = closures.filter(c => {
-                const d = new Date(c.fecha || c.createdAt);
-                return d >= targetDate && d < nextDay;
-            });
-            const beforeClosures = closures.filter(c => {
-                const d = new Date(c.fecha || c.createdAt);
-                return d < targetDate;
-            });
+            // Separar cierres del día objetivo y los anteriores mediante JavaScript
+            const todayClosures = closures.filter(c => c.parsedDate >= targetDate && c.parsedDate < nextDay);
+            const beforeClosures = closures.filter(c => c.parsedDate < targetDate);
 
             let targetClosure = null;
+            let isSimulatedFromPrevious = false;
 
-            if (type === 'cierre') {
-                if (todayClosures.length === 0) {
-                    emptyState.innerHTML = `No se encontró ningún cierre registrado el <b>${targetDate.toLocaleDateString()}</b> para este vendedor.`;
-                    return;
+            if (type === 'apertura') {
+                if (todayClosures.length > 0) {
+                    targetClosure = todayClosures[todayClosures.length - 1]; // El más antiguo del día
+                } else if (beforeClosures.length > 0) {
+                    targetClosure = beforeClosures[0]; // El último cierre del día laboral previo
+                    isSimulatedFromPrevious = true;
                 }
                 
-                targetClosure = todayClosures[0]; // El último registrado ese día
-                const d = new Date(targetClosure.fecha || targetClosure.createdAt);
-                if (todayClosures.length === 1 && d.getHours() < 12) {
-                    console.warn("El único cierre del día es en la mañana. Podría ser una apertura retrasada, pero se mostrará como el último estado de inventario del día.");
-                }
-
-            } else { // Apertura
-                if (todayClosures.length > 1) {
-                    // Si hizo múltiples cierres hoy, el primero del día es la apertura real de su jornada
-                    targetClosure = todayClosures[todayClosures.length - 1]; 
-                } else if (todayClosures.length === 1) {
-                    const d = new Date(todayClosures[0].fecha || todayClosures[0].createdAt);
-                    if (d.getHours() < 14) {
-                        // Si hizo un solo cierre y fue en la mañana, asumimos que fue la apertura (cierre retrasado del día anterior)
-                        targetClosure = todayClosures[0]; 
-                    } else {
-                        // Si el cierre fue en la tarde/noche, la apertura debe ser el cierre del día anterior trabajado
-                        targetClosure = beforeClosures.length > 0 ? beforeClosures[0] : null; 
-                    }
-                } else {
-                    // Si no hubo actividad de cierre hoy, la apertura es el estado con el que dejó el inventario su último día laborado
-                    targetClosure = beforeClosures.length > 0 ? beforeClosures[0] : null;
-                }
-
                 if (!targetClosure) {
-                    emptyState.innerHTML = `No se encontró inventario de apertura para el <b>${targetDate.toLocaleDateString()}</b> (No hay registros de cierre en días previos).`;
+                    emptyState.innerHTML = `No se encontró inventario de apertura para el <b>${targetDate.toLocaleDateString()}</b> (No hay registros previos).`;
+                    return;
+                }
+            } else { // Cierre
+                if (todayClosures.length > 0) {
+                    targetClosure = todayClosures[0]; // El más reciente del día
+                } else {
+                    emptyState.innerHTML = `No se encontró ningún cierre registrado el <b>${targetDate.toLocaleDateString()}</b> para este vendedor.`;
                     return;
                 }
             }
 
-            const closureDate = new Date(targetClosure.fecha || targetClosure.createdAt);
+            const closureDate = targetClosure.parsedDate;
+            let explanation = '';
+            if (type === 'apertura' && isSimulatedFromPrevious) {
+                explanation = `(Calculado en base al cierre del ${closureDate.toLocaleDateString()})`;
+            }
+
             infoBox.innerHTML = `Mostrando inventario de <b>${type.toUpperCase()}</b> correspondiente a la jornada del ${targetDate.toLocaleDateString()}. <br>
-                                 <span class="text-xs">Basado en el registro guardado el: <b>${closureDate.toLocaleString()}</b> (Ref: ${targetClosure.id.substring(0,8)}...)</span>`;
+                                 <span class="text-xs">Basado en el registro: <b>${closureDate.toLocaleString()}</b> (Ref: ${targetClosure.id.substring(0,8)}...) <span class="text-red-600 font-bold">${explanation}</span></span>`;
             infoBox.classList.remove('hidden');
 
-            const items = targetClosure.inventario || targetClosure.productos || targetClosure.stockFinal || targetClosure.detalles || [];
+            // CORRECCIÓN 2: EXTRAER EL INVENTARIO BASE EXACTO (cargaInicialInventario es la variable real que se guarda en ventas.js)
+            const baseItems = targetClosure.cargaInicialInventario || targetClosure.inventario || targetClosure.productos || [];
             
-            if (items.length === 0) {
+            if (baseItems.length === 0) {
                 emptyState.innerHTML = 'El registro de inventario guardado en este cierre se encuentra vacío (0 productos).';
                 return;
             }
 
-            items.sort((a, b) => {
+            // Copia profunda para no mutar el objeto en caché accidentalmente
+            let finalItems = JSON.parse(JSON.stringify(baseItems));
+
+            // Si es "cierre", o si es una "apertura" simulada desde el cierre del día anterior, 
+            // DEBEMOS RESTAR LAS VENTAS Y OBSEQUIOS al 'cargaInicialInventario' para obtener el stock final real de ese día.
+            const needsCalculation = type === 'cierre' || isSimulatedFromPrevious;
+
+            if (needsCalculation) {
+                const ventas = targetClosure.ventas || [];
+                const obsequios = targetClosure.obsequios || [];
+
+                ventas.forEach(v => {
+                    (v.productos || []).forEach(vp => {
+                        const it = finalItems.find(i => i.id === vp.id);
+                        if (it) it.cantidadUnidades = (it.cantidadUnidades || 0) - (vp.totalUnidadesVendidas || 0);
+                    });
+                });
+
+                obsequios.forEach(o => {
+                    const it = finalItems.find(i => i.id === o.productoId);
+                    if (it) {
+                        const pMaster = _masterMapCache[o.productoId] || {};
+                        const factor = pMaster.unidadesPorCaja || 1;
+                        it.cantidadUnidades = (it.cantidadUnidades || 0) - ((o.cantidadCajas || 0) * factor);
+                    }
+                });
+            }
+
+            finalItems.sort((a, b) => {
                 const nameA = (a.presentacion || a.productoNombre || '').toLowerCase();
                 const nameB = (b.presentacion || b.productoNombre || '').toLowerCase();
                 return nameA.localeCompare(nameB);
             });
 
             let html = '';
-            items.forEach(item => {
+            finalItems.forEach(item => {
                 const pid = item.productoId || item.id;
                 const pMaster = _masterMapCache[pid] || {};
                 const presentacion = item.presentacion || item.productoNombre || pMaster.presentacion || 'Desconocido';
