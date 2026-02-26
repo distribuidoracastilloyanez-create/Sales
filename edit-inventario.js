@@ -23,6 +23,7 @@
     let _currentDetalleRecarga = null;
     let _currentSnapshotItems = [];
     let _apCierreFilters = { search: '', rubro: '', segmento: '', marca: '' };
+    let _lastSnapshotInfo = {}; // Guarda datos para el Excel
 
     window.initEditInventario = function(dependencies) {
         _db = dependencies.db;
@@ -553,6 +554,7 @@
 
         const today = new Date().toISOString().split('T')[0];
 
+        // Rediseño: 2 Contenedores (Uno principal para la lista, otro para los detalles)
         _mainContent.innerHTML = `
             <div class="p-2 md:p-4 pt-8 h-screen flex flex-col">
                 
@@ -881,11 +883,11 @@
             const formatStock = (unidadesBase) => {
                 if (vPor.cj && pMaster.unidadesPorCaja > 1) {
                     const cjas = Math.floor(unidadesBase / pMaster.unidadesPorCaja);
-                    const resto = unidadesBase % pMaster.unidadesPorCaja;
+                    const resto = unitsBase % pMaster.unidadesPorCaja;
                     return resto > 0 ? `<span class="font-bold text-gray-800">${cjas} Cj</span> <span class="text-[10px] text-gray-500 font-semibold ml-1">+${resto}u</span>` : `<span class="font-bold text-gray-800">${cjas} Cj</span>`;
                 } else if (vPor.paq && pMaster.unidadesPorPaquete > 1) {
                     const paqs = Math.floor(unidadesBase / pMaster.unidadesPorPaquete);
-                    const resto = unidadesBase % pMaster.unidadesPorPaquete;
+                    const resto = unitsBase % pMaster.unidadesPorPaquete;
                     return resto > 0 ? `<span class="font-bold text-gray-800">${paqs} Pq</span> <span class="text-[10px] text-gray-500 font-semibold ml-1">+${resto}u</span>` : `<span class="font-bold text-gray-800">${paqs} Pq</span>`;
                 }
                 return `<span class="font-bold text-gray-800">${unidadesBase} Und</span>`;
@@ -1017,7 +1019,10 @@
                     <div class="bg-white/95 backdrop-blur-sm p-4 md:p-6 rounded-lg shadow-xl flex flex-col flex-grow overflow-hidden border border-gray-200">
                         <div class="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
                             <h2 class="text-2xl font-bold text-gray-800">Apertura y Cierre de Inventario</h2>
-                            <button id="btnBackFromApCierre" class="px-4 py-2 bg-gray-400 text-white rounded shadow hover:bg-gray-500 font-bold transition">Volver al Menú</button>
+                            <div class="flex gap-2">
+                                <button id="btnExportApCierre" class="hidden px-4 py-2 bg-green-600 text-white rounded shadow hover:bg-green-700 font-bold transition">Descargar Excel</button>
+                                <button id="btnBackFromApCierre" class="px-4 py-2 bg-gray-400 text-white rounded shadow hover:bg-gray-500 font-bold transition">Volver al Menú</button>
+                            </div>
                         </div>
 
                         <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6 p-4 bg-indigo-50 rounded-lg border border-indigo-100 shadow-inner">
@@ -1086,6 +1091,7 @@
 
         document.getElementById('btnBackFromApCierre').addEventListener('click', showEditInventarioMenu);
         document.getElementById('btnBuscarApCierre').addEventListener('click', handleSearchAperturaCierre);
+        document.getElementById('btnExportApCierre').addEventListener('click', exportAperturaCierreToExcel);
     }
 
     async function handleSearchAperturaCierre() {
@@ -1100,12 +1106,14 @@
         const tableContainer = document.getElementById('snapshotTableContainer');
         const infoBox = document.getElementById('snapshotInfo');
         const subFilters = document.getElementById('apCierreSubFilters');
+        const btnExport = document.getElementById('btnExportApCierre');
 
         emptyState.innerHTML = 'Buscando registros...';
         emptyState.classList.remove('hidden');
         tableContainer.classList.add('hidden');
         infoBox.classList.add('hidden');
         subFilters.classList.add('hidden');
+        btnExport.classList.add('hidden');
 
         try {
             if (!_masterMapCache) await loadMasterCatalog();
@@ -1157,6 +1165,16 @@
                 explanation = `(Calculado en base al cierre del ${closureDate.toLocaleDateString()})`;
             }
 
+            // Guardar para exportar
+            const userObj = _usersCache.find(u => u.id === userId);
+            _lastSnapshotInfo = {
+                type: type,
+                date: targetDate.toLocaleDateString(),
+                user: `${userObj?.nombre || ''} ${userObj?.apellido || ''}`.trim() || userObj?.email,
+                closureDate: closureDate.toLocaleString(),
+                isSimulated: isSimulatedFromPrevious
+            };
+
             infoBox.innerHTML = `Mostrando inventario de <b>${type.toUpperCase()}</b> correspondiente a la jornada del ${targetDate.toLocaleDateString()}. <br>
                                  <span class="text-xs">Basado en el registro: <b>${closureDate.toLocaleString()}</b> (Ref: ${targetClosure.id.substring(0,8)}...) <span class="text-red-600 font-bold">${explanation}</span></span>`;
             infoBox.classList.remove('hidden');
@@ -1192,7 +1210,6 @@
                 });
             }
 
-            // Enriquecer y guardar en estado global para filtrado
             _currentSnapshotItems = finalItems.map(item => {
                 const pid = item.productoId || item.id;
                 const pMaster = _masterMapCache[pid] || {};
@@ -1206,7 +1223,11 @@
                     vPor: pMaster.ventaPor || {und: true},
                     unidadesPorCaja: pMaster.unidadesPorCaja || 1,
                     unidadesPorPaquete: pMaster.unidadesPorPaquete || 1,
-                    cantidadUnidades: item.cantidadUnidades !== undefined ? item.cantidadUnidades : (item.stock || item.cantidad || 0)
+                    cantidadUnidades: item.cantidadUnidades !== undefined ? item.cantidadUnidades : (item.stock || item.cantidad || 0),
+                    // Traemos las coordenadas para el ordenamiento
+                    ordenSegmento: pMaster.ordenSegmento ?? 9999,
+                    ordenMarca: pMaster.ordenMarca ?? 9999,
+                    ordenProducto: pMaster.ordenProducto ?? 9999
                 };
             });
 
@@ -1215,6 +1236,7 @@
             subFilters.classList.remove('hidden');
             tableContainer.classList.remove('hidden');
             emptyState.classList.add('hidden');
+            btnExport.classList.remove('hidden');
 
             initApCierreFilters();
 
@@ -1232,7 +1254,6 @@
         const searchInput = document.getElementById('apCSearch');
         const clearBtn = document.getElementById('apCClearFilters');
 
-        // Clonar para limpiar event listeners previos
         const newRubroSel = rubroSel.cloneNode(true); rubroSel.parentNode.replaceChild(newRubroSel, rubroSel);
         const newSegSel = segSel.cloneNode(true); segSel.parentNode.replaceChild(newSegSel, segSel);
         const newMarcaSel = marcaSel.cloneNode(true); marcaSel.parentNode.replaceChild(newMarcaSel, marcaSel);
@@ -1309,7 +1330,7 @@
         updateDropdowns('init');
     }
 
-    function renderApCierreTable() {
+    async function renderApCierreTable() {
         const tbody = document.getElementById('snapshotTableBody');
         if (!tbody) return;
 
@@ -1327,22 +1348,19 @@
             return textMatch && rMatch && sMatch && mMatch;
         });
 
-        // Ordenamiento Alfabético Estándar por Jerarquía
-        filtrados.sort((a, b) => {
-            const rStrA = (a.rubro || 'SIN RUBRO').toUpperCase();
-            const rStrB = (b.rubro || 'SIN RUBRO').toUpperCase();
-            if (rStrA !== rStrB) return rStrA.localeCompare(rStrB);
-
-            const sStrA = (a.segmento || 'SIN SEGMENTO').toUpperCase();
-            const sStrB = (b.segmento || 'SIN SEGMENTO').toUpperCase();
-            if (sStrA !== sStrB) return sStrA.localeCompare(sStrB);
-
-            const mStrA = (a.marca || 'S/M').toUpperCase();
-            const mStrB = (b.marca || 'S/M').toUpperCase();
-            if (mStrA !== mStrB) return mStrA.localeCompare(mStrB);
-
-            return (a.presentacion || '').toUpperCase().localeCompare((b.presentacion || '').toUpperCase());
-        });
+        // INTEGRACIÓN DEL MOTOR DE ORDENAMIENTO (Mismo de Inventario y Data)
+        if (window.getGlobalProductSortFunction) {
+            const sortFn = await window.getGlobalProductSortFunction();
+            filtrados.sort(sortFn);
+        } else {
+            // Fallback alfabético si no carga el motor global
+            filtrados.sort((a, b) => {
+                if (a.rubro !== b.rubro) return (a.rubro || '').localeCompare(b.rubro || '');
+                if (a.segmento !== b.segmento) return (a.segmento || '').localeCompare(b.segmento || '');
+                if (a.marca !== b.marca) return (a.marca || '').localeCompare(b.marca || '');
+                return (a.presentacion || '').localeCompare(b.presentacion || '');
+            });
+        }
 
         if (filtrados.length === 0) {
             tbody.innerHTML = `<tr><td colspan="3" class="p-8 text-center text-gray-500 font-medium">No se encontraron productos con estos filtros.</td></tr>`;
@@ -1402,6 +1420,158 @@
 
         tbody.innerHTML = html;
     }
+
+    // EXPORTACIÓN A EXCEL DE LA VISTA APERTURA/CIERRE
+    async function exportAperturaCierreToExcel() {
+        if (!_currentSnapshotItems || _currentSnapshotItems.length === 0) return;
+        
+        if (typeof ExcelJS === 'undefined') {
+            _showModal('Error', 'La librería ExcelJS no está cargada.');
+            return;
+        }
+
+        _showModal('Progreso', 'Generando Reporte Excel...');
+
+        try {
+            const workbook = new ExcelJS.Workbook();
+            const sheet = workbook.addWorksheet('Inventario Snapshot');
+
+            // --- Estilos Base ---
+            const headerFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A8A' } }; // Azul oscuro (indigo-900 aprox)
+            const headerFont = { color: { argb: 'FFFFFFFF' }, bold: true, size: 12 };
+            const subHeaderFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEFF6FF' } }; // Azul claro (blue-50)
+            const subHeaderFont = { color: { argb: 'FF1E3A8A' }, bold: true, size: 11 };
+            const borderStyle = { top: {style:'thin'}, left: {style:'thin'}, bottom: {style:'thin'}, right: {style:'thin'} };
+            const borderLight = { bottom: {style:'hair', color:{argb:'FFE5E7EB'}} }; // Gris claro
+
+            // --- Encabezado General ---
+            sheet.mergeCells('A1:E1');
+            const titleCell = sheet.getCell('A1');
+            titleCell.value = `INVENTARIO DE ${_lastSnapshotInfo.type.toUpperCase()}`;
+            titleCell.font = { size: 14, bold: true, color: { argb: 'FF1E3A8A' } };
+            titleCell.alignment = { horizontal: 'center' };
+
+            sheet.mergeCells('A2:E2');
+            sheet.getCell('A2').value = `Vendedor: ${_lastSnapshotInfo.user} | Fecha Jornada: ${_lastSnapshotInfo.date}`;
+            sheet.getCell('A2').font = { bold: true };
+            
+            sheet.mergeCells('A3:E3');
+            let infoText = `Calculado a partir del registro del: ${_lastSnapshotInfo.closureDate}`;
+            if (_lastSnapshotInfo.isSimulated) infoText += ' (Cierre previo)';
+            sheet.getCell('A3').value = infoText;
+            sheet.getCell('A3').font = { italic: true, color: { argb: 'FF4B5563' } }; // Gris
+
+            // --- Columnas ---
+            sheet.getRow(5).values = ['Presentación', 'Marca', 'Cajas', 'Paquetes', 'Unidades Sueltas'];
+            sheet.columns = [
+                { key: 'pres', width: 45 },
+                { key: 'marca', width: 20 },
+                { key: 'cj', width: 12 },
+                { key: 'paq', width: 12 },
+                { key: 'und', width: 15 }
+            ];
+
+            ['A5','B5','C5','D5','E5'].forEach(cell => {
+                const c = sheet.getCell(cell);
+                c.fill = headerFill;
+                c.font = headerFont;
+                c.alignment = { horizontal: 'center', vertical: 'middle' };
+                c.border = borderStyle;
+            });
+
+            // --- Agrupamiento y Datos ---
+            // Reaplicamos el filtrado actual y ordenamiento
+            let exportData = _currentSnapshotItems.filter(p => {
+                const term = _apCierreFilters.search;
+                const textMatch = !term || (p.presentacion || '').toLowerCase().includes(term) || (p.marca || '').toLowerCase().includes(term) || (p.segmento || '').toLowerCase().includes(term);
+                const rMatch = !_apCierreFilters.rubro || p.rubro === _apCierreFilters.rubro;
+                const sMatch = !_apCierreFilters.segmento || p.segmento === _apCierreFilters.segmento;
+                const mMatch = !_apCierreFilters.marca || p.marca === _apCierreFilters.marca;
+                return textMatch && rMatch && sMatch && mMatch;
+            });
+
+            if (window.getGlobalProductSortFunction) {
+                const sortFn = await window.getGlobalProductSortFunction();
+                exportData.sort(sortFn);
+            }
+
+            let currentRow = 6;
+            let currentGroup = null;
+
+            exportData.forEach(p => {
+                const rName = (p.rubro || 'SIN RUBRO').toUpperCase();
+                const sName = (p.segmento || 'SIN SEGMENTO').toUpperCase();
+                const groupName = `${rName} > ${sName}`;
+
+                if (groupName !== currentGroup) {
+                    currentGroup = groupName;
+                    sheet.mergeCells(`A${currentRow}:E${currentRow}`);
+                    const groupCell = sheet.getCell(`A${currentRow}`);
+                    groupCell.value = `📁 ${currentGroup}`;
+                    groupCell.fill = subHeaderFill;
+                    groupCell.font = subHeaderFont;
+                    groupCell.border = borderStyle;
+                    currentRow++;
+                }
+
+                const vPor = p.vPor || {und: true};
+                let cj = 0, paq = 0, und = p.cantidadUnidades || 0;
+
+                if (vPor.cj && p.unidadesPorCaja > 1) {
+                    cj = Math.floor(und / p.unidadesPorCaja);
+                    und = und % p.unidadesPorCaja;
+                } else if (vPor.paq && p.unidadesPorPaquete > 1) {
+                    paq = Math.floor(und / p.unidadesPorPaquete);
+                    und = und % p.unidadesPorPaquete;
+                }
+
+                let presFull = p.presentacion;
+                if (vPor.cj && p.unidadesPorCaja > 1) presFull += ` (${p.unidadesPorCaja}u)`;
+                else if (vPor.paq && p.unidadesPorPaquete > 1) presFull += ` (${p.unidadesPorPaquete}u)`;
+
+                const row = sheet.getRow(currentRow);
+                row.values = {
+                    pres: presFull,
+                    marca: p.marca || 'S/M',
+                    cj: cj > 0 ? cj : '',
+                    paq: paq > 0 ? paq : '',
+                    und: und > 0 ? und : ''
+                };
+
+                row.getCell('pres').border = borderLight;
+                row.getCell('marca').border = borderLight;
+                
+                ['cj', 'paq', 'und'].forEach(k => {
+                    const c = row.getCell(k);
+                    c.border = borderLight;
+                    c.alignment = { horizontal: 'center' };
+                    if (c.value !== '') c.font = { bold: true };
+                });
+
+                currentRow++;
+            });
+
+            // Congelar paneles para la navegación cómoda
+            sheet.views = [{ state: 'frozen', xSplit: 0, ySplit: 5 }];
+
+            const buffer = await workbook.xlsx.writeBuffer();
+            const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            
+            const vNameSafe = _lastSnapshotInfo.user.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+            const dateSafe = _lastSnapshotInfo.date.replace(/[^a-z0-9]/gi, '');
+            link.download = `Inventario_${_lastSnapshotInfo.type}_${vNameSafe}_${dateSafe}.xlsx`;
+            
+            link.click();
+            document.getElementById('modalContainer').classList.add('hidden');
+
+        } catch (error) {
+            console.error(error);
+            _showModal('Error', 'Falló la generación del Excel: ' + error.message);
+        }
+    }
+
 
     // --- VISTA 4: HISTORIAL DE CORRECCIONES ---
     async function showHistorialView() {
