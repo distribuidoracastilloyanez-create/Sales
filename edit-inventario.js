@@ -17,10 +17,12 @@
 
     // Estados de filtros
     let _correctionFilters = { search: '', rubro: '', segmento: '', marca: '' };
-    
-    // Estados para la nueva vista de detalle de recargas
-    let _currentDetalleRecarga = null;
     let _detalleFilters = { search: '', rubro: '', segmento: '', marca: '' };
+    
+    // ESTADOS PARA APERTURA/CIERRE
+    let _currentDetalleRecarga = null;
+    let _currentSnapshotItems = [];
+    let _apCierreFilters = { search: '', rubro: '', segmento: '', marca: '' };
 
     window.initEditInventario = function(dependencies) {
         _db = dependencies.db;
@@ -551,7 +553,6 @@
 
         const today = new Date().toISOString().split('T')[0];
 
-        // Rediseño: 2 Contenedores (Uno principal para la lista, otro para los detalles)
         _mainContent.innerHTML = `
             <div class="p-2 md:p-4 pt-8 h-screen flex flex-col">
                 
@@ -675,7 +676,6 @@
                 return;
             }
 
-            // Descargar el catálogo maestro silenciosamente en background para uso futuro en los detalles
             loadMasterCatalog();
 
             document.getElementById('btnExportRecargas').classList.remove('hidden');
@@ -709,7 +709,6 @@
         }
     }
 
-    // --- LÓGICA DE DETALLE INTERNO (VISTA HÍBRIDA) ---
     window.editInventarioModule = {
         verDetalleRecarga: async function(recargaId) {
             _currentDetalleRecarga = _recargasSearchCache.find(r => r.id === recargaId);
@@ -825,7 +824,6 @@
         });
 
         newSearchInput.value = _detalleFilters.search;
-
         updateDropdowns('init');
     }
 
@@ -846,8 +844,7 @@
         });
 
         if (filtered.length === 0) {
-            emptyState.classList.remove('hidden');
-            return;
+            emptyState.classList.remove('hidden'); return;
         } else {
             emptyState.classList.add('hidden');
         }
@@ -920,9 +917,7 @@
 
     async function exportRecargasToExcel() {
         if (!_recargasSearchCache || _recargasSearchCache.length === 0) return;
-
         _showModal('Progreso', 'Generando Reporte Excel...', null, '', null, false);
-
         try {
             const workbook = new ExcelJS.Workbook();
             const sheet = workbook.addWorksheet('Reporte Recargas');
@@ -951,19 +946,12 @@
 
             sheet.getRow(5).values = ['Fecha Recarga', 'Producto', 'Stock Anterior (Base)', 'Cantidad Agregada', 'Stock Resultante (Base)'];
             sheet.columns = [
-                { key: 'fecha', width: 22 },
-                { key: 'prod', width: 40 },
-                { key: 'ant', width: 18 },
-                { key: 'agg', width: 20 },
-                { key: 'res', width: 18 }
+                { key: 'fecha', width: 22 }, { key: 'prod', width: 40 }, { key: 'ant', width: 18 }, { key: 'agg', width: 20 }, { key: 'res', width: 18 }
             ];
 
             ['A5','B5','C5','D5','E5'].forEach(cell => {
                 const c = sheet.getCell(cell);
-                c.fill = headerFill;
-                c.font = headerFont;
-                c.alignment = { horizontal: 'center' };
-                c.border = borderStyle;
+                c.fill = headerFill; c.font = headerFont; c.alignment = { horizontal: 'center' }; c.border = borderStyle;
             });
 
             let currentRow = 6;
@@ -975,43 +963,21 @@
                 sheet.mergeCells(`A${currentRow}:E${currentRow}`);
                 const groupCell = sheet.getCell(`A${currentRow}`);
                 groupCell.value = `RECARGA: ${fecha}  |  Items: ${recarga.totalProductos}  |  ID: ${recarga.id.substring(0,8)}...`;
-                groupCell.fill = subHeaderFill;
-                groupCell.font = { bold: true, color: { argb: 'FF000000' } };
-                groupCell.border = borderStyle;
+                groupCell.fill = subHeaderFill; groupCell.font = { bold: true, color: { argb: 'FF000000' } }; groupCell.border = borderStyle;
                 currentRow++;
 
                 detalles.forEach(d => {
                     const row = sheet.getRow(currentRow);
-                    
                     let unitLabel = 'Und';
-                    if (d.factorUtilizado > 1) {
-                        unitLabel = 'Cj/Pq'; // No tenemos pMaster en Excel exportado facilmente sin cruzar otra vez, lo dejamos genérico
-                    }
+                    if (d.factorUtilizado > 1) unitLabel = 'Cj/Pq'; 
                     const addedAmount = d.diferenciaUnidades / (d.factorUtilizado || 1);
 
-                    row.values = {
-                        fecha: '', 
-                        prod: d.presentacion,
-                        ant: d.unidadesAnteriores,
-                        agg: `+${addedAmount} ${unitLabel}`,
-                        res: d.unidadesNuevas
-                    };
-                    
-                    row.getCell('prod').border = borderStyle;
-                    row.getCell('ant').border = borderStyle;
-                    row.getCell('ant').alignment = { horizontal: 'center' };
-                    
-                    const aggCell = row.getCell('agg');
-                    aggCell.border = borderStyle;
-                    aggCell.alignment = { horizontal: 'center' };
-                    aggCell.font = { bold: true, color: { argb: 'FF006100' } }; 
-
-                    row.getCell('res').border = borderStyle;
-                    row.getCell('res').alignment = { horizontal: 'center' };
-
+                    row.values = { fecha: '', prod: d.presentacion, ant: d.unidadesAnteriores, agg: `+${addedAmount} ${unitLabel}`, res: d.unidadesNuevas };
+                    row.getCell('prod').border = borderStyle; row.getCell('ant').border = borderStyle; row.getCell('ant').alignment = { horizontal: 'center' };
+                    const aggCell = row.getCell('agg'); aggCell.border = borderStyle; aggCell.alignment = { horizontal: 'center' }; aggCell.font = { bold: true, color: { argb: 'FF006100' } }; 
+                    row.getCell('res').border = borderStyle; row.getCell('res').alignment = { horizontal: 'center' };
                     currentRow++;
                 });
-                
                 currentRow++; 
             });
 
@@ -1078,16 +1044,35 @@
                             </div>
                         </div>
 
-                        <div id="snapshotInfo" class="mb-4 hidden p-3 bg-blue-100 text-blue-900 rounded border border-blue-300 font-medium text-sm">
+                        <div id="snapshotInfo" class="mb-4 hidden p-3 bg-blue-100 text-blue-900 rounded border border-blue-300 font-medium text-sm"></div>
+
+                        <div id="apCierreSubFilters" class="hidden grid grid-cols-1 md:grid-cols-4 gap-4 mb-4 p-4 border border-blue-200 rounded-lg bg-blue-50/30 shadow-sm">
+                            <input type="text" id="apCSearch" placeholder="Buscar por Nombre, Marca o Segmento..." class="md:col-span-4 w-full px-4 py-3 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-indigo-500 outline-none transition">
+                            
+                            <div>
+                                <label class="block text-xs font-bold text-indigo-900 mb-1 uppercase tracking-wider">Rubro:</label>
+                                <select id="apCRubro" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white outline-none focus:ring-2 focus:ring-indigo-500"><option value="">Todos</option></select>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-indigo-900 mb-1 uppercase tracking-wider">Segmento:</label>
+                                <select id="apCSegmento" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white outline-none focus:ring-2 focus:ring-indigo-500" disabled><option value="">Todos</option></select>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-indigo-900 mb-1 uppercase tracking-wider">Marca:</label>
+                                <select id="apCMarca" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white outline-none focus:ring-2 focus:ring-indigo-500" disabled><option value="">Todas</option></select>
+                            </div>
+                            <div class="flex items-end">
+                                <button id="apCClearFilters" class="w-full bg-gray-300 text-sm font-bold text-gray-700 rounded-lg py-2.5 px-4 hover:bg-gray-400 transition-colors shadow-sm">Limpiar Filtros</button>
+                            </div>
                         </div>
 
                         <div class="flex-grow overflow-auto border border-gray-300 rounded-lg bg-gray-50 relative hidden" id="snapshotTableContainer">
-                            <table class="min-w-full bg-white text-sm relative">
-                                <thead class="bg-indigo-800 text-white sticky top-0 z-10 shadow-md">
+                            <table class="min-w-full bg-white text-sm text-left whitespace-nowrap relative">
+                                <thead class="bg-indigo-800 text-white sticky top-0 z-20 shadow-md">
                                     <tr>
-                                        <th class="py-2.5 px-3 text-left font-semibold tracking-wider">Producto</th>
-                                        <th class="py-2.5 px-3 text-left font-semibold tracking-wider">Marca</th>
-                                        <th class="py-2.5 px-3 text-center font-semibold tracking-wider w-32">Stock</th>
+                                        <th class="py-3 px-4 uppercase font-semibold tracking-wider">Presentación</th>
+                                        <th class="py-3 px-4 uppercase font-semibold tracking-wider hidden sm:table-cell">Marca</th>
+                                        <th class="py-3 px-4 uppercase font-semibold tracking-wider text-center w-32">Stock</th>
                                     </tr>
                                 </thead>
                                 <tbody id="snapshotTableBody" class="divide-y divide-gray-200"></tbody>
@@ -1114,13 +1099,13 @@
         const emptyState = document.getElementById('apCierreEmptyState');
         const tableContainer = document.getElementById('snapshotTableContainer');
         const infoBox = document.getElementById('snapshotInfo');
-        const tbody = document.getElementById('snapshotTableBody');
+        const subFilters = document.getElementById('apCierreSubFilters');
 
         emptyState.innerHTML = 'Buscando registros...';
         emptyState.classList.remove('hidden');
         tableContainer.classList.add('hidden');
         infoBox.classList.add('hidden');
-        tbody.innerHTML = '';
+        subFilters.classList.add('hidden');
 
         try {
             if (!_masterMapCache) await loadMasterCatalog();
@@ -1129,19 +1114,16 @@
             const nextDay = new Date(targetDate);
             nextDay.setDate(targetDate.getDate() + 1);
 
-            // CORRECCIÓN 1: Solicitamos los últimos 20 cierres en lugar de buscar por fecha (Evita errores de Index/Timestamp)
             const cierresRef = _collection(_db, `artifacts/${_appId}/users/${userId}/cierres`);
             const q = _query(cierresRef, _orderBy('fecha', 'desc'), _limit(20));
             const snap = await _getDocs(q);
 
             let closures = snap.docs.map(d => {
                 const data = d.data();
-                // Conversión nativa segura de Firestore Timestamp a Date JS
                 const dObj = data.fecha?.toDate ? data.fecha.toDate() : new Date(data.fecha || data.createdAt);
                 return { id: d.id, ...data, parsedDate: dObj };
             });
 
-            // Separar cierres del día objetivo y los anteriores mediante JavaScript
             const todayClosures = closures.filter(c => c.parsedDate >= targetDate && c.parsedDate < nextDay);
             const beforeClosures = closures.filter(c => c.parsedDate < targetDate);
 
@@ -1150,9 +1132,9 @@
 
             if (type === 'apertura') {
                 if (todayClosures.length > 0) {
-                    targetClosure = todayClosures[todayClosures.length - 1]; // El más antiguo del día
+                    targetClosure = todayClosures[todayClosures.length - 1]; 
                 } else if (beforeClosures.length > 0) {
-                    targetClosure = beforeClosures[0]; // El último cierre del día laboral previo
+                    targetClosure = beforeClosures[0]; 
                     isSimulatedFromPrevious = true;
                 }
                 
@@ -1160,9 +1142,9 @@
                     emptyState.innerHTML = `No se encontró inventario de apertura para el <b>${targetDate.toLocaleDateString()}</b> (No hay registros previos).`;
                     return;
                 }
-            } else { // Cierre
+            } else { 
                 if (todayClosures.length > 0) {
-                    targetClosure = todayClosures[0]; // El más reciente del día
+                    targetClosure = todayClosures[0]; 
                 } else {
                     emptyState.innerHTML = `No se encontró ningún cierre registrado el <b>${targetDate.toLocaleDateString()}</b> para este vendedor.`;
                     return;
@@ -1179,7 +1161,6 @@
                                  <span class="text-xs">Basado en el registro: <b>${closureDate.toLocaleString()}</b> (Ref: ${targetClosure.id.substring(0,8)}...) <span class="text-red-600 font-bold">${explanation}</span></span>`;
             infoBox.classList.remove('hidden');
 
-            // CORRECCIÓN 2: EXTRAER EL INVENTARIO BASE EXACTO (cargaInicialInventario es la variable real que se guarda en ventas.js)
             const baseItems = targetClosure.cargaInicialInventario || targetClosure.inventario || targetClosure.productos || [];
             
             if (baseItems.length === 0) {
@@ -1187,11 +1168,7 @@
                 return;
             }
 
-            // Copia profunda para no mutar el objeto en caché accidentalmente
             let finalItems = JSON.parse(JSON.stringify(baseItems));
-
-            // Si es "cierre", o si es una "apertura" simulada desde el cierre del día anterior, 
-            // DEBEMOS RESTAR LAS VENTAS Y OBSEQUIOS al 'cargaInicialInventario' para obtener el stock final real de ese día.
             const needsCalculation = type === 'cierre' || isSimulatedFromPrevious;
 
             if (needsCalculation) {
@@ -1215,49 +1192,215 @@
                 });
             }
 
-            finalItems.sort((a, b) => {
-                const nameA = (a.presentacion || a.productoNombre || '').toLowerCase();
-                const nameB = (b.presentacion || b.productoNombre || '').toLowerCase();
-                return nameA.localeCompare(nameB);
-            });
-
-            let html = '';
-            finalItems.forEach(item => {
+            // Enriquecer y guardar en estado global para filtrado
+            _currentSnapshotItems = finalItems.map(item => {
                 const pid = item.productoId || item.id;
                 const pMaster = _masterMapCache[pid] || {};
-                const presentacion = item.presentacion || item.productoNombre || pMaster.presentacion || 'Desconocido';
-                const marca = pMaster.marca || item.marca || '';
-                const vPor = pMaster.ventaPor || {und: true};
-                const stock = item.cantidadUnidades !== undefined ? item.cantidadUnidades : (item.stock || item.cantidad || 0);
-
-                let stockDisplay = `<span class="font-bold text-gray-800">${stock} Und</span>`;
-                if (vPor.cj && pMaster.unidadesPorCaja > 1) {
-                    const cjas = Math.floor(stock / pMaster.unidadesPorCaja);
-                    const resto = stock % pMaster.unidadesPorCaja;
-                    stockDisplay = resto > 0 ? `<span class="font-bold text-gray-800">${cjas} Cj</span> <span class="text-[10px] text-gray-500 font-semibold ml-1">+${resto}u</span>` : `<span class="font-bold text-gray-800">${cjas} Cj</span>`;
-                } else if (vPor.paq && pMaster.unidadesPorPaquete > 1) {
-                    const paqs = Math.floor(stock / pMaster.unidadesPorPaquete);
-                    const resto = stock % pMaster.unidadesPorPaquete;
-                    stockDisplay = resto > 0 ? `<span class="font-bold text-gray-800">${paqs} Pq</span> <span class="text-[10px] text-gray-500 font-semibold ml-1">+${resto}u</span>` : `<span class="font-bold text-gray-800">${paqs} Pq</span>`;
-                }
-
-                html += `
-                <tr class="hover:bg-indigo-50 border-b border-gray-200 transition-colors">
-                    <td class="py-2.5 px-3 font-medium text-gray-800 leading-tight">${presentacion}</td>
-                    <td class="py-2.5 px-3 text-gray-600 text-[11px] uppercase font-semibold">${marca}</td>
-                    <td class="py-2.5 px-3 text-center align-middle">${stockDisplay}</td>
-                </tr>`;
+                return {
+                    ...item,
+                    pid: pid,
+                    presentacion: item.presentacion || item.productoNombre || pMaster.presentacion || 'Desconocido',
+                    rubro: pMaster.rubro || item.rubro || 'SIN RUBRO',
+                    segmento: pMaster.segmento || item.segmento || 'SIN SEGMENTO',
+                    marca: pMaster.marca || item.marca || 'S/M',
+                    vPor: pMaster.ventaPor || {und: true},
+                    unidadesPorCaja: pMaster.unidadesPorCaja || 1,
+                    unidadesPorPaquete: pMaster.unidadesPorPaquete || 1,
+                    cantidadUnidades: item.cantidadUnidades !== undefined ? item.cantidadUnidades : (item.stock || item.cantidad || 0)
+                };
             });
 
-            tbody.innerHTML = html;
+            _apCierreFilters = { search: '', rubro: '', segmento: '', marca: '' };
+            
+            subFilters.classList.remove('hidden');
             tableContainer.classList.remove('hidden');
             emptyState.classList.add('hidden');
+
+            initApCierreFilters();
 
         } catch (error) {
             console.error("Error fetching apertura/cierre:", error);
             emptyState.innerHTML = `<span class="text-red-600 font-bold">Ocurrió un error al buscar los datos: ${error.message}</span>`;
             emptyState.classList.remove('hidden');
         }
+    }
+
+    function initApCierreFilters() {
+        const rubroSel = document.getElementById('apCRubro');
+        const segSel = document.getElementById('apCSegmento');
+        const marcaSel = document.getElementById('apCMarca');
+        const searchInput = document.getElementById('apCSearch');
+        const clearBtn = document.getElementById('apCClearFilters');
+
+        // Clonar para limpiar event listeners previos
+        const newRubroSel = rubroSel.cloneNode(true); rubroSel.parentNode.replaceChild(newRubroSel, rubroSel);
+        const newSegSel = segSel.cloneNode(true); segSel.parentNode.replaceChild(newSegSel, segSel);
+        const newMarcaSel = marcaSel.cloneNode(true); marcaSel.parentNode.replaceChild(newMarcaSel, marcaSel);
+        const newSearchInput = searchInput.cloneNode(true); searchInput.parentNode.replaceChild(newSearchInput, searchInput);
+        
+        const updateDropdowns = (trigger) => {
+            _apCierreFilters.search = newSearchInput.value.toLowerCase();
+            _apCierreFilters.rubro = newRubroSel.value;
+            
+            if (trigger === 'rubro') { _apCierreFilters.segmento = ''; _apCierreFilters.marca = ''; }
+            if (trigger === 'segmento') { _apCierreFilters.marca = ''; }
+
+            _apCierreFilters.segmento = trigger === 'rubro' ? '' : newSegSel.value;
+            _apCierreFilters.marca = (trigger === 'rubro' || trigger === 'segmento') ? '' : newMarcaSel.value;
+
+            const renderOptions = (selectEl, valuesSet, label, currentVal) => {
+                selectEl.innerHTML = `<option value="">${label}: Todos</option>`;
+                [...valuesSet].sort().forEach(val => {
+                    const opt = document.createElement('option');
+                    opt.value = val; opt.textContent = val;
+                    if (val === currentVal) opt.selected = true;
+                    selectEl.appendChild(opt);
+                });
+            };
+
+            if (trigger === 'init') {
+                const rubros = new Set();
+                _currentSnapshotItems.forEach(p => { if (p.rubro) rubros.add(p.rubro); });
+                renderOptions(newRubroSel, rubros, 'Rubro', _apCierreFilters.rubro);
+            }
+
+            if (trigger === 'init' || trigger === 'rubro') {
+                const segmentos = new Set();
+                _currentSnapshotItems.forEach(p => {
+                    if (!_apCierreFilters.rubro || p.rubro === _apCierreFilters.rubro) {
+                        if (p.segmento) segmentos.add(p.segmento);
+                    }
+                });
+                renderOptions(newSegSel, segmentos, 'Segmento', _apCierreFilters.segmento);
+                newSegSel.disabled = segmentos.size === 0;
+            }
+
+            if (trigger === 'init' || trigger === 'rubro' || trigger === 'segmento') {
+                const marcas = new Set();
+                _currentSnapshotItems.forEach(p => {
+                    const matchRubro = !_apCierreFilters.rubro || p.rubro === _apCierreFilters.rubro;
+                    const matchSeg = !_apCierreFilters.segmento || p.segmento === _apCierreFilters.segmento;
+                    if (matchRubro && matchSeg && p.marca) { marcas.add(p.marca); }
+                });
+                renderOptions(newMarcaSel, marcas, 'Marca', _apCierreFilters.marca);
+                newMarcaSel.disabled = marcas.size === 0;
+            }
+
+            renderApCierreTable();
+        };
+
+        newRubroSel.addEventListener('change', () => updateDropdowns('rubro'));
+        newSegSel.addEventListener('change', () => updateDropdowns('segmento'));
+        newMarcaSel.addEventListener('change', () => updateDropdowns('marca'));
+        newSearchInput.addEventListener('input', () => { 
+            _apCierreFilters.search = newSearchInput.value.toLowerCase(); 
+            renderApCierreTable(); 
+        });
+        
+        if (clearBtn) {
+            const newClearBtn = clearBtn.cloneNode(true); clearBtn.parentNode.replaceChild(newClearBtn, clearBtn);
+            newClearBtn.addEventListener('click', () => {
+                newSearchInput.value = '';
+                newRubroSel.value = '';
+                updateDropdowns('rubro');
+            });
+        }
+
+        updateDropdowns('init');
+    }
+
+    function renderApCierreTable() {
+        const tbody = document.getElementById('snapshotTableBody');
+        if (!tbody) return;
+
+        let filtrados = _currentSnapshotItems.filter(p => {
+            const term = _apCierreFilters.search;
+            const textMatch = !term || 
+                (p.presentacion || '').toLowerCase().includes(term) ||
+                (p.marca || '').toLowerCase().includes(term) ||
+                (p.segmento || '').toLowerCase().includes(term);
+                
+            const rMatch = !_apCierreFilters.rubro || p.rubro === _apCierreFilters.rubro;
+            const sMatch = !_apCierreFilters.segmento || p.segmento === _apCierreFilters.segmento;
+            const mMatch = !_apCierreFilters.marca || p.marca === _apCierreFilters.marca;
+            
+            return textMatch && rMatch && sMatch && mMatch;
+        });
+
+        // Ordenamiento Alfabético Estándar por Jerarquía
+        filtrados.sort((a, b) => {
+            const rStrA = (a.rubro || 'SIN RUBRO').toUpperCase();
+            const rStrB = (b.rubro || 'SIN RUBRO').toUpperCase();
+            if (rStrA !== rStrB) return rStrA.localeCompare(rStrB);
+
+            const sStrA = (a.segmento || 'SIN SEGMENTO').toUpperCase();
+            const sStrB = (b.segmento || 'SIN SEGMENTO').toUpperCase();
+            if (sStrA !== sStrB) return sStrA.localeCompare(sStrB);
+
+            const mStrA = (a.marca || 'S/M').toUpperCase();
+            const mStrB = (b.marca || 'S/M').toUpperCase();
+            if (mStrA !== mStrB) return mStrA.localeCompare(mStrB);
+
+            return (a.presentacion || '').toUpperCase().localeCompare((b.presentacion || '').toUpperCase());
+        });
+
+        if (filtrados.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="3" class="p-8 text-center text-gray-500 font-medium">No se encontraron productos con estos filtros.</td></tr>`;
+            return;
+        }
+
+        let html = '';
+        let currentGroup = null;
+
+        filtrados.forEach(p => {
+            const rName = (p.rubro || 'SIN RUBRO').toUpperCase();
+            const sName = (p.segmento || 'SIN SEGMENTO').toUpperCase();
+            const groupName = `${rName} > ${sName}`;
+
+            if (groupName !== currentGroup) {
+                currentGroup = groupName;
+                html += `
+                    <tr class="bg-blue-50/90 border-t-2 border-blue-200">
+                        <td colspan="3" class="py-2.5 px-4 font-extrabold text-blue-900 sticky top-[44px] z-10 backdrop-blur-sm shadow-sm tracking-wide">
+                            📁 ${currentGroup}
+                        </td>
+                    </tr>
+                `;
+            }
+
+            const vPor = p.vPor || {und: true};
+            let stockDisplay = '';
+            let labelPres = p.presentacion;
+
+            if (vPor.cj && p.unidadesPorCaja > 1) {
+                labelPres += ` <span class="text-gray-400 text-xs">(${p.unidadesPorCaja}u)</span>`;
+                const cjas = Math.floor((p.cantidadUnidades || 0) / p.unidadesPorCaja);
+                const resto = (p.cantidadUnidades || 0) % p.unidadesPorCaja;
+                stockDisplay = `<span class="font-bold text-gray-800">${cjas} Cj</span>`;
+                if(resto > 0) stockDisplay += ` <span class="text-[10px] text-gray-500 font-semibold ml-1">+${resto}u</span>`;
+            } else if (vPor.paq && p.unidadesPorPaquete > 1) {
+                labelPres += ` <span class="text-gray-400 text-xs">(${p.unidadesPorPaquete}u)</span>`;
+                const paqs = Math.floor((p.cantidadUnidades || 0) / p.unidadesPorPaquete);
+                const resto = (p.cantidadUnidades || 0) % p.unidadesPorPaquete;
+                stockDisplay = `<span class="font-bold text-gray-800">${paqs} Pq</span>`;
+                if(resto > 0) stockDisplay += ` <span class="text-[10px] text-gray-500 font-semibold ml-1">+${resto}u</span>`;
+            } else {
+                 stockDisplay = `<span class="font-bold text-gray-800">${p.cantidadUnidades || 0} Und</span>`;
+            }
+
+            html += `
+                <tr class="hover:bg-amber-50 transition-colors duration-150 border-b border-gray-100">
+                    <td class="py-3 px-4 font-semibold text-gray-800">
+                        ${labelPres}
+                        <span class="block sm:hidden text-xs text-gray-500 font-normal mt-0.5">${p.marca || 'S/M'}</span>
+                    </td>
+                    <td class="py-3 px-4 text-gray-600 hidden sm:table-cell">${p.marca || 'S/M'}</td>
+                    <td class="py-3 px-4 font-bold text-gray-700 text-center">${stockDisplay}</td>
+                </tr>
+            `;
+        });
+
+        tbody.innerHTML = html;
     }
 
     // --- VISTA 4: HISTORIAL DE CORRECCIONES ---
@@ -1323,7 +1466,6 @@
                 `;
                 
                 (log.detalles || []).forEach(d => {
-                    // Validar si tiene la nueva estructura (d.ajusteBase) o la vieja (solo d.ajuste)
                     const adjustmentToEvaluate = d.ajusteBase !== undefined ? d.ajusteBase : d.ajuste;
                     const colorClass = adjustmentToEvaluate < 0 ? 'text-red-600' : (adjustmentToEvaluate > 0 ? 'text-green-600' : 'text-gray-800');
                     const signo = adjustmentToEvaluate > 0 ? '+' : '';
