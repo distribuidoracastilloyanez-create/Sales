@@ -203,6 +203,7 @@
                         <div>
                             <h2 class="text-xl font-bold text-gray-800">Corregir Inventario</h2>
                             <p class="text-sm text-gray-600">Usuario: <span class="font-bold text-blue-600">${targetUser.email}</span></p>
+                            <p class="text-xs text-red-600 mt-1 font-semibold">* La unidad requerida de corrección (Und, Pq, Cj) se ajusta dinámicamente según el producto.</p>
                         </div>
                         <div class="flex flex-col md:flex-row gap-2 w-full md:w-auto">
                             <button id="btnWipeInventory" class="flex-1 md:flex-none px-4 py-2 bg-red-600 text-white font-bold rounded shadow hover:bg-red-700 text-sm" title="Limpiar todo el inventario del vendedor a cero">
@@ -378,27 +379,51 @@
         else { emptyState.classList.add('hidden'); }
 
         const html = filtered.map(p => {
-            let stockDisplay = `${p.cantidadUnidades || 0}`;
-            if (p.ventaPor?.cj && p.unidadesPorCaja > 1) {
+            const vPor = p.ventaPor || {und: true};
+            let factor = 1;
+            let unitLabel = 'Und';
+
+            // REGLA MATEMÁTICA ESTRICTA (Idéntica a inventario.js)
+            if (vPor.und) {
+                factor = 1; unitLabel = 'Und';
+            } else if (vPor.paq) {
+                factor = p.unidadesPorPaquete || 1; unitLabel = 'Pq';
+            } else if (vPor.cj) {
+                factor = p.unidadesPorCaja || 1; unitLabel = 'Cj';
+            }
+
+            // Visualización del stock actual
+            let stockDisplay = `${p.cantidadUnidades || 0} Und`;
+            if (vPor.cj && p.unidadesPorCaja > 1) {
                 const cjas = Math.floor((p.cantidadUnidades || 0) / p.unidadesPorCaja);
                 const resto = (p.cantidadUnidades || 0) % p.unidadesPorCaja;
                 stockDisplay = `<span class="font-bold text-blue-700">${cjas} Cj</span>`;
-                if(resto > 0) stockDisplay += ` <span class="text-xs text-gray-500">+ ${resto}</span>`;
+                if(resto > 0) stockDisplay += ` <span class="text-xs text-gray-500">+ ${resto}u</span>`;
+            } else if (vPor.paq && p.unidadesPorPaquete > 1) {
+                const paqs = Math.floor((p.cantidadUnidades || 0) / p.unidadesPorPaquete);
+                const resto = (p.cantidadUnidades || 0) % p.unidadesPorPaquete;
+                stockDisplay = `<span class="font-bold text-blue-700">${paqs} Pq</span>`;
+                if(resto > 0) stockDisplay += ` <span class="text-xs text-gray-500">+ ${resto}u</span>`;
+            } else {
+                 stockDisplay = `<span class="font-bold text-gray-800">${p.cantidadUnidades || 0} Und</span>`;
             }
 
             const state = _correccionActualState[p.id] || { ajuste: '', observacion: '' };
-            const ajusteVal = state.ajuste !== 0 ? state.ajuste : '';
+            const ajusteVal = state.ajuste !== 0 && state.ajuste !== '' ? state.ajuste : '';
 
             return `
-            <tr class="hover:bg-gray-50 transition-colors">
+            <tr class="hover:bg-gray-50 transition-colors border-b border-gray-100">
                 <td class="py-2 px-3">
                     <div class="font-medium text-gray-800">${p.presentacion || 'Sin nombre'}</div>
                     <div class="text-xs text-gray-500">${p.marca || ''} - ${p.segmento || ''}</div>
                 </td>
                 <td class="py-2 px-3 text-center bg-gray-50">${stockDisplay}</td>
                 <td class="py-2 px-3 text-center">
-                    <input type="number" data-pid="${p.id}" value="${ajusteVal}"
-                        class="correction-input w-full px-2 py-1 border border-gray-300 rounded focus:ring-2 focus:ring-yellow-500 text-center font-bold" placeholder="0">
+                    <div class="flex items-center justify-center">
+                        <input type="number" data-pid="${p.id}" value="${ajusteVal}"
+                            class="correction-input w-20 px-2 py-1 border border-gray-300 rounded focus:ring-2 focus:ring-yellow-500 text-center font-bold" placeholder="0">
+                        <span class="ml-1 text-xs text-gray-500 font-bold">${unitLabel}</span>
+                    </div>
                 </td>
                 <td class="py-2 px-3">
                     <input type="text" data-pid="${p.id}-obs" value="${state.observacion || ''}"
@@ -457,15 +482,39 @@
                     for (const data of readData) {
                         const { item, invRef, invDoc } = data;
                         const currentStock = invDoc.exists() ? (invDoc.data().cantidadUnidades || 0) : 0;
-                        const newStock = currentStock + item.ajuste;
+                        
+                        const p = item.prod;
+                        const vPor = p.ventaPor || {und: true};
+                        let factor = 1;
+                        let unitLabel = 'Und';
+
+                        if (vPor.und) {
+                            factor = 1; unitLabel = 'Und';
+                        } else if (vPor.paq) {
+                            factor = p.unidadesPorPaquete || 1; unitLabel = 'Pq';
+                        } else if (vPor.cj) {
+                            factor = p.unidadesPorCaja || 1; unitLabel = 'Cj';
+                        }
+
+                        // Matemáticas: Multiplicar el valor tipeado por el factor real
+                        const unitsToAdjust = item.ajuste * factor;
+                        const newStock = currentStock + unitsToAdjust;
 
                         if (newStock < 0) throw new Error(`El ajuste resulta en stock negativo para ${item.prod.presentacion}.`);
 
                         transaction.set(invRef, { cantidadUnidades: newStock }, { merge: true });
 
                         detallesLog.push({
-                            productoId: item.pid, presentacion: item.prod.presentacion || 'Desconocido', marca: item.prod.marca || '',
-                            stockAnterior: currentStock, ajuste: item.ajuste, stockNuevo: newStock, observacion: item.observacion
+                            productoId: item.pid, 
+                            presentacion: item.prod.presentacion || 'Desconocido', 
+                            marca: item.prod.marca || '',
+                            stockAnterior: currentStock, 
+                            ajuste: item.ajuste, 
+                            factor: factor,
+                            unidad: unitLabel,
+                            ajusteBase: unitsToAdjust,
+                            stockNuevo: newStock, 
+                            observacion: item.observacion
                         });
                     }
 
@@ -668,14 +717,12 @@
             _currentDetalleRecarga = _recargasSearchCache.find(r => r.id === recargaId);
             if (!_currentDetalleRecarga) return;
 
-            // Asegurarnos de tener el catálogo maestro cargado para cruzar los Rubros y Segmentos
             if (!_masterMapCache) {
                 _showModal('Cargando', 'Sincronizando con el Catálogo Maestro...', null, '', null, false);
                 await loadMasterCatalog();
                 document.getElementById('modalContainer').classList.add('hidden');
             }
 
-            // Cambiar de vista
             document.getElementById('recargasMainContainer').classList.add('hidden');
             document.getElementById('recargasMainContainer').classList.remove('flex');
             
@@ -691,7 +738,6 @@
     };
 
     function setupDetalleFilters() {
-        // Enriquecer los detalles con la data del maestro temporalmente
         const enrichedDetails = (_currentDetalleRecarga.detalles || []).map(d => {
             const masterData = _masterMapCache[d.productoId] || {};
             return {
@@ -716,7 +762,6 @@
         };
 
         const updateDropdowns = (trigger) => {
-            // FIX: Tomar los valores directamente de los nodos vivos del DOM para evitar problemas de clonación
             const liveRubro = document.getElementById('detRubro');
             const liveSeg = document.getElementById('detSegmento');
             const liveMarca = document.getElementById('detMarca');
@@ -761,7 +806,6 @@
             renderDetalleRows(enrichedDetails);
         };
 
-        // Eliminar listeners anteriores clonando los nodos (Reseteo seguro para SPAs)
         const oldRubroSel = document.getElementById('detRubro');
         const newRubroSel = oldRubroSel.cloneNode(true); oldRubroSel.parentNode.replaceChild(newRubroSel, oldRubroSel);
         
@@ -774,7 +818,6 @@
         const oldSearchInput = document.getElementById('detSearch');
         const newSearchInput = oldSearchInput.cloneNode(true); oldSearchInput.parentNode.replaceChild(newSearchInput, oldSearchInput);
 
-        // Añadir listeners a los nuevos nodos
         newRubroSel.addEventListener('change', () => updateDropdowns('rubro'));
         newSegSel.addEventListener('change', () => updateDropdowns('segmento'));
         newMarcaSel.addEventListener('change', () => updateDropdowns('marca'));
@@ -783,7 +826,6 @@
             renderDetalleRows(enrichedDetails); 
         });
 
-        // Asegurar que el search box arranque vacío si es un nuevo detalle
         newSearchInput.value = _detalleFilters.search;
 
         updateDropdowns('init');
@@ -796,7 +838,6 @@
 
         tbody.innerHTML = '';
 
-        // Filtrar
         const filtered = enrichedDetails.filter(p => {
             const term = _detalleFilters.search;
             const matchSearch = !term || (p.presentacion || '').toLowerCase().includes(term) || (p.marca || '').toLowerCase().includes(term);
@@ -813,7 +854,6 @@
             emptyState.classList.add('hidden');
         }
 
-        // Ordenar Jerárquicamente
         filtered.sort((a, b) => {
             if (a.rubro !== b.rubro) return a.rubro.localeCompare(b.rubro);
             if (a.segmento !== b.segmento) return a.segmento.localeCompare(b.segmento);
@@ -821,7 +861,6 @@
             return (a.presentacion || '').localeCompare(b.presentacion || '');
         });
 
-        // Agrupar y Renderizar (Estilo Recarga)
         let html = '';
         let lastHeader = null;
 
@@ -835,7 +874,6 @@
             const pMaster = d.masterData;
             const vPor = pMaster.ventaPor || {und: true};
 
-            // Cálculo Inteligente de la Unidad Exacta usada para recargar
             let unitLabel = 'Und';
             if (d.factorUtilizado > 1) {
                 if (d.factorUtilizado === pMaster.unidadesPorCaja) unitLabel = 'Cj';
@@ -843,10 +881,8 @@
                 else unitLabel = `x${d.factorUtilizado}`;
             }
 
-            // Cantidad limpia que el usuario tipeó
             const addedAmount = d.diferenciaUnidades / d.factorUtilizado;
 
-            // Formateador inteligente para Stock Anterior y Nuevo (Igual a la pantalla de corrección)
             const formatStock = (unidadesBase) => {
                 if (vPor.cj && pMaster.unidadesPorCaja > 1) {
                     const cjas = Math.floor(unidadesBase / pMaster.unidadesPorCaja);
@@ -915,7 +951,7 @@
             sheet.mergeCells('A3:E3');
             sheet.getCell('A3').value = `Generado el: ${new Date().toLocaleString()}`;
 
-            sheet.getRow(5).values = ['Fecha Recarga', 'Producto', 'Stock Anterior (Base)', 'Cantidad Agregada (Base)', 'Stock Resultante (Base)'];
+            sheet.getRow(5).values = ['Fecha Recarga', 'Producto', 'Stock Anterior (Base)', 'Cantidad Agregada', 'Stock Resultante (Base)'];
             sheet.columns = [
                 { key: 'fecha', width: 22 },
                 { key: 'prod', width: 40 },
@@ -948,11 +984,18 @@
 
                 detalles.forEach(d => {
                     const row = sheet.getRow(currentRow);
+                    
+                    let unitLabel = 'Und';
+                    if (d.factorUtilizado > 1) {
+                        unitLabel = 'Cj/Pq'; // No tenemos pMaster en Excel exportado facilmente sin cruzar otra vez, lo dejamos genérico
+                    }
+                    const addedAmount = d.diferenciaUnidades / (d.factorUtilizado || 1);
+
                     row.values = {
                         fecha: '', 
                         prod: d.presentacion,
                         ant: d.unidadesAnteriores,
-                        agg: d.diferenciaUnidades,
+                        agg: `+${addedAmount} ${unitLabel}`,
                         res: d.unidadesNuevas
                     };
                     
@@ -989,7 +1032,7 @@
         }
     }
 
-    // --- VISTA 4: HISTORIAL DE CORRECCIONES (RESTAURADA) ---
+    // --- VISTA 4: HISTORIAL DE CORRECCIONES ---
     async function showHistorialView() {
         _mainContent.innerHTML = `
             <div class="p-4 pt-8">
@@ -1042,9 +1085,9 @@
                         <thead class="bg-gray-200">
                             <tr>
                                 <th class="p-1 text-left">Producto</th>
-                                <th class="p-1 text-center">Ant.</th>
+                                <th class="p-1 text-center">Ant. (Base)</th>
                                 <th class="p-1 text-center">Ajuste</th>
-                                <th class="p-1 text-center">Nuevo</th>
+                                <th class="p-1 text-center">Nuevo (Base)</th>
                                 <th class="p-1 text-left">Observación</th>
                             </tr>
                         </thead>
@@ -1052,13 +1095,19 @@
                 `;
                 
                 (log.detalles || []).forEach(d => {
-                    const colorClass = d.ajuste < 0 ? 'text-red-600' : (d.ajuste > 0 ? 'text-green-600' : 'text-gray-800');
-                    const signo = d.ajuste > 0 ? '+' : '';
+                    // Validar si tiene la nueva estructura (d.ajusteBase) o la vieja (solo d.ajuste)
+                    const adjustmentToEvaluate = d.ajusteBase !== undefined ? d.ajusteBase : d.ajuste;
+                    const colorClass = adjustmentToEvaluate < 0 ? 'text-red-600' : (adjustmentToEvaluate > 0 ? 'text-green-600' : 'text-gray-800');
+                    const signo = adjustmentToEvaluate > 0 ? '+' : '';
+                    
+                    const unidadStr = d.unidad ? ` ${d.unidad}` : '';
+                    const tooltipBase = d.ajusteBase !== undefined ? ` title="${signo}${d.ajusteBase} Und. Base"` : '';
+
                     detallesHTML += `
                         <tr class="border-t border-gray-200">
                             <td class="p-1 font-medium">${d.presentacion}</td>
                             <td class="p-1 text-center text-gray-500">${d.stockAnterior}</td>
-                            <td class="p-1 text-center font-bold ${colorClass}">${signo}${d.ajuste}</td>
+                            <td class="p-1 text-center font-bold ${colorClass}"${tooltipBase}>${signo}${d.ajuste}${unidadStr}</td>
                             <td class="p-1 text-center font-bold">${d.stockNuevo}</td>
                             <td class="p-1 italic text-gray-600">${d.observacion}</td>
                         </tr>
@@ -1105,9 +1154,9 @@
                 { header: 'Usuario Afectado', key: 'usuario', width: 25 },
                 { header: 'Producto', key: 'producto', width: 30 },
                 { header: 'Marca', key: 'marca', width: 20 },
-                { header: 'Stock Anterior', key: 'ant', width: 15 },
-                { header: 'Ajuste', key: 'ajuste', width: 10 },
-                { header: 'Stock Nuevo', key: 'nuevo', width: 15 },
+                { header: 'Stock Ant. (Base)', key: 'ant', width: 18 },
+                { header: 'Ajuste', key: 'ajuste', width: 15 },
+                { header: 'Stock Nuevo (Base)', key: 'nuevo', width: 20 },
                 { header: 'Observación', key: 'obs', width: 40 }
             ];
 
@@ -1117,19 +1166,22 @@
             window._tempHistorialLogs.forEach(log => {
                 const fechaStr = log.fecha?.toDate ? log.fecha.toDate().toLocaleString() : '';
                 (log.detalles || []).forEach(d => {
+                    const adjustmentToEvaluate = d.ajusteBase !== undefined ? d.ajusteBase : d.ajuste;
+                    const unidadStr = d.unidad ? ` ${d.unidad}` : '';
+                    
                     const row = worksheet.addRow({
                         fecha: fechaStr,
                         usuario: log.targetUserEmail,
                         producto: d.presentacion,
                         marca: d.marca,
                         ant: d.stockAnterior,
-                        ajuste: d.ajuste,
+                        ajuste: `${d.ajuste}${unidadStr}`,
                         nuevo: d.stockNuevo,
                         obs: d.observacion
                     });
                     
-                    if (d.ajuste < 0) row.getCell('ajuste').font = { color: { argb: 'FFFF0000' } };
-                    else if (d.ajuste > 0) row.getCell('ajuste').font = { color: { argb: 'FF008000' } };
+                    if (adjustmentToEvaluate < 0) row.getCell('ajuste').font = { color: { argb: 'FFFF0000' } };
+                    else if (adjustmentToEvaluate > 0) row.getCell('ajuste').font = { color: { argb: 'FF008000' } };
                 });
             });
 
