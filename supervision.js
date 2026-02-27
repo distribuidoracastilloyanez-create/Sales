@@ -279,7 +279,7 @@
         document.getElementById('btnEjecutarAuditoria').addEventListener('click', executeAudit);
     }
 
-    // Helper interno para formatear visualmente el stock (Misma matemática que inventario.js)
+    // Helper interno para formatear visualmente el stock
     function formatStockStrict(baseUnits, pMaster) {
         if (baseUnits === 0) return `<span class="text-gray-400">0</span>`;
         const vPor = pMaster.ventaPor || {und: true};
@@ -327,11 +327,11 @@
                 cargaInicialInventario = data.inventario || [];
                 fechaCargaInicial = data.fecha?.toDate ? data.fecha.toDate() : new Date(data.fecha);
             } else {
-                emptyState.innerHTML = '<span class="text-red-500 font-bold">El vendedor no tiene un Cierre Previo (Carga Inicial) registrado. No se puede auditar.</span>';
+                emptyState.innerHTML = '<span class="text-red-500 font-bold">El vendedor no tiene un Cierre Previo (Carga Inicial) registrado. No se puede auditar de forma precisa.</span>';
                 return;
             }
 
-            // 2. Obtener Ventas, Obsequios y Recargas
+            // 2. Obtener Ventas, Obsequios y Físico
             const [vSnap, oSnap, iSnap] = await Promise.all([
                 _getDocs(_collection(_db, `artifacts/${_appId}/users/${userId}/ventas`)),
                 _getDocs(_collection(_db, `artifacts/${_appId}/users/${userId}/obsequios_entregados`)),
@@ -342,13 +342,18 @@
             const obsequios = oSnap.docs.map(d => d.data());
             const inventarioActualMap = new Map(iSnap.docs.map(d => [d.id, d.data().cantidadUnidades || 0]));
 
-            // Recargas (solo las creadas después del snapshot)
+            // 3. Recargas y Correcciones (Desde el último cierre)
             const rQuery = _query(_collection(_db, `artifacts/${_appId}/users/${userId}/recargas`), _where("fecha", ">=", fechaCargaInicial.toISOString()));
             const rSnap = await _getDocs(rQuery);
             const recargas = rSnap.docs.map(d => d.data());
 
-            // 3. MATEMÁTICA: STOCK TEÓRICO
+            const cQuery = _query(_collection(_db, `artifacts/${_appId}/users/${userId}/historial_correcciones`), _where("fecha", ">=", fechaCargaInicial));
+            const cSnap = await _getDocs(cQuery);
+            const correcciones = cSnap.docs.map(d => d.data());
+
+            // 4. MATEMÁTICA: STOCK TEÓRICO
             const mapaStockTeorico = new Map(); 
+            const masterMapLocal = new Map(Object.values(_masterMapCache).map(p => [p.id, p])); 
             
             // A. Sumar Inicial
             cargaInicialInventario.forEach(item => {
@@ -364,7 +369,18 @@
                 });
             });
 
-            // C. Restar Ventas
+            // C. Sumar Correcciones de Admin
+            correcciones.forEach(c => {
+                if (c.tipoAjuste === 'LIMPIEZA_PROFUNDA') return; // Se ignora por seguridad
+                (c.detalles || []).forEach(d => {
+                    const ajuste = d.ajusteBase !== undefined ? d.ajusteBase : (d.ajuste || 0);
+                    if (d.productoId && d.productoId !== 'ALL') {
+                        mapaStockTeorico.set(d.productoId, (mapaStockTeorico.get(d.productoId) || 0) + ajuste);
+                    }
+                });
+            });
+
+            // D. Restar Ventas
             ventas.forEach(v => {
                 (v.productos || []).forEach(vp => {
                     const pId = vp.id;
@@ -372,20 +388,19 @@
                 });
             });
 
-            // D. Restar Obsequios
+            // E. Restar Obsequios
             obsequios.forEach(o => {
                 const pId = o.productoId;
-                const pMaster = _masterMapCache[pId] || { unidadesPorCaja: 1 };
+                const pMaster = masterMapLocal.get(pId) || { unidadesPorCaja: 1 };
                 const uRegaladas = (o.cantidadCajas || 0) * (pMaster.unidadesPorCaja || 1);
                 mapaStockTeorico.set(pId, (mapaStockTeorico.get(pId) || 0) - uRegaladas);
             });
 
-            // 4. COMPARACIÓN Y RENDERIZADO
+            // 5. COMPARACIÓN Y RENDERIZADO
             let html = '';
             let discrepanciasCount = 0;
             let totalEvaluados = 0;
 
-            // Recopilar todos los IDs que existen ya sea en el Teórico o en el Físico
             const allIdsSet = new Set([...mapaStockTeorico.keys(), ...inventarioActualMap.keys()]);
             const results = [];
 
@@ -393,16 +408,14 @@
                 const teorico = mapaStockTeorico.get(pId) || 0;
                 const fisico = inventarioActualMap.get(pId) || 0;
                 
-                // Si ambos son cero, no vale la pena mostrarlo para no saturar la tabla
                 if (teorico === 0 && fisico === 0) return;
 
-                const pMaster = _masterMapCache[pId] || {};
-                const presentacion = pMaster.presentacion || 'Desconocido';
+                const pMaster = masterMapLocal.get(pId) || { presentacion: 'Producto Desconocido' };
                 const diff = fisico - teorico;
 
                 results.push({
                     id: pId,
-                    presentacion,
+                    presentacion: pMaster.presentacion,
                     marca: pMaster.marca || 'S/M',
                     teorico,
                     fisico,
@@ -421,7 +434,7 @@
                 
                 if (r.diff !== 0) {
                     discrepanciasCount++;
-                    const isFaltante = r.diff < 0; // Físico es menor que teórico -> Faltan productos
+                    const isFaltante = r.diff < 0; 
                     rowClass = isFaltante ? 'bg-red-50 hover:bg-red-100' : 'bg-blue-50 hover:bg-blue-100';
                     const textColor = isFaltante ? 'text-red-700' : 'text-blue-700';
                     const signo = r.diff > 0 ? '+' : '';
@@ -456,7 +469,6 @@
 
             tbody.innerHTML = html;
 
-            // Update Summary
             if (discrepanciasCount === 0) {
                 summary.className = 'mb-4 p-4 rounded-lg border border-green-300 bg-green-50 text-green-800 flex items-center justify-between';
                 summary.innerHTML = `
