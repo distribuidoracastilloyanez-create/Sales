@@ -248,7 +248,7 @@
             return; 
         }
         pV.totalUnidadesVendidas=totU; if(totU===0&&pV.cantCj===0&&pV.cantPaq===0&&pV.cantUnd===0) delete _ventaActual.productos[pId]; updateVentaTotal();
-    };
+    }
 
     function handleTipoVacioChange(event) { const inp=event.target, tipo=inp.dataset.tipoVacio, cant=parseInt(inp.value,10)||0; if(tipo&&_ventaActual.vaciosDevueltosPorTipo.hasOwnProperty(tipo)) _ventaActual.vaciosDevueltosPorTipo[tipo]=cant; }
 
@@ -312,17 +312,6 @@
     }
 
     async function _processAndSaveVenta() {
-        const SNAPSHOT_DOC_PATH = `artifacts/${_appId}/users/${_userId}/config/cargaInicialSnapshot`;
-        const snapshotRef = _doc(_db, SNAPSHOT_DOC_PATH);
-        try {
-            const snapshotDoc = await _getDoc(snapshotRef);
-            if (!snapshotDoc.exists()) {
-                 if (_inventarioCache && _inventarioCache.length > 0) {
-                     await _setDoc(snapshotRef, { inventario: _inventarioCache, fecha: new Date() });
-                 }
-            }
-        } catch (e) { console.warn("Snapshot check failed (non-blocking)", e); }
-
         const prodsParaGuardar = Object.values(_ventaActual.productos);
         if (prodsParaGuardar.length === 0 && Object.values(_ventaActual.vaciosDevueltosPorTipo).every(v => v === 0)) {
              throw new Error("No hay productos ni vacíos para guardar.");
@@ -561,7 +550,7 @@
         renderVentasList();
     }
 
-    // REUTILIZAREMOS LA MISMA LÓGICA DE AUDITORÍA PARA LA CARGA INICIAL
+    // --- REUTILIZAREMOS LA MISMA LÓGICA DE AUDITORÍA PARA LA CARGA INICIAL ---
     async function obtenerDatosParaCierre(userId) {
         await ensureHybridCacheLoaded();
         const cierresRef = _collection(_db, `artifacts/${_appId}/users/${userId}/cierres`);
@@ -1141,6 +1130,19 @@
         }
     }
 
+    // Exponemos la función al entorno global para que funcione el onclick del HTML
+    window.showPastSaleOptions = function(ventaId, tipo = 'ticket') {
+        const venta = _ventasGlobal.find(v => v.id === ventaId);
+        if (!venta) { _showModal('Error', 'Venta no encontrada.'); return; }
+        const productosFormateados = (venta.productos || []).map(p => ({
+            ...p,
+            cantidadVendida: p.cantidadVendida || { cj: 0, paq: 0, und: 0 },
+            totalUnidadesVendidas: p.totalUnidadesVendidas || 0,
+            precios: p.precios || { und: 0, paq: 0, cj: 0 }
+        }));
+        showSharingOptions(venta, productosFormateados, venta.vaciosDevueltosPorTipo || {}, tipo, showVentasActualesView);
+    };
+
     function editVenta(ventaId) {
         const venta = _ventasGlobal.find(v => v.id === ventaId);
         if (!venta) { _showModal('Error', 'Venta no encontrada.'); return; }
@@ -1387,5 +1389,15 @@
         }, 'Sí, Guardar', null, true);
     }
 
-    window.ventasModule = { toggleMoneda, handleQuantityChange, handleTipoVacioChange, showPastSaleOptions, editVenta, deleteVenta, invalidateCache: () => { } };
+    // EXPOSICIÓN GLOBAL AL ENTORNO WINDOW (Corrección del ReferenceError)
+    window.ventasModule = { 
+        toggleMoneda: toggleMoneda, 
+        handleQuantityChange: handleQuantityChange, 
+        handleTipoVacioChange: handleTipoVacioChange, 
+        showPastSaleOptions: showPastSaleOptions, 
+        editVenta: editVenta, 
+        deleteVenta: deleteVenta, 
+        invalidateCache: () => { } 
+    };
+
 })();
