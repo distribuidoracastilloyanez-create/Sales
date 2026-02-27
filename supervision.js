@@ -329,7 +329,7 @@
                     const baseStock = new Map();
                     invSnap.docs.forEach(d => baseStock.set(d.id, d.data().cantidadUnidades || 0));
 
-                    // 2. Obtener Ventas Activas (Ya las descontó del físico, así que se las DEVOLVEMOS al teórico inicial)
+                    // 2. Obtener Ventas Activas (Se devuelven al teórico inicial)
                     const vSnap = await _getDocs(_collection(_db, `artifacts/${_appId}/users/${userId}/ventas`));
                     const ventas = vSnap.docs.map(d => d.data());
 
@@ -339,7 +339,7 @@
                         });
                     });
 
-                    // 3. Obtener Obsequios Activos (Igual, se los devolvemos al teórico inicial)
+                    // 3. Obtener Obsequios Activos (Se devuelven al teórico inicial)
                     const oSnap = await _getDocs(_collection(_db, `artifacts/${_appId}/users/${userId}/obsequios_entregados`));
                     const obsequios = oSnap.docs.map(d => d.data());
 
@@ -379,12 +379,12 @@
             }, 'Sí, Fijar Punto de Partida', null, true);
     }
 
-    // --- 2. Ver Snapshot (Carga Inicial) Actual ---
+    // --- 2. Ver Snapshot (Carga Inicial) Efectivo Actual ---
     async function handleViewSnapshot() {
         const userId = document.getElementById('auditUserSelect').value;
         if (!userId) { _showModal('Error', 'Seleccione un vendedor primero.'); return; }
 
-        _showModal('Progreso', 'Obteniendo Punto de Partida...', null, '', null, false);
+        _showModal('Progreso', 'Obteniendo Punto de Partida y calculando ajustes...', null, '', null, false);
         try {
             const SNAPSHOT_DOC_PATH = `artifacts/${_appId}/users/${userId}/config/cargaInicialSnapshot`;
             const snap = await _getDoc(_doc(_db, SNAPSHOT_DOC_PATH));
@@ -395,31 +395,67 @@
             }
 
             const data = snap.data();
-            const fecha = data.fecha?.toDate ? data.fecha.toDate().toLocaleString('es-ES') : new Date(data.fecha).toLocaleString('es-ES');
-            let items = data.inventario || [];
+            const fechaCargaInicial = data.fecha?.toDate ? data.fecha.toDate() : new Date(data.fecha);
+            const fechaStr = fechaCargaInicial.toLocaleString('es-ES');
+            
+            let baseItems = data.inventario || [];
 
-            if (items.length === 0) {
-                _showModal('Aviso', `El Punto de Partida está vacío (0 productos).<br><br>Fecha del registro: <b>${fecha}</b>`);
-                return;
-            }
+            // --- SUMAR RECARGAS Y CORRECCIONES PARA MOSTRAR LA CARGA EFECTIVA REAL ---
+            const rQuery = _query(_collection(_db, `artifacts/${_appId}/users/${userId}/recargas`), _where("fecha", ">=", fechaCargaInicial.toISOString()));
+            const rSnap = await _getDocs(rQuery);
+            const recargas = rSnap.docs.map(d => d.data());
+
+            const cQuery = _query(_collection(_db, `artifacts/${_appId}/users/${userId}/historial_correcciones`), _where("fecha", ">=", fechaCargaInicial));
+            const cSnap = await _getDocs(cQuery);
+            const correcciones = cSnap.docs.map(d => d.data());
+
+            const mapaStockEfectivo = new Map();
+            baseItems.forEach(item => mapaStockEfectivo.set(item.productoId || item.id, item.cantidadUnidades || 0));
+
+            recargas.forEach(r => {
+                (r.detalles || []).forEach(d => {
+                    const pId = d.productoId;
+                    mapaStockEfectivo.set(pId, (mapaStockEfectivo.get(pId) || 0) + (d.diferenciaUnidades || 0));
+                });
+            });
+
+            correcciones.forEach(c => {
+                if (c.tipoAjuste === 'LIMPIEZA_PROFUNDA') return;
+                (c.detalles || []).forEach(d => {
+                    const ajuste = d.ajusteBase !== undefined ? d.ajusteBase : (d.ajuste || 0);
+                    if (d.productoId && d.productoId !== 'ALL') {
+                        mapaStockEfectivo.set(d.productoId, (mapaStockEfectivo.get(d.productoId) || 0) + ajuste);
+                    }
+                });
+            });
 
             await loadMasterCatalog();
             
-            items = items.map(item => {
-                const pMaster = _masterMapCache[item.productoId || item.id] || {};
-                return {
-                    ...item,
-                    presentacion: item.presentacion || pMaster.presentacion || 'Desconocido',
-                    rubro: pMaster.rubro || item.rubro || 'SIN RUBRO',
-                    segmento: pMaster.segmento || item.segmento || 'SIN SEGMENTO',
-                    marca: pMaster.marca || item.marca || 'S/M',
-                    ordenSegmento: pMaster.ordenSegmento ?? 9999,
-                    ordenMarca: pMaster.ordenMarca ?? 9999,
-                    ordenProducto: pMaster.ordenProducto ?? 9999,
-                    pMaster: pMaster
-                };
+            let items = [];
+            mapaStockEfectivo.forEach((qty, pId) => {
+                if (qty > 0) {
+                    const pMaster = _masterMapCache[pId] || {};
+                    items.push({
+                        id: pId,
+                        presentacion: pMaster.presentacion || 'Desconocido',
+                        rubro: pMaster.rubro || 'SIN RUBRO',
+                        segmento: pMaster.segmento || 'SIN SEGMENTO',
+                        marca: pMaster.marca || 'S/M',
+                        cantidadUnidades: qty,
+                        ordenSegmento: pMaster.ordenSegmento ?? 9999,
+                        ordenMarca: pMaster.ordenMarca ?? 9999,
+                        ordenProducto: pMaster.ordenProducto ?? 9999,
+                        pMaster: pMaster
+                    });
+                }
             });
 
+            if (items.length === 0) {
+                _showModal('Aviso', `El Punto de Partida Efectivo está vacío (0 productos).<br><br>Fecha del registro base: <b>${fechaStr}</b>`);
+                return;
+            }
+
+            // Aplicar el mismo ordenamiento estricto de inventario.js
             if (window.getGlobalProductSortFunction) {
                 const sortFn = await window.getGlobalProductSortFunction();
                 items.sort(sortFn);
@@ -461,13 +497,16 @@
 
             const modalHtml = `
                 <div class="text-left">
-                    <p class="text-sm text-gray-600 mb-4 bg-gray-100 p-2 rounded border border-gray-200">Fecha del registro base: <br><b class="text-blue-700">${fecha}</b></p>
+                    <p class="text-sm text-gray-600 mb-4 bg-gray-100 p-2 rounded border border-gray-200">
+                        Fecha del registro base: <br><b class="text-blue-700">${fechaStr}</b>
+                        <br><span class="text-xs text-gray-500">(Incluye recargas y correcciones posteriores)</span>
+                    </p>
                     <div class="max-h-[50vh] overflow-y-auto border border-gray-300 rounded-lg shadow-inner bg-white">
                         <table class="w-full text-sm">
                             <thead class="bg-gray-800 text-white sticky top-0 shadow-sm z-10">
                                 <tr>
                                     <th class="py-2 px-3 text-left font-semibold">Producto</th>
-                                    <th class="py-2 px-3 text-right font-semibold">Stock Inicial</th>
+                                    <th class="py-2 px-3 text-right font-semibold">Carga Efectiva</th>
                                 </tr>
                             </thead>
                             <tbody>${html}</tbody>
@@ -476,7 +515,7 @@
                 </div>
             `;
 
-            _showModal('Punto de Partida Actual', modalHtml, null, 'Cerrar');
+            _showModal('Carga Inicial Efectiva', modalHtml, null, 'Cerrar');
 
         } catch (err) {
             console.error(err);
@@ -524,7 +563,7 @@
             const [vSnap, oSnap, iSnap] = await Promise.all([
                 _getDocs(_collection(_db, `artifacts/${_appId}/users/${userId}/ventas`)),
                 _getDocs(_collection(_db, `artifacts/${_appId}/users/${userId}/obsequios_entregados`)),
-                _getDocs(_collection(_db, `artifacts/${_appId}/users/${userId}/inventario`))
+                _getDocs(_collection(_db, `artifacts/${_appId}/users/${userId}/inventario`)) // FÍSICO ACTUAL
             ]);
 
             const ventas = vSnap.docs.map(d => d.data());
