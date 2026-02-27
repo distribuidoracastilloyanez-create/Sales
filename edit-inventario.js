@@ -190,8 +190,12 @@
                 }
             });
             
-            _targetInventoryCache.sort((a, b) => (a.presentacion || '').localeCompare(b.presentacion || ''));
-
+            if (window.getGlobalProductSortFunction) {
+                const sortFn = await window.getGlobalProductSortFunction();
+                _targetInventoryCache.sort(sortFn);
+            } else {
+                _targetInventoryCache.sort((a, b) => (a.presentacion || '').localeCompare(b.presentacion || ''));
+            }
             renderCorrectionTable(targetUser);
             document.getElementById('modalContainer').classList.add('hidden');
 
@@ -385,12 +389,30 @@
         if (filtered.length === 0) { emptyState.classList.remove('hidden'); return; } 
         else { emptyState.classList.add('hidden'); }
 
-        const html = filtered.map(p => {
+        let html = '';
+        let currentGroup = null;
+
+        filtered.forEach(p => {
+            const rName = (p.rubro || 'SIN RUBRO').toUpperCase();
+            const sName = (p.segmento || 'SIN SEGMENTO').toUpperCase();
+            const groupName = `${rName} > ${sName}`;
+
+            // Insertar separador visual si cambiamos de grupo
+            if (groupName !== currentGroup) {
+                currentGroup = groupName;
+                html += `
+                    <tr class="bg-gray-200/80 border-t border-gray-300">
+                        <td colspan="4" class="py-2 px-3 font-extrabold text-gray-700 tracking-wide text-xs">
+                            📁 ${currentGroup}
+                        </td>
+                    </tr>
+                `;
+            }
+
             const vPor = p.ventaPor || {und: true};
             let factor = 1;
             let unitLabel = 'Und';
 
-            // REGLA MATEMÁTICA ESTRICTA (Idéntica a inventario.js)
             if (vPor.und) {
                 factor = 1; unitLabel = 'Und';
             } else if (vPor.paq) {
@@ -399,7 +421,6 @@
                 factor = p.unidadesPorCaja || 1; unitLabel = 'Cj';
             }
 
-            // Visualización del stock actual
             let stockDisplay = `${p.cantidadUnidades || 0} Und`;
             if (vPor.cj && p.unidadesPorCaja > 1) {
                 const cjas = Math.floor((p.cantidadUnidades || 0) / p.unidadesPorCaja);
@@ -418,7 +439,7 @@
             const state = _correccionActualState[p.id] || { ajuste: '', observacion: '' };
             const ajusteVal = state.ajuste !== 0 && state.ajuste !== '' ? state.ajuste : '';
 
-            return `
+            html += `
             <tr class="hover:bg-gray-50 transition-colors border-b border-gray-100">
                 <td class="py-2 px-3">
                     <div class="font-medium text-gray-800">${p.presentacion || 'Sin nombre'}</div>
@@ -437,7 +458,7 @@
                         class="observation-input w-full px-2 py-1 border border-gray-300 rounded focus:ring-blue-500 text-xs" placeholder="Razón del ajuste...">
                 </td>
             </tr>`;
-        }).join('');
+        });
 
         tbody.innerHTML = html;
 
