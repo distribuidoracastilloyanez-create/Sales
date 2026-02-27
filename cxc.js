@@ -518,14 +518,12 @@
                 }
             }
 
-            const modal = document.getElementById('modalContainer');
-            if(modal) modal.classList.add('hidden');
-
             if (foundVenta) {
-                // Verificamos si window.ventasUI está disponible para usar su template nativo
+                // Verificamos si window.ventasUI está disponible
                 if (window.ventasUI && typeof window.ventasUI.getTicketHTML === 'function') {
                     
-                    // Formateamos los productos para que la función de UI los entienda
+                    _showModal('Cargando Recibo', 'Renderizando el recibo original...', null, '', null, false);
+
                     const productosFormateados = (foundVenta.productos || []).map(p => ({
                         ...p,
                         cantidadVendida: p.cantidadVendida || { cj: 0, paq: 0, und: 0 },
@@ -533,7 +531,6 @@
                         precios: p.precios || { und: 0, paq: 0, cj: 0 }
                     }));
 
-                    // Inyectamos un cliente ficticio basado en los datos de la venta para satisfacer el template
                     const ventaFicticia = {
                         cliente: { nombreComercial: foundVenta.clienteNombre, nombrePersonal: foundVenta.clienteNombrePersonal || '' },
                         fecha: foundVenta.fecha || foundVenta.cierreFecha || new Date(),
@@ -547,19 +544,47 @@
                         'Nota de Entrega'
                     );
 
-                    // Lo metemos en un modal grande con scroll y un contenedor que restringe el ancho para que parezca un ticket
-                    const modalWrapper = `
-                        <div class="flex justify-center w-full max-h-[80vh] overflow-y-auto bg-gray-200 rounded p-2">
-                            ${ticketHTML}
-                        </div>
-                    `;
+                    // Renderizar el HTML temporalmente fuera de pantalla para tomarle una "foto"
+                    const tempDiv = document.createElement('div');
+                    tempDiv.style.position = 'absolute';
+                    tempDiv.style.left = '-9999px';
+                    tempDiv.style.top = '0';
+                    tempDiv.innerHTML = ticketHTML;
+                    document.body.appendChild(tempDiv);
+
+                    const ticketElement = document.getElementById('temp-ticket-for-image');
                     
-                    setTimeout(() => _showModal('Recibo Original', modalWrapper, null, 'Cerrar'), 300);
+                    if (ticketElement) {
+                        setTimeout(async () => {
+                            try {
+                                const canvas = await html2canvas(ticketElement, { scale: 2 }); // Scale 2 para buena calidad
+                                const dataUrl = canvas.toDataURL('image/png');
+                                
+                                // Modal con imagen responsive (object-contain y w-full)
+                                const modalWrapper = `
+                                    <div class="flex justify-center items-center w-full bg-gray-100 rounded p-1">
+                                        <img src="${dataUrl}" class="w-full max-h-[70vh] object-contain shadow-sm rounded" alt="Recibo de Venta" />
+                                    </div>
+                                    <p class="text-[10px] text-gray-500 mt-2 text-center uppercase tracking-wide">Recibo reconstruido a partir del historial</p>
+                                `;
+                                
+                                _showModal('Recibo Original', modalWrapper, null, 'Cerrar');
+                            } catch (e) {
+                                console.error("Error generando imagen de recibo:", e);
+                                _showModal('Error', 'No se pudo generar la previsualización del recibo.');
+                            } finally {
+                                document.body.removeChild(tempDiv);
+                            }
+                        }, 200); // Dar tiempo al navegador de pintar el DOM oculto
+                    } else {
+                        document.body.removeChild(tempDiv);
+                        _showModal('Error', 'No se pudo encontrar la estructura del ticket.');
+                    }
                 } else {
                     _showModal('Error', 'El módulo de interfaz de ventas no está cargado. No se puede generar el ticket visual.');
                 }
             } else {
-                setTimeout(() => _showModal('Sin resultados', `No se encontró el ticket digital original. Es posible que sea una venta antigua o importada de otro sistema.`), 300);
+                _showModal('Sin resultados', `No se encontró el ticket digital original. Es posible que sea una venta antigua o importada de otro sistema.`);
             }
         } catch (error) {
             console.error("Search error:", error);
