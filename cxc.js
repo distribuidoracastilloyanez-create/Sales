@@ -454,11 +454,12 @@
     }
 
     async function searchSaleDetails(clientName, dateStr, amount) {
-        _showModal('Buscando', `Buscando detalle de venta por $${amount.toFixed(2)} del día ${dateStr}...`);
+        _showModal('Buscando', `Buscando el recibo original de la venta...`, null, '', null, false);
         try {
+            // Buscamos a través de todos los vendedores para encontrar el ticket
             const usersSnap = await _getDocs(_collection(_db, "users"));
             const userIds = usersSnap.docs.map(d => d.id);
-            let foundVentas = [];
+            let foundVenta = null;
             
             let searchDate = new Date(dateStr);
             if (isNaN(searchDate.getTime())) {
@@ -471,57 +472,98 @@
                 return;
             }
 
+            // Ampliamos un poco el rango para evitar problemas de zona horaria
             const startRange = new Date(searchDate); startRange.setDate(startRange.getDate() - 2);
             const endRange = new Date(searchDate); endRange.setDate(endRange.getDate() + 2);
 
             for (const uid of userIds) {
+                // Buscamos en los cierres históricos
                 const cierresRef = _collection(_db, `artifacts/${_appId}/users/${uid}/cierres`);
                 const q = _query(cierresRef, _where("fecha", ">=", startRange), _where("fecha", "<=", endRange));
                 const cierresSnap = await _getDocs(q);
 
-                cierresSnap.docs.forEach(doc => {
+                for (const doc of cierresSnap.docs) {
                     const cierre = doc.data();
                     const ventas = cierre.ventas || [];
-                    const matches = ventas.filter(v => Math.abs((v.total || 0) - amount) < 0.5);
-                    matches.forEach(m => {
-                        foundVentas.push({ ...m, vendedorId: uid, cierreFecha: cierre.fecha });
-                    });
-                });
+                    
+                    // Buscamos coincidencia por Monto y por nombre de cliente (para evitar falsos positivos)
+                    const match = ventas.find(v => 
+                        Math.abs((v.total || 0) - amount) < 0.5 && 
+                        (v.clienteNombre || '').toLowerCase().includes(clientName.split(' ')[0].toLowerCase())
+                    );
+
+                    if (match) {
+                        foundVenta = { ...match, vendedorId: uid, cierreFecha: cierre.fecha };
+                        break; 
+                    }
+                }
+                if (foundVenta) break; 
+            }
+
+            // Si no está en cierres, buscamos en ventas activas (por si no han cerrado el día)
+            if (!foundVenta) {
+                for (const uid of userIds) {
+                    const ventasActivasRef = _collection(_db, `artifacts/${_appId}/users/${uid}/ventas`);
+                    const ventasActivasSnap = await _getDocs(ventasActivasRef);
+                    
+                    for (const doc of ventasActivasSnap.docs) {
+                         const vData = doc.data();
+                         if (Math.abs((vData.total || 0) - amount) < 0.5 && 
+                             (vData.clienteNombre || '').toLowerCase().includes(clientName.split(' ')[0].toLowerCase())) {
+                              foundVenta = { ...vData, id: doc.id, isActiva: true };
+                              break;
+                         }
+                    }
+                    if (foundVenta) break;
+                }
             }
 
             const modal = document.getElementById('modalContainer');
             if(modal) modal.classList.add('hidden');
 
-            if (foundVentas.length > 0) {
-                let html = `<div class="text-left space-y-4">`;
-                foundVentas.forEach(v => {
-                    const fechaVenta = v.fecha && v.fecha.toDate ? v.fecha.toDate().toLocaleString() : 'N/A';
-                    const prodsHTML = (v.productos || []).map(p => 
-                        `<div class="flex justify-between text-sm border-b border-gray-100 py-1.5">
-                            <span class="text-gray-700">${p.cantidadVendida?.cj || 0} x ${p.presentacion}</span>
-                            <span class="font-bold text-gray-900">$${((p.precios?.cj||0)*(p.cantidadVendida?.cj||0) + (p.precios?.paq||0)*(p.cantidadVendida?.paq||0) + (p.precios?.und||0)*(p.cantidadVendida?.und||0)).toFixed(2)}</span>
-                         </div>`
-                    ).join('');
+            if (foundVenta) {
+                // Verificamos si window.ventasUI está disponible para usar su template nativo
+                if (window.ventasUI && typeof window.ventasUI.getTicketHTML === 'function') {
+                    
+                    // Formateamos los productos para que la función de UI los entienda
+                    const productosFormateados = (foundVenta.productos || []).map(p => ({
+                        ...p,
+                        cantidadVendida: p.cantidadVendida || { cj: 0, paq: 0, und: 0 },
+                        totalUnidadesVendidas: p.totalUnidadesVendidas || 0,
+                        precios: p.precios || { und: 0, paq: 0, cj: 0 }
+                    }));
 
-                    html += `
-                        <div class="bg-blue-50/50 p-3 rounded-lg border border-blue-200 shadow-sm">
-                            <p class="font-bold text-blue-900 border-b border-blue-200 pb-1.5 mb-2 flex justify-between">
-                                <span>Ticket Facturado:</span>
-                                <span>$${v.total.toFixed(2)}</span>
-                            </p>
-                            <p class="text-[10px] text-gray-500 mb-2 uppercase tracking-wide">F. Registro: ${fechaVenta}</p>
-                            <div class="bg-white p-2 rounded border border-gray-100">${prodsHTML}</div>
+                    // Inyectamos un cliente ficticio basado en los datos de la venta para satisfacer el template
+                    const ventaFicticia = {
+                        cliente: { nombreComercial: foundVenta.clienteNombre, nombrePersonal: foundVenta.clienteNombrePersonal || '' },
+                        fecha: foundVenta.fecha || foundVenta.cierreFecha || new Date(),
+                        total: foundVenta.total
+                    };
+
+                    const ticketHTML = window.ventasUI.getTicketHTML(
+                        ventaFicticia, 
+                        productosFormateados, 
+                        foundVenta.vaciosDevueltosPorTipo || {}, 
+                        'Nota de Entrega'
+                    );
+
+                    // Lo metemos en un modal grande con scroll y un contenedor que restringe el ancho para que parezca un ticket
+                    const modalWrapper = `
+                        <div class="flex justify-center w-full max-h-[80vh] overflow-y-auto bg-gray-200 rounded p-2">
+                            ${ticketHTML}
                         </div>
                     `;
-                });
-                html += `</div>`;
-                setTimeout(() => _showModal('Productos de la Venta', html, null, 'Cerrar'), 300);
+                    
+                    setTimeout(() => _showModal('Recibo Original', modalWrapper, null, 'Cerrar'), 300);
+                } else {
+                    _showModal('Error', 'El módulo de interfaz de ventas no está cargado. No se puede generar el ticket visual.');
+                }
             } else {
                 setTimeout(() => _showModal('Sin resultados', `No se encontró el ticket digital original. Es posible que sea una venta antigua o importada de otro sistema.`), 300);
             }
         } catch (error) {
             console.error("Search error:", error);
-            _showModal('Error', 'Error buscando productos en la base de datos.');
+            _showModal('Error', 'Error buscando la factura en la base de datos.');
         }
     }
 
