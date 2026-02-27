@@ -92,6 +92,29 @@
     }
 
     // ==============================================================================
+    // --- HELPER DE FORMATEO MATEMÁTICO DE STOCK (EVITA OCULTAR REMANENTES) ---
+    // ==============================================================================
+    function formatStockDisplay(p, forcedStockBase = null) {
+        const vPor = p.ventaPor || {und: true};
+        const baseUnits = forcedStockBase !== null ? forcedStockBase : (p.cantidadUnidades || 0);
+        
+        if (vPor.cj && p.unidadesPorCaja > 1) {
+            const cjas = Math.floor(baseUnits / p.unidadesPorCaja);
+            const resto = baseUnits % p.unidadesPorCaja;
+            let res = `<span class="font-bold text-gray-800">${cjas} Cj</span>`;
+            if (resto > 0) res += ` <span class="text-[10px] text-gray-500 font-semibold ml-1">+${resto}u</span>`;
+            return res;
+        } else if (vPor.paq && p.unidadesPorPaquete > 1) {
+            const paqs = Math.floor(baseUnits / p.unidadesPorPaquete);
+            const resto = baseUnits % p.unidadesPorPaquete;
+            let res = `<span class="font-bold text-gray-800">${paqs} Pq</span>`;
+            if (resto > 0) res += ` <span class="text-[10px] text-gray-500 font-semibold ml-1">+${resto}u</span>`;
+            return res;
+        }
+        return `<span class="font-bold text-gray-800">${baseUnits} Und</span>`;
+    }
+
+    // ==============================================================================
     // --- MOTOR DE ORDENAMIENTO (COORDENADAS + ESCUDO ALFABÉTICO) ---
     // ==============================================================================
     window.getGlobalProductSortFunction = async () => {
@@ -398,25 +421,19 @@
             
             let labelPres = p.presentacion || 'N/A';
             let labelPrecio = '$0.00';
-            let stockSuffix = 'Und';
-            let factor = 1;
 
-            if (vPor.cj) {
-                if (p.unidadesPorCaja > 1) labelPres += ` <span class="text-gray-400 text-xs">(${p.unidadesPorCaja}u)</span>`;
+            if (vPor.cj && p.unidadesPorCaja > 1) {
+                labelPres += ` <span class="text-gray-400 text-xs">(${p.unidadesPorCaja}u)</span>`;
                 labelPrecio = `<span class="text-gray-500 text-xs">Cj</span> $${(pre.cj || 0).toFixed(2)}`;
-                factor = Math.max(1, p.unidadesPorCaja || 1);
-                stockSuffix = 'Cj';
-            } else if (vPor.paq) {
-                if (p.unidadesPorPaquete > 1) labelPres += ` <span class="text-gray-400 text-xs">(${p.unidadesPorPaquete}u)</span>`;
+            } else if (vPor.paq && p.unidadesPorPaquete > 1) {
+                labelPres += ` <span class="text-gray-400 text-xs">(${p.unidadesPorPaquete}u)</span>`;
                 labelPrecio = `<span class="text-gray-500 text-xs">Pq</span> $${(pre.paq || 0).toFixed(2)}`;
-                factor = Math.max(1, p.unidadesPorPaquete || 1);
-                stockSuffix = 'Paq';
             } else {
                 labelPrecio = `<span class="text-gray-500 text-xs">Un</span> $${(pre.und || 0).toFixed(2)}`;
             }
 
-            const stockStr = `${Math.floor((p.cantidadUnidades || 0) / factor)} ${stockSuffix}`;
-            const tooltip = `Stock Total Base: ${p.cantidadUnidades || 0} Und`;
+            // APLICAR NUEVA MATEMÁTICA VISUAL PRECISA (No oculta remanentes)
+            const stockDisplayHtml = formatStockDisplay(p);
 
             html += `
                 <tr class="hover:bg-amber-50 transition-colors duration-150">
@@ -426,7 +443,9 @@
                     </td>
                     <td class="py-3 px-4 text-gray-600 hidden sm:table-cell">${p.marca || 'S/M'}</td>
                     <td class="py-3 px-4 font-bold text-gray-900 text-right">${labelPrecio}</td>
-                    <td class="py-3 px-4 font-bold text-gray-700 text-center" title="${tooltip}">${stockStr}</td>
+                    <td class="py-3 px-4 text-center">
+                        ${stockDisplayHtml}
+                    </td>
                     ${!readOnly ? `
                     <td class="py-3 px-4">
                         <div class="flex justify-center space-x-2">
@@ -468,8 +487,7 @@
                         </div>
 
                         <div id="segmentos-marcas-sortable-list" class="space-y-3 max-h-[65vh] overflow-y-auto pb-4 px-1">
-                            <!-- Se llena dinámicamente -->
-                        </div>
+                            </div>
                         
                         <div class="mt-4 flex flex-col sm:flex-row gap-3 justify-between border-t border-gray-200 pt-4">
                             <button id="backToInventarioBtn" class="w-full sm:w-auto px-6 py-2 bg-gray-500 text-white font-bold rounded shadow hover:bg-gray-600 transition-colors text-sm">Volver</button>
@@ -1003,7 +1021,7 @@
         };
 
         if (!isUpdate) {
-             data.cantidadUnidades = 0; // Se fuerza a 0, el stock inicial ya no existe aquí
+             data.cantidadUnidades = 0; 
         }
         
         return data;
@@ -1097,7 +1115,9 @@
         const updatedData = getProductoDataFromForm(true); 
         if (!updatedData.rubro||!updatedData.segmento||!updatedData.marca||!updatedData.presentacion){_showModal('Error','Completa Rubro, Segmento, Marca y Presentación.');return;} if (!updatedData.ventaPor.und&&!updatedData.ventaPor.paq&&!updatedData.ventaPor.cj){_showModal('Error','Selecciona al menos una forma de venta.');return;} if (updatedData.manejaVacios&&!updatedData.tipoVacio){_showModal('Error','Si maneja vacío, selecciona el tipo.');document.getElementById('tipoVacioSelect')?.focus();return;} let precioValido=(updatedData.ventaPor.und&&updatedData.precios.und>0)||(updatedData.ventaPor.paq&&updatedData.precios.paq>0)||(updatedData.ventaPor.cj&&updatedData.precios.cj>0); if(!precioValido){_showModal('Error','Ingresa al menos un precio válido (> 0) para la forma de venta seleccionada.');document.querySelector('#preciosContainer input[required]')?.focus();return;}
         
-        updatedData.cantidadUnidades = 0; 
+        // CORRECCIÓN CRÍTICA: NO SOBREESCRIBIR EL INVENTARIO CON CERO. 
+        // Si no eliminamos la variable de cantidad, admin.js lo sobreescribirá.
+        delete updatedData.cantidadUnidades; 
 
         _showModal('Progreso','Guardando cambios en Catálogo Maestro...'); 
         try { 
@@ -1202,11 +1222,11 @@
                         <h2 class="text-2xl font-bold text-gray-800 mb-6 text-center">Recarga de Productos</h2>
                         <p class="text-center text-gray-600 mb-4 text-sm">Ingrese la CANTIDAD A AÑADIR. Este valor se sumará al stock actual. Los cambios se mantienen al cambiar de filtro.</p>
                         ${getFiltrosHTML('recarga')}
-                        <div id="recargaListContainer" class="overflow-x-auto max-h-[60vh] border rounded-lg">
+                        <div id="recargaListContainer" class="overflow-x-auto max-h-[60vh] border rounded-lg shadow-inner bg-white">
                             <p class="text-gray-500 text-center p-4">Cargando productos...</p>
                         </div>
                         <div class="mt-6 flex flex-col sm:flex-row gap-4">
-                            <button id="backToInventarioBtn" class="w-full px-6 py-3 bg-gray-400 text-white rounded-lg shadow-md hover:bg-gray-500">Volver</button>
+                            <button id="backToInventarioBtn" class="w-full px-6 py-3 bg-gray-400 text-white font-bold rounded-lg shadow-md hover:bg-gray-500">Volver</button>
                             <button id="saveRecargaBtn" class="w-full px-6 py-3 bg-green-600 text-white font-bold rounded-lg shadow-md hover:bg-green-700">Confirmar Recarga</button>
                         </div>
                     </div>
@@ -1261,14 +1281,14 @@
 
         let tableHTML = `
             <table class="min-w-full bg-white text-sm">
-                <thead class="bg-gray-100 sticky top-0 z-10">
+                <thead class="bg-gray-800 text-white sticky top-0 z-10 shadow-md">
                     <tr>
-                        <th class="py-2 px-4 border-b text-left">Producto</th>
-                        <th class="py-2 px-4 border-b text-center w-32">Stock Actual</th>
-                        <th class="py-2 px-4 border-b text-center w-40">Cantidad a Recargar</th>
+                        <th class="py-3 px-4 border-b text-left">Producto</th>
+                        <th class="py-3 px-4 border-b text-center w-32">Stock Actual</th>
+                        <th class="py-3 px-4 border-b text-center w-40">Cantidad a Recargar</th>
                     </tr>
                 </thead>
-                <tbody>`;
+                <tbody class="divide-y divide-gray-200">`;
         
         let lastHeader = null;
         
@@ -1277,52 +1297,56 @@
 
             if (currentHeaderValue !== lastHeader) { 
                 lastHeader = currentHeaderValue; 
-                tableHTML += `<tr><td colspan="3" class="py-2 px-4 bg-gray-300 font-bold text-gray-800 sticky top-[calc(theme(height.10))] z-[9]">${lastHeader}</td></tr>`; 
+                tableHTML += `
+                    <tr class="bg-blue-50/90 border-t-2 border-blue-200">
+                        <td colspan="3" class="py-2.5 px-4 font-extrabold text-blue-900 sticky top-[44px] z-10 backdrop-blur-sm shadow-sm tracking-wide">
+                            📁 ${lastHeader}
+                        </td>
+                    </tr>`; 
             }
             
             const vPor = p.ventaPor || {und:true};
-            const cStockU = p.cantidadUnidades||0; 
-
-            // CÁLCULO DE LA UNIDAD MENOR (PRIORIDAD: UND > PAQ > CJ)
+            
+            // PRIORIDAD LÓGICA DE RECARGA: Cajas > Paquetes > Unidades
+            // La gente usualmente recarga en grandes volúmenes.
             let factor = 1;
-            let unitLabel = 'Und.';
+            let unitLabel = 'Und';
 
-            if (vPor.und) {
-                factor = 1;
-                unitLabel = 'Und.';
-            } else if (vPor.paq) {
-                factor = p.unidadesPorPaquete || 1;
-                unitLabel = 'Paq.';
-            } else if (vPor.cj) {
-                factor = p.unidadesPorCaja || 1;
-                unitLabel = 'Cj.';
+            if (vPor.cj && p.unidadesPorCaja > 1) {
+                factor = p.unidadesPorCaja;
+                unitLabel = 'Cj';
+            } else if (vPor.paq && p.unidadesPorPaquete > 1) {
+                factor = p.unidadesPorPaquete;
+                unitLabel = 'Paq';
             }
 
-            const currentDisplayStock = Math.floor(cStockU / factor);
+            // Uso de la nueva matemática visual sin ocultar restos
+            const currentDisplayStockHtml = formatStockDisplay(p);
 
-            let inputValue = 0;
+            let inputValue = '';
             if (_recargaTempState.hasOwnProperty(p.id)) {
                 inputValue = _recargaTempState[p.id];
             }
 
             tableHTML += `
-                <tr class="hover:bg-gray-50">
-                    <td class="py-2 px-4 border-b">
-                        <p class="font-medium">${p.presentacion}</p>
-                        <p class="text-xs text-gray-500">${p.marca||'S/M'}</p>
+                <tr class="hover:bg-amber-50 transition-colors">
+                    <td class="py-3 px-4">
+                        <p class="font-bold text-gray-800">${p.presentacion}</p>
+                        <p class="text-[11px] font-semibold uppercase text-gray-500">${p.marca||'S/M'}</p>
                     </td>
-                    <td class="py-2 px-4 border-b text-center align-middle text-gray-600">
-                        ${currentDisplayStock} ${unitLabel}
+                    <td class="py-3 px-4 text-center align-middle">
+                        ${currentDisplayStockHtml}
                     </td>
-                    <td class="py-2 px-4 border-b text-center align-middle">
+                    <td class="py-3 px-4 text-center align-middle bg-green-50/30">
                         <div class="flex items-center justify-center">
                             <input type="number" 
                                 value="${inputValue}" 
                                 data-doc-id="${p.id}"
                                 data-factor="${factor}"
                                 min="0" step="1" 
-                                class="w-20 p-1 text-center border rounded-lg focus:ring-1 focus:ring-teal-500 focus:border-teal-500 recarga-qty-input font-bold bg-white">
-                            <span class="ml-2 text-xs font-semibold text-gray-500">${unitLabel}</span>
+                                placeholder="0"
+                                class="w-24 p-1.5 text-center border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 recarga-qty-input font-bold bg-white text-green-700 shadow-sm">
+                            <span class="ml-2 text-xs font-bold text-gray-500 whitespace-nowrap">x ${unitLabel}</span>
                         </div>
                     </td>
                 </tr>`;
@@ -1351,7 +1375,9 @@
                 const inputValStr = String(_recargaTempState[p.id]).trim();
                 const inputVal = parseInt(inputValStr, 10);
 
-                if (inputValStr === '' || isNaN(inputVal) || inputVal < 0) {
+                if (inputValStr === '') return; // Ignorar vacíos
+
+                if (isNaN(inputVal) || inputVal < 0) {
                     invalidValues = true;
                     return; 
                 }
@@ -1359,14 +1385,12 @@
                 if (inputVal > 0) {
                     const vPor = p.ventaPor || {und:true};
                     
-                    // CÁLCULO DE LA UNIDAD MENOR PARA MULTIPLICAR AL GUARDAR
+                    // PRIORIDAD Cajas > Paquetes > Unidades (Debe coincidir EXACTAMENTE con el input visual)
                     let factor = 1;
-                    if (vPor.und) {
-                        factor = 1;
-                    } else if (vPor.paq) {
-                        factor = p.unidadesPorPaquete || 1;
-                    } else if (vPor.cj) {
-                        factor = p.unidadesPorCaja || 1;
+                    if (vPor.cj && p.unidadesPorCaja > 1) {
+                        factor = p.unidadesPorCaja;
+                    } else if (vPor.paq && p.unidadesPorPaquete > 1) {
+                        factor = p.unidadesPorPaquete;
                     }
 
                     const currentBase = p.cantidadUnidades || 0;
@@ -1394,7 +1418,7 @@
             }
         });
 
-        if (invalidValues) { _showModal('Error', 'Hay valores inválidos (vacíos o negativos). Por favor revise.'); return; }
+        if (invalidValues) { _showModal('Error', 'Hay valores inválidos (negativos). Por favor revise.'); return; }
         if (changesCount === 0) { _showModal('Aviso', 'No se ha ingresado ninguna cantidad para recargar.'); return; }
 
         _showModal('Confirmar Recarga', `Se añadirán cantidades a ${changesCount} productos. ¿Continuar?`, async () => {
