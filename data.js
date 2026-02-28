@@ -332,9 +332,10 @@
         let hasSnapshot = cargaInicialInventario && cargaInicialInventario.length > 0;
         let snapshotMap = new Map();
         if(hasSnapshot) {
-             snapshotMap = new Map(cargaInicialInventario.map(doc => [doc.id, doc]));
+             // Modificado para soportar tanto el formato histórico (doc.id) como el nuevo formato ultra preciso (doc.productoId)
+             snapshotMap = new Map(cargaInicialInventario.map(doc => [doc.productoId || doc.id, doc]));
         }
-
+        
         const userDoc = await _getDoc(_doc(_db, "users", targetUserId));
         const userInfo = userDoc.exists() ? userDoc.data() : { email: 'Usuario Desconocido' };
 
