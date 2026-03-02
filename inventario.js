@@ -92,26 +92,27 @@
     }
 
     // ==============================================================================
-    // --- HELPER DE FORMATEO MATEMÁTICO DE STOCK (EVITA OCULTAR REMANENTES) ---
+    // --- HELPER DE FORMATEO MATEMÁTICO DE STOCK (REGLAS DE NEGOCIO ESTRICTAS) ---
     // ==============================================================================
     function formatStockDisplay(p, forcedStockBase = null) {
         const vPor = p.ventaPor || {und: true};
         const baseUnits = forcedStockBase !== null ? forcedStockBase : (p.cantidadUnidades || 0);
         
-        if (vPor.cj && p.unidadesPorCaja > 1) {
-            const cjas = Math.floor(baseUnits / p.unidadesPorCaja);
-            const resto = baseUnits % p.unidadesPorCaja;
-            let res = `<span class="font-bold text-gray-800">${cjas} Cj</span>`;
-            if (resto > 0) res += ` <span class="text-[10px] text-gray-500 font-semibold ml-1">+${resto}u</span>`;
-            return res;
-        } else if (vPor.paq && p.unidadesPorPaquete > 1) {
-            const paqs = Math.floor(baseUnits / p.unidadesPorPaquete);
-            const resto = baseUnits % p.unidadesPorPaquete;
-            let res = `<span class="font-bold text-gray-800">${paqs} Pq</span>`;
-            if (resto > 0) res += ` <span class="text-[10px] text-gray-500 font-semibold ml-1">+${resto}u</span>`;
-            return res;
+        if (vPor.und) {
+            // REGLA 1: Si se vende por unidades, forzar mostrar siempre en unidades.
+            return `<span class="font-bold text-gray-800">${baseUnits} Und</span>`;
+        } else {
+            // REGLA 2: Si NO se vende por unidades, mostrar Cajas/Paquetes exactos y ocultar residuos.
+            if (vPor.cj && p.unidadesPorCaja > 1) {
+                const cjas = Math.floor(baseUnits / p.unidadesPorCaja);
+                return `<span class="font-bold text-blue-700">${cjas} Cj</span>`;
+            } else if (vPor.paq && p.unidadesPorPaquete > 1) {
+                const paqs = Math.floor(baseUnits / p.unidadesPorPaquete);
+                return `<span class="font-bold text-blue-700">${paqs} Pq</span>`;
+            }
+            // Fallback por si la configuración está corrupta
+            return `<span class="font-bold text-gray-800">${baseUnits} Und</span>`;
         }
-        return `<span class="font-bold text-gray-800">${baseUnits} Und</span>`;
     }
 
     // ==============================================================================
@@ -308,29 +309,29 @@
         const isAdmin = _userRole === 'admin';
        
         _mainContent.innerHTML = `
-           <div class="p-2 md:p-6 pt-8 max-w-7xl mx-auto"> 
-               <div class="bg-gray-100/95 backdrop-blur-md p-4 md:p-8 rounded-2xl shadow-2xl border border-gray-200"> 
-                   <div class="flex flex-col md:flex-row justify-between items-center mb-6 border-b border-gray-300 pb-4">
-                        <h2 class="text-3xl font-black text-gray-800 tracking-tight">
-                            ${isAdmin ? '⚙️ Gestión del Catálogo' : '📦 Consultar Inventario'}
-                        </h2>
-                        <button id="backToInventarioBtnTop" class="mt-4 md:mt-0 px-6 py-2 bg-gray-500 text-white font-bold rounded-lg shadow hover:bg-gray-600 transition-colors">
-                            ← Volver
-                        </button>
-                   </div>
-                   
-                   ${getFiltrosHTML('modify')} 
-                   
-                   <div id="productosListContainer" class="overflow-x-auto max-h-[65vh] border border-gray-300 rounded-xl shadow-inner bg-white"> 
-                        <p class="text-gray-500 text-center p-8 font-medium animate-pulse">Cargando y organizando inventario...</p>
-                   </div> 
-                   
-                   <div class="mt-6 flex flex-col sm:flex-row gap-4 justify-between"> 
-                       <button id="backToInventarioBtnBottom" class="w-full sm:w-auto px-8 py-3 bg-gray-500 text-white font-bold rounded-lg shadow hover:bg-gray-600 transition-colors">Volver al Menú</button> 
-                       ${isAdmin ? `<button id="deleteAllProductosBtn" class="w-full sm:w-auto px-8 py-3 bg-red-600 text-white font-bold rounded-lg shadow hover:bg-red-700 transition-colors">⚠️ Eliminar Todo el Catálogo</button>` : ''} 
-                   </div> 
-               </div> 
-           </div>`;
+            <div class="p-2 md:p-6 pt-8 max-w-7xl mx-auto"> 
+                <div class="bg-gray-100/95 backdrop-blur-md p-4 md:p-8 rounded-2xl shadow-2xl border border-gray-200"> 
+                    <div class="flex flex-col md:flex-row justify-between items-center mb-6 border-b border-gray-300 pb-4">
+                         <h2 class="text-3xl font-black text-gray-800 tracking-tight">
+                             ${isAdmin ? '⚙️ Gestión del Catálogo' : '📦 Consultar Inventario'}
+                         </h2>
+                         <button id="backToInventarioBtnTop" class="mt-4 md:mt-0 px-6 py-2 bg-gray-500 text-white font-bold rounded-lg shadow hover:bg-gray-600 transition-colors">
+                             ← Volver
+                         </button>
+                    </div>
+                    
+                    ${getFiltrosHTML('modify')} 
+                    
+                    <div id="productosListContainer" class="overflow-x-auto max-h-[65vh] border border-gray-300 rounded-xl shadow-inner bg-white"> 
+                         <p class="text-gray-500 text-center p-8 font-medium animate-pulse">Cargando y organizando inventario...</p>
+                    </div> 
+                    
+                    <div class="mt-6 flex flex-col sm:flex-row gap-4 justify-between"> 
+                        <button id="backToInventarioBtnBottom" class="w-full sm:w-auto px-8 py-3 bg-gray-500 text-white font-bold rounded-lg shadow hover:bg-gray-600 transition-colors">Volver al Menú</button> 
+                        ${isAdmin ? `<button id="deleteAllProductosBtn" class="w-full sm:w-auto px-8 py-3 bg-red-600 text-white font-bold rounded-lg shadow hover:bg-red-700 transition-colors">⚠️ Eliminar Todo el Catálogo</button>` : ''} 
+                    </div> 
+                </div> 
+            </div>`;
 
         document.getElementById('backToInventarioBtnTop').addEventListener('click', showInventarioSubMenu);
         document.getElementById('backToInventarioBtnBottom').addEventListener('click', showInventarioSubMenu);
@@ -432,7 +433,6 @@
                 labelPrecio = `<span class="text-gray-500 text-xs">Un</span> $${(pre.und || 0).toFixed(2)}`;
             }
 
-            // APLICAR NUEVA MATEMÁTICA VISUAL PRECISA (No oculta remanentes)
             const stockDisplayHtml = formatStockDisplay(p);
 
             html += `
@@ -1307,20 +1307,21 @@
             
             const vPor = p.ventaPor || {und:true};
             
-            // PRIORIDAD LÓGICA DE RECARGA: Cajas > Paquetes > Unidades
-            // La gente usualmente recarga en grandes volúmenes.
+            // PRIORIDAD LÓGICA DE RECARGA: Unidades > Paquetes > Cajas (La más pequeña disponible)
             let factor = 1;
             let unitLabel = 'Und';
 
-            if (vPor.cj && p.unidadesPorCaja > 1) {
-                factor = p.unidadesPorCaja;
-                unitLabel = 'Cj';
-            } else if (vPor.paq && p.unidadesPorPaquete > 1) {
-                factor = p.unidadesPorPaquete;
+            if (vPor.und) {
+                factor = 1;
+                unitLabel = 'Und';
+            } else if (vPor.paq) {
+                factor = p.unidadesPorPaquete || 1;
                 unitLabel = 'Paq';
+            } else if (vPor.cj) {
+                factor = p.unidadesPorCaja || 1;
+                unitLabel = 'Cj';
             }
 
-            // Uso de la nueva matemática visual sin ocultar restos
             const currentDisplayStockHtml = formatStockDisplay(p);
 
             let inputValue = '';
@@ -1385,12 +1386,13 @@
                 if (inputVal > 0) {
                     const vPor = p.ventaPor || {und:true};
                     
-                    // PRIORIDAD Cajas > Paquetes > Unidades (Debe coincidir EXACTAMENTE con el input visual)
                     let factor = 1;
-                    if (vPor.cj && p.unidadesPorCaja > 1) {
-                        factor = p.unidadesPorCaja;
-                    } else if (vPor.paq && p.unidadesPorPaquete > 1) {
-                        factor = p.unidadesPorPaquete;
+                    if (vPor.und) {
+                        factor = 1;
+                    } else if (vPor.paq) {
+                        factor = p.unidadesPorPaquete || 1;
+                    } else if (vPor.cj) {
+                        factor = p.unidadesPorCaja || 1;
                     }
 
                     const currentBase = p.cantidadUnidades || 0;
