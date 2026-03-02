@@ -507,7 +507,8 @@
                 let currentStockUnits = 0;
                 
                 if (hasSnapshot) {
-                    initialStockUnits = pInfoSnapshot ? (pInfoSnapshot.cantidadUnidades || 0) : 0;
+                    // Lee inteligentemente ya sea la propiedad nueva o las viejas (stock/cantidad)
+                    initialStockUnits = pInfoSnapshot ? (pInfoSnapshot.cantidadUnidades !== undefined ? pInfoSnapshot.cantidadUnidades : (pInfoSnapshot.stock || pInfoSnapshot.cantidad || 0)) : 0;
                     currentStockUnits = initialStockUnits - totalSoldUnits;
                 } else {
                     currentStockUnits = pInfoCurrent ? (pInfoCurrent.cantidadUnidades || 0) : 0;
@@ -544,11 +545,13 @@
         if (!closingData) { _showModal('Error', 'No se cargaron detalles.'); return; }
         _showModal('Progreso', 'Generando reporte detallado...');
         try {
+            const cargaInicialHistorica = closingData.cargaInicialInventario || closingData.inventario || closingData.productos || [];
+            
             const { clientData, clientTotals, grandTotalValue, sortedClients, finalProductOrder, vaciosMovementsPorTipo } = 
                 await _processSalesDataForModal(
                     closingData.ventas || [], 
                     closingData.obsequios || [], 
-                    closingData.cargaInicialInventario || [], 
+                    cargaInicialHistorica, 
                     closingData.vendedorInfo.userId
                 );
             
@@ -679,10 +682,13 @@
         _showModal('Progreso', 'Generando Excel con su diseño...'); 
 
         try {
+            // Compatibilidad con cierres antiguos para el Excel
+            const cargaInicialHistorica = closingData.cargaInicialInventario || closingData.inventario || closingData.productos || [];
+
             const { finalData, userInfo } = await _processSalesDataForModal(
                 closingData.ventas || [], 
                 closingData.obsequios || [], 
-                closingData.cargaInicialInventario || [], 
+                cargaInicialHistorica, 
                 closingData.vendedorInfo.userId
             );
             
