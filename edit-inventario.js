@@ -421,19 +421,20 @@
                 factor = p.unidadesPorCaja || 1; unitLabel = 'Cj';
             }
 
-            let stockDisplay = `${p.cantidadUnidades || 0} Und`;
-            if (vPor.cj && p.unidadesPorCaja > 1) {
-                const cjas = Math.floor((p.cantidadUnidades || 0) / p.unidadesPorCaja);
-                const resto = (p.cantidadUnidades || 0) % p.unidadesPorCaja;
-                stockDisplay = `<span class="font-bold text-blue-700">${cjas} Cj</span>`;
-                if(resto > 0) stockDisplay += ` <span class="text-xs text-gray-500">+ ${resto}u</span>`;
-            } else if (vPor.paq && p.unidadesPorPaquete > 1) {
-                const paqs = Math.floor((p.cantidadUnidades || 0) / p.unidadesPorPaquete);
-                const resto = (p.cantidadUnidades || 0) % p.unidadesPorPaquete;
-                stockDisplay = `<span class="font-bold text-blue-700">${paqs} Pq</span>`;
-                if(resto > 0) stockDisplay += ` <span class="text-xs text-gray-500">+ ${resto}u</span>`;
+            // REGLAS ESTRICTAS DE VISUALIZACIÓN
+            let stockDisplay = '';
+            if (vPor.und) {
+                stockDisplay = `<span class="font-bold text-gray-800">${p.cantidadUnidades || 0} Und</span>`;
             } else {
-                 stockDisplay = `<span class="font-bold text-gray-800">${p.cantidadUnidades || 0} Und</span>`;
+                if (vPor.cj) {
+                    const cjas = Math.floor((p.cantidadUnidades || 0) / (p.unidadesPorCaja || 1));
+                    stockDisplay = `<span class="font-bold text-blue-700">${cjas} Cj</span>`;
+                } else if (vPor.paq) {
+                    const paqs = Math.floor((p.cantidadUnidades || 0) / (p.unidadesPorPaquete || 1));
+                    stockDisplay = `<span class="font-bold text-blue-700">${paqs} Pq</span>`;
+                } else {
+                    stockDisplay = `<span class="font-bold text-gray-800">${p.cantidadUnidades || 0} Und</span>`;
+                }
             }
 
             const state = _correccionActualState[p.id] || { ajuste: '', observacion: '' };
@@ -575,7 +576,6 @@
 
         const today = new Date().toISOString().split('T')[0];
 
-        // Rediseño: 2 Contenedores (Uno principal para la lista, otro para los detalles)
         _mainContent.innerHTML = `
             <div class="p-2 md:p-4 pt-8 h-screen flex flex-col">
                 
@@ -902,16 +902,18 @@
             const addedAmount = d.diferenciaUnidades / d.factorUtilizado;
 
             const formatStock = (unidadesBase) => {
-                if (vPor.cj && pMaster.unidadesPorCaja > 1) {
-                    const cjas = Math.floor(unidadesBase / pMaster.unidadesPorCaja);
-                    const resto = unidadesBase % pMaster.unidadesPorCaja;
-                    return resto > 0 ? `<span class="font-bold text-gray-800">${cjas} Cj</span> <span class="text-[10px] text-gray-500 font-semibold ml-1">+${resto}u</span>` : `<span class="font-bold text-gray-800">${cjas} Cj</span>`;
-                } else if (vPor.paq && pMaster.unidadesPorPaquete > 1) {
-                    const paqs = Math.floor(unidadesBase / pMaster.unidadesPorPaquete);
-                    const resto = unidadesBase % pMaster.unidadesPorPaquete;
-                    return resto > 0 ? `<span class="font-bold text-gray-800">${paqs} Pq</span> <span class="text-[10px] text-gray-500 font-semibold ml-1">+${resto}u</span>` : `<span class="font-bold text-gray-800">${paqs} Pq</span>`;
+                if (vPor.und) {
+                    return `<span class="font-bold text-gray-800">${unidadesBase} Und</span>`;
+                } else {
+                    if (vPor.cj) {
+                        const cjas = Math.floor(unidadesBase / (pMaster.unidadesPorCaja || 1));
+                        return `<span class="font-bold text-gray-800">${cjas} Cj</span>`;
+                    } else if (vPor.paq) {
+                        const paqs = Math.floor(unidadesBase / (pMaster.unidadesPorPaquete || 1));
+                        return `<span class="font-bold text-gray-800">${paqs} Pq</span>`;
+                    }
+                    return `<span class="font-bold text-gray-800">${unidadesBase} Und</span>`;
                 }
-                return `<span class="font-bold text-gray-800">${unidadesBase} Und</span>`;
             };
 
             html += `
@@ -1411,20 +1413,21 @@
             let stockDisplay = '';
             let labelPres = p.presentacion;
 
-            if (vPor.cj && p.unidadesPorCaja > 1) {
-                labelPres += ` <span class="text-gray-400 text-xs">(${p.unidadesPorCaja}u)</span>`;
-                const cjas = Math.floor((p.cantidadUnidades || 0) / p.unidadesPorCaja);
-                const resto = (p.cantidadUnidades || 0) % p.unidadesPorCaja;
-                stockDisplay = `<span class="font-bold text-gray-800">${cjas} Cj</span>`;
-                if(resto > 0) stockDisplay += ` <span class="text-[10px] text-gray-500 font-semibold ml-1">+${resto}u</span>`;
-            } else if (vPor.paq && p.unidadesPorPaquete > 1) {
-                labelPres += ` <span class="text-gray-400 text-xs">(${p.unidadesPorPaquete}u)</span>`;
-                const paqs = Math.floor((p.cantidadUnidades || 0) / p.unidadesPorPaquete);
-                const resto = (p.cantidadUnidades || 0) % p.unidadesPorPaquete;
-                stockDisplay = `<span class="font-bold text-gray-800">${paqs} Pq</span>`;
-                if(resto > 0) stockDisplay += ` <span class="text-[10px] text-gray-500 font-semibold ml-1">+${resto}u</span>`;
+            // REGLAS ESTRICTAS DE VISUALIZACIÓN
+            if (vPor.und) {
+                stockDisplay = `<span class="font-bold text-gray-800">${p.cantidadUnidades || 0} Und</span>`;
             } else {
-                 stockDisplay = `<span class="font-bold text-gray-800">${p.cantidadUnidades || 0} Und</span>`;
+                if (vPor.cj) {
+                    labelPres += ` <span class="text-gray-400 text-xs">(${p.unidadesPorCaja}u)</span>`;
+                    const cjas = Math.floor((p.cantidadUnidades || 0) / (p.unidadesPorCaja || 1));
+                    stockDisplay = `<span class="font-bold text-blue-700">${cjas} Cj</span>`;
+                } else if (vPor.paq) {
+                    labelPres += ` <span class="text-gray-400 text-xs">(${p.unidadesPorPaquete}u)</span>`;
+                    const paqs = Math.floor((p.cantidadUnidades || 0) / (p.unidadesPorPaquete || 1));
+                    stockDisplay = `<span class="font-bold text-blue-700">${paqs} Pq</span>`;
+                } else {
+                    stockDisplay = `<span class="font-bold text-gray-800">${p.cantidadUnidades || 0} Und</span>`;
+                }
             }
 
             html += `
@@ -1506,7 +1509,7 @@
                 sheet.getCell('A3').font = { italic: true, color: { argb: 'FF4B5563' } };
 
                 // --- Columnas ---
-                sheet.getRow(5).values = ['Presentación', 'Marca', 'Cajas', 'Paquetes', 'Unidades Sueltas'];
+                sheet.getRow(5).values = ['Presentación', 'Marca', 'Cajas', 'Paquetes', 'Unidades'];
                 sheet.columns = [
                     { key: 'pres', width: 45 },
                     { key: 'marca', width: 20 },
@@ -1547,20 +1550,26 @@
                     const vPor = p.vPor || {und: true};
                     let cj = '', paq = '', und = p.cantidadUnidades || 0;
 
+                    // REGLAS ESTRICTAS DE EXCEL
                     if (und > 0) {
-                        if (vPor.cj && p.unidadesPorCaja > 1) {
-                            const calCj = Math.floor(und / p.unidadesPorCaja);
-                            if (calCj > 0) cj = calCj;
-                            und = und % p.unidadesPorCaja;
-                        } else if (vPor.paq && p.unidadesPorPaquete > 1) {
-                            const calPaq = Math.floor(und / p.unidadesPorPaquete);
-                            if (calPaq > 0) paq = calPaq;
-                            und = und % p.unidadesPorPaquete;
+                        if (vPor.und) {
+                            // Todo a unidades (no mostramos cajas ni paquetes si maneja unidades)
+                            cj = '';
+                            paq = '';
+                        } else {
+                            if (vPor.cj && p.unidadesPorCaja > 1) {
+                                const calCj = Math.floor(und / p.unidadesPorCaja);
+                                if (calCj > 0) cj = calCj;
+                                und = ''; // Ocultamos residuos
+                            } else if (vPor.paq && p.unidadesPorPaquete > 1) {
+                                const calPaq = Math.floor(und / p.unidadesPorPaquete);
+                                if (calPaq > 0) paq = calPaq;
+                                und = ''; // Ocultamos residuos
+                            }
                         }
+                    } else {
+                        und = '';
                     }
-
-                    // Si al final quedaron unidades en 0 no mostrar el 0, dejar vacío para limpiar la vista.
-                    if (und === 0) und = '';
 
                     let presFull = p.presentacion;
                     if (vPor.cj && p.unidadesPorCaja > 1) presFull += ` (${p.unidadesPorCaja}u)`;
