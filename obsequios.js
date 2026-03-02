@@ -52,7 +52,7 @@
         OBSEQUIO_CONFIG_PATH = `artifacts/${PUBLIC_DATA_ID}/public/data/config/obsequio`;
         CLIENTES_PUBLIC_PATH = `artifacts/${PUBLIC_DATA_ID}/public/data/clientes`;
         
-        console.log("Módulo Obsequios inicializado (Fase 2). Public ID:", PUBLIC_DATA_ID);
+        console.log("Módulo Obsequios inicializado (Con Inmutabilidad Matemática). Public ID:", PUBLIC_DATA_ID);
     };
 
     /**
@@ -251,6 +251,7 @@
                     cantidadCajas: cjs,
                     vaciosRecibidos: vRec,
                     tipoVacio: p.tipoVacio,
+                    unidadesPorCaja: p.unidadesPorCaja || 1, // CONGELAMIENTO MATEMÁTICO: Salvavidas para el historial
                     observacion: document.getElementById('obsText').value,
                     userId: _userId
                 };
@@ -367,19 +368,19 @@
             const iRef = _doc(_db, `artifacts/${_appId}/users/${_userId}/inventario`, r.productoId);
             const cRef = _doc(_db, CLIENTES_PUBLIC_PATH, r.clienteId);
             
-            // FASE 2: Leer configuración del producto para obtener unidadesPorCaja actualizado
-            // (Si el producto fue borrado localmente, necesitamos la data del registro o fallback)
-            // Asumimos que r.productoNombre es útil para logs, pero necesitamos la data técnica del producto
-            // Intentamos buscarlo en la cache actual
-            const prodDef = _inventarioCache.find(p => p.id === r.productoId) || { unidadesPorCaja: 1 }; // Fallback peligroso pero necesario
+            // Lo leemos por si es un registro antiguo que no tenga la propiedad congelada
+            const prodDef = _inventarioCache.find(p => p.id === r.productoId) || { unidadesPorCaja: 1 }; 
 
             await _runTransaction(_db, async (t) => {
                 const i = await t.get(iRef);
                 const c = await t.get(cRef);
                 
-                // Si el doc de inventario no existe (raro pero posible), asumimos 0 y creamos
                 const currentStock = i.exists() ? (i.data().cantidadUnidades || 0) : 0;
-                const unidadesARestaurar = r.cantidadCajas * (prodDef.unidadesPorCaja || 1);
+                
+                // MAGIA: Usamos el factor congelado de la base de datos al momento de crearlo. 
+                // Si es viejo y no lo tiene, recurrimos al catálogo en vivo.
+                const factorHistorico = r.unidadesPorCaja || prodDef.unidadesPorCaja || 1;
+                const unidadesARestaurar = r.cantidadCajas * factorHistorico;
                 
                 t.set(iRef, { cantidadUnidades: currentStock + unidadesARestaurar }, { merge: true });
                 
