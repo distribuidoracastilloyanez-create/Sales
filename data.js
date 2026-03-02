@@ -59,16 +59,27 @@
         const uCj = p.unidadesPorCaja || 1;
         const uPaq = p.unidadesPorPaquete || 1;
         
+        // REGLA: Si se vende por unidades (solo o mixto), SIEMPRE mostrar en Unidades
         if (vP.und) {
             return { value: qU, unit: 'Und' };
         } 
-        else if (vP.paq) {
-            return { value: Math.floor(qU / uPaq), unit: 'Pq' };
-        } 
-        else if (vP.cj) {
-            return { value: Math.floor(qU / uCj), unit: 'Cj' };
+        
+        // REGLA: Si NO se vende por unidades, evaluar si es exclusivo de caja (ej. Obsequios)
+        if (vP.cj && !vP.paq) {
+            const cajas = Math.floor(qU / uCj);
+            const resto = qU % uCj;
+            if (resto > 0) return { value: `${cajas} Cj + ${resto} Und`, unit: '' };
+            return { value: cajas, unit: 'Cj' };
         }
         
+        if (vP.paq && !vP.cj) {
+            const paq = Math.floor(qU / uPaq);
+            const resto = qU % uPaq;
+            if (resto > 0) return { value: `${paq} Pq + ${resto} Und`, unit: '' };
+            return { value: paq, unit: 'Pq' };
+        }
+        
+        // Fallback genérico a unidades si la configuración es extraña
         return { value: qU, unit: 'Und' };
     }
 
@@ -314,7 +325,7 @@
         const allProductsMap = new Map();
         const vaciosMovementsPorTipo = {};
         const allRubros = new Set();
-        const dataByRubro = {}; // ESENCIAL: Estructura base para el Excel
+        const dataByRubro = {}; 
         const TIPOS_VACIO_GLOBAL = window.TIPOS_VACIO_GLOBAL || ["1/4 - 1/3", "ret 350 ml", "ret 1.25 Lts"];
         
         const targetUserId = userIdForInventario || _userId;
@@ -332,7 +343,6 @@
         let hasSnapshot = cargaInicialInventario && cargaInicialInventario.length > 0;
         let snapshotMap = new Map();
         if(hasSnapshot) {
-             // Modificado para soportar tanto el formato histórico (doc.id) como el nuevo formato ultra preciso (doc.productoId)
              snapshotMap = new Map(cargaInicialInventario.map(doc => [doc.productoId || doc.id, doc]));
         }
         
@@ -385,7 +395,6 @@
                 const ventaTotalCliente = venta.total || 0;
                 clientData[rowClientName].totalValue += ventaTotalCliente;
                 
-                // Totales globales al cliente base
                 clientTotals[baseClientName] = (clientTotals[baseClientName] || 0) + ventaTotalCliente;
                 grandTotalValue += ventaTotalCliente;
 
@@ -400,6 +409,15 @@
                     const prodComp = { ...p, ...prodPrivado, ...prodMaestro, id: p.id }; 
                     const rubro = prodComp.rubro || 'SIN RUBRO';
                     
+                    // SEGURIDAD: Inicializar rubro si el producto estaba eliminado al generar el reporte
+                    if (!dataByRubro[rubro]) {
+                        dataByRubro[rubro] = { clients: {}, productsMap: new Map(), productTotals: {}, totalValue: 0, obsequiosMap: new Set() };
+                        allRubros.add(rubro);
+                    }
+                    if (!dataByRubro[rubro].productsMap.has(p.id)) {
+                        dataByRubro[rubro].productsMap.set(p.id, prodComp); 
+                    }
+
                     if (p.id && !clientData[rowClientName].products[p.id]) clientData[rowClientName].products[p.id] = 0;
                     
                     let cantidadUnidades = 0;
@@ -416,7 +434,6 @@
                         vaciosMovementsPorTipo[baseClientName][prodComp.tipoVacio].entregados += p.cantidadVendida?.cj || 0; 
                     }
 
-                    // Llenar datos para Excel (dataByRubro)
                     if (!dataByRubro[rubro].clients[rowClientName]) {
                         dataByRubro[rubro].clients[rowClientName] = { products: {}, totalValue: 0, isObsequioRow: false };
                     }
@@ -448,12 +465,20 @@
                 const cantidadCajas = obsequio.cantidadCajas || 0;
                 const cantidadUnidades = cantidadCajas * (pComp.unidadesPorCaja || 1);
                 
-                // CALCULAR EL VALOR MONETARIO DEL OBSEQUIO COMO VENTA NORMAL
                 const precioCj = pComp.precios?.cj || 0;
                 const subtotalObsequio = cantidadCajas * precioCj;
 
                 const rubro = pComp.rubro || 'SIN RUBRO';
                 
+                // SEGURIDAD: Inicializar rubro si el producto estaba eliminado al generar el reporte
+                if (!dataByRubro[rubro]) {
+                    dataByRubro[rubro] = { clients: {}, productsMap: new Map(), productTotals: {}, totalValue: 0, obsequiosMap: new Set() };
+                    allRubros.add(rubro);
+                }
+                if (!dataByRubro[rubro].productsMap.has(pComp.id)) {
+                    dataByRubro[rubro].productsMap.set(pComp.id, pComp); 
+                }
+
                 if (!dataByRubro[rubro].clients[rowClientName]) {
                     dataByRubro[rubro].clients[rowClientName] = { products: {}, totalValue: 0, isObsequioRow: true };
                 }
@@ -461,7 +486,6 @@
 
                 if(pComp.id) dataByRubro[rubro].clients[rowClientName].products[pComp.id] = (dataByRubro[rubro].clients[rowClientName].products[pComp.id] || 0) + cantidadUnidades;
                 
-                // Sumar los valores monetarios
                 dataByRubro[rubro].clients[rowClientName].totalValue += subtotalObsequio;
                 dataByRubro[rubro].totalValue += subtotalObsequio;
                 
@@ -507,7 +531,6 @@
                 let currentStockUnits = 0;
                 
                 if (hasSnapshot) {
-                    // Lee inteligentemente ya sea la propiedad nueva o las viejas (stock/cantidad)
                     initialStockUnits = pInfoSnapshot ? (pInfoSnapshot.cantidadUnidades !== undefined ? pInfoSnapshot.cantidadUnidades : (pInfoSnapshot.stock || pInfoSnapshot.cantidad || 0)) : 0;
                     currentStockUnits = initialStockUnits - totalSoldUnits;
                 } else {
@@ -564,7 +587,6 @@
                 const cCli = clientData[cli]; 
                 const esSoloObsequio = cCli.isObsequioRow;
                 
-                // Color azul claro para distinguir obsequios visualmente en pantalla
                 const rowClass = esSoloObsequio ? 'bg-blue-100 hover:bg-blue-200 text-blue-900' : 'hover:bg-blue-50';
                 
                 bHTML+=`<tr class="${rowClass}"><td class="p-1 border font-medium bg-white sticky left-0 z-10">${cli}</td>`; 
@@ -574,7 +596,7 @@
                     
                     let dQ = '';
                     if (qU > 0) {
-                        dQ = `${qtyDisplay.value} ${qtyDisplay.unit}`;
+                        dQ = typeof qtyDisplay.value === 'number' ? `${qtyDisplay.value} ${qtyDisplay.unit}` : qtyDisplay.value;
                         if (esSoloObsequio) dQ += ` <span class="text-[10px] text-blue-600 font-black ml-1">(Regalo)</span>`;
                     }
                     
@@ -591,7 +613,7 @@
                 sortedClients.forEach(cli=>tQ+=clientData[cli].products[p.id]||0); 
                 
                 const qtyDisplay = getDisplayQty(tQ, p);
-                let dT = (tQ > 0) ? `${qtyDisplay.value} ${qtyDisplay.unit}` : '';
+                let dT = (tQ > 0) ? (typeof qtyDisplay.value === 'number' ? `${qtyDisplay.value} ${qtyDisplay.unit}` : qtyDisplay.value) : '';
                 
                 fHTML+=`<td class="p-1 border text-center whitespace-nowrap">${dT}</td>`;
             }); 
@@ -833,8 +855,13 @@
                         const cell = cargaInicialRow.getCell(START_COL + index);
                         if (initialStock > 0) {
                             const qtyDisplay = getDisplayQty(initialStock, p);
-                            cell.value = qtyDisplay.value;
-                            cell.style = { ...cargaInicialQtyStyle, numFmt: `0 " ${qtyDisplay.unit}"` };
+                            if (typeof qtyDisplay.value === 'number') {
+                                cell.value = qtyDisplay.value;
+                                cell.style = { ...cargaInicialQtyStyle, numFmt: `0 " ${qtyDisplay.unit}"` };
+                            } else {
+                                cell.value = qtyDisplay.value;
+                                cell.style = { ...cargaInicialQtyStyle };
+                            }
                         } else {
                             cell.value = '';
                             cell.style = { ...cargaInicialQtyStyle };
@@ -878,8 +905,14 @@
                         if (qU > 0) {
                             const qtyDisplay = getDisplayQty(qU, p);
                             const suffix = esSoloObsequio ? ' (Obs)' : '';
-                            cell.value = qtyDisplay.value;
-                            cell.style = { ...finalCellStyle, numFmt: `0 " ${qtyDisplay.unit}${suffix}"` };
+                            
+                            if (typeof qtyDisplay.value === 'number') {
+                                cell.value = qtyDisplay.value;
+                                cell.style = { ...finalCellStyle, numFmt: `0 " ${qtyDisplay.unit}${suffix}"` };
+                            } else {
+                                cell.value = qtyDisplay.value + suffix;
+                                cell.style = finalCellStyle;
+                            }
                         } else {
                             cell.value = '';
                             cell.style = finalCellStyle;
@@ -910,8 +943,13 @@
                         const cell = cargaRestanteRow.getCell(START_COL + index);
                         if (currentStock > 0) {
                             const qtyDisplay = getDisplayQty(currentStock, p);
-                            cell.value = qtyDisplay.value;
-                            cell.style = { ...cargaRestanteQtyStyle, numFmt: `0 " ${qtyDisplay.unit}"` };
+                            if (typeof qtyDisplay.value === 'number') {
+                                cell.value = qtyDisplay.value;
+                                cell.style = { ...cargaRestanteQtyStyle, numFmt: `0 " ${qtyDisplay.unit}"` };
+                            } else {
+                                cell.value = qtyDisplay.value;
+                                cell.style = { ...cargaRestanteQtyStyle };
+                            }
                         } else {
                             cell.value = '';
                             cell.style = { ...cargaRestanteQtyStyle };
@@ -928,8 +966,13 @@
                     const cell = totalesRow.getCell(START_COL + index);
                     if (totalSold > 0) {
                         const qtyDisplay = getDisplayQty(totalSold, p);
-                        cell.value = qtyDisplay.value;
-                        cell.style = { ...totalsQtyStyle, numFmt: `0 " ${qtyDisplay.unit}"` };
+                        if (typeof qtyDisplay.value === 'number') {
+                            cell.value = qtyDisplay.value;
+                            cell.style = { ...totalsQtyStyle, numFmt: `0 " ${qtyDisplay.unit}"` };
+                        } else {
+                            cell.value = qtyDisplay.value;
+                            cell.style = { ...totalsQtyStyle };
+                        }
                     } else {
                         cell.value = '';
                         cell.style = { ...totalsQtyStyle };
