@@ -553,20 +553,48 @@
     // --- REUTILIZAREMOS LA MISMA LÓGICA DE AUDITORÍA PARA LA CARGA INICIAL ---
     async function obtenerDatosParaCierre(userId) {
         await ensureHybridCacheLoaded();
+        
+        // 1. Obtener el último cierre oficial
         const cierresRef = _collection(_db, `artifacts/${_appId}/users/${userId}/cierres`);
         const qUltimo = _query(cierresRef, _orderBy('fecha', 'desc'), _limit(1));
         const snapUltimo = await _getDocs(qUltimo);
 
+        // 2. Obtener el Snapshot manual (Punto de Partida)
+        const snapshotRef = _doc(_db, `artifacts/${_appId}/users/${userId}/config/cargaInicialSnapshot`);
+        const snapshotDoc = await _getDoc(snapshotRef);
+
         let stockTeorico = new Map();
         let fechaCargaInicial = new Date(0);
+        let fechaUltimoCierre = new Date(0);
+        let fechaSnapshot = new Date(0);
 
         if (!snapUltimo.empty) {
             const uCierre = snapUltimo.docs[0].data();
-            fechaCargaInicial = uCierre.fecha?.toDate ? uCierre.fecha.toDate() : new Date(uCierre.fecha);
+            fechaUltimoCierre = uCierre.fecha?.toDate ? uCierre.fecha.toDate() : new Date(uCierre.fecha);
+        }
+
+        if (snapshotDoc.exists()) {
+            const sData = snapshotDoc.data();
+            fechaSnapshot = sData.fecha?.toDate ? sData.fecha.toDate() : new Date(sData.fecha);
+        }
+
+        // 3. DECISIÓN INTELIGENTE: ¿Qué base usamos? ¿El último cierre o el Snapshot manual?
+        if (snapshotDoc.exists() && fechaSnapshot > fechaUltimoCierre) {
+            // El Admin fijó un punto de partida DESPUÉS del último cierre. Usamos el Snapshot.
+            fechaCargaInicial = fechaSnapshot;
+            const baseItems = snapshotDoc.data().inventario || [];
+            baseItems.forEach(item => stockTeorico.set(item.productoId || item.id, item.cantidadUnidades || 0));
+            // OJO: En el snapshot no restamos ventas/obsequios porque ya es un cálculo limpio de ese instante.
+            
+        } else if (!snapUltimo.empty) {
+            // El último cierre es más reciente. Usamos el cierre normal.
+            fechaCargaInicial = fechaUltimoCierre;
+            const uCierre = snapUltimo.docs[0].data();
             const baseItems = uCierre.cargaInicialInventario || [];
             
             baseItems.forEach(item => stockTeorico.set(item.productoId || item.id, item.cantidadUnidades || 0));
             
+            // Restamos lo vendido en ese cierre para saber con cuánto finalizó realmente
             (uCierre.ventas || []).forEach(v => {
                 (v.productos || []).forEach(p => {
                     stockTeorico.set(p.id, (stockTeorico.get(p.id) || 0) - (p.totalUnidadesVendidas || 0));
@@ -579,6 +607,7 @@
             });
         }
 
+        // 4. Sumar Recargas posteriores a la base seleccionada
         const recargasRef = _collection(_db, `artifacts/${_appId}/users/${userId}/recargas`);
         const qRecargas = _query(recargasRef, _where("fecha", ">=", fechaCargaInicial.toISOString()));
         const snapRecargas = await _getDocs(qRecargas);
@@ -590,16 +619,20 @@
             });
         });
 
-        // Sumar correcciones del Admin para que NO se sobreescriban
+        // 5. Sumar correcciones del Admin
         const corrRef = _collection(_db, `artifacts/${_appId}/users/${userId}/historial_correcciones`);
         const qCorr = _query(corrRef, _where("fecha", ">=", fechaCargaInicial)); 
         const snapCorr = await _getDocs(qCorr);
         const correcciones = snapCorr.docs.map(d => d.data());
 
         correcciones.forEach(c => {
+            // Saltamos la limpieza profunda temporalmente (eso lo abordaremos en el punto 2)
+            if (c.tipoAjuste === 'LIMPIEZA_PROFUNDA') return; 
             (c.detalles || []).forEach(d => {
-                const ajuste = d.ajusteBase !== undefined ? d.ajusteBase : (d.ajuste || 0); // Maneja versión nueva y vieja
-                stockTeorico.set(d.productoId, (stockTeorico.get(d.productoId) || 0) + ajuste);
+                const ajuste = d.ajusteBase !== undefined ? d.ajusteBase : (d.ajuste || 0);
+                if (d.productoId && d.productoId !== 'ALL') {
+                    stockTeorico.set(d.productoId, (stockTeorico.get(d.productoId) || 0) + ajuste);
+                }
             });
         });
 
