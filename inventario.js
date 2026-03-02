@@ -726,8 +726,6 @@
         const segConts = document.querySelectorAll('#segmentos-marcas-sortable-list .segmento-container'); 
         if (segConts.length === 0) { _showModal('Aviso', 'No hay elementos para ordenar.'); return; }
         
-        _showModal('Progreso', 'Inyectando coordenadas matemáticas en los productos...');
-        
         const updates = [];
         
         segConts.forEach((segCont, sIdx) => {
@@ -757,7 +755,13 @@
             return;
         }
 
+        _showModal('Progreso', 'Guardando coordenadas en la base de datos (por favor espere)...', null, '', null, false);
+
         try {
+            // 1. APAGAR LISTENERS PARA EVITAR COLAPSO QUIC (Self-DDoS)
+            _listenersUnsubscribes.forEach(unsub => { try { unsub(); } catch(e) {} });
+            _listenersUnsubscribes = [];
+
             let totalOps = 0;
             let batch = _writeBatch(_db);
             
@@ -785,8 +789,10 @@
                     totalOps++;
                 }
                 
-                if (totalOps >= 490) { 
+                // 2. REDUCIR BATCH Y DAR UN RESPIRO A LA RED
+                if (totalOps >= 250) { 
                     await batch.commit();
+                    await new Promise(resolve => setTimeout(resolve, 300)); // Respiro de 300ms para la red
                     batch = _writeBatch(_db);
                     totalOps = 0;
                 }
@@ -797,10 +803,13 @@
             }
 
             invalidateSegmentOrderCache(); 
-            _showModal('Éxito', `Coordenadas actualizadas en ${updates.length} productos. Verifique la tabla "Ver Productos".`, showInventarioSubMenu);
+            
+            // 3. RETORNAR AL MENÚ (Esto reiniciará los listeners de forma limpia y segura al entrar a otra vista)
+            _showModal('Éxito', `Coordenadas actualizadas en ${updates.length} productos.`, showInventarioSubMenu);
+
         } catch (error) {
             console.error("Error al guardar orden:", error);
-            _showModal('Error', `Fallo al guardar: ${error.message}`);
+            _showModal('Error', `Fallo al guardar: ${error.message}`, showInventarioSubMenu);
         }
     }
 
@@ -809,39 +818,51 @@
         if (!rubroValue) return;
 
         _showModal('Confirmación Crítica', `¿Desea hacer una LIMPIEZA PROFUNDA y restablecer todo el rubro "${rubroValue}" a su orden alfabético original?`, async () => {
-            _showModal('Progreso', 'Borrando coordenadas y restableciendo...');
+            _showModal('Progreso', 'Borrando coordenadas y restableciendo...', null, '', null, false);
             
+            // 1. APAGAR LISTENERS PARA EVITAR COLAPSO QUIC
+            _listenersUnsubscribes.forEach(unsub => { try { unsub(); } catch(e) {} });
+            _listenersUnsubscribes = [];
+
             const prods = _inventarioCache.filter(p => p.rubro === rubroValue);
             let batch = _writeBatch(_db);
             let totalOps = 0;
 
-            for(const p of prods) {
-                if (p.ordenSegmento !== undefined || p.ordenMarca !== undefined || p.ordenProducto !== undefined) {
-                    if (_masterCatalogCache[p.id]) {
-                        batch.set(_doc(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/productos`, p.id), {
-                            ordenSegmento: null, ordenMarca: null, ordenProducto: null
-                        }, {merge: true});
-                        totalOps++;
+            try {
+                for(const p of prods) {
+                    if (p.ordenSegmento !== undefined || p.ordenMarca !== undefined || p.ordenProducto !== undefined) {
+                        if (_masterCatalogCache[p.id]) {
+                            batch.set(_doc(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/productos`, p.id), {
+                                ordenSegmento: null, ordenMarca: null, ordenProducto: null
+                            }, {merge: true});
+                            totalOps++;
+                        }
+                        if (_userStockCache[p.id]) {
+                            batch.set(_doc(_db, `artifacts/${_appId}/users/${_userId}/inventario`, p.id), {
+                                ordenSegmento: null, ordenMarca: null, ordenProducto: null
+                            }, {merge: true});
+                            totalOps++;
+                        }
+                        
+                        // 2. REDUCIR BATCH Y DAR RESPIRO A LA RED
+                        if (totalOps >= 250) { 
+                            await batch.commit(); 
+                            await new Promise(resolve => setTimeout(resolve, 300)); 
+                            batch = _writeBatch(_db); 
+                            totalOps = 0; 
+                        }
                     }
-                    if (_userStockCache[p.id]) {
-                        batch.set(_doc(_db, `artifacts/${_appId}/users/${_userId}/inventario`, p.id), {
-                            ordenSegmento: null, ordenMarca: null, ordenProducto: null
-                        }, {merge: true});
-                        totalOps++;
-                    }
-                    if (totalOps >= 490) { await batch.commit(); batch = _writeBatch(_db); totalOps = 0; }
                 }
-            }
-            if (totalOps > 0) await batch.commit();
-            
-            invalidateSegmentOrderCache();
-            renderSortableHierarchy(rubroValue); 
-            
-            const pModal = document.getElementById('modalContainer');
-            if(pModal && pModal.querySelector('h3')?.textContent === 'Progreso') pModal.classList.add('hidden');
-            
-            setTimeout(() => _showModal('Éxito', 'Limpieza profunda exitosa. Orden alfabético restablecido.'), 500);
+                if (totalOps > 0) await batch.commit();
+                
+                invalidateSegmentOrderCache();
+                
+                _showModal('Éxito', 'Limpieza profunda exitosa. Orden alfabético restablecido.', showInventarioSubMenu);
 
+            } catch (error) {
+                console.error("Error al resetear:", error);
+                _showModal('Error', `Fallo al restablecer: ${error.message}`, showInventarioSubMenu);
+            }
         }, 'Sí, Limpiar y Restablecer');
     }
 
@@ -929,7 +950,7 @@
         
         if (data.manejaVacios && !data.tipoVacio){_showModal('Error','Si maneja vacío, selecciona el tipo.');return;}
 
-        _showModal('Progreso', 'Creando producto en Catálogo Maestro...');
+        _showModal('Progreso', 'Creando producto en Catálogo Maestro...', null, '', null, false);
         try {
             const newId = _doc(_collection(_db, 'dummy')).id;
             if (window.adminModule?.propagateProductChange) {
@@ -1119,7 +1140,7 @@
         // Si no eliminamos la variable de cantidad, admin.js lo sobreescribirá.
         delete updatedData.cantidadUnidades; 
 
-        _showModal('Progreso','Guardando cambios en Catálogo Maestro...'); 
+        _showModal('Progreso','Guardando cambios en Catálogo Maestro...', null, '', null, false); 
         try { 
             if (window.adminModule?.propagateProductChange) { 
                 await window.adminModule.propagateProductChange(productId, updatedData); 
@@ -1135,19 +1156,48 @@
 
     function deleteProducto(productId) {
         if (_userRole !== 'admin') { _showModal('Acceso Denegado', 'Solo administradores.'); return; } const prod = _inventarioCache.find(p => p.id === productId); if (!prod) { _showModal('Error', 'Producto no encontrado.'); return; }
-        _showModal('Confirmar Eliminación', `¿Estás seguro de eliminar el producto "${prod.presentacion}"? Esta acción se propagará a todos los usuarios y es IRREVERSIBLE.`, async () => { _showModal('Progreso', `Eliminando "${prod.presentacion}"...`); try { if (window.adminModule?.propagateProductChange) { await window.adminModule.propagateProductChange(productId, null); } else { await _deleteDoc(_doc(_db, `artifacts/${_appId}/users/${_userId}/inventario`, productId)); } _showModal('Éxito',`Producto "${prod.presentacion}" eliminado y propagado.`); } catch (e) { console.error("Error eliminando producto:", e); _showModal('Error', `No se pudo eliminar: ${e.message}`); } }, 'Sí, Eliminar', null, true);
+        _showModal('Confirmar Eliminación', `¿Estás seguro de eliminar el producto "${prod.presentacion}"? Esta acción se propagará a todos los usuarios y es IRREVERSIBLE.`, async () => { _showModal('Progreso', `Eliminando "${prod.presentacion}"...`, null, '', null, false); try { if (window.adminModule?.propagateProductChange) { await window.adminModule.propagateProductChange(productId, null); } else { await _deleteDoc(_doc(_db, `artifacts/${_appId}/users/${_userId}/inventario`, productId)); } _showModal('Éxito',`Producto "${prod.presentacion}" eliminado y propagado.`); } catch (e) { console.error("Error eliminando producto:", e); _showModal('Error', `No se pudo eliminar: ${e.message}`); } }, 'Sí, Eliminar', null, true);
     }
 
     async function handleDeleteAllProductos() {
-        if (_userRole !== 'admin') return; _showModal('Confirmación Extrema', `¿Estás SEGURO de eliminar TODOS los productos del inventario? Esta acción es IRREVERSIBLE y se propagará.`, async () => { _showModal('Progreso', 'Eliminando productos...'); try { const collectionRef = _collection(_db, `artifacts/${_appId}/users/${_userId}/inventario`); const snapshot = await _getDocs(collectionRef); if (snapshot.empty) { _showModal('Aviso', 'No hay productos en el inventario para eliminar.'); return; } const productIds = snapshot.docs.map(d => d.id); 
+        if (_userRole !== 'admin') return; 
+        _showModal('Confirmación Extrema', `¿Estás SEGURO de eliminar TODOS los productos del inventario? Esta acción es IRREVERSIBLE y se propagará.`, async () => { 
+            _showModal('Progreso', 'Eliminando productos...', null, '', null, false); 
+            try { 
+                // APAGAR LISTENERS
+                _listenersUnsubscribes.forEach(unsub => { try { unsub(); } catch(e) {} });
+                _listenersUnsubscribes = [];
+
+                const collectionRef = _collection(_db, `artifacts/${_appId}/users/${_userId}/inventario`); 
+                const snapshot = await _getDocs(collectionRef); 
+                if (snapshot.empty) { _showModal('Aviso', 'No hay productos en el inventario para eliminar.'); return; } 
+                const productIds = snapshot.docs.map(d => d.id); 
         
-        if (window.adminModule?.propagateProductChange) { let propagationErrors = 0; for (const productId of productIds) { try { await window.adminModule.propagateProductChange(productId, null); } catch (propError) { console.error(`Error propagando eliminación de ${productId}:`, propError); propagationErrors++; } } _showModal(propagationErrors > 0 ? 'Advertencia' : 'Éxito', `Se eliminaron ${productIds.length} productos.${propagationErrors > 0 ? ` Ocurrieron ${propagationErrors} errores al propagar.` : ' Propagado correctamente.'}`); } else { _showModal('Error', `La función de propagación no está disponible.`); } } catch (error) { console.error("Error al eliminar todos los productos:", error); _showModal('Error', `Hubo un error al eliminar los productos: ${error.message}`); } }, 'Sí, Eliminar Todos', null, true);
+                if (window.adminModule?.propagateProductChange) { 
+                    let propagationErrors = 0; 
+                    for (const productId of productIds) { 
+                        try { 
+                            await window.adminModule.propagateProductChange(productId, null); 
+                            await new Promise(r => setTimeout(r, 50)); // Respiro de red
+                        } catch (propError) { 
+                            console.error(`Error propagando eliminación de ${productId}:`, propError); propagationErrors++; 
+                        } 
+                    } 
+                    _showModal(propagationErrors > 0 ? 'Advertencia' : 'Éxito', `Se eliminaron ${productIds.length} productos.${propagationErrors > 0 ? ` Ocurrieron ${propagationErrors} errores al propagar.` : ' Propagado correctamente.'}`, showInventarioSubMenu); 
+                } else { 
+                    _showModal('Error', `La función de propagación no está disponible.`); 
+                } 
+            } catch (error) { 
+                console.error("Error al eliminar todos los productos:", error); 
+                _showModal('Error', `Hubo un error al eliminar los productos: ${error.message}`, showInventarioSubMenu); 
+            } 
+        }, 'Sí, Eliminar Todos', null, true);
     }
 
     async function handleDeleteAllDatosMaestros() {
         if (_userRole !== 'admin') return;
         _showModal('Confirmar Borrado Datos Maestros', `¿Eliminar TODOS los Rubros, Segmentos y Marcas que NO estén siendo usados actualmente en el inventario? Esta acción es IRREVERSIBLE y se propagará.`, async () => {
-            _showModal('Progreso', 'Verificando uso de datos maestros...');
+            _showModal('Progreso', 'Verificando uso de datos maestros...', null, '', null, false);
             try {
                 const collectionsToClean = ['rubros', 'segmentos', 'marcas'];
                 const itemsToDelete = { rubros: [], segmentos: [], marcas: [] };
@@ -1178,29 +1228,34 @@
                 }
 
                 _showModal('Confirmación Final', `Se eliminarán ${totalToDelete} datos maestros no utilizados (${itemsToDelete.rubros.length} Rubros, ${itemsToDelete.segmentos.length} Segmentos, ${itemsToDelete.marcas.length} Marcas). Esta acción se propagará. ¿Continuar?`, async () => {
-                    _showModal('Progreso', `Eliminando ${totalToDelete} datos maestros localmente...`);
+                    _showModal('Progreso', `Eliminando ${totalToDelete} datos maestros localmente...`, null, '', null, false);
                     try { 
+                        // APAGAR LISTENERS
+                        _listenersUnsubscribes.forEach(unsub => { try { unsub(); } catch(e) {} });
+                        _listenersUnsubscribes = [];
+
                         let propagationErrors = 0;
                         if (window.adminModule?.propagateCategoryChange) {
                             for (const colName in itemsToDelete) {
                                 for (const item of itemsToDelete[colName]) {
                                     try {
                                          await window.adminModule.propagateCategoryChange(colName, item.id, null);
+                                         await new Promise(r => setTimeout(r, 50)); // Respiro de red
                                     } catch (propError) {
                                          console.error(`Error propagando eliminación de ${colName}/${item.id}:`, propError);
                                          propagationErrors++;
                                     }
                                 }
                             }
-                            _showModal(propagationErrors > 0 ? 'Advertencia' : 'Éxito', `Se eliminaron ${totalToDelete} datos maestros no utilizados.${propagationErrors > 0 ? ` Ocurrieron ${propagationErrors} errores al propagar.` : ' Propagado correctamente.'}`);
+                            _showModal(propagationErrors > 0 ? 'Advertencia' : 'Éxito', `Se eliminaron ${totalToDelete} datos maestros no utilizados.${propagationErrors > 0 ? ` Ocurrieron ${propagationErrors} errores al propagar.` : ' Propagado correctamente.'}`, showInventarioSubMenu);
                         } else {
-                            _showModal('Advertencia', `La función de propagación no está disponible.`);
+                            _showModal('Advertencia', `La función de propagación no está disponible.`, showInventarioSubMenu);
                         }
                         invalidateSegmentOrderCache(); 
 
                     } catch (deletePropError) { 
                          console.error("Error durante eliminación/propagación de datos maestros:", deletePropError);
-                         _showModal('Error', `Ocurrió un error durante la eliminación/propagación: ${deletePropError.message}`);
+                         _showModal('Error', `Ocurrió un error durante la eliminación/propagación: ${deletePropError.message}`, showInventarioSubMenu);
                     }
                 }, 'Sí, Eliminar No Usados', null, true); 
 
@@ -1424,7 +1479,7 @@
         if (changesCount === 0) { _showModal('Aviso', 'No se ha ingresado ninguna cantidad para recargar.'); return; }
 
         _showModal('Confirmar Recarga', `Se añadirán cantidades a ${changesCount} productos. ¿Continuar?`, async () => {
-            _showModal('Progreso', 'Procesando recarga...');
+            _showModal('Progreso', 'Procesando recarga...', null, '', null, false);
             try {
                 const recargaLogRef = _collection(_db, `artifacts/${_appId}/users/${_userId}/recargas`);
                 await _addDoc(recargaLogRef, {
