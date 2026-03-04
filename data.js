@@ -7,13 +7,7 @@
     let _usersMapCache = new Map();
 
     let mapInstance = null;
-    let mapMarkers = new Map();
-
-    let _sortPreferenceCache = null;
-    let _rubroOrderMapCache = null;
-    let _segmentoOrderMapCache = null;
-    let _marcasOrderMapCache = null;
-    const SORT_CONFIG_PATH = 'config/productSortOrder'; 
+    let mapMarkers = new Map(); 
 
     const PUBLIC_DATA_ID = window.AppConfig.PUBLIC_DATA_ID;
     const CLIENTES_COLLECTION_PATH = `artifacts/${PUBLIC_DATA_ID}/public/data/clientes`;
@@ -1798,105 +1792,37 @@
     }
 
     async function getGlobalProductSortFunction() {
-        if (!_sortPreferenceCache || !_rubroOrderMapCache || !_marcasOrderMapCache) {
-            try { 
-                const dRef=_doc(_db, `artifacts/${_appId}/users/${_userId}/${SORT_CONFIG_PATH}`); 
-                const dSnap=await _getDoc(dRef); 
-                if(dSnap.exists()&&dSnap.data().order){ 
-                    _sortPreferenceCache=dSnap.data().order; 
-                } else {
-                    _sortPreferenceCache=['segmento','marca','presentacion','rubro'];
-                } 
-
-                const publicPath = `artifacts/${PUBLIC_DATA_ID}/public/data`;
-                _rubroOrderMapCache = {};
-                _segmentoOrderMapCache = {};
-                _marcasOrderMapCache = {}; 
-
-                const [rSnap, sSnap, mSnap] = await Promise.all([
-                    _getDocs(_collection(_db, `${publicPath}/rubros`)),
-                    _getDocs(_collection(_db, `${publicPath}/segmentos`)),
-                    _getDocs(_collection(_db, `${publicPath}/marcas`))
-                ]);
-
-                const norm = (s) => (s||'').trim().toUpperCase();
-
-                rSnap.forEach(d => { const dat=d.data(); if(dat.name) _rubroOrderMapCache[norm(dat.name)] = dat.orden ?? 9999; });
-                sSnap.forEach(d => { 
-                    const dat=d.data(); 
-                    if(dat.name) _segmentoOrderMapCache[norm(dat.name)] = {
-                        orden: dat.orden ?? 9999,
-                        marcaOrder: (dat.marcaOrder || []).map(m => norm(m))
-                    };
-                });
-                mSnap.forEach(d => {
-                    const dat=d.data();
-                    if(dat.name) _marcasOrderMapCache[norm(dat.name)] = {
-                        productOrder: dat.productOrder || []
-                    };
-                });
-
-            } catch (error) { 
-                console.error("Error cargando pref orden (Data):", error); 
-                _sortPreferenceCache=['segmento','marca','presentacion','rubro']; 
-                _rubroOrderMapCache={}; _segmentoOrderMapCache={}; _marcasOrderMapCache={};
-            }
-        }
-
-        const norm = (s) => (s||'').trim().toUpperCase();
-
         return (a, b) => {
-            const safeA = a || {}; const safeB = b || {};
+            // 1. Nivel Rubro: Siempre alfabético
+            const rStrA = (a.rubro || 'SIN RUBRO').toUpperCase();
+            const rStrB = (b.rubro || 'SIN RUBRO').toUpperCase();
+            if (rStrA !== rStrB) return rStrA.localeCompare(rStrB);
 
-            for (const key of _sortPreferenceCache) { 
-                let res = 0;
-                if (key === 'rubro') {
-                    const kA = norm(safeA.rubro); const kB = norm(safeB.rubro);
-                    const oA = _rubroOrderMapCache[kA] ?? 9999; 
-                    const oB = _rubroOrderMapCache[kB] ?? 9999; 
-                    res = oA - oB; 
-                    if (res === 0) res = kA.localeCompare(kB); 
-                }
-                else if (key === 'segmento') { 
-                    const kA = norm(safeA.segmento); const kB = norm(safeB.segmento);
-                    const sA = _segmentoOrderMapCache[kA];
-                    const sB = _segmentoOrderMapCache[kB];
-                    res = (sA?.orden ?? 9999) - (sB?.orden ?? 9999); 
-                    if (res === 0) res = kA.localeCompare(kB); 
-                }
-                else if (key === 'marca') { 
-                    if (norm(safeA.segmento) === norm(safeB.segmento)) {
-                        const segData = _segmentoOrderMapCache[norm(safeA.segmento)];
-                        if (segData && segData.marcaOrder) {
-                            const iA = segData.marcaOrder.indexOf(norm(safeA.marca));
-                            const iB = segData.marcaOrder.indexOf(norm(safeB.marca));
-                            if (iA !== -1 && iB !== -1) res = iA - iB;
-                            else if (iA !== -1) res = -1;
-                            else if (iB !== -1) res = 1;
-                        }
-                    }
-                    if (res === 0) res = (safeA.marca||'').localeCompare(safeB.marca||''); 
-                }
-                else if (key === 'presentacion') { 
-                    if (norm(safeA.marca) === norm(safeB.marca)) {
-                        const mData = _marcasOrderMapCache?.[norm(safeA.marca)];
-                        if (mData && mData.productOrder) {
-                            const iA = mData.productOrder.indexOf(safeA.id);
-                            const iB = mData.productOrder.indexOf(safeB.id);
-                            if (iA !== -1 && iB !== -1) res = iA - iB;
-                            else if (iA !== -1) res = -1;
-                            else if (iB !== -1) res = 1;
-                        }
-                    }
-                    if (res === 0) res = (safeA.presentacion||'').localeCompare(safeB.presentacion||''); 
-                    if (res === 0) res = (safeA.id || '').localeCompare(safeB.id || ''); 
-                }
-                
-                if (res !== 0) return res;
-            } 
-            return 0;
+            // 2. Nivel Segmento: Por Coordenada visual
+            const sOrdA = a.ordenSegmento ?? 9999;
+            const sOrdB = b.ordenSegmento ?? 9999;
+            if (sOrdA !== sOrdB) return sOrdA - sOrdB;
+            const sStrA = (a.segmento || 'SIN SEGMENTO').toUpperCase();
+            const sStrB = (b.segmento || 'SIN SEGMENTO').toUpperCase();
+            if (sStrA !== sStrB) return sStrA.localeCompare(sStrB);
+
+            // 3. Nivel Marca: Por Coordenada visual
+            const mOrdA = a.ordenMarca ?? 9999;
+            const mOrdB = b.ordenMarca ?? 9999;
+            if (mOrdA !== mOrdB) return mOrdA - mOrdB;
+            const mStrA = (a.marca || 'S/M').toUpperCase();
+            const mStrB = (b.marca || 'S/M').toUpperCase();
+            if (mStrA !== mStrB) return mStrA.localeCompare(mStrB);
+
+            // 4. Nivel Producto: Por Coordenada visual
+            const pOrdA = a.ordenProducto ?? 9999;
+            const pOrdB = b.ordenProducto ?? 9999;
+            if (pOrdA !== pOrdB) return pOrdA - pOrdB;
+            const pStrA = (a.presentacion || '').toUpperCase();
+            const pStrB = (b.presentacion || '').toUpperCase();
+            return pStrA.localeCompare(pStrB);
         };
-    };
+    }
 
     // Exponer explícitamente estas funciones para evitar ReferenceErrors en menús
     window.showReportDesignView = showReportDesignView;
