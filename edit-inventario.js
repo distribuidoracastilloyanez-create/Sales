@@ -547,10 +547,22 @@
                         });
                     }
 
-                    transaction.set(logRef, {
+                    // --- INICIO FIX: DOBLE GUARDADO PARA EVITAR ERRORES DE PERMISOS ---
+                    const logData = {
                         fecha: fecha, adminId: _userId, targetUserId: targetUser.id, targetUserEmail: targetUser.email,
                         totalItemsAfectados: changes.length, detalles: detallesLog
-                    });
+                    };
+
+                    // 1. Guardamos en el historial del Admin
+                    transaction.set(logRef, logData);
+                    
+                    // 2. Guardamos una COPIA exacta en el historial del Vendedor
+                    // (Así el algoritmo de cierre del vendedor lo puede leer sin violar la seguridad)
+                    if (_userId !== targetUser.id) {
+                        const userLogRef = _doc(_collection(_db, `artifacts/${_appId}/users/${targetUser.id}/historial_correcciones`));
+                        transaction.set(userLogRef, logData);
+                    }
+                    // --- FIN FIX ---
                 });
                 
                 // --- NUEVO MENSAJE DE CONFIRMACIÓN Y RECARGA ---
