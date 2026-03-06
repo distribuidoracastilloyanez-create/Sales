@@ -613,41 +613,49 @@
             (r.detalles || []).forEach(d => eventos.push({ tipo: 'RECARGA', fecha: f, id: d.productoId, qty: d.diferenciaUnidades || 0 }));
         });
 
-        // --- INICIO FIX: BÚSQUEDA MULTI-CARPETA (ADMINS + VENDEDOR) PARA CORRECCIONES ---
-        const usersRef = _collection(_db, 'users');
-        const usersSnap = await _getDocs(usersRef);
-        const adminIds = usersSnap.docs.filter(d => d.data().role === 'admin').map(d => d.id);
+        // --- INICIO FIX: BÚSQUEDA MULTI-CARPETA PROTEGIDA CONTRA REGLAS DE FIREBASE ---
+        let idsToSearch = [userId]; // Por defecto siempre buscar en la carpeta del propio vendedor
         
-        // Buscar en la carpeta del vendedor y en la de todos los administradores simultáneamente
-        const idsToSearch = [...new Set([userId, ...adminIds])];
+        try {
+            // Intentamos buscar administradores (Solo funcionará si el que ejecuta esto es un Admin)
+            const usersRef = _collection(_db, 'users');
+            const usersSnap = await _getDocs(usersRef);
+            const adminIds = usersSnap.docs.filter(d => d.data().role === 'admin').map(d => d.id);
+            idsToSearch = [...new Set([userId, ...adminIds])];
+        } catch (permError) {
+            // Si da "Missing permissions", es porque es un Vendedor normal. 
+            // Ignoramos el error silenciosamente y continuamos solo con su userId.
+            console.warn("Búsqueda restringida: El usuario no es admin, solo leerá su propia carpeta de correcciones.");
+        }
 
         for (const searchUid of idsToSearch) {
-            const qCorr = _query(_collection(_db, `artifacts/${_appId}/users/${searchUid}/historial_correcciones`), _where("fecha", ">=", fechaBase)); 
-            const snapCorr = await _getDocs(qCorr);
-            
-            snapCorr.docs.forEach(doc => {
-                const c = doc.data(); 
+            try {
+                const qCorr = _query(_collection(_db, `artifacts/${_appId}/users/${searchUid}/historial_correcciones`), _where("fecha", ">=", fechaBase)); 
+                const snapCorr = await _getDocs(qCorr);
                 
-                // Filtramos en memoria: Solo nos importan las correcciones donde el target es este vendedor 
-                // o si la corrección está en su propia carpeta (retrocompatibilidad)
-                if (c.targetUserId === userId || (!c.targetUserId && searchUid === userId)) {
-                    const f = c.fecha?.toDate ? c.fecha.toDate() : new Date(c.fecha);
-                    
-                    if (c.tipoAjuste === 'LIMPIEZA_PROFUNDA') {
-                        eventos.push({ tipo: 'WIPE', fecha: f });
-                    } else {
-                        (c.detalles || []).forEach(d => {
-                            const ajuste = d.ajusteBase !== undefined ? d.ajusteBase : (d.ajuste || 0);
-                            if (d.productoId && d.productoId !== 'ALL') {
-                                eventos.push({ tipo: 'CORRECCION', fecha: f, id: d.productoId, qty: ajuste });
-                            }
-                        });
+                snapCorr.docs.forEach(doc => {
+                    const c = doc.data(); 
+                    // Filtramos: Solo nos importan las correcciones donde el target es este vendedor 
+                    if (c.targetUserId === userId || (!c.targetUserId && searchUid === userId)) {
+                        const f = c.fecha?.toDate ? c.fecha.toDate() : new Date(c.fecha);
+                        
+                        if (c.tipoAjuste === 'LIMPIEZA_PROFUNDA') {
+                            eventos.push({ tipo: 'WIPE', fecha: f });
+                        } else {
+                            (c.detalles || []).forEach(d => {
+                                const ajuste = d.ajusteBase !== undefined ? d.ajusteBase : (d.ajuste || 0);
+                                if (d.productoId && d.productoId !== 'ALL') {
+                                    eventos.push({ tipo: 'CORRECCION', fecha: f, id: d.productoId, qty: ajuste });
+                                }
+                            });
+                        }
                     }
-                }
-            });
+                });
+            } catch (folderError) {
+                // Si Firebase rechaza leer la carpeta de un admin específico por permisos, se ignora.
+            }
         }
         // --- FIN FIX CORRECCIONES ---
-
         // 3. Extraer Ventas y Obsequios activos
         ventasActivas.forEach(v => {
             const f = v.fecha?.toDate ? v.fecha.toDate() : new Date(v.fecha);
