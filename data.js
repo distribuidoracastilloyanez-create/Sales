@@ -374,7 +374,6 @@
             const baseClientName = item.data.clienteNombre || 'Cliente Desconocido';
             const isObsequio = item.tipo === 'obsequio';
             
-            // Fila virtual distinta para obsequios
             const rowClientName = isObsequio ? `${baseClientName} (OBSEQUIO)` : baseClientName;
 
             if (!vaciosMovementsPorTipo[baseClientName]) { 
@@ -403,7 +402,6 @@
                     const prodComp = { ...p, ...prodPrivado, ...prodMaestro, id: p.id }; 
                     const rubro = prodComp.rubro || 'SIN RUBRO';
                     
-                    // SEGURIDAD: Inicializar rubro si el producto estaba eliminado al generar el reporte
                     if (!dataByRubro[rubro]) {
                         dataByRubro[rubro] = { clients: {}, productsMap: new Map(), productTotals: {}, totalValue: 0, obsequiosMap: new Set() };
                         allRubros.add(rubro);
@@ -458,13 +456,10 @@
                 
                 const cantidadCajas = obsequio.cantidadCajas || 0;
                 const cantidadUnidades = cantidadCajas * (pComp.unidadesPorCaja || 1);
-                
                 const precioCj = pComp.precios?.cj || 0;
                 const subtotalObsequio = cantidadCajas * precioCj;
-
                 const rubro = pComp.rubro || 'SIN RUBRO';
                 
-                // SEGURIDAD: Inicializar rubro si el producto estaba eliminado al generar el reporte
                 if (!dataByRubro[rubro]) {
                     dataByRubro[rubro] = { clients: {}, productsMap: new Map(), productTotals: {}, totalValue: 0, obsequiosMap: new Set() };
                     allRubros.add(rubro);
@@ -472,13 +467,18 @@
                 if (!dataByRubro[rubro].productsMap.has(pComp.id)) {
                     dataByRubro[rubro].productsMap.set(pComp.id, pComp); 
                 }
-
                 if (!dataByRubro[rubro].clients[rowClientName]) {
                     dataByRubro[rubro].clients[rowClientName] = { products: {}, totalValue: 0, isObsequioRow: true };
                 }
                 dataByRubro[rubro].obsequiosMap.add(pComp.id);
 
-                if(pComp.id) dataByRubro[rubro].clients[rowClientName].products[pComp.id] = (dataByRubro[rubro].clients[rowClientName].products[pComp.id] || 0) + cantidadUnidades;
+                if(pComp.id) {
+                    dataByRubro[rubro].clients[rowClientName].products[pComp.id] = (dataByRubro[rubro].clients[rowClientName].products[pComp.id] || 0) + cantidadUnidades;
+                    
+                    // FIX CRÍTICO: Añadimos el obsequio a la tabla general del modal de ventas.
+                    if (!clientData[rowClientName].products[pComp.id]) clientData[rowClientName].products[pComp.id] = 0;
+                    clientData[rowClientName].products[pComp.id] += cantidadUnidades;
+                }
                 
                 dataByRubro[rubro].clients[rowClientName].totalValue += subtotalObsequio;
                 dataByRubro[rubro].totalValue += subtotalObsequio;
@@ -490,7 +490,6 @@
                 if (pComp.manejaVacios && pComp.tipoVacio) {
                     vaciosMovementsPorTipo[baseClientName][pComp.tipoVacio].entregados += cantidadCajas; 
                 }
-
                 const vacDev = obsequio.vaciosRecibidos || 0;
                 if (vacDev > 0 && pComp.tipoVacio) {
                      vaciosMovementsPorTipo[baseClientName][pComp.tipoVacio].devueltos += vacDev;
@@ -502,7 +501,6 @@
         const sortFunction = await getGlobalProductSortFunction();
         const finalProductOrder = Array.from(allProductsMap.values()).sort(sortFunction);
 
-        // 2. CONSTRUIR FINAL DATA PARA EXCEL
         const finalData = { rubros: {}, vaciosMovementsPorTipo: vaciosMovementsPorTipo, clientTotals: clientTotals, grandTotalValue: grandTotalValue };
 
         for (const rubroName of Array.from(allRubros).sort()) {
@@ -545,18 +543,8 @@
             };
         }
 
-        return { 
-            clientData, 
-            clientTotals, 
-            grandTotalValue, 
-            sortedClients, 
-            finalProductOrder, 
-            vaciosMovementsPorTipo,
-            finalData,
-            userInfo
-        };
+        return { clientData, clientTotals, grandTotalValue, sortedClients, finalProductOrder, vaciosMovementsPorTipo, finalData, userInfo };
     }
-
     async function showClosingDetail(closingId) {
         const closingData = window.tempClosingsData?.find(c => c.id === closingId);
         if (!closingData) { _showModal('Error', 'No se cargaron detalles.'); return; }
