@@ -553,7 +553,11 @@
                     });
                 });
                 
-                _showModal('Éxito', 'Correcciones aplicadas correctamente.', showEditInventarioMenu);
+                // --- NUEVO MENSAJE DE CONFIRMACIÓN Y RECARGA ---
+                _showModal('¡Corrección Exitosa!', '✅ Los ajustes manuales se han guardado y aplicado correctamente al inventario del vendedor.', () => {
+                    loadUserInventory(targetUser); // Recarga la tabla para ver el nuevo stock
+                });
+
             } catch (error) {
                 console.error("Transaction Error:", error);
                 _showModal('Error', `Falló la corrección: ${error.message}`);
