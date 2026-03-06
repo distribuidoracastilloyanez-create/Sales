@@ -613,21 +613,40 @@
             (r.detalles || []).forEach(d => eventos.push({ tipo: 'RECARGA', fecha: f, id: d.productoId, qty: d.diferenciaUnidades || 0 }));
         });
 
-        const qCorr = _query(_collection(_db, `artifacts/${_appId}/users/${userId}/historial_correcciones`), _where("fecha", ">=", fechaBase)); 
-        const snapCorr = await _getDocs(qCorr);
-        snapCorr.docs.forEach(doc => {
-            const c = doc.data(); const f = c.fecha?.toDate ? c.fecha.toDate() : new Date(c.fecha);
+        // --- INICIO FIX: BÚSQUEDA MULTI-CARPETA (ADMINS + VENDEDOR) PARA CORRECCIONES ---
+        const usersRef = _collection(_db, 'users');
+        const usersSnap = await _getDocs(usersRef);
+        const adminIds = usersSnap.docs.filter(d => d.data().role === 'admin').map(d => d.id);
+        
+        // Buscar en la carpeta del vendedor y en la de todos los administradores simultáneamente
+        const idsToSearch = [...new Set([userId, ...adminIds])];
+
+        for (const searchUid of idsToSearch) {
+            const qCorr = _query(_collection(_db, `artifacts/${_appId}/users/${searchUid}/historial_correcciones`), _where("fecha", ">=", fechaBase)); 
+            const snapCorr = await _getDocs(qCorr);
             
-            // PREPARACIÓN PUNTO 2: La Limpieza Profunda interrumpe el tiempo
-            if (c.tipoAjuste === 'LIMPIEZA_PROFUNDA') {
-                eventos.push({ tipo: 'WIPE', fecha: f });
-            } else {
-                (c.detalles || []).forEach(d => {
-                    const ajuste = d.ajusteBase !== undefined ? d.ajusteBase : (d.ajuste || 0);
-                    if (d.productoId && d.productoId !== 'ALL') eventos.push({ tipo: 'CORRECCION', fecha: f, id: d.productoId, qty: ajuste });
-                });
-            }
-        });
+            snapCorr.docs.forEach(doc => {
+                const c = doc.data(); 
+                
+                // Filtramos en memoria: Solo nos importan las correcciones donde el target es este vendedor 
+                // o si la corrección está en su propia carpeta (retrocompatibilidad)
+                if (c.targetUserId === userId || (!c.targetUserId && searchUid === userId)) {
+                    const f = c.fecha?.toDate ? c.fecha.toDate() : new Date(c.fecha);
+                    
+                    if (c.tipoAjuste === 'LIMPIEZA_PROFUNDA') {
+                        eventos.push({ tipo: 'WIPE', fecha: f });
+                    } else {
+                        (c.detalles || []).forEach(d => {
+                            const ajuste = d.ajusteBase !== undefined ? d.ajusteBase : (d.ajuste || 0);
+                            if (d.productoId && d.productoId !== 'ALL') {
+                                eventos.push({ tipo: 'CORRECCION', fecha: f, id: d.productoId, qty: ajuste });
+                            }
+                        });
+                    }
+                }
+            });
+        }
+        // --- FIN FIX CORRECCIONES ---
 
         // 3. Extraer Ventas y Obsequios activos
         ventasActivas.forEach(v => {
