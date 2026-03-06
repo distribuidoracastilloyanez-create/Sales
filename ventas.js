@@ -889,7 +889,7 @@
                 enrichedProductOrder.forEach(p=>{
                     const qU=cCli.products[p.id]||0; 
                     const qtyDisplay = window.dataModule.getDisplayQty(qU, p);
-                    let dQ = qU > 0 ? `${qtyDisplay.value} ${qtyDisplay.unit}` + (esSoloObsequio ? ` <span class="text-[10px] text-blue-600 font-black ml-1">(Regalo)</span>` : '') : '';
+                    let dQ = qU > 0 ? (typeof qtyDisplay.value === 'number' ? `${qtyDisplay.value} ${qtyDisplay.unit}` : qtyDisplay.value) + (esSoloObsequio ? ` <span class="text-[10px] text-blue-600 font-black ml-1">(Regalo)</span>` : '') : '';
                     let cellClass = esSoloObsequio && qU > 0 ? 'font-bold bg-blue-50 text-blue-800' : (qU > 0 ? 'font-bold' : '');
                     bHTML+=`<td class="p-1 border text-center ${cellClass}">${dQ}</td>`;
                 }); 
@@ -900,13 +900,16 @@
             enrichedProductOrder.forEach(p=>{
                 let tQ=0; sortedClients.forEach(cli=>tQ+=clientData[cli].products[p.id]||0); 
                 const qtyDisplay = window.dataModule.getDisplayQty(tQ, p);
-                fHTML+=`<td class="p-1 border text-center whitespace-nowrap">${tQ > 0 ? `${qtyDisplay.value} ${qtyDisplay.unit}` : ''}</td>`;
+                let dT = tQ > 0 ? (typeof qtyDisplay.value === 'number' ? `${qtyDisplay.value} ${qtyDisplay.unit}` : qtyDisplay.value) : '';
+                fHTML+=`<td class="p-1 border text-center whitespace-nowrap">${dT}</td>`;
             }); 
             fHTML+=`<td class="p-1 border text-right sticky right-0 z-10">$${grandTotalValue.toFixed(2)}</td></tr>`;
             
             const TIPOS_VACIO_GLOBAL = window.TIPOS_VACIO_GLOBAL || ["1/4 - 1/3", "ret 350 ml", "ret 1.25 Lts"];
             const localVacios = {};
-            [...ventas, ...obsequios].forEach(v => {
+            
+            // Procesar Ventas Normales
+            ventas.forEach(v => {
                 const cName = v.clienteNombre || 'Desconocido';
                 if (!localVacios[cName]) localVacios[cName] = {};
                 (v.productos || []).forEach(p => {
@@ -921,6 +924,17 @@
                         localVacios[cName][tipo].devueltos += parseInt(cant, 10);
                     }
                 });
+            });
+
+            // Procesar Obsequios (Estructura de datos diferente)
+            obsequios.forEach(o => {
+                const cName = o.clienteNombre || 'Desconocido';
+                if (!localVacios[cName]) localVacios[cName] = {};
+                if (o.tipoVacio) {
+                    if (!localVacios[cName][o.tipoVacio]) localVacios[cName][o.tipoVacio] = { entregados: 0, devueltos: 0 };
+                    if (o.cantidadCajas > 0) localVacios[cName][o.tipoVacio].entregados += o.cantidadCajas;
+                    if (o.vaciosRecibidos > 0) localVacios[cName][o.tipoVacio].devueltos += parseInt(o.vaciosRecibidos, 10);
+                }
             });
 
             let vHTML=''; 
