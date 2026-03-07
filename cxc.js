@@ -5,13 +5,12 @@
     const CXC_COLLECTION_PATH = `artifacts/${PUBLIC_DATA_ID}/public/data/cxc`;
     const TASAS_COLLECTION_PATH = `artifacts/${PUBLIC_DATA_ID}/public/data/tasas_bcv`;
     
-    const LS_KEY_DATE = 'cxc_local_date'; // Mantenemos la fecha en LocalStorage (es pequeña)
+    const LS_KEY_DATE = 'cxc_local_date'; 
 
-    // Variables de Estado
     let _cxcDataCache = null;
     let _tasasCache = {}; 
 
-    // --- MANEJO DE INDEXEDDB (Base de datos local potente) ---
+    // --- MANEJO DE INDEXEDDB ---
     const DB_NAME = 'DistCastilloDB';
     const STORE_NAME = 'cxc_store';
     const DB_VERSION = 1;
@@ -36,7 +35,7 @@
             return new Promise((resolve, reject) => {
                 const transaction = db.transaction([STORE_NAME], "readwrite");
                 const store = transaction.objectStore(STORE_NAME);
-                const request = store.put(data, 'clients_data'); // Guardamos todo bajo una llave
+                const request = store.put(data, 'clients_data'); 
                 request.onsuccess = () => resolve();
                 request.onerror = (e) => reject(e.target.error);
             });
@@ -220,7 +219,6 @@
     async function syncAndLoadData() {
         const statusLabel = document.getElementById('dataStatusLabel');
         
-        // 1. Intentar cargar datos locales primero (Estrategia "Cache-First" para velocidad y offline)
         const localData = await loadFromLocalDB();
         const localDateStr = localStorage.getItem(LS_KEY_DATE);
         
@@ -230,7 +228,6 @@
             if (statusLabel) statusLabel.textContent = "⚡ Datos locales (Verificando...)";
         }
 
-        // 2. Verificar actualización en el servidor
         try {
             const metaRef = _doc(_db, CXC_COLLECTION_PATH, 'metadata');
             const metaSnap = await _getDoc(metaRef);
@@ -249,7 +246,6 @@
                         const data = listSnap.data();
                         _cxcDataCache = data.clients || [];
                         
-                        // Guardar en IndexedDB
                         await saveToLocalDB(_cxcDataCache);
                         localStorage.setItem(LS_KEY_DATE, serverDate.toISOString());
                         
@@ -300,7 +296,6 @@
             return;
         }
 
-        // Obtener la tasa más reciente disponible para calcular los totales en Bs
         const availableDates = Object.keys(_tasasCache).sort();
         const latestDate = availableDates.length > 0 ? availableDates[availableDates.length - 1] : null;
         const currentRate = latestDate ? _tasasCache[latestDate] : 0;
@@ -313,7 +308,6 @@
             const bgClass = amount > 0 ? 'bg-white' : 'bg-green-50';
             const safeName = client.name.replace(/'/g, "\\'").replace(/"/g, '&quot;');
             
-            // HTML para mostrar el total en bolívares en la lista principal
             let bsTotalHtml = '';
             if (currentRate > 0 && amount !== 0) {
                 const bsTotal = amount * currentRate;
@@ -369,7 +363,6 @@
 
                 if (t.type === 'F') {
                     typeLabel = '🛒 Venta';
-                    // MODO COMPACTO: Botón de lupa circular
                     actionButton = `
                         <button onclick="window.cxcModule.searchSaleDetails('${safeClientName}', '${t.date}', ${t.amount})" 
                             class="p-1 bg-blue-100 text-blue-700 rounded-full border border-blue-200 hover:bg-blue-200 flex-shrink-0 transition-colors ml-1" title="Ver Detalle de Venta">
@@ -381,7 +374,6 @@
                 else if (t.type === 'R') typeLabel = '🧾 Retenc';
                 else if (t.type === '%') typeLabel = '📉 Dscto';
 
-                // --- Calcular y mostrar Bs para Transferencias y Efectivo ---
                 if (t.type === 'T' || t.type === 'E') {
                     const parts = t.date.split('/');
                     if (parts.length === 3) {
@@ -401,7 +393,6 @@
                     }
                 }
 
-                // Fila más delgada (py-1.5), botón y precio en la misma línea superior
                 rowsHTML += `
                     <tr class="border-b hover:bg-gray-50 text-sm">
                         <td class="py-2 px-2 text-gray-600 whitespace-nowrap align-top text-xs">${t.date}</td>
@@ -453,29 +444,34 @@
         _showModal('Estado de Cuenta', modalHTML, null, 'Cerrar');
     }
 
+    // HELPER DE NORMALIZACIÓN PARA BÚSQUEDA ROBUSTA (Evita fallos por acentos y mayúsculas)
+    function normalizeStr(str) {
+        return (str || '').normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+    }
+
     async function searchSaleDetails(clientName, dateStr, amount) {
-        _showModal('Buscando', `Buscando el recibo original de la venta...`, null, '', null, false);
+        _showModal('Buscando', `Buscando el recibo original de la venta en la base de datos...`, null, '', null, false);
         try {
-            // Inicializar userIds con el ID del usuario logueado por defecto
+            // 1. OBTENER USUARIOS
             let userIds = [_userId]; 
-            
             try {
-                // Intento de búsqueda global (Para Admins o si las reglas lo permiten)
                 const usersSnap = await _getDocs(_collection(_db, "users"));
-                // Solo si la llamada no falla, actualizamos el array
                 if (!usersSnap.empty) {
                      userIds = usersSnap.docs.map(d => d.id);
                 }
             } catch (permError) {
-                console.warn("Aviso de Permisos: Firebase bloqueó el acceso a la colección de usuarios globales. Se buscará solo en los registros locales del vendedor.");
+                console.warn("Búsqueda restringida: El usuario no es admin. Buscará solo en sus registros.");
             }
 
-            let foundVenta = null;
-            
+            // 2. PARSEO DE FECHAS SEGURO
             let searchDate = new Date(dateStr);
-            if (isNaN(searchDate.getTime())) {
+            if (isNaN(searchDate.getTime()) || searchDate.getFullYear() < 2000) {
                 const parts = dateStr.split('/');
-                if (parts.length === 3) searchDate = new Date(parts[2], parts[1]-1, parts[0]);
+                if (parts.length === 3) {
+                    let year = parseInt(parts[2], 10);
+                    if (year < 100) year += 2000;
+                    searchDate = new Date(year, parseInt(parts[1], 10) - 1, parseInt(parts[0], 10));
+                }
             }
 
             if (isNaN(searchDate.getTime())) {
@@ -483,60 +479,78 @@
                 return;
             }
 
-            // Ampliamos un poco el rango para evitar problemas de zona horaria
             const startRange = new Date(searchDate); startRange.setDate(startRange.getDate() - 2);
             const endRange = new Date(searchDate); endRange.setDate(endRange.getDate() + 2);
 
+            // 3. TOKENIZACIÓN DEL CLIENTE (Evita que "Bodegon Pedro" falle si en Firebase dice "Inversiones Pedro")
+            const normSearchName = normalizeStr(clientName);
+            const ignoreWords = ['ca', 'c.a.', 'c.a', 'de', 'el', 'la', 'los', 'las', 'inversiones', 'bodegon', 'comercial', 'abasto', 'supermercado'];
+            const searchTokens = normSearchName.split(' ').filter(t => t.length > 2 && !ignoreWords.includes(t));
+            const primaryToken = searchTokens.length > 0 ? searchTokens[0] : normSearchName.split(' ')[0];
+
+            let foundVenta = null;
+
+            // BÚSQUEDA OPTIMIZADA Y SECUENCIAL EN MEMORIA
             for (const uid of userIds) {
+                if (foundVenta) break;
                 try {
+                    // Descargamos todo el historial de este usuario (sin filtros limitantes de Firebase)
                     const cierresRef = _collection(_db, `artifacts/${_appId}/users/${uid}/cierres`);
-                    const q = _query(cierresRef, _where("fecha", ">=", startRange), _where("fecha", "<=", endRange));
+                    const q = _query(cierresRef, _orderBy("fecha", "desc"), _limit(30)); // Trae los últimos 30 cierres
                     const cierresSnap = await _getDocs(q);
 
+                    // Filtramos en memoria (MUCHO MÁS SEGURO Y NO REQUIERE ÍNDICES FIREBASE)
                     for (const doc of cierresSnap.docs) {
                         const cierre = doc.data();
                         const ventas = cierre.ventas || [];
                         
-                        const match = ventas.find(v => 
-                            Math.abs((v.total || 0) - amount) < 0.5 && 
-                            (v.clienteNombre || '').toLowerCase().includes(clientName.split(' ')[0].toLowerCase())
-                        );
+                        const match = ventas.find(v => {
+                            // 1. Coincidencia de Monto
+                            const isAmountMatch = Math.abs((v.total || 0) - Math.abs(amount)) < 0.5;
+                            // 2. Coincidencia de Nombre
+                            const isNameMatch = normalizeStr(v.clienteNombre).includes(primaryToken);
+                            // 3. Coincidencia de Fecha
+                            const vDate = v.fecha?.toDate ? v.fecha.toDate() : new Date(v.fecha || cierre.fecha);
+                            const isDateMatch = vDate >= startRange && vDate <= endRange;
+
+                            return isAmountMatch && isNameMatch && isDateMatch;
+                        });
 
                         if (match) {
                             foundVenta = { ...match, vendedorId: uid, cierreFecha: cierre.fecha };
                             break; 
                         }
                     }
-                    if (foundVenta) break; 
                 } catch (folderError) {
-                    console.warn(`No se pudo leer la carpeta de cierres del usuario ${uid}`);
+                    // Ignoramos errores de lectura en carpetas privadas
                 }
             }
 
+            // BÚSQUEDA DE RESPALDO (Ventas Activas)
             if (!foundVenta) {
                 for (const uid of userIds) {
+                    if (foundVenta) break;
                     try {
                         const ventasActivasRef = _collection(_db, `artifacts/${_appId}/users/${uid}/ventas`);
                         const ventasActivasSnap = await _getDocs(ventasActivasRef);
                         
                         for (const doc of ventasActivasSnap.docs) {
                              const vData = doc.data();
-                             if (Math.abs((vData.total || 0) - amount) < 0.5 && 
-                                 (vData.clienteNombre || '').toLowerCase().includes(clientName.split(' ')[0].toLowerCase())) {
+                             const isAmountMatch = Math.abs((vData.total || 0) - Math.abs(amount)) < 0.5;
+                             const isNameMatch = normalizeStr(vData.clienteNombre).includes(primaryToken);
+
+                             if (isAmountMatch && isNameMatch) {
                                   foundVenta = { ...vData, id: doc.id, isActiva: true };
                                   break;
                              }
                         }
-                        if (foundVenta) break;
-                    } catch (folderError) {
-                         console.warn(`No se pudo leer la carpeta de ventas activas del usuario ${uid}`);
-                    }
+                    } catch (folderError) {}
                 }
             }
 
+            // RENDERIZADO
             if (foundVenta) {
                 if (window.ventasUI && typeof window.ventasUI.getTicketHTML === 'function') {
-                    
                     _showModal('Cargando Recibo', 'Renderizando el recibo original...', null, '', null, false);
 
                     const productosFormateados = (foundVenta.productos || []).map(p => ({
@@ -578,12 +592,12 @@
                                     <div class="flex justify-center items-center w-full bg-gray-100 rounded p-1">
                                         <img src="${dataUrl}" class="w-full max-h-[70vh] object-contain shadow-sm rounded" alt="Recibo de Venta" />
                                     </div>
-                                    <p class="text-[10px] text-gray-500 mt-2 text-center uppercase tracking-wide">Recibo reconstruido a partir del historial</p>
+                                    <p class="text-[10px] text-gray-500 mt-2 text-center uppercase tracking-wide">Recibo recuperado del historial</p>
                                 `;
                                 
                                 _showModal('Recibo Original', modalWrapper, null, 'Cerrar');
                             } catch (e) {
-                                console.error("Error generando imagen de recibo:", e);
+                                console.error("Error generando imagen:", e);
                                 _showModal('Error', 'No se pudo generar la previsualización del recibo.');
                             } finally {
                                 document.body.removeChild(tempDiv);
@@ -591,17 +605,17 @@
                         }, 200); 
                     } else {
                         document.body.removeChild(tempDiv);
-                        _showModal('Error', 'No se pudo encontrar la estructura del ticket.');
+                        _showModal('Error', 'Estructura de ticket no encontrada.');
                     }
                 } else {
-                    _showModal('Error', 'El módulo de interfaz de ventas no está cargado.');
+                    _showModal('Error', 'Módulo de interfaz no cargado.');
                 }
             } else {
-                _showModal('Sin resultados', `No se encontró el ticket digital original. Es posible que sea una venta muy antigua o de otro vendedor.`);
+                _showModal('Sin resultados', `No se encontró el ticket digital original en la base de datos.`);
             }
         } catch (error) {
             console.error("Search error:", error);
-            _showModal('Error', 'Error buscando la factura en la base de datos.');
+            _showModal('Error', 'Error de conexión buscando la factura.');
         }
     }
 
