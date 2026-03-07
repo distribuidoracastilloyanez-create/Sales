@@ -444,26 +444,57 @@
         _showModal('Estado de Cuenta', modalHTML, null, 'Cerrar');
     }
 
-    // HELPER DE NORMALIZACIÓN PARA BÚSQUEDA ROBUSTA (Evita fallos por acentos y mayúsculas)
+    // HELPER: Normalizador estricto para comparar textos ignorando acentos, mayúsculas y caracteres especiales
     function normalizeStr(str) {
-        return (str || '').normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+        if (!str) return '';
+        return str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]/g, '');
     }
 
-    async function searchSaleDetails(clientName, dateStr, amount) {
-        _showModal('Buscando', `Buscando el recibo original de la venta en la base de datos...`, null, '', null, false);
+    async function searchSaleDetails(excelClientName, dateStr, amount) {
+        let debugMsg = "";
+        let sysClient = null;
+        let userIds = [_userId]; 
+        let foundVenta = null;
+
+        const delay = (ms) => new Promise(res => setTimeout(res, ms));
+        const updateModal = (title, msg) => _showModal(title, msg, null, '', null, false);
+
         try {
-            // 1. OBTENER USUARIOS
-            let userIds = [_userId]; 
-            try {
-                const usersSnap = await _getDocs(_collection(_db, "users"));
-                if (!usersSnap.empty) {
-                     userIds = usersSnap.docs.map(d => d.id);
+            // ==========================================
+            // PASO 1: VALIDACIÓN DEL CLIENTE
+            // ==========================================
+            updateModal('🔍 Paso 1/5: Validando Cliente', `Buscando a <b>${excelClientName}</b> en la base de datos de clientes del sistema...`);
+            await delay(1500);
+
+            const clientesSnap = await _getDocs(_collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/clientes`));
+            const excelNameNorm = normalizeStr(excelClientName);
+            
+            // Intentar hacer match ignorando basura (C.A., Inversiones, etc)
+            for (const doc of clientesSnap.docs) {
+                const cData = doc.data();
+                const dbNameNorm = normalizeStr(cData.nombreComercial);
+                const dbNamePersNorm = normalizeStr(cData.nombrePersonal);
+                
+                if (dbNameNorm.includes(excelNameNorm) || excelNameNorm.includes(dbNameNorm) ||
+                    (dbNamePersNorm && (dbNamePersNorm.includes(excelNameNorm) || excelNameNorm.includes(dbNamePersNorm)))) {
+                    sysClient = { id: doc.id, ...cData };
+                    break;
                 }
-            } catch (permError) {
-                console.warn("Búsqueda restringida: El usuario no es admin. Buscará solo en sus registros.");
             }
 
-            // 2. PARSEO DE FECHAS SEGURO
+            if (sysClient) {
+                updateModal('🔍 Paso 1/5: Validando Cliente', `✅ Cliente encontrado en Firebase: <b>${sysClient.nombreComercial}</b>`);
+            } else {
+                updateModal('⚠️ Aviso: Cliente no enlazado', `No se encontró un match exacto en Firebase para <b>${excelClientName}</b>.<br>Se intentará buscar el recibo usando el nombre crudo del Excel.`);
+            }
+            await delay(1500);
+
+            // ==========================================
+            // PASO 2: PARSEO DE FECHA Y USUARIOS
+            // ==========================================
+            updateModal('🔍 Paso 2/5: Preparando Búsqueda', `Analizando fecha <b>${dateStr}</b> y obteniendo rutas de vendedores...`);
+            await delay(1000);
+
             let searchDate = new Date(dateStr);
             if (isNaN(searchDate.getTime()) || searchDate.getFullYear() < 2000) {
                 const parts = dateStr.split('/');
@@ -475,45 +506,49 @@
             }
 
             if (isNaN(searchDate.getTime())) {
-                _showModal('Error', 'Formato de fecha inválido para búsqueda.');
+                _showModal('❌ Error (Paso 2)', `El formato de la fecha del Excel (${dateStr}) es inválido o ilegible para Firebase.`);
                 return;
             }
 
-            const startRange = new Date(searchDate); startRange.setDate(startRange.getDate() - 2);
-            const endRange = new Date(searchDate); endRange.setDate(endRange.getDate() + 2);
+            try {
+                const usersSnap = await _getDocs(_collection(_db, "users"));
+                if (!usersSnap.empty) userIds = usersSnap.docs.map(d => d.id);
+            } catch (e) {
+                console.warn("Solo se buscará en el usuario actual por reglas de seguridad.");
+            }
 
-            // 3. TOKENIZACIÓN DEL CLIENTE (Evita que "Bodegon Pedro" falle si en Firebase dice "Inversiones Pedro")
-            const normSearchName = normalizeStr(clientName);
-            const ignoreWords = ['ca', 'c.a.', 'c.a', 'de', 'el', 'la', 'los', 'las', 'inversiones', 'bodegon', 'comercial', 'abasto', 'supermercado'];
-            const searchTokens = normSearchName.split(' ').filter(t => t.length > 2 && !ignoreWords.includes(t));
-            const primaryToken = searchTokens.length > 0 ? searchTokens[0] : normSearchName.split(' ')[0];
+            // Rango de búsqueda: El día de la venta, 1 día antes (por errores de zona horaria) y hasta 2 días después (por cierres tardíos)
+            const startRange = new Date(searchDate); startRange.setDate(startRange.getDate() - 1); startRange.setHours(0,0,0,0);
+            const endRange = new Date(searchDate); endRange.setDate(endRange.getDate() + 2); endRange.setHours(23,59,59,999);
 
-            let foundVenta = null;
+            // ==========================================
+            // PASO 3: BUSCANDO EN CIERRES HISTÓRICOS
+            // ==========================================
+            updateModal('🔍 Paso 3/5: Escaneando Historial', `Buscando una venta de <b>$${amount}</b> entre el ${startRange.toLocaleDateString()} y el ${endRange.toLocaleDateString()} en los cierres...`);
+            await delay(1500);
 
-            // BÚSQUEDA OPTIMIZADA Y SECUENCIAL EN MEMORIA
+            // El nombre a buscar: Prioridad al nombre del sistema, si no, el del excel
+            const targetNameNorm = sysClient ? normalizeStr(sysClient.nombreComercial) : excelNameNorm;
+
             for (const uid of userIds) {
                 if (foundVenta) break;
                 try {
-                    // Descargamos todo el historial de este usuario (sin filtros limitantes de Firebase)
                     const cierresRef = _collection(_db, `artifacts/${_appId}/users/${uid}/cierres`);
-                    const q = _query(cierresRef, _orderBy("fecha", "desc"), _limit(30)); // Trae los últimos 30 cierres
+                    const q = _query(cierresRef, _where("fecha", ">=", startRange), _where("fecha", "<=", endRange));
                     const cierresSnap = await _getDocs(q);
 
-                    // Filtramos en memoria (MUCHO MÁS SEGURO Y NO REQUIERE ÍNDICES FIREBASE)
                     for (const doc of cierresSnap.docs) {
                         const cierre = doc.data();
                         const ventas = cierre.ventas || [];
                         
                         const match = ventas.find(v => {
-                            // 1. Coincidencia de Monto
-                            const isAmountMatch = Math.abs((v.total || 0) - Math.abs(amount)) < 0.5;
-                            // 2. Coincidencia de Nombre
-                            const isNameMatch = normalizeStr(v.clienteNombre).includes(primaryToken);
-                            // 3. Coincidencia de Fecha
-                            const vDate = v.fecha?.toDate ? v.fecha.toDate() : new Date(v.fecha || cierre.fecha);
-                            const isDateMatch = vDate >= startRange && vDate <= endRange;
-
-                            return isAmountMatch && isNameMatch && isDateMatch;
+                            // Validar Monto (tolerancia de 1 dólar por redondeos)
+                            const isAmountMatch = Math.abs(Math.abs(v.total || 0) - Math.abs(amount)) <= 1.0;
+                            // Validar Nombre
+                            const vNameNorm = normalizeStr(v.clienteNombre);
+                            const isNameMatch = vNameNorm.includes(targetNameNorm) || targetNameNorm.includes(vNameNorm);
+                            
+                            return isAmountMatch && isNameMatch;
                         });
 
                         if (match) {
@@ -521,13 +556,16 @@
                             break; 
                         }
                     }
-                } catch (folderError) {
-                    // Ignoramos errores de lectura en carpetas privadas
-                }
+                } catch (err) { /* Ignorar errores de carpetas protegidas */ }
             }
 
-            // BÚSQUEDA DE RESPALDO (Ventas Activas)
+            // ==========================================
+            // PASO 4: BUSCANDO EN VENTAS ACTIVAS (SI FALLA EL CIERRE)
+            // ==========================================
             if (!foundVenta) {
+                updateModal('🔍 Paso 4/5: Escaneando Ventas del Día', `No se encontró en los cierres. Buscando en las ventas activas sin cerrar...`);
+                await delay(1500);
+
                 for (const uid of userIds) {
                     if (foundVenta) break;
                     try {
@@ -536,23 +574,27 @@
                         
                         for (const doc of ventasActivasSnap.docs) {
                              const vData = doc.data();
-                             const isAmountMatch = Math.abs((vData.total || 0) - Math.abs(amount)) < 0.5;
-                             const isNameMatch = normalizeStr(vData.clienteNombre).includes(primaryToken);
+                             const isAmountMatch = Math.abs(Math.abs(vData.total || 0) - Math.abs(amount)) <= 1.0;
+                             const vNameNorm = normalizeStr(vData.clienteNombre);
+                             const isNameMatch = vNameNorm.includes(targetNameNorm) || targetNameNorm.includes(vNameNorm);
 
                              if (isAmountMatch && isNameMatch) {
                                   foundVenta = { ...vData, id: doc.id, isActiva: true };
                                   break;
                              }
                         }
-                    } catch (folderError) {}
+                    } catch (err) {}
                 }
             }
 
-            // RENDERIZADO
+            // ==========================================
+            // PASO 5: RESULTADO Y RENDERIZADO
+            // ==========================================
             if (foundVenta) {
-                if (window.ventasUI && typeof window.ventasUI.getTicketHTML === 'function') {
-                    _showModal('Cargando Recibo', 'Renderizando el recibo original...', null, '', null, false);
+                updateModal('✅ Paso 5/5: ¡Venta Encontrada!', `Preparando el recibo digital...`);
+                await delay(1000);
 
+                if (window.ventasUI && typeof window.ventasUI.getTicketHTML === 'function') {
                     const productosFormateados = (foundVenta.productos || []).map(p => ({
                         ...p,
                         cantidadVendida: p.cantidadVendida || { cj: 0, paq: 0, und: 0 },
@@ -561,7 +603,10 @@
                     }));
 
                     const ventaFicticia = {
-                        cliente: { nombreComercial: foundVenta.clienteNombre, nombrePersonal: foundVenta.clienteNombrePersonal || '' },
+                        cliente: { 
+                            nombreComercial: sysClient ? sysClient.nombreComercial : foundVenta.clienteNombre, 
+                            nombrePersonal: sysClient ? (sysClient.nombrePersonal || '') : (foundVenta.clienteNombrePersonal || '') 
+                        },
                         fecha: foundVenta.fecha || foundVenta.cierreFecha || new Date(),
                         total: foundVenta.total
                     };
@@ -570,9 +615,10 @@
                         ventaFicticia, 
                         productosFormateados, 
                         foundVenta.vaciosDevueltosPorTipo || {}, 
-                        'Nota de Entrega'
+                        'Recuperación de Venta'
                     );
 
+                    // Renderizar el HTML temporalmente fuera de pantalla
                     const tempDiv = document.createElement('div');
                     tempDiv.style.position = 'absolute';
                     tempDiv.style.left = '-9999px';
@@ -589,33 +635,56 @@
                                 const dataUrl = canvas.toDataURL('image/png');
                                 
                                 const modalWrapper = `
-                                    <div class="flex justify-center items-center w-full bg-gray-100 rounded p-1">
-                                        <img src="${dataUrl}" class="w-full max-h-[70vh] object-contain shadow-sm rounded" alt="Recibo de Venta" />
+                                    <div class="flex justify-center items-center w-full bg-gray-100 rounded p-1 mb-4 border border-gray-300">
+                                        <img src="${dataUrl}" class="w-full max-h-[60vh] object-contain shadow-sm rounded" alt="Recibo de Venta" />
                                     </div>
-                                    <p class="text-[10px] text-gray-500 mt-2 text-center uppercase tracking-wide">Recibo recuperado del historial</p>
+                                    <button id="btnCompartirReciboEncontrado" class="w-full py-3 bg-green-600 hover:bg-green-700 text-white font-bold rounded-lg shadow-lg transition-colors flex justify-center items-center gap-2">
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" /></svg>
+                                        Compartir Ticket
+                                    </button>
+                                    <button onclick="document.getElementById('modalContainer').classList.add('hidden')" class="w-full py-2 mt-2 bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold rounded-lg transition-colors">Cerrar</button>
                                 `;
                                 
-                                _showModal('Recibo Original', modalWrapper, null, 'Cerrar');
+                                _showModal('Recibo Encontrado', modalWrapper, null, '');
+                                document.getElementById('modalFooter').innerHTML = ''; // Limpiar footer por defecto
+                                
+                                // Lógica de botón Compartir
+                                document.getElementById('btnCompartirReciboEncontrado').onclick = async () => {
+                                    canvas.toBlob(async (blob) => {
+                                        if (navigator.share && blob) {
+                                            try {
+                                                await navigator.share({ 
+                                                    files: [new File([blob], `Ticket_${ventaFicticia.cliente.nombreComercial.replace(/\\s/g,'_')}.png`, {type:"image/png"})],
+                                                    title: 'Ticket de Venta'
+                                                });
+                                            } catch(e) { console.warn("Share cancelado", e); }
+                                        } else {
+                                            const url = URL.createObjectURL(blob);
+                                            const link = document.createElement('a'); link.href=url; link.download="Ticket.png"; link.click();
+                                        }
+                                    });
+                                };
+
                             } catch (e) {
                                 console.error("Error generando imagen:", e);
-                                _showModal('Error', 'No se pudo generar la previsualización del recibo.');
+                                _showModal('❌ Error', 'No se pudo generar la imagen del recibo.');
                             } finally {
                                 document.body.removeChild(tempDiv);
                             }
-                        }, 200); 
+                        }, 300); // Dar tiempo al navegador de pintar el DOM oculto
                     } else {
                         document.body.removeChild(tempDiv);
-                        _showModal('Error', 'Estructura de ticket no encontrada.');
+                        _showModal('❌ Error', 'Estructura de ticket no encontrada.');
                     }
                 } else {
-                    _showModal('Error', 'Módulo de interfaz no cargado.');
+                    _showModal('❌ Error', 'El módulo de interfaz visual de ventas (ventas-ui.js) no está cargado.');
                 }
             } else {
-                _showModal('Sin resultados', `No se encontró el ticket digital original en la base de datos.`);
+                _showModal('❌ Sin resultados', `La búsqueda finalizó, pero no se encontró ninguna venta de <b>$${amount}</b> para este cliente en las fechas cercanas a <b>${searchDate.toLocaleDateString()}</b>.<br><br><b>Causas probables:</b><br>- Fue una venta de un sistema anterior.<br>- El monto del Excel es distinto al guardado en la factura.<br>- El cliente se registró con un nombre totalmente diferente.`);
             }
         } catch (error) {
-            console.error("Search error:", error);
-            _showModal('Error', 'Error de conexión buscando la factura.');
+            console.error("Search pipeline error:", error);
+            _showModal('❌ Error Crítico', 'La búsqueda falló por un error interno o de conexión.');
         }
     }
 
