@@ -453,12 +453,21 @@
         _showModal('Estado de Cuenta', modalHTML, null, 'Cerrar');
     }
 
-    async function searchSaleDetails(clientName, dateStr, amount) {
-        _showModal('Buscando', `Buscando el recibo original de la venta...`, null, '', null, false);
+   async function searchSaleDetails(clientName, dateStr, amount) {
+        _showModal('Buscando', `Buscando el recibo original de la venta en la base de datos general...`, null, '', null, false);
         try {
-            // Buscamos a través de todos los vendedores para encontrar el ticket
-            const usersSnap = await _getDocs(_collection(_db, "users"));
-            const userIds = usersSnap.docs.map(d => d.id);
+            let userIds = [];
+
+            try {
+                // INTENTO DE LECTURA GLOBAL: Buscamos la lista de todos los vendedores
+                const usersSnap = await _getDocs(_collection(_db, "users"));
+                userIds = usersSnap.docs.map(d => d.id);
+            } catch (permError) {
+                console.error("Bloqueo de Firebase:", permError);
+                _showModal('Acceso Restringido', 'Las <b>Reglas de Seguridad de Firebase</b> actuales bloquean a los vendedores de leer el historial general.<br><br>Para que la lupa funcione para todos, el administrador debe ir a la consola de Firebase y permitir la lectura global en las reglas de Firestore.');
+                return;
+            }
+
             let foundVenta = null;
             
             let searchDate = new Date(dateStr);
@@ -476,53 +485,60 @@
             const startRange = new Date(searchDate); startRange.setDate(startRange.getDate() - 2);
             const endRange = new Date(searchDate); endRange.setDate(endRange.getDate() + 2);
 
+            // BÚSQUEDA 1: Buscar en los cierres de TODOS los vendedores
             for (const uid of userIds) {
-                // Buscamos en los cierres históricos
-                const cierresRef = _collection(_db, `artifacts/${_appId}/users/${uid}/cierres`);
-                const q = _query(cierresRef, _where("fecha", ">=", startRange), _where("fecha", "<=", endRange));
-                const cierresSnap = await _getDocs(q);
+                try {
+                    const cierresRef = _collection(_db, `artifacts/${_appId}/users/${uid}/cierres`);
+                    const q = _query(cierresRef, _where("fecha", ">=", startRange), _where("fecha", "<=", endRange));
+                    const cierresSnap = await _getDocs(q);
 
-                for (const doc of cierresSnap.docs) {
-                    const cierre = doc.data();
-                    const ventas = cierre.ventas || [];
-                    
-                    // Buscamos coincidencia por Monto y por nombre de cliente (para evitar falsos positivos)
-                    const match = ventas.find(v => 
-                        Math.abs((v.total || 0) - amount) < 0.5 && 
-                        (v.clienteNombre || '').toLowerCase().includes(clientName.split(' ')[0].toLowerCase())
-                    );
+                    for (const doc of cierresSnap.docs) {
+                        const cierre = doc.data();
+                        const ventas = cierre.ventas || [];
+                        
+                        const match = ventas.find(v => 
+                            Math.abs((v.total || 0) - amount) < 0.5 && 
+                            (v.clienteNombre || '').toLowerCase().includes(clientName.split(' ')[0].toLowerCase())
+                        );
 
-                    if (match) {
-                        foundVenta = { ...match, vendedorId: uid, cierreFecha: cierre.fecha };
-                        break; 
+                        if (match) {
+                            foundVenta = { ...match, vendedorId: uid, cierreFecha: cierre.fecha };
+                            break; 
+                        }
                     }
+                    if (foundVenta) break; 
+                } catch (folderError) {
+                    console.warn(`No se pudo leer la carpeta de cierres del usuario ${uid}`);
                 }
-                if (foundVenta) break; 
             }
 
-            // Si no está en cierres, buscamos en ventas activas (por si no han cerrado el día)
+            // BÚSQUEDA 2: Si no está en cierres, buscamos en ventas activas del día actual
             if (!foundVenta) {
                 for (const uid of userIds) {
-                    const ventasActivasRef = _collection(_db, `artifacts/${_appId}/users/${uid}/ventas`);
-                    const ventasActivasSnap = await _getDocs(ventasActivasRef);
-                    
-                    for (const doc of ventasActivasSnap.docs) {
-                         const vData = doc.data();
-                         if (Math.abs((vData.total || 0) - amount) < 0.5 && 
-                             (vData.clienteNombre || '').toLowerCase().includes(clientName.split(' ')[0].toLowerCase())) {
-                              foundVenta = { ...vData, id: doc.id, isActiva: true };
-                              break;
-                         }
+                    try {
+                        const ventasActivasRef = _collection(_db, `artifacts/${_appId}/users/${uid}/ventas`);
+                        const ventasActivasSnap = await _getDocs(ventasActivasRef);
+                        
+                        for (const doc of ventasActivasSnap.docs) {
+                             const vData = doc.data();
+                             if (Math.abs((vData.total || 0) - amount) < 0.5 && 
+                                 (vData.clienteNombre || '').toLowerCase().includes(clientName.split(' ')[0].toLowerCase())) {
+                                  foundVenta = { ...vData, id: doc.id, isActiva: true };
+                                  break;
+                             }
+                        }
+                        if (foundVenta) break;
+                    } catch (folderError) {
+                        console.warn(`No se pudo leer la carpeta de ventas activas del usuario ${uid}`);
                     }
-                    if (foundVenta) break;
                 }
             }
 
+            // RENDERIZADO DEL TICKET
             if (foundVenta) {
-                // Verificamos si window.ventasUI está disponible
                 if (window.ventasUI && typeof window.ventasUI.getTicketHTML === 'function') {
                     
-                    _showModal('Cargando Recibo', 'Renderizando el recibo original...', null, '', null, false);
+                    _showModal('Cargando Recibo', 'Renderizando el recibo original encontrado...', null, '', null, false);
 
                     const productosFormateados = (foundVenta.productos || []).map(p => ({
                         ...p,
@@ -544,7 +560,6 @@
                         'Nota de Entrega'
                     );
 
-                    // Renderizar el HTML temporalmente fuera de pantalla para tomarle una "foto"
                     const tempDiv = document.createElement('div');
                     tempDiv.style.position = 'absolute';
                     tempDiv.style.left = '-9999px';
@@ -557,15 +572,14 @@
                     if (ticketElement) {
                         setTimeout(async () => {
                             try {
-                                const canvas = await html2canvas(ticketElement, { scale: 2 }); // Scale 2 para buena calidad
+                                const canvas = await html2canvas(ticketElement, { scale: 2 });
                                 const dataUrl = canvas.toDataURL('image/png');
                                 
-                                // Modal con imagen responsive (object-contain y w-full)
                                 const modalWrapper = `
                                     <div class="flex justify-center items-center w-full bg-gray-100 rounded p-1">
                                         <img src="${dataUrl}" class="w-full max-h-[70vh] object-contain shadow-sm rounded" alt="Recibo de Venta" />
                                     </div>
-                                    <p class="text-[10px] text-gray-500 mt-2 text-center uppercase tracking-wide">Recibo reconstruido a partir del historial</p>
+                                    <p class="text-[10px] text-gray-500 mt-2 text-center uppercase tracking-wide">Recibo recuperado del historial global</p>
                                 `;
                                 
                                 _showModal('Recibo Original', modalWrapper, null, 'Cerrar');
@@ -575,23 +589,22 @@
                             } finally {
                                 document.body.removeChild(tempDiv);
                             }
-                        }, 200); // Dar tiempo al navegador de pintar el DOM oculto
+                        }, 200);
                     } else {
                         document.body.removeChild(tempDiv);
                         _showModal('Error', 'No se pudo encontrar la estructura del ticket.');
                     }
                 } else {
-                    _showModal('Error', 'El módulo de interfaz de ventas no está cargado. No se puede generar el ticket visual.');
+                    _showModal('Error', 'El módulo de interfaz de ventas no está cargado.');
                 }
             } else {
-                _showModal('Sin resultados', `No se encontró el ticket digital original. Es posible que sea una venta antigua o importada de otro sistema.`);
+                _showModal('Sin resultados', `No se encontró el ticket digital original. Es posible que sea una venta muy antigua o de un sistema previo.`);
             }
         } catch (error) {
             console.error("Search error:", error);
             _showModal('Error', 'Error buscando la factura en la base de datos.');
         }
     }
-
     async function handleShareClientHistory(clientName) {
         const client = _cxcDataCache.find(c => c.name === clientName);
         if (!client) return;
