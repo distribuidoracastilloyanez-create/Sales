@@ -5,12 +5,13 @@
     const CXC_COLLECTION_PATH = `artifacts/${PUBLIC_DATA_ID}/public/data/cxc`;
     const TASAS_COLLECTION_PATH = `artifacts/${PUBLIC_DATA_ID}/public/data/tasas_bcv`;
     
-    const LS_KEY_DATE = 'cxc_local_date'; 
+    const LS_KEY_DATE = 'cxc_local_date'; // Mantenemos la fecha en LocalStorage (es pequeña)
 
+    // Variables de Estado
     let _cxcDataCache = null;
     let _tasasCache = {}; 
 
-    // --- MANEJO DE INDEXEDDB ---
+    // --- MANEJO DE INDEXEDDB (Base de datos local potente) ---
     const DB_NAME = 'DistCastilloDB';
     const STORE_NAME = 'cxc_store';
     const DB_VERSION = 1;
@@ -35,7 +36,7 @@
             return new Promise((resolve, reject) => {
                 const transaction = db.transaction([STORE_NAME], "readwrite");
                 const store = transaction.objectStore(STORE_NAME);
-                const request = store.put(data, 'clients_data'); 
+                const request = store.put(data, 'clients_data'); // Guardamos todo bajo una llave
                 request.onsuccess = () => resolve();
                 request.onerror = (e) => reject(e.target.error);
             });
@@ -219,6 +220,7 @@
     async function syncAndLoadData() {
         const statusLabel = document.getElementById('dataStatusLabel');
         
+        // 1. Intentar cargar datos locales primero (Estrategia "Cache-First" para velocidad y offline)
         const localData = await loadFromLocalDB();
         const localDateStr = localStorage.getItem(LS_KEY_DATE);
         
@@ -228,6 +230,7 @@
             if (statusLabel) statusLabel.textContent = "⚡ Datos locales (Verificando...)";
         }
 
+        // 2. Verificar actualización en el servidor
         try {
             const metaRef = _doc(_db, CXC_COLLECTION_PATH, 'metadata');
             const metaSnap = await _getDoc(metaRef);
@@ -246,6 +249,7 @@
                         const data = listSnap.data();
                         _cxcDataCache = data.clients || [];
                         
+                        // Guardar en IndexedDB
                         await saveToLocalDB(_cxcDataCache);
                         localStorage.setItem(LS_KEY_DATE, serverDate.toISOString());
                         
@@ -296,6 +300,7 @@
             return;
         }
 
+        // Obtener la tasa más reciente disponible para calcular los totales en Bs
         const availableDates = Object.keys(_tasasCache).sort();
         const latestDate = availableDates.length > 0 ? availableDates[availableDates.length - 1] : null;
         const currentRate = latestDate ? _tasasCache[latestDate] : 0;
@@ -308,6 +313,7 @@
             const bgClass = amount > 0 ? 'bg-white' : 'bg-green-50';
             const safeName = client.name.replace(/'/g, "\\'").replace(/"/g, '&quot;');
             
+            // HTML para mostrar el total en bolívares en la lista principal
             let bsTotalHtml = '';
             if (currentRate > 0 && amount !== 0) {
                 const bsTotal = amount * currentRate;
@@ -363,6 +369,7 @@
 
                 if (t.type === 'F') {
                     typeLabel = '🛒 Venta';
+                    // MODO COMPACTO: Botón de lupa circular
                     actionButton = `
                         <button onclick="window.cxcModule.searchSaleDetails('${safeClientName}', '${t.date}', ${t.amount})" 
                             class="p-1 bg-blue-100 text-blue-700 rounded-full border border-blue-200 hover:bg-blue-200 flex-shrink-0 transition-colors ml-1" title="Ver Detalle de Venta">
@@ -374,6 +381,7 @@
                 else if (t.type === 'R') typeLabel = '🧾 Retenc';
                 else if (t.type === '%') typeLabel = '📉 Dscto';
 
+                // --- Calcular y mostrar Bs para Transferencias y Efectivo ---
                 if (t.type === 'T' || t.type === 'E') {
                     const parts = t.date.split('/');
                     if (parts.length === 3) {
@@ -393,6 +401,7 @@
                     }
                 }
 
+                // Fila más delgada (py-1.5), botón y precio en la misma línea superior
                 rowsHTML += `
                     <tr class="border-b hover:bg-gray-50 text-sm">
                         <td class="py-2 px-2 text-gray-600 whitespace-nowrap align-top text-xs">${t.date}</td>
@@ -444,92 +453,65 @@
         _showModal('Estado de Cuenta', modalHTML, null, 'Cerrar');
     }
 
-    // HELPER: Normalizador estricto para comparar textos ignorando acentos, mayúsculas y caracteres especiales
+    // HELPER: Normalizador estricto para comparar textos ignorando acentos y mayúsculas
     function normalizeStr(str) {
         if (!str) return '';
-        return str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]/g, '');
+        return str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9 ]/g, '');
     }
 
-    async function searchSaleDetails(excelClientName, dateStr, amount) {
-        let debugMsg = "";
-        let sysClient = null;
-        let userIds = [_userId]; 
-        let foundVenta = null;
-
-        const delay = (ms) => new Promise(res => setTimeout(res, ms));
-        const updateModal = (title, msg) => _showModal(title, msg, null, '', null, false);
-
+    async function searchSaleDetails(clientName, dateStr, amount) {
+        _showModal('Buscando', `Buscando el recibo original de la venta...`, null, '', null, false);
         try {
-            // ==========================================
-            // PASO 1: VALIDACIÓN DEL CLIENTE
-            // ==========================================
-            updateModal('🔍 Paso 1/5: Validando Cliente', `Buscando a <b>${excelClientName}</b> en la base de datos de clientes del sistema...`);
-            await delay(1500);
+            // 1. OBTENER USUARIOS
+            let userIds = [_userId]; 
+            try {
+                const usersSnap = await _getDocs(_collection(_db, "users"));
+                if (!usersSnap.empty) {
+                     userIds = usersSnap.docs.map(d => d.id);
+                }
+            } catch (permError) {
+                console.warn("Búsqueda restringida: Buscará solo en sus registros por reglas de seguridad.");
+            }
 
-            const clientesSnap = await _getDocs(_collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/clientes`));
-            const excelNameNorm = normalizeStr(excelClientName);
+            // 2. PARSEO DE FECHAS ESTRICTO (LATAM: DD/MM/YYYY)
+            let searchDate;
+            const dateStrClean = dateStr.trim();
+            const parts = dateStrClean.split(/[\/\-]/); // Separa por "/" o "-"
             
-            // Intentar hacer match ignorando basura (C.A., Inversiones, etc)
-            for (const doc of clientesSnap.docs) {
-                const cData = doc.data();
-                const dbNameNorm = normalizeStr(cData.nombreComercial);
-                const dbNamePersNorm = normalizeStr(cData.nombrePersonal);
+            if (parts.length === 3) {
+                let day = parseInt(parts[0], 10);
+                let month = parseInt(parts[1], 10) - 1; // En JS los meses van de 0 a 11
+                let year = parseInt(parts[2], 10);
                 
-                if (dbNameNorm.includes(excelNameNorm) || excelNameNorm.includes(dbNameNorm) ||
-                    (dbNamePersNorm && (dbNamePersNorm.includes(excelNameNorm) || excelNameNorm.includes(dbNamePersNorm)))) {
-                    sysClient = { id: doc.id, ...cData };
-                    break;
+                // Si el año viene de primero (formato YYYY-MM-DD)
+                if (parts[0].length === 4) {
+                    year = parseInt(parts[0], 10);
+                    month = parseInt(parts[1], 10) - 1;
+                    day = parseInt(parts[2], 10);
+                } else if (year < 100) {
+                    year += 2000; // Convierte "26" en "2026"
                 }
-            }
-
-            if (sysClient) {
-                updateModal('🔍 Paso 1/5: Validando Cliente', `✅ Cliente encontrado en Firebase: <b>${sysClient.nombreComercial}</b>`);
+                searchDate = new Date(year, month, day);
             } else {
-                updateModal('⚠️ Aviso: Cliente no enlazado', `No se encontró un match exacto en Firebase para <b>${excelClientName}</b>.<br>Se intentará buscar el recibo usando el nombre crudo del Excel.`);
-            }
-            await delay(1500);
-
-            // ==========================================
-            // PASO 2: PARSEO DE FECHA Y USUARIOS
-            // ==========================================
-            updateModal('🔍 Paso 2/5: Preparando Búsqueda', `Analizando fecha <b>${dateStr}</b> y obteniendo rutas de vendedores...`);
-            await delay(1000);
-
-            let searchDate = new Date(dateStr);
-            if (isNaN(searchDate.getTime()) || searchDate.getFullYear() < 2000) {
-                const parts = dateStr.split('/');
-                if (parts.length === 3) {
-                    let year = parseInt(parts[2], 10);
-                    if (year < 100) year += 2000;
-                    searchDate = new Date(year, parseInt(parts[1], 10) - 1, parseInt(parts[0], 10));
-                }
+                searchDate = new Date(dateStrClean);
             }
 
             if (isNaN(searchDate.getTime())) {
-                _showModal('❌ Error (Paso 2)', `El formato de la fecha del Excel (${dateStr}) es inválido o ilegible para Firebase.`);
+                _showModal('Error', `Formato de fecha inválido para búsqueda: ${dateStr}`);
                 return;
             }
 
-            try {
-                const usersSnap = await _getDocs(_collection(_db, "users"));
-                if (!usersSnap.empty) userIds = usersSnap.docs.map(d => d.id);
-            } catch (e) {
-                console.warn("Solo se buscará en el usuario actual por reglas de seguridad.");
-            }
-
-            // Rango de búsqueda: El día de la venta, 1 día antes (por errores de zona horaria) y hasta 2 días después (por cierres tardíos)
-            const startRange = new Date(searchDate); startRange.setDate(startRange.getDate() - 1); startRange.setHours(0,0,0,0);
+            // Rango de búsqueda: ±2 días
+            const startRange = new Date(searchDate); startRange.setDate(startRange.getDate() - 2); startRange.setHours(0,0,0,0);
             const endRange = new Date(searchDate); endRange.setDate(endRange.getDate() + 2); endRange.setHours(23,59,59,999);
 
-            // ==========================================
-            // PASO 3: BUSCANDO EN CIERRES HISTÓRICOS
-            // ==========================================
-            updateModal('🔍 Paso 3/5: Escaneando Historial', `Buscando una venta de <b>$${amount}</b> entre el ${startRange.toLocaleDateString()} y el ${endRange.toLocaleDateString()} en los cierres...`);
-            await delay(1500);
+            // 3. TOKENIZACIÓN DEL CLIENTE ORIGINAL
+            const normSearchName = normalizeStr(clientName);
+            const primaryToken = normalizeStr(clientName.split(' ')[0]); // Vuelve a la lógica original de la primera palabra
 
-            // El nombre a buscar: Prioridad al nombre del sistema, si no, el del excel
-            const targetNameNorm = sysClient ? normalizeStr(sysClient.nombreComercial) : excelNameNorm;
+            let foundVenta = null;
 
+            // BÚSQUEDA A: En Cierres Históricos (Rango de Fechas)
             for (const uid of userIds) {
                 if (foundVenta) break;
                 try {
@@ -542,11 +524,11 @@
                         const ventas = cierre.ventas || [];
                         
                         const match = ventas.find(v => {
-                            // Validar Monto (tolerancia de 1 dólar por redondeos)
+                            // Validar Monto (tolerancia de $1 por si hay redondeos de decimales)
                             const isAmountMatch = Math.abs(Math.abs(v.total || 0) - Math.abs(amount)) <= 1.0;
-                            // Validar Nombre
+                            // Validar Nombre como estaba antes (primera palabra)
                             const vNameNorm = normalizeStr(v.clienteNombre);
-                            const isNameMatch = vNameNorm.includes(targetNameNorm) || targetNameNorm.includes(vNameNorm);
+                            const isNameMatch = vNameNorm.includes(primaryToken) || normSearchName.includes(vNameNorm);
                             
                             return isAmountMatch && isNameMatch;
                         });
@@ -556,16 +538,11 @@
                             break; 
                         }
                     }
-                } catch (err) { /* Ignorar errores de carpetas protegidas */ }
+                } catch (err) { /* Ignorar si no tiene permisos para esa carpeta */ }
             }
 
-            // ==========================================
-            // PASO 4: BUSCANDO EN VENTAS ACTIVAS (SI FALLA EL CIERRE)
-            // ==========================================
+            // BÚSQUEDA B: En Ventas Activas del día (Si no han hecho cierre)
             if (!foundVenta) {
-                updateModal('🔍 Paso 4/5: Escaneando Ventas del Día', `No se encontró en los cierres. Buscando en las ventas activas sin cerrar...`);
-                await delay(1500);
-
                 for (const uid of userIds) {
                     if (foundVenta) break;
                     try {
@@ -576,25 +553,23 @@
                              const vData = doc.data();
                              const isAmountMatch = Math.abs(Math.abs(vData.total || 0) - Math.abs(amount)) <= 1.0;
                              const vNameNorm = normalizeStr(vData.clienteNombre);
-                             const isNameMatch = vNameNorm.includes(targetNameNorm) || targetNameNorm.includes(vNameNorm);
+                             const isNameMatch = vNameNorm.includes(primaryToken) || normSearchName.includes(vNameNorm);
 
                              if (isAmountMatch && isNameMatch) {
                                   foundVenta = { ...vData, id: doc.id, isActiva: true };
                                   break;
                              }
                         }
-                    } catch (err) {}
+                    } catch (err) { }
                 }
             }
 
-            // ==========================================
-            // PASO 5: RESULTADO Y RENDERIZADO
-            // ==========================================
+            // RENDERIZADO DEL TICKET CON BOTÓN DE COMPARTIR
             if (foundVenta) {
-                updateModal('✅ Paso 5/5: ¡Venta Encontrada!', `Preparando el recibo digital...`);
-                await delay(1000);
-
                 if (window.ventasUI && typeof window.ventasUI.getTicketHTML === 'function') {
+                    
+                    _showModal('Cargando Recibo', 'Renderizando el recibo original...', null, '', null, false);
+
                     const productosFormateados = (foundVenta.productos || []).map(p => ({
                         ...p,
                         cantidadVendida: p.cantidadVendida || { cj: 0, paq: 0, und: 0 },
@@ -603,10 +578,7 @@
                     }));
 
                     const ventaFicticia = {
-                        cliente: { 
-                            nombreComercial: sysClient ? sysClient.nombreComercial : foundVenta.clienteNombre, 
-                            nombrePersonal: sysClient ? (sysClient.nombrePersonal || '') : (foundVenta.clienteNombrePersonal || '') 
-                        },
+                        cliente: { nombreComercial: foundVenta.clienteNombre, nombrePersonal: foundVenta.clienteNombrePersonal || '' },
                         fecha: foundVenta.fecha || foundVenta.cierreFecha || new Date(),
                         total: foundVenta.total
                     };
@@ -618,7 +590,7 @@
                         'Recuperación de Venta'
                     );
 
-                    // Renderizar el HTML temporalmente fuera de pantalla
+                    // Render oculto
                     const tempDiv = document.createElement('div');
                     tempDiv.style.position = 'absolute';
                     tempDiv.style.left = '-9999px';
@@ -642,19 +614,18 @@
                                         <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" /></svg>
                                         Compartir Ticket
                                     </button>
-                                    <button onclick="document.getElementById('modalContainer').classList.add('hidden')" class="w-full py-2 mt-2 bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold rounded-lg transition-colors">Cerrar</button>
                                 `;
                                 
-                                _showModal('Recibo Encontrado', modalWrapper, null, '');
-                                document.getElementById('modalFooter').innerHTML = ''; // Limpiar footer por defecto
+                                _showModal('Recibo Encontrado', modalWrapper, null, 'Cerrar');
+                                document.getElementById('modalFooter').innerHTML = ''; // Eliminar botón "Cerrar" repetido
                                 
-                                // Lógica de botón Compartir
+                                // Lógica del botón Compartir
                                 document.getElementById('btnCompartirReciboEncontrado').onclick = async () => {
                                     canvas.toBlob(async (blob) => {
                                         if (navigator.share && blob) {
                                             try {
                                                 await navigator.share({ 
-                                                    files: [new File([blob], `Ticket_${ventaFicticia.cliente.nombreComercial.replace(/\\s/g,'_')}.png`, {type:"image/png"})],
+                                                    files: [new File([blob], `Ticket_${ventaFicticia.cliente.nombreComercial.replace(/[\s/]/g,'_')}.png`, {type:"image/png"})],
                                                     title: 'Ticket de Venta'
                                                 });
                                             } catch(e) { console.warn("Share cancelado", e); }
@@ -667,24 +638,24 @@
 
                             } catch (e) {
                                 console.error("Error generando imagen:", e);
-                                _showModal('❌ Error', 'No se pudo generar la imagen del recibo.');
+                                _showModal('Error', 'No se pudo generar la imagen del recibo.');
                             } finally {
                                 document.body.removeChild(tempDiv);
                             }
-                        }, 300); // Dar tiempo al navegador de pintar el DOM oculto
+                        }, 250); 
                     } else {
                         document.body.removeChild(tempDiv);
-                        _showModal('❌ Error', 'Estructura de ticket no encontrada.');
+                        _showModal('Error', 'Estructura de ticket no encontrada.');
                     }
                 } else {
-                    _showModal('❌ Error', 'El módulo de interfaz visual de ventas (ventas-ui.js) no está cargado.');
+                    _showModal('Error', 'El módulo de interfaz de ventas no está cargado.');
                 }
             } else {
-                _showModal('❌ Sin resultados', `La búsqueda finalizó, pero no se encontró ninguna venta de <b>$${amount}</b> para este cliente en las fechas cercanas a <b>${searchDate.toLocaleDateString()}</b>.<br><br><b>Causas probables:</b><br>- Fue una venta de un sistema anterior.<br>- El monto del Excel es distinto al guardado en la factura.<br>- El cliente se registró con un nombre totalmente diferente.`);
+                _showModal('Sin resultados', `No se encontró un ticket en la base de datos para el cliente <b>${primaryToken.toUpperCase()}</b> por <b>$${amount}</b> en las fechas cercanas a <b>${searchDate.toLocaleDateString()}</b>.<br><br>Revise que el monto y la fecha del Excel coincidan con la venta real.`);
             }
         } catch (error) {
-            console.error("Search pipeline error:", error);
-            _showModal('❌ Error Crítico', 'La búsqueda falló por un error interno o de conexión.');
+            console.error("Search error:", error);
+            _showModal('Error', 'Error de conexión buscando la factura.');
         }
     }
 
