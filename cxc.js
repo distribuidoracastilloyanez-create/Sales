@@ -369,7 +369,6 @@
 
                 if (t.type === 'F') {
                     typeLabel = '🛒 Venta';
-                    // MODO COMPACTO: Botón de lupa circular
                     actionButton = `
                         <button onclick="window.cxcModule.searchSaleDetails('${safeClientName}', '${t.date}', ${t.amount})" 
                             class="p-1 bg-blue-100 text-blue-700 rounded-full border border-blue-200 hover:bg-blue-200 flex-shrink-0 transition-colors ml-1" title="Ver Detalle de Venta">
@@ -381,7 +380,6 @@
                 else if (t.type === 'R') typeLabel = '🧾 Retenc';
                 else if (t.type === '%') typeLabel = '📉 Dscto';
 
-                // --- Calcular y mostrar Bs para Transferencias y Efectivo ---
                 if (t.type === 'T' || t.type === 'E') {
                     const parts = t.date.split('/');
                     if (parts.length === 3) {
@@ -401,7 +399,6 @@
                     }
                 }
 
-                // Fila más delgada (py-1.5), botón y precio en la misma línea superior
                 rowsHTML += `
                     <tr class="border-b hover:bg-gray-50 text-sm">
                         <td class="py-2 px-2 text-gray-600 whitespace-nowrap align-top text-xs">${t.date}</td>
@@ -507,7 +504,7 @@
 
             // 3. TOKENIZACIÓN DEL CLIENTE ORIGINAL
             const normSearchName = normalizeStr(clientName);
-            const primaryToken = normalizeStr(clientName.split(' ')[0]); // Vuelve a la lógica original de la primera palabra
+            const primaryToken = normalizeStr(clientName.split(' ')[0]); // Lógica original de la primera palabra
 
             let foundVenta = null;
 
@@ -617,24 +614,26 @@
                                 `;
                                 
                                 _showModal('Recibo Encontrado', modalWrapper, null, 'Cerrar');
-                                document.getElementById('modalFooter').innerHTML = ''; // Eliminar botón "Cerrar" repetido
                                 
                                 // Lógica del botón Compartir
-                                document.getElementById('btnCompartirReciboEncontrado').onclick = async () => {
-                                    canvas.toBlob(async (blob) => {
-                                        if (navigator.share && blob) {
-                                            try {
-                                                await navigator.share({ 
-                                                    files: [new File([blob], `Ticket_${ventaFicticia.cliente.nombreComercial.replace(/[\s/]/g,'_')}.png`, {type:"image/png"})],
-                                                    title: 'Ticket de Venta'
-                                                });
-                                            } catch(e) { console.warn("Share cancelado", e); }
-                                        } else {
-                                            const url = URL.createObjectURL(blob);
-                                            const link = document.createElement('a'); link.href=url; link.download="Ticket.png"; link.click();
-                                        }
-                                    });
-                                };
+                                const shareBtn = document.getElementById('btnCompartirReciboEncontrado');
+                                if(shareBtn) {
+                                    shareBtn.onclick = async () => {
+                                        canvas.toBlob(async (blob) => {
+                                            if (navigator.share && blob) {
+                                                try {
+                                                    await navigator.share({ 
+                                                        files: [new File([blob], `Ticket_${ventaFicticia.cliente.nombreComercial.replace(/[\\s/]/g,'_')}.png`, {type:"image/png"})],
+                                                        title: 'Ticket de Venta'
+                                                    });
+                                                } catch(e) { console.warn("Share cancelado", e); }
+                                            } else {
+                                                const url = URL.createObjectURL(blob);
+                                                const link = document.createElement('a'); link.href=url; link.download="Ticket.png"; link.click();
+                                            }
+                                        });
+                                    };
+                                }
 
                             } catch (e) {
                                 console.error("Error generando imagen:", e);
