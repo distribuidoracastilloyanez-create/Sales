@@ -374,6 +374,8 @@
             const baseClientName = item.data.clienteNombre || 'Cliente Desconocido';
             const isObsequio = item.tipo === 'obsequio';
             
+            // Creamos una clave única para diferenciar la fila si es que queremos separarlas, 
+            // pero para el modal general lo agruparemos todo al final en baseClientName.
             const rowClientName = isObsequio ? `${baseClientName} (OBSEQUIO)` : baseClientName;
 
             if (!vaciosMovementsPorTipo[baseClientName]) { 
@@ -381,7 +383,10 @@
                 TIPOS_VACIO_GLOBAL.forEach(t => vaciosMovementsPorTipo[baseClientName][t] = { entregados: 0, devueltos: 0 }); 
             }
 
+            // Inicializamos la data del cliente tanto en la fila específica (para Excel) 
+            // como en el cliente base (para Modal)
             if (!clientData[rowClientName]) clientData[rowClientName] = { products: {}, totalValue: 0, isObsequioRow: isObsequio };
+            if (!clientData[baseClientName]) clientData[baseClientName] = { products: {}, totalValue: 0, isObsequioRow: false };
             
             if (item.tipo === 'venta') {
                 const venta = item.data;
@@ -411,6 +416,8 @@
                     }
 
                     if (p.id && !clientData[rowClientName].products[p.id]) clientData[rowClientName].products[p.id] = 0;
+                    // También lo asignamos al base
+                    if (p.id && !clientData[baseClientName].products[p.id]) clientData[baseClientName].products[p.id] = 0;
                     
                     let cantidadUnidades = 0;
                     if (p.cantidadVendida) { 
@@ -420,7 +427,10 @@
                     } else if (p.totalUnidadesVendidas) { 
                         cantidadUnidades = p.totalUnidadesVendidas;
                     }
-                    if(p.id) clientData[rowClientName].products[p.id] += cantidadUnidades;
+                    if(p.id) {
+                        clientData[rowClientName].products[p.id] += cantidadUnidades;
+                        if (!isObsequio) clientData[baseClientName].products[p.id] += cantidadUnidades;
+                    }
 
                     if (prodComp.manejaVacios && prodComp.tipoVacio) {
                         vaciosMovementsPorTipo[baseClientName][prodComp.tipoVacio].entregados += p.cantidadVendida?.cj || 0; 
@@ -475,15 +485,20 @@
                 if(pComp.id) {
                     dataByRubro[rubro].clients[rowClientName].products[pComp.id] = (dataByRubro[rubro].clients[rowClientName].products[pComp.id] || 0) + cantidadUnidades;
                     
-                    // FIX CRÍTICO: Añadimos el obsequio a la tabla general del modal de ventas.
-                    if (!clientData[rowClientName].products[pComp.id]) clientData[rowClientName].products[pComp.id] = 0;
-                    clientData[rowClientName].products[pComp.id] += cantidadUnidades;
+                    // FIX CRÍTICO: Añadimos el obsequio al BASE CLIENT NAME para que salga en el Modal General
+                    if (!clientData[baseClientName].products[pComp.id]) clientData[baseClientName].products[pComp.id] = 0;
+                    clientData[baseClientName].products[pComp.id] += cantidadUnidades;
+                    
+                    // Activamos un flag especial temporal para que la tabla lo reconozca
+                    clientData[baseClientName].isObsequioPartial = true; 
                 }
                 
                 dataByRubro[rubro].clients[rowClientName].totalValue += subtotalObsequio;
                 dataByRubro[rubro].totalValue += subtotalObsequio;
                 
-                clientData[rowClientName].totalValue += subtotalObsequio;
+                // Sumamos al base también
+                clientData[baseClientName].totalValue += subtotalObsequio;
+                
                 clientTotals[baseClientName] = (clientTotals[baseClientName] || 0) + subtotalObsequio;
                 grandTotalValue += subtotalObsequio;
 
@@ -497,7 +512,10 @@
             }
         }
         
-        const sortedClients = Object.keys(clientData).sort();
+        // --- PARA LA VISTA DEL MODAL USAMOS LOS NOMBRES BASE (SIN LA PALABRA OBSEQUIO) ---
+        // Filtramos para obtener solo los nombres reales de los clientes
+        const sortedClients = Object.keys(clientData).filter(k => !k.includes('(OBSEQUIO)')).sort();
+        
         const sortFunction = await getGlobalProductSortFunction();
         const finalProductOrder = Array.from(allProductsMap.values()).sort(sortFunction);
 
@@ -545,6 +563,7 @@
 
         return { clientData, clientTotals, grandTotalValue, sortedClients, finalProductOrder, vaciosMovementsPorTipo, finalData, userInfo };
     }
+    
     async function showClosingDetail(closingId) {
         const closingData = window.tempClosingsData?.find(c => c.id === closingId);
         if (!closingData) { _showModal('Error', 'No se cargaron detalles.'); return; }
