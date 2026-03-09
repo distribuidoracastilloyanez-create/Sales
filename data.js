@@ -374,8 +374,7 @@
             const baseClientName = item.data.clienteNombre || 'Cliente Desconocido';
             const isObsequio = item.tipo === 'obsequio';
             
-            // Creamos una clave única para diferenciar la fila si es que queremos separarlas, 
-            // pero para el modal general lo agruparemos todo al final en baseClientName.
+            // Creamos una clave única para diferenciar la fila 
             const rowClientName = isObsequio ? `${baseClientName} (OBSEQUIO)` : baseClientName;
 
             if (!vaciosMovementsPorTipo[baseClientName]) { 
@@ -393,7 +392,8 @@
                 const ventaTotalCliente = venta.total || 0;
                 clientData[rowClientName].totalValue += ventaTotalCliente;
                 
-                clientTotals[baseClientName] = (clientTotals[baseClientName] || 0) + ventaTotalCliente;
+                // FIX: Agrupar por la fila específica para que salga separado en la hoja Totales
+                clientTotals[rowClientName] = (clientTotals[rowClientName] || 0) + ventaTotalCliente;
                 grandTotalValue += ventaTotalCliente;
 
                 const vacDev = venta.vaciosDevueltosPorTipo || {};
@@ -496,10 +496,11 @@
                 dataByRubro[rubro].clients[rowClientName].totalValue += subtotalObsequio;
                 dataByRubro[rubro].totalValue += subtotalObsequio;
                 
-                // Sumamos al base también
+                // Sumamos al base también para el Modal General
                 clientData[baseClientName].totalValue += subtotalObsequio;
                 
-                clientTotals[baseClientName] = (clientTotals[baseClientName] || 0) + subtotalObsequio;
+                // FIX: Agrupar por la fila específica (OBSEQUIO) para la Hoja Totales en Excel
+                clientTotals[rowClientName] = (clientTotals[rowClientName] || 0) + subtotalObsequio;
                 grandTotalValue += subtotalObsequio;
 
                 if (pComp.manejaVacios && pComp.tipoVacio) {
@@ -563,7 +564,7 @@
 
         return { clientData, clientTotals, grandTotalValue, sortedClients, finalProductOrder, vaciosMovementsPorTipo, finalData, userInfo };
     }
-    
+
     async function showClosingDetail(closingId) {
         const closingData = window.tempClosingsData?.find(c => c.id === closingId);
         if (!closingData) { _showModal('Error', 'No se cargaron detalles.'); return; }
@@ -1039,6 +1040,11 @@
                 const totalesHeaderStyle = buildExcelJSStyle(s.totalesHeader, s.totalesHeader.border ? thinBorderStyle : null, null, 'left');
                 const totalesDataStyle = buildExcelJSStyle(s.totalesData, s.totalesData.border ? thinBorderStyle : null, null, 'left');
                 const totalesDataPriceStyle = buildExcelJSStyle(s.totalesData, s.totalesData.border ? thinBorderStyle : null, "$#,##0.00", 'right');
+                
+                // NUEVOS ESTILOS PARA RESALTAR EL OBSEQUIO EN LA HOJA DE TOTALES
+                const totalesDataObsequioStyle = buildExcelJSStyle(s.rowDataClientsObsequio, s.rowDataClientsObsequio.border ? thinBorderStyle : null, null, 'left');
+                const totalesDataObsequioPriceStyle = buildExcelJSStyle(s.rowDataClientsObsequio, s.rowDataClientsObsequio.border ? thinBorderStyle : null, "$#,##0.00", 'right');
+
                 const totalesTotalRowStyle = buildExcelJSStyle(s.totalesTotalRow, s.totalesTotalRow.border ? thinBorderStyle : null, null, 'left');
                 const totalesTotalRowPriceStyle = buildExcelJSStyle(s.totalesTotalRow, s.totalesTotalRow.border ? thinBorderStyle : null, "$#,##0.00", 'right');
                 
@@ -1050,8 +1056,11 @@
                 const sortedClientTotals = Object.entries(clientTotals).sort((a, b) => a[0].localeCompare(b[0]));
                 sortedClientTotals.forEach(([clientName, totalValue]) => {
                     const row = wsClientes.addRow([clientName, Number(totalValue.toFixed(2))]);
-                    row.getCell(1).style = totalesDataStyle;
-                    row.getCell(2).style = totalesDataPriceStyle;
+                    const isObs = clientName.includes('(OBSEQUIO)');
+                    
+                    // Aplicar el estilo especial si es un obsequio
+                    row.getCell(1).style = isObs ? totalesDataObsequioStyle : totalesDataStyle;
+                    row.getCell(2).style = isObs ? totalesDataObsequioPriceStyle : totalesDataPriceStyle;
                 });
                 
                 const totalRow = wsClientes.addRow(['GRAN TOTAL', Number(grandTotalValue.toFixed(2))]);
