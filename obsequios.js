@@ -9,6 +9,7 @@
     // Estado específico del módulo
     let _clientesCache = [];
     let _inventarioCache = []; 
+    let _usersCache = []; // Nuevo: Caché de vendedores para el panel Admin
     let _obsequioConfig = { productoId: null, productoData: null }; 
     let _obsequioActual = { cliente: null, cantidadEntregada: 0, vaciosRecibidos: 0, observacion: '' };
     let _lastObsequiosSearch = []; 
@@ -385,16 +386,52 @@
         };
     }
 
-    function showRegistroObsequiosView() {
-        const m = new Date().toISOString().slice(0, 7);
+    async function showRegistroObsequiosView() {
+        // Cargar usuarios si es administrador
+        if (_userRole === 'admin' && _usersCache.length === 0) {
+            try {
+                const usersSnap = await _getDocs(_collection(_db, "users"));
+                _usersCache = usersSnap.docs.map(d => ({id: d.id, ...d.data()}));
+            } catch (e) {
+                console.warn("No se pudo cargar la lista de usuarios.", e);
+            }
+        }
+
+        const today = new Date().toISOString().split('T')[0];
+
+        let adminFiltersHTML = '';
+        if (_userRole === 'admin') {
+            adminFiltersHTML = `
+                <div>
+                    <label class="block text-xs font-bold text-gray-700 mb-1 uppercase tracking-wider">Vendedor:</label>
+                    <select id="obsUserSelect" class="w-full p-2.5 border border-gray-300 rounded-lg bg-white text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+                        <option value="all">Todos los Vendedores</option>
+                        ${_usersCache.map(u => `<option value="${u.id}">${u.nombre || ''} ${u.apellido || ''} (${u.email})</option>`).join('')}
+                    </select>
+                </div>
+            `;
+        }
+
         _mainContent.innerHTML = `
-            <div class="p-4 pt-8">
-                <div class="container mx-auto max-w-3xl bg-white p-6 md:p-8 rounded-lg shadow-xl">
+            <div class="p-2 sm:p-4 pt-8">
+                <div class="container mx-auto max-w-4xl bg-white p-4 sm:p-6 md:p-8 rounded-lg shadow-xl">
                     <h2 class="text-2xl font-black mb-6 text-gray-800 text-center tracking-tight">Registro de Obsequios</h2>
-                    <div class="flex flex-col sm:flex-row gap-3 mb-6 bg-blue-50 p-4 rounded-lg border border-blue-100">
-                        <input type="month" id="mIn" value="${m}" class="flex-grow p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none font-bold text-gray-700 shadow-sm">
-                        <button id="btnSearch" class="bg-blue-600 hover:bg-blue-700 text-white font-bold px-8 py-3 rounded-lg shadow-md transition-colors">Buscar Mes</button>
+                    
+                    <div class="grid grid-cols-1 md:grid-cols-${_userRole === 'admin' ? '4' : '3'} gap-4 mb-6 bg-blue-50 p-4 rounded-lg border border-blue-100 shadow-inner">
+                        ${adminFiltersHTML}
+                        <div>
+                            <label class="block text-xs font-bold text-gray-700 mb-1 uppercase tracking-wider">Desde Fecha:</label>
+                            <input type="date" id="obsDateStart" value="${today}" class="w-full p-2.5 border border-gray-300 rounded-lg bg-white text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-gray-700 mb-1 uppercase tracking-wider">Hasta Fecha:</label>
+                            <input type="date" id="obsDateEnd" value="${today}" class="w-full p-2.5 border border-gray-300 rounded-lg bg-white text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+                        </div>
+                        <div class="flex items-end">
+                            <button id="btnSearch" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-2.5 rounded-lg shadow-md transition-colors">Buscar Entregas</button>
+                        </div>
                     </div>
+                    
                     <div id="rList" class="space-y-3 max-h-[60vh] overflow-y-auto pr-2 pb-4">
                         <p class="text-center text-gray-500 italic mt-10">Presione buscar para cargar los registros.</p>
                     </div>
@@ -403,41 +440,59 @@
             </div>
         `;
         document.getElementById('btnSearch').onclick = handleSearchObsequios;
-        // Cargar automáticamente el mes actual
+        // Cargar automáticamente el día actual
         handleSearchObsequios();
     }
 
-    // RESOLUCIÓN DEL ERROR DE BÚSQUEDA Y FECHAS
     async function handleSearchObsequios() {
-        const m = document.getElementById('mIn').value;
-        let targetYear, targetMonth;
-        
-        if (m) {
-            [targetYear, targetMonth] = m.split('-').map(Number);
-        } else {
-            const now = new Date();
-            targetYear = now.getFullYear();
-            targetMonth = now.getMonth() + 1;
+        const dStartStr = document.getElementById('obsDateStart').value;
+        const dEndStr = document.getElementById('obsDateEnd').value;
+        let selectedUserId = _userId;
+
+        if (_userRole === 'admin') {
+            const selectEl = document.getElementById('obsUserSelect');
+            if (selectEl) selectedUserId = selectEl.value;
         }
+
+        if (!dStartStr || !dEndStr) {
+            _showModal('Aviso', 'Seleccione un rango de fechas válido.');
+            return;
+        }
+
+        // Parseo seguro de la fecha local
+        const [sY, sM, sD] = dStartStr.split('-');
+        const dStart = new Date(sY, sM - 1, sD, 0, 0, 0, 0);
+
+        const [eY, eM, eD] = dEndStr.split('-');
+        const dEnd = new Date(eY, eM - 1, eD, 23, 59, 59, 999);
 
         const list = document.getElementById('rList');
         list.innerHTML = '<p class="text-center text-blue-500 font-bold animate-pulse py-10">Buscando y sincronizando registros...</p>';
 
         try {
-            // Estrategia a prueba de fallos: Traer todos los obsequios recientes y filtrar en memoria.
-            // Esto evita el error de tipos en Firestore si en algún momento se guardaron fechas como Strings en vez de Timestamps.
-            const q = _query(_collection(_db, `artifacts/${_appId}/users/${_userId}/obsequios_entregados`));
-            const snap = await _getDocs(q);
-            
-            let results = snap.docs.map(d => ({id: d.id, ...d.data()}));
-            
-            // Filtro estricto en memoria
-            results = results.filter(r => {
-                const d = r.fecha?.toDate ? r.fecha.toDate() : new Date(r.fecha);
-                if (isNaN(d)) return false;
-                return d.getFullYear() === targetYear && (d.getMonth() + 1) === targetMonth;
-            });
+            let uidsToSearch = [selectedUserId];
+            if (selectedUserId === 'all') {
+                uidsToSearch = _usersCache.map(u => u.id);
+            }
 
+            let results = [];
+
+            for (const uid of uidsToSearch) {
+                try {
+                    const q = _query(_collection(_db, `artifacts/${_appId}/users/${uid}/obsequios_entregados`),
+                              _where("fecha", ">=", dStart),
+                              _where("fecha", "<=", dEnd));
+                    
+                    const snap = await _getDocs(q);
+                    
+                    snap.docs.forEach(d => {
+                        results.push({id: d.id, vendedorId: uid, ...d.data()});
+                    });
+                } catch(folderErr) {
+                    console.warn(`No se pudo leer la carpeta de obsequios del usuario ${uid}`);
+                }
+            }
+            
             // Ordenar de más reciente a más antiguo
             results.sort((a, b) => {
                 const dA = a.fecha?.toDate ? a.fecha.toDate() : new Date(a.fecha);
@@ -448,7 +503,7 @@
             _lastObsequiosSearch = results;
 
             if (results.length === 0) {
-                list.innerHTML = `<div class="text-center p-8 bg-gray-50 border border-dashed border-gray-300 rounded-lg text-gray-500 font-medium">No se entregaron obsequios en este mes.</div>`;
+                list.innerHTML = `<div class="text-center p-8 bg-gray-50 border border-dashed border-gray-300 rounded-lg text-gray-500 font-medium">No se entregaron obsequios en este rango de fechas.</div>`;
                 return;
             }
 
@@ -456,10 +511,19 @@
                 const fObj = r.fecha?.toDate ? r.fecha.toDate() : new Date(r.fecha);
                 const fStr = isNaN(fObj) ? 'Fecha inválida' : fObj.toLocaleDateString('es-ES', {day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute:'2-digit'});
                 
+                let vendedorBadge = '';
+                if (_userRole === 'admin') {
+                    const vName = _usersCache.find(u => u.id === r.vendedorId)?.email || 'Desconocido';
+                    vendedorBadge = `<span class="bg-purple-100 text-purple-800 text-[10px] px-2 py-0.5 rounded font-bold uppercase ml-2 border border-purple-200">Vend: ${vName}</span>`;
+                }
+
                 return `
                 <div class="p-4 border border-gray-200 rounded-xl flex justify-between items-center text-sm bg-white shadow-sm hover:shadow transition-shadow">
                     <div>
-                        <div class="text-[10px] text-gray-400 font-bold mb-1 tracking-wider uppercase">${fStr}</div>
+                        <div class="flex items-center mb-1">
+                            <span class="text-[10px] text-gray-400 font-bold tracking-wider uppercase">${fStr}</span>
+                            ${vendedorBadge}
+                        </div>
                         <div class="text-blue-900 font-black text-base mb-0.5 leading-tight">${r.clienteNombre}</div>
                         <div class="text-gray-700">${r.productoNombre}</div> 
                         <div class="mt-1">
@@ -485,10 +549,13 @@
         const r = _lastObsequiosSearch.find(x => x.id === id);
         if(!r) return;
 
-        _showModal('Eliminar Registro', `¿Borrar el obsequio de <br><b class="text-blue-600">${r.cantidadCajas} Cajas</b> a <br><b class="text-gray-800">${r.clienteNombre}</b>?<br><br><span class="text-red-600 text-xs font-bold">⚠️ Esta acción devolverá automáticamente el producto al stock y revertirá los vacíos.</span>`, async () => {
+        // Determinar a qué usuario le pertenece este obsequio para devolverle el stock correcto
+        const targetUserId = r.vendedorId || r.userId || _userId;
+
+        _showModal('Eliminar Registro', `¿Borrar el obsequio de <br><b class="text-blue-600">${r.cantidadCajas} Cajas</b> a <br><b class="text-gray-800">${r.clienteNombre}</b>?<br><br><span class="text-red-600 text-xs font-bold">⚠️ Esta acción devolverá automáticamente el producto al stock del vendedor y revertirá los vacíos.</span>`, async () => {
             _showModal('Progreso', 'Revirtiendo transacción...', null, '', null, false);
             try {
-                const iRef = _doc(_db, `artifacts/${_appId}/users/${_userId}/inventario`, r.productoId);
+                const iRef = _doc(_db, `artifacts/${_appId}/users/${targetUserId}/inventario`, r.productoId);
                 const cRef = _doc(_db, CLIENTES_PUBLIC_PATH, r.clienteId);
                 
                 // Lo leemos por si es un registro antiguo que no tenga la propiedad congelada
@@ -515,7 +582,7 @@
                         }
                     }
                     
-                    t.delete(_doc(_db, `artifacts/${_appId}/users/${_userId}/obsequios_entregados`, id));
+                    t.delete(_doc(_db, `artifacts/${_appId}/users/${targetUserId}/obsequios_entregados`, id));
                 });
                 
                 const pModal = document.getElementById('modalContainer'); if(pModal) pModal.classList.add('hidden');
