@@ -9,23 +9,17 @@
     // Estado específico del módulo
     let _clientesCache = [];
     let _inventarioCache = []; 
-    let _usersCache = []; // Nuevo: Caché de vendedores para el panel Admin
+    let _usersCache = []; // Caché de vendedores para el panel Admin
     let _obsequioConfig = { productoId: null, productoData: null }; 
     let _obsequioActual = { cliente: null, cantidadEntregada: 0, vaciosRecibidos: 0, observacion: '' };
     let _lastObsequiosSearch = []; 
 
     const TIPOS_VACIO = window.TIPOS_VACIO_GLOBAL || ["1/4 - 1/3", "ret 350 ml", "ret 1.25 Lts"];
     
-    // CORRECCIÓN: Usar ID global desde config.js
     const PUBLIC_DATA_ID = window.AppConfig.PUBLIC_DATA_ID;
-    
-    // Rutas dinámicas
     let OBSEQUIO_CONFIG_PATH;
     let CLIENTES_PUBLIC_PATH;
 
-    /**
-     * Inicializa el módulo de obsequios con dependencias dinámicas.
-     */
     window.initObsequios = function(dependencies) {
         _db = dependencies.db;
         _userId = dependencies.userId;
@@ -51,16 +45,12 @@
         _limit = dependencies.limit;
         _deleteDoc = dependencies.deleteDoc;
 
-        // FASE 2: Usar ID público explícito para datos compartidos
         OBSEQUIO_CONFIG_PATH = `artifacts/${PUBLIC_DATA_ID}/public/data/config/obsequio`;
         CLIENTES_PUBLIC_PATH = `artifacts/${PUBLIC_DATA_ID}/public/data/clientes`;
         
-        console.log("Módulo Obsequios inicializado (Con Inmutabilidad Matemática). Public ID:", PUBLIC_DATA_ID);
+        console.log("Módulo Obsequios inicializado. Public ID:", PUBLIC_DATA_ID);
     };
 
-    /**
-     * Menú principal del módulo.
-     */
     window.showGestionObsequiosView = function() {
         if (_floatingControls) _floatingControls.classList.add('hidden');
         _mainContent.innerHTML = `
@@ -129,7 +119,6 @@
             </div>
         `;
 
-        // FASE 2: Carga paralela de datos híbridos
         await Promise.all([_loadClientes(), _loadInventarioHibrido(), _loadObsequioProduct()]);
 
         const loader = document.getElementById('obs-form-loader');
@@ -153,7 +142,6 @@
             const snap = await _getDoc(_doc(_db, OBSEQUIO_CONFIG_PATH));
             if (snap.exists()) {
                 _obsequioConfig.productoId = snap.data().productoId;
-                // Buscar en la caché híbrida ya cargada
                 _obsequioConfig.productoData = _inventarioCache.find(p => p.id === _obsequioConfig.productoId);
             }
         } catch (e) {
@@ -161,20 +149,16 @@
         }
     }
 
-    // --- NUEVO: CARGA HÍBRIDA (Maestro + Stock Personal) ---
     async function _loadInventarioHibrido() {
         try {
-            // 1. Cargar Maestro
             const masterSnap = await _getDocs(_collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/productos`));
             const masterMap = {};
             masterSnap.docs.forEach(d => masterMap[d.id] = { id: d.id, ...d.data() });
 
-            // 2. Cargar Stock Local
             const stockSnap = await _getDocs(_collection(_db, `artifacts/${_appId}/users/${_userId}/inventario`));
             const stockMap = {};
             stockSnap.docs.forEach(d => stockMap[d.id] = { id: d.id, ...d.data() });
 
-            // 3. Fusionar
             _inventarioCache = [];
             const allIds = new Set([...Object.keys(masterMap), ...Object.keys(stockMap)]);
             
@@ -183,14 +167,12 @@
                 const stock = stockMap[id];
                 
                 if (master) {
-                    // Producto Moderno (Definición Maestra + Stock Local)
                     _inventarioCache.push({
                         ...master,
                         cantidadUnidades: stock ? (stock.cantidadUnidades || 0) : 0,
                         id: id
                     });
                 } else if (stock) {
-                    // Producto Legacy (Solo Local)
                     _inventarioCache.push({ ...stock, id: id });
                 }
             });
@@ -277,7 +259,7 @@
                     cantidadCajas: cjs,
                     vaciosRecibidos: vRec,
                     tipoVacio: p.tipoVacio || null,
-                    unidadesPorCaja: p.unidadesPorCaja || 1, // CONGELAMIENTO MATEMÁTICO: Salvavidas para el historial
+                    unidadesPorCaja: p.unidadesPorCaja || 1, 
                     observacion: document.getElementById('obsText').value,
                     userId: _userId
                 };
@@ -304,7 +286,6 @@
                     t.set(regRef, regData);
                 });
 
-                // GENERAR TICKET 
                 _showSharingOptionsObsequio(regData, p, window.showGestionObsequiosView);
             } catch (err) { 
                 _showModal('Error', err.message); 
@@ -312,8 +293,6 @@
         }, 'Sí, Entregar Obsequio', null, true);
     }
 
-    // --- Lógica de Tickets (RESTAURADA TOTALMENTE) ---
-    
     function _showSharingOptionsObsequio(reg, prod, callback) {
         const html = `
             <div class="text-center space-y-4">
@@ -387,7 +366,6 @@
     }
 
     async function showRegistroObsequiosView() {
-        // Cargar usuarios si es administrador
         if (_userRole === 'admin' && _usersCache.length === 0) {
             try {
                 const usersSnap = await _getDocs(_collection(_db, "users"));
@@ -428,7 +406,7 @@
                             <input type="date" id="obsDateEnd" value="${today}" class="w-full p-2.5 border border-gray-300 rounded-lg bg-white text-sm focus:ring-2 focus:ring-blue-500 outline-none">
                         </div>
                         <div class="flex items-end">
-                            <button id="btnSearch" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-2.5 rounded-lg shadow-md transition-colors">Buscar Entregas</button>
+                            <button id="btnSearch" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-2.5 rounded-lg shadow-md transition-colors">Buscar</button>
                         </div>
                     </div>
                     
@@ -440,7 +418,6 @@
             </div>
         `;
         document.getElementById('btnSearch').onclick = handleSearchObsequios;
-        // Cargar automáticamente el día actual
         handleSearchObsequios();
     }
 
@@ -459,7 +436,6 @@
             return;
         }
 
-        // Parseo seguro de la fecha local
         const [sY, sM, sD] = dStartStr.split('-');
         const dStart = new Date(sY, sM - 1, sD, 0, 0, 0, 0);
 
@@ -467,7 +443,7 @@
         const dEnd = new Date(eY, eM - 1, eD, 23, 59, 59, 999);
 
         const list = document.getElementById('rList');
-        list.innerHTML = '<p class="text-center text-blue-500 font-bold animate-pulse py-10">Buscando y sincronizando registros...</p>';
+        list.innerHTML = '<p class="text-center text-blue-500 font-bold animate-pulse py-10">Buscando en activos e historial...</p>';
 
         try {
             let uidsToSearch = [selectedUserId];
@@ -478,50 +454,90 @@
             let results = [];
 
             for (const uid of uidsToSearch) {
+                // 1. BUSCAR EN ACTIVOS (No cerrados aún)
                 try {
-                    const q = _query(_collection(_db, `artifacts/${_appId}/users/${uid}/obsequios_entregados`),
+                    const qActivos = _query(_collection(_db, `artifacts/${_appId}/users/${uid}/obsequios_entregados`));
+                    const snapActivos = await _getDocs(qActivos);
+                    
+                    snapActivos.docs.forEach(d => {
+                        const data = d.data();
+                        const dObj = data.fecha?.toDate ? data.fecha.toDate() : new Date(data.fecha);
+                        if (dObj >= dStart && dObj <= dEnd) {
+                            results.push({
+                                id: d.id, 
+                                vendedorId: uid, 
+                                isCerrado: false, 
+                                ...data, 
+                                fechaParaOrdenar: dObj
+                            });
+                        }
+                    });
+                } catch(folderErr) {}
+
+                // 2. BUSCAR EN HISTORIAL (Cierres ya procesados)
+                try {
+                    const qCierres = _query(_collection(_db, `artifacts/${_appId}/users/${uid}/cierres`),
                               _where("fecha", ">=", dStart),
                               _where("fecha", "<=", dEnd));
                     
-                    const snap = await _getDocs(q);
+                    const snapCierres = await _getDocs(qCierres);
                     
-                    snap.docs.forEach(d => {
-                        results.push({id: d.id, vendedorId: uid, ...d.data()});
+                    snapCierres.docs.forEach(dCierre => {
+                        const cierreData = dCierre.data();
+                        const obsArray = cierreData.obsequios || [];
+                        
+                        obsArray.forEach((obs, index) => {
+                            const dObj = obs.fecha?.toDate ? obs.fecha.toDate() : (obs.fecha ? new Date(obs.fecha) : cierreData.fecha.toDate());
+                            results.push({ 
+                                id: `${dCierre.id}_${index}`, 
+                                vendedorId: uid, 
+                                isCerrado: true, 
+                                ...obs, 
+                                fecha: dObj, 
+                                fechaParaOrdenar: dObj 
+                            });
+                        });
                     });
-                } catch(folderErr) {
-                    console.warn(`No se pudo leer la carpeta de obsequios del usuario ${uid}`);
-                }
+                } catch(folderErr) {}
             }
             
             // Ordenar de más reciente a más antiguo
-            results.sort((a, b) => {
-                const dA = a.fecha?.toDate ? a.fecha.toDate() : new Date(a.fecha);
-                const dB = b.fecha?.toDate ? b.fecha.toDate() : new Date(b.fecha);
-                return dB - dA;
-            });
+            results.sort((a, b) => b.fechaParaOrdenar - a.fechaParaOrdenar);
 
             _lastObsequiosSearch = results;
 
             if (results.length === 0) {
-                list.innerHTML = `<div class="text-center p-8 bg-gray-50 border border-dashed border-gray-300 rounded-lg text-gray-500 font-medium">No se entregaron obsequios en este rango de fechas.</div>`;
+                list.innerHTML = `<div class="text-center p-8 bg-gray-50 border border-dashed border-gray-300 rounded-lg text-gray-500 font-medium">No se encontraron obsequios en este rango de fechas.</div>`;
                 return;
             }
 
             list.innerHTML = results.map(r => {
-                const fObj = r.fecha?.toDate ? r.fecha.toDate() : new Date(r.fecha);
-                const fStr = isNaN(fObj) ? 'Fecha inválida' : fObj.toLocaleDateString('es-ES', {day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute:'2-digit'});
+                const fStr = r.fechaParaOrdenar.toLocaleDateString('es-ES', {day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute:'2-digit'});
                 
                 let vendedorBadge = '';
                 if (_userRole === 'admin') {
                     const vName = _usersCache.find(u => u.id === r.vendedorId)?.email || 'Desconocido';
-                    vendedorBadge = `<span class="bg-purple-100 text-purple-800 text-[10px] px-2 py-0.5 rounded font-bold uppercase ml-2 border border-purple-200">Vend: ${vName}</span>`;
+                    vendedorBadge = `<span class="bg-purple-100 text-purple-800 text-[10px] px-2 py-0.5 rounded font-bold uppercase ml-2 border border-purple-200" title="${vName}">Vend: ${vName.split('@')[0]}</span>`;
                 }
+
+                let statusBadge = r.isCerrado 
+                    ? `<span class="bg-gray-200 text-gray-700 text-[10px] px-2 py-0.5 rounded font-bold uppercase ml-2 border border-gray-300">🔒 Cerrado</span>` 
+                    : `<span class="bg-green-100 text-green-800 text-[10px] px-2 py-0.5 rounded font-bold uppercase ml-2 border border-green-200">🟢 Activo</span>`;
+
+                let actionButton = r.isCerrado 
+                    ? `<button onclick="window.showModal('Acción Protegida', 'Este obsequio pertenece a un <b>Cierre de Ventas auditado del pasado</b>.<br><br>Ya no puede eliminarse desde aquí para no afectar las estadísticas cerradas. Si necesita corregir el stock, use la herramienta de <b>Edición de Inventario</b>.', null, 'Entendido')" class="text-gray-400 p-3 hover:bg-gray-100 rounded-lg transition-colors border border-transparent" title="Protegido por Cierre">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+                       </button>`
+                    : `<button onclick="window.obsequiosModule.deleteObsequio('${r.id}')" class="text-red-500 p-3 hover:bg-red-50 rounded-lg transition-colors border border-transparent hover:border-red-200" title="Eliminar y Revertir Stock">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                       </button>`;
 
                 return `
                 <div class="p-4 border border-gray-200 rounded-xl flex justify-between items-center text-sm bg-white shadow-sm hover:shadow transition-shadow">
                     <div>
                         <div class="flex items-center mb-1">
                             <span class="text-[10px] text-gray-400 font-bold tracking-wider uppercase">${fStr}</span>
+                            ${statusBadge}
                             ${vendedorBadge}
                         </div>
                         <div class="text-blue-900 font-black text-base mb-0.5 leading-tight">${r.clienteNombre}</div>
@@ -531,11 +547,7 @@
                             ${r.vaciosRecibidos > 0 ? `<span class="ml-2 text-[11px] font-bold text-green-700 bg-green-50 px-2 py-0.5 rounded border border-green-200">✓ Recibió ${r.vaciosRecibidos} vacíos</span>` : ''}
                         </div>
                     </div>
-                    <button onclick="window.obsequiosModule.deleteObsequio('${r.id}')" class="text-red-500 p-3 hover:bg-red-50 rounded-lg transition-colors border border-transparent hover:border-red-200" title="Eliminar y Revertir Stock">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                        </svg>
-                    </button>
+                    ${actionButton}
                 </div>
                 `;
             }).join('');
@@ -549,7 +561,11 @@
         const r = _lastObsequiosSearch.find(x => x.id === id);
         if(!r) return;
 
-        // Determinar a qué usuario le pertenece este obsequio para devolverle el stock correcto
+        if (r.isCerrado) {
+            _showModal('Error', 'No puede borrar un obsequio que ya fue cerrado.');
+            return;
+        }
+
         const targetUserId = r.vendedorId || r.userId || _userId;
 
         _showModal('Eliminar Registro', `¿Borrar el obsequio de <br><b class="text-blue-600">${r.cantidadCajas} Cajas</b> a <br><b class="text-gray-800">${r.clienteNombre}</b>?<br><br><span class="text-red-600 text-xs font-bold">⚠️ Esta acción devolverá automáticamente el producto al stock del vendedor y revertirá los vacíos.</span>`, async () => {
@@ -558,7 +574,6 @@
                 const iRef = _doc(_db, `artifacts/${_appId}/users/${targetUserId}/inventario`, r.productoId);
                 const cRef = _doc(_db, CLIENTES_PUBLIC_PATH, r.clienteId);
                 
-                // Lo leemos por si es un registro antiguo que no tenga la propiedad congelada
                 const prodDef = _inventarioCache.find(p => p.id === r.productoId) || { unidadesPorCaja: 1 }; 
 
                 await _runTransaction(_db, async (t) => {
@@ -567,8 +582,6 @@
                     
                     const currentStock = i.exists() ? (i.data().cantidadUnidades || 0) : 0;
                     
-                    // MAGIA: Usamos el factor congelado de la base de datos al momento de crearlo. 
-                    // Si es viejo y no lo tiene, recurrimos al catálogo en vivo.
                     const factorHistorico = r.unidadesPorCaja || prodDef.unidadesPorCaja || 1;
                     const unidadesARestaurar = r.cantidadCajas * factorHistorico;
                     
