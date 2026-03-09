@@ -190,12 +190,12 @@
         import { getAnalytics } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-analytics.js";
         import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, createUserWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         
-        // 1. CORRECCIÓN: Importar initializeFirestore y persistentLocalCache
+        // 1. CORRECCIÓN: Importar persistentMultipleTabManager para soportar multi-pestañas
         import { 
             getFirestore, 
             doc, getDoc, addDoc, setDoc, deleteDoc, onSnapshot, collection, writeBatch, runTransaction, getDocs, 
             query, where, orderBy, limit, startAfter, enableNetwork, disableNetwork, increment,
-            initializeFirestore, persistentLocalCache 
+            initializeFirestore, persistentLocalCache, persistentMultipleTabManager
         } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // 2. VERIFICACIÓN DE CONFIGURACIÓN Y CARGA CENTRALIZADA
@@ -391,19 +391,23 @@
                     <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl text-center">
                         <h1 class="text-3xl font-bold text-gray-800 mb-6">Menú Principal</h1>
                         <div class="space-y-4">
-                            <button id="inventarioBtn" class="w-full px-6 py-3 bg-blue-500 text-white rounded-lg shadow-md hover:bg-blue-600">Inventario</button>
+                            <button id="inventarioBtn" class="w-full px-6 py-3 bg-blue-500 text-white rounded-lg shadow-md hover:bg-blue-600 font-bold">Inventario</button>
                             
                             ${isAdmin ? `<button id="editInventarioBtn" class="w-full px-6 py-3 bg-amber-600 text-white rounded-lg shadow-md hover:bg-amber-700 font-bold">Edición de Inventario</button>` : ''}
                             
-                            <button id="clientesBtn" class="w-full px-6 py-3 bg-indigo-500 text-white rounded-lg shadow-md hover:bg-indigo-600">Clientes</button>
-                            <button id="ventasBtn" class="w-full px-6 py-3 bg-green-500 text-white rounded-lg shadow-md hover:bg-green-600">Ventas</button>
+                            <button id="clientesBtn" class="w-full px-6 py-3 bg-indigo-500 text-white rounded-lg shadow-md hover:bg-indigo-600 font-bold">Clientes</button>
+                            
+                            <button id="ventasBtn" class="w-full px-6 py-3 bg-green-500 text-white rounded-lg shadow-md hover:bg-green-600 font-bold">Ventas</button>
                             
                             <button id="cxcBtn" class="w-full px-6 py-3 bg-orange-500 text-white rounded-lg shadow-md hover:bg-orange-600 font-bold">CXC</button>
                             
-                            ${!isAdmin ? `<button id="obsequiosBtn" class="w-full px-6 py-3 bg-cyan-500 text-white rounded-lg shadow-md hover:bg-cyan-600">Obsequios</button>` : ''}
-                            <button id="catalogoBtn" class="w-full px-6 py-3 bg-purple-500 text-white rounded-lg shadow-md hover:bg-purple-600">Catálogo</button>
-                            <button id="profileAdminBtn" class="w-full px-6 py-3 bg-gray-700 text-white rounded-lg shadow-md hover:bg-gray-800">${isAdmin ? 'Admin Panel' : 'Mi Perfil'}</button>
-                            ${isAdmin ? `<button id="dataBtn" class="w-full px-6 py-3 bg-red-700 text-white rounded-lg shadow-md hover:bg-red-800">Data</button>` : ''}
+                            <button id="obsequiosBtn" class="w-full px-6 py-3 bg-cyan-500 text-white rounded-lg shadow-md hover:bg-cyan-600 font-bold">Obsequios</button>
+                            
+                            <button id="catalogoBtn" class="w-full px-6 py-3 bg-purple-500 text-white rounded-lg shadow-md hover:bg-purple-600 font-bold">Catálogo</button>
+                            
+                            <button id="profileAdminBtn" class="w-full px-6 py-3 bg-gray-700 text-white rounded-lg shadow-md hover:bg-gray-800 font-bold">${isAdmin ? 'Admin Panel' : 'Mi Perfil'}</button>
+                            
+                            ${isAdmin ? `<button id="dataBtn" class="w-full px-6 py-3 bg-red-700 text-white rounded-lg shadow-md hover:bg-red-800 font-bold">Data</button>` : ''}
                             ${isAdmin ? `<button id="supervisionBtn" class="w-full px-6 py-3 bg-pink-600 text-white rounded-lg shadow-md hover:bg-pink-700 font-bold flex items-center justify-center gap-2"><span class="text-xl">🛡️</span> Supervisión y Auditoría</button>` : ''}
                         </div>
                         <div class="mt-8 pt-4 border-t flex items-center justify-center space-x-3">
@@ -458,9 +462,11 @@
         async function initializeAppAndListeners() {
             const app = initializeApp(firebaseConfig);
             
-            // 3. NUEVA INICIALIZACIÓN DE FIRESTORE CON PERSISTENCIA MODERNA (CORREGIDA)
+            // 3. NUEVA INICIALIZACIÓN DE FIRESTORE CON PERSISTENCIA Y SINCRONIZACIÓN MULTI-PESTAÑA
             db = initializeFirestore(app, {
-                localCache: persistentLocalCache() 
+                localCache: persistentLocalCache({
+                    tabManager: persistentMultipleTabManager()
+                }) 
             });
 
             auth = getAuth(app);
