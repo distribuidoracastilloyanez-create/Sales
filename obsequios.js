@@ -292,7 +292,7 @@
             }
         }, 'Sí, Entregar Obsequio', null, true);
     }
-
+    
     function _showSharingOptionsObsequio(reg, prod, callback) {
         const html = `
             <div class="text-center space-y-4">
@@ -384,7 +384,10 @@
                     <label class="block text-xs font-bold text-gray-700 mb-1 uppercase tracking-wider">Vendedor:</label>
                     <select id="obsUserSelect" class="w-full p-2.5 border border-gray-300 rounded-lg bg-white text-sm focus:ring-2 focus:ring-blue-500 outline-none">
                         <option value="all">Todos los Vendedores</option>
-                        ${_usersCache.map(u => `<option value="${u.id}">${u.nombre || ''} ${u.apellido || ''} (${u.email})</option>`).join('')}
+                        ${_usersCache.map(u => {
+                            const nameDisplay = (u.nombre && u.apellido) ? `${u.nombre} ${u.apellido}` : (u.nombre || u.email);
+                            return `<option value="${u.id}">${nameDisplay}</option>`;
+                        }).join('')}
                     </select>
                 </div>
             `;
@@ -516,8 +519,19 @@
                 
                 let vendedorBadge = '';
                 if (_userRole === 'admin') {
-                    const vName = _usersCache.find(u => u.id === r.vendedorId)?.email || 'Desconocido';
-                    vendedorBadge = `<span class="bg-purple-100 text-purple-800 text-[10px] px-2 py-0.5 rounded font-bold uppercase ml-2 border border-purple-200" title="${vName}">Vend: ${vName.split('@')[0]}</span>`;
+                    // Extraer nombre y apellido de la caché de usuarios
+                    const userObj = _usersCache.find(u => u.id === r.vendedorId) || {};
+                    let vName = 'Desconocido';
+                    
+                    if (userObj.nombre && userObj.apellido) {
+                        vName = `${userObj.nombre} ${userObj.apellido}`;
+                    } else if (userObj.nombre) {
+                        vName = userObj.nombre;
+                    } else if (userObj.email) {
+                        vName = userObj.email.split('@')[0];
+                    }
+                    
+                    vendedorBadge = `<span class="bg-purple-100 text-purple-800 text-[10px] px-2 py-0.5 rounded font-bold uppercase ml-2 border border-purple-200" title="${userObj.email || ''}">Vend: ${vName}</span>`;
                 }
 
                 let statusBadge = r.isCerrado 
@@ -534,18 +548,19 @@
 
                 return `
                 <div class="p-4 border border-gray-200 rounded-xl flex justify-between items-center text-sm bg-white shadow-sm hover:shadow transition-shadow">
-                    <div>
-                        <div class="flex items-center mb-1">
+                    <div class="w-full pr-4">
+                        <div class="flex items-center mb-1 flex-wrap gap-1">
                             <span class="text-[10px] text-gray-400 font-bold tracking-wider uppercase">${fStr}</span>
                             ${statusBadge}
                             ${vendedorBadge}
                         </div>
                         <div class="text-blue-900 font-black text-base mb-0.5 leading-tight">${r.clienteNombre}</div>
-                        <div class="text-gray-700">${r.productoNombre}</div> 
-                        <div class="mt-1">
-                            <span class="font-black text-gray-800 bg-gray-100 px-2 py-0.5 rounded border border-gray-200 text-xs">${r.cantidadCajas} CAJAS</span>
-                            ${r.vaciosRecibidos > 0 ? `<span class="ml-2 text-[11px] font-bold text-green-700 bg-green-50 px-2 py-0.5 rounded border border-green-200">✓ Recibió ${r.vaciosRecibidos} vacíos</span>` : ''}
+                        <div class="text-gray-700 font-medium">${r.productoNombre}</div> 
+                        <div class="mt-1.5 flex items-center flex-wrap gap-2">
+                            <span class="font-black text-gray-800 bg-gray-100 px-2 py-1 rounded border border-gray-200 text-xs">${r.cantidadCajas} CAJAS</span>
+                            ${r.vaciosRecibidos > 0 ? `<span class="text-[11px] font-bold text-green-700 bg-green-50 px-2 py-1 rounded border border-green-200">✓ Recibió ${r.vaciosRecibidos} vacíos</span>` : ''}
                         </div>
+                        ${r.observacion ? `<div class="mt-2 text-xs text-gray-700 bg-yellow-50 p-2 rounded border border-yellow-200 italic w-full"><b>Nota:</b> ${r.observacion}</div>` : ''}
                     </div>
                     ${actionButton}
                 </div>
