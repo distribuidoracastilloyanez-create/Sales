@@ -5,6 +5,7 @@
     const PUBLIC_DATA_ID = window.AppConfig.PUBLIC_DATA_ID;
     let _usersCache = [];
     let _masterMapCache = {};
+    let _lastAuditData = []; // Caché para los filtros de auditoría
 
     window.initSupervision = function(dependencies) {
         _db = dependencies.db;
@@ -23,15 +24,16 @@
         _where = dependencies.where;
         _doc = dependencies.doc;
 
-        console.log("Módulo Supervisión Inicializado con Gestor de Snapshots.");
+        console.log("Módulo Supervisión Inicializado con Gestor de Snapshots y Filtros.");
     };
 
+    // CORRECCIÓN: Asegurar que el ID se guarde dentro del objeto de caché
     async function loadMasterCatalog() {
         if (Object.keys(_masterMapCache).length > 0) return _masterMapCache;
         const masterRef = _collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/productos`);
         const snap = await _getDocs(masterRef);
         _masterMapCache = {};
-        snap.forEach(d => { _masterMapCache[d.id] = d.data(); });
+        snap.forEach(d => { _masterMapCache[d.id] = { id: d.id, ...d.data() }; });
         return _masterMapCache;
     }
 
@@ -79,7 +81,7 @@
     };
 
     // =========================================================================
-    // VISTA 1: VENTAS EN VIVO (ACTUALES NO CERRADAS)
+    // VISTA 1: VENTAS EN VIVO
     // =========================================================================
     async function showVentasEnVivoView() {
         await loadUsers();
@@ -187,7 +189,7 @@
                 return;
             }
 
-            operaciones.sort((a, b) => b.fecha - a.fecha); // Más recientes primero
+            operaciones.sort((a, b) => b.fecha - a.fecha); 
 
             totalSalesEl.textContent = `$${granTotal.toFixed(2)}`;
             totalOpsEl.textContent = operaciones.length;
@@ -263,6 +265,20 @@
                         <div id="auditResultsPanel" class="hidden flex-col flex-grow overflow-hidden">
                             <div id="auditSummary" class="mb-4 p-4 rounded-lg border"></div>
                             
+                            <div id="auditFilters" class="mb-4 grid grid-cols-1 sm:grid-cols-4 gap-3 bg-white p-3 rounded-lg border border-gray-200 shadow-sm hidden">
+                                <input type="text" id="auditSearchInput" placeholder="Buscar presentación..." class="border border-gray-300 rounded p-2 text-sm focus:ring-2 focus:ring-red-500 outline-none">
+                                <select id="auditRubroFilter" class="border border-gray-300 rounded p-2 text-sm focus:ring-2 focus:ring-red-500 outline-none bg-white">
+                                    <option value="">Todos los Rubros</option>
+                                </select>
+                                <select id="auditMarcaFilter" class="border border-gray-300 rounded p-2 text-sm focus:ring-2 focus:ring-red-500 outline-none bg-white">
+                                    <option value="">Todas las Marcas</option>
+                                </select>
+                                <label class="flex items-center justify-center space-x-2 bg-red-50 px-3 py-2 rounded border border-red-200 cursor-pointer hover:bg-red-100 transition">
+                                    <input type="checkbox" id="auditOnlyErrors" class="rounded text-red-600 focus:ring-red-500 w-4 h-4">
+                                    <span class="text-xs font-bold text-red-800 uppercase tracking-wider">Solo Errores</span>
+                                </label>
+                            </div>
+                            
                             <div class="flex-grow overflow-auto border border-gray-300 rounded-lg bg-gray-50">
                                 <table class="min-w-full bg-white text-sm relative">
                                     <thead class="bg-gray-800 text-white sticky top-0 z-10 shadow-sm">
@@ -288,9 +304,14 @@
         
         document.getElementById('btnVerSnapshot').addEventListener('click', handleViewSnapshot);
         document.getElementById('btnFijarSnapshot').addEventListener('click', handleCreateSnapshot);
+
+        // Listeners para los filtros de auditoría
+        document.getElementById('auditSearchInput').addEventListener('input', renderAuditTable);
+        document.getElementById('auditRubroFilter').addEventListener('change', renderAuditTable);
+        document.getElementById('auditMarcaFilter').addEventListener('change', renderAuditTable);
+        document.getElementById('auditOnlyErrors').addEventListener('change', renderAuditTable);
     }
 
-    // Formateador estricto visual
     function formatStockStrict(baseUnits, pMaster) {
         if (baseUnits === 0) return `<span class="text-gray-400">0</span>`;
         const vPor = pMaster.ventaPor || {und: true};
@@ -311,15 +332,14 @@
         return `<span class="font-bold">${baseUnits} Und</span>`;
     }
 
-    // --- 1. Fijar Punto de Partida (Tomando la Carga Efectiva Consolidada) ---
+    // --- 1. Fijar Punto de Partida ---
     async function handleCreateSnapshot() {
         const userId = document.getElementById('auditUserSelect').value;
         if (!userId) { _showModal('Error', 'Seleccione un vendedor primero.'); return; }
         
-        _showModal('Fijar Punto de Partida', `¿Desea consolidar y guardar los valores de la "Carga Inicial Efectiva" como el nuevo Punto de Partida limpio?<br><br>
-            <span class="text-sm text-gray-600">Esto calculará la base inicial sumando las recargas recientes y guardará ese resultado como la nueva base matemática para el cierre de hoy. <b>Tus ventas y obsequios del día no se verán afectados.</b></span>`, 
+        _showModal('Fijar Punto de Partida', `¿Desea guardar los valores exactos que muestra el botón "Ver Carga Inicial Actual" como el nuevo punto de partida?`, 
             async () => {
-                _showModal('Progreso', 'Guardando nuevo punto de partida...', null, '', null, false);
+                _showModal('Progreso', 'Guardando...', null, '', null, false);
                 try {
                     const SNAPSHOT_DOC_PATH = `artifacts/${_appId}/users/${userId}/config/cargaInicialSnapshot`;
                     const snap = await _getDoc(_doc(_db, SNAPSHOT_DOC_PATH));
@@ -381,15 +401,15 @@
                         inventario: snapshotArray
                     });
 
-                    _showModal('Éxito', '✅ El punto de partida se ha tomado y guardado correctamente. Las ventas y obsequios del día no se han visto afectados.');
+                    _showModal('Éxito', 'Punto de Partida actualizado exitosamente con los valores de la Carga Inicial Efectiva.');
                 } catch (err) {
                     console.error(err);
                     _showModal('Error', 'Fallo al guardar: ' + err.message);
                 }
-            }, 'Sí, Guardar Punto de Partida', null, true);
+            }, 'Sí, Guardar', null, true);
     }
 
-    // --- 2. Ver Snapshot (Carga Inicial) Efectivo Actual ---
+    // --- 2. Ver Snapshot (Carga Inicial Efectiva) ---
     async function handleViewSnapshot() {
         const userId = document.getElementById('auditUserSelect').value;
         if (!userId) { _showModal('Error', 'Seleccione un vendedor primero.'); return; }
@@ -576,7 +596,6 @@
         const userId = document.getElementById('auditUserSelect').value;
         const panel = document.getElementById('auditResultsPanel');
         const emptyState = document.getElementById('auditEmptyState');
-        const tbody = document.getElementById('auditTableBody');
         const summary = document.getElementById('auditSummary');
 
         if (!userId) { _showModal('Error', 'Seleccione un vendedor.'); return; }
@@ -585,9 +604,10 @@
         emptyState.classList.remove('hidden');
         panel.classList.add('hidden');
         panel.classList.remove('flex');
-        tbody.innerHTML = '';
-
+        
         try {
+            await loadMasterCatalog();
+
             const SNAPSHOT_DOC_PATH = `artifacts/${_appId}/users/${userId}/config/cargaInicialSnapshot`;
             let cargaInicialInventario = [];
             let fechaCargaInicial = null;
@@ -611,7 +631,7 @@
             const [vSnap, oSnap, iSnap] = await Promise.all([
                 _getDocs(_collection(_db, `artifacts/${_appId}/users/${userId}/ventas`)),
                 _getDocs(_collection(_db, `artifacts/${_appId}/users/${userId}/obsequios_entregados`)),
-                _getDocs(_collection(_db, `artifacts/${_appId}/users/${userId}/inventario`)) // FÍSICO ACTUAL
+                _getDocs(_collection(_db, `artifacts/${_appId}/users/${userId}/inventario`))
             ]);
 
             const ventas = vSnap.docs.map(d => d.data());
@@ -627,7 +647,6 @@
             const correcciones = cSnap.docs.map(d => d.data());
 
             const mapaStockTeorico = new Map(); 
-            const masterMapLocal = new Map(Object.values(_masterMapCache).map(p => [p.id, p])); 
             
             cargaInicialInventario.forEach(item => {
                 const pId = item.productoId || item.id;
@@ -660,14 +679,11 @@
 
             obsequios.forEach(o => {
                 const pId = o.productoId;
-                const pMaster = masterMapLocal.get(pId) || { unidadesPorCaja: 1 };
-                const uRegaladas = (o.cantidadCajas || 0) * (pMaster.unidadesPorCaja || 1);
+                const pMaster = _masterMapCache[pId] || { unidadesPorCaja: 1 };
+                const factorMultiplicador = o.unidadesPorCaja || pMaster.unidadesPorCaja || 1;
+                const uRegaladas = (o.cantidadCajas || 0) * factorMultiplicador;
                 mapaStockTeorico.set(pId, (mapaStockTeorico.get(pId) || 0) - uRegaladas);
             });
-
-            let html = '';
-            let discrepanciasCount = 0;
-            let totalEvaluados = 0;
 
             const allIdsSet = new Set([...mapaStockTeorico.keys(), ...inventarioActualMap.keys()]);
             const results = [];
@@ -675,16 +691,17 @@
             allIdsSet.forEach(pId => {
                 const teorico = mapaStockTeorico.get(pId) || 0;
                 const fisico = inventarioActualMap.get(pId) || 0;
-                
                 if (teorico === 0 && fisico === 0) return;
 
-                const pMaster = masterMapLocal.get(pId) || { presentacion: 'Producto Desconocido' };
+                const pMaster = _masterMapCache[pId] || { presentacion: 'Producto Desconocido', rubro: 'SIN RUBRO', marca: 'S/M' };
                 const diff = fisico - teorico;
 
                 results.push({
                     id: pId,
-                    presentacion: pMaster.presentacion,
+                    presentacion: pMaster.presentacion || 'Producto Desconocido',
+                    rubro: pMaster.rubro || 'SIN RUBRO',
                     marca: pMaster.marca || 'S/M',
+                    segmento: pMaster.segmento || 'SIN SEGMENTO',
                     teorico,
                     fisico,
                     diff,
@@ -692,49 +709,36 @@
                 });
             });
 
-            results.sort((a, b) => a.presentacion.localeCompare(b.presentacion));
+            // Ordenamiento global estricto
+            if (window.getGlobalProductSortFunction) {
+                const sortFn = await window.getGlobalProductSortFunction();
+                results.sort(sortFn);
+            } else {
+                results.sort((a, b) => a.presentacion.localeCompare(b.presentacion));
+            }
+
+            _lastAuditData = results; // Guardar para filtros
+
+            // Preparar filtros
+            const rubrosSet = new Set();
+            const marcasSet = new Set();
+            let discrepanciasCount = 0;
+            let totalEvaluados = 0;
 
             results.forEach(r => {
                 totalEvaluados++;
-                let rowClass = 'hover:bg-gray-50';
-                let diffHtml = '<span class="text-gray-400 font-bold">OK</span>';
-                
-                if (r.diff !== 0) {
-                    discrepanciasCount++;
-                    const isFaltante = r.diff < 0; 
-                    rowClass = isFaltante ? 'bg-red-50 hover:bg-red-100' : 'bg-blue-50 hover:bg-blue-100';
-                    const textColor = isFaltante ? 'text-red-700' : 'text-blue-700';
-                    const signo = r.diff > 0 ? '+' : '';
-                    const etiqueta = isFaltante ? 'FALTANTE' : 'SOBRANTE';
-                    
-                    diffHtml = `
-                        <div class="${textColor} font-black">
-                            ${signo}${r.diff} Und
-                            <div class="text-[9px] uppercase">${etiqueta}</div>
-                        </div>
-                    `;
-                }
-
-                html += `
-                    <tr class="${rowClass} border-b border-gray-100">
-                        <td class="py-2 px-3">
-                            <p class="font-bold text-gray-800 text-xs">${r.presentacion}</p>
-                            <p class="text-[10px] text-gray-500 uppercase">${r.marca}</p>
-                        </td>
-                        <td class="py-2 px-3 text-center bg-gray-50 text-xs border-l border-r border-gray-200">
-                            ${formatStockStrict(r.teorico, r.pMaster)}
-                        </td>
-                        <td class="py-2 px-3 text-center text-xs">
-                            ${formatStockStrict(r.fisico, r.pMaster)}
-                        </td>
-                        <td class="py-2 px-3 text-center align-middle border-l border-gray-200">
-                            ${diffHtml}
-                        </td>
-                    </tr>
-                `;
+                if (r.diff !== 0) discrepanciasCount++;
+                rubrosSet.add(r.rubro);
+                marcasSet.add(r.marca);
             });
 
-            tbody.innerHTML = html;
+            const rubroSelect = document.getElementById('auditRubroFilter');
+            const marcaSelect = document.getElementById('auditMarcaFilter');
+            
+            rubroSelect.innerHTML = '<option value="">Todos los Rubros</option>' + 
+                                    [...rubrosSet].sort().map(r => `<option value="${r}">${r}</option>`).join('');
+            marcaSelect.innerHTML = '<option value="">Todas las Marcas</option>' + 
+                                    [...marcasSet].sort().map(m => `<option value="${m}">${m}</option>`).join('');
 
             if (discrepanciasCount === 0) {
                 summary.className = 'mb-4 p-4 rounded-lg border border-green-300 bg-green-50 text-green-800 flex items-center justify-between shadow-sm';
@@ -754,6 +758,9 @@
                 `;
             }
 
+            document.getElementById('auditFilters').classList.remove('hidden');
+            renderAuditTable(); // Renderizar tabla inicial
+
             panel.classList.remove('hidden');
             panel.classList.add('flex');
             emptyState.classList.add('hidden');
@@ -762,6 +769,85 @@
             console.error("Error ejecutando auditoría:", error);
             emptyState.innerHTML = `<span class="text-red-500 font-bold">Error de Auditoría: ${error.message}</span>`;
         }
+    }
+
+    // --- Renderizado Dinámico con Filtros ---
+    function renderAuditTable() {
+        const tbody = document.getElementById('auditTableBody');
+        const searchTerm = document.getElementById('auditSearchInput').value.toLowerCase();
+        const filterRubro = document.getElementById('auditRubroFilter').value;
+        const filterMarca = document.getElementById('auditMarcaFilter').value;
+        const onlyErrors = document.getElementById('auditOnlyErrors').checked;
+
+        let filtered = _lastAuditData.filter(r => {
+            if (onlyErrors && r.diff === 0) return false;
+            if (filterRubro && r.rubro !== filterRubro) return false;
+            if (filterMarca && r.marca !== filterMarca) return false;
+            if (searchTerm && !r.presentacion.toLowerCase().includes(searchTerm) && !r.marca.toLowerCase().includes(searchTerm)) return false;
+            return true;
+        });
+
+        let html = '';
+        let currentGroup = null;
+
+        filtered.forEach(r => {
+            const rName = (r.rubro || 'SIN RUBRO').toUpperCase();
+            const sName = (r.pMaster?.segmento || 'SIN SEGMENTO').toUpperCase();
+            const groupName = `${rName} > ${sName}`;
+
+            if (groupName !== currentGroup) {
+                currentGroup = groupName;
+                html += `
+                    <tr class="bg-blue-50/90 border-t border-blue-200">
+                        <td colspan="4" class="py-1.5 px-3 font-extrabold text-blue-900 tracking-wide text-[10px] uppercase">
+                            📁 ${currentGroup}
+                        </td>
+                    </tr>
+                `;
+            }
+
+            let rowClass = 'hover:bg-gray-50';
+            let diffHtml = '<span class="text-gray-400 font-bold">OK</span>';
+            
+            if (r.diff !== 0) {
+                const isFaltante = r.diff < 0; 
+                rowClass = isFaltante ? 'bg-red-50 hover:bg-red-100' : 'bg-blue-50 hover:bg-blue-100';
+                const textColor = isFaltante ? 'text-red-700' : 'text-blue-700';
+                const signo = r.diff > 0 ? '+' : '';
+                const etiqueta = isFaltante ? 'FALTANTE' : 'SOBRANTE';
+                
+                diffHtml = `
+                    <div class="${textColor} font-black">
+                        ${signo}${r.diff} Und
+                        <div class="text-[9px] uppercase">${etiqueta}</div>
+                    </div>
+                `;
+            }
+
+            html += `
+                <tr class="${rowClass} border-b border-gray-100">
+                    <td class="py-2 px-3">
+                        <p class="font-bold text-gray-800 text-xs">${r.presentacion}</p>
+                        <p class="text-[10px] text-gray-500 uppercase">${r.marca}</p>
+                    </td>
+                    <td class="py-2 px-3 text-center bg-gray-50 text-xs border-l border-r border-gray-200">
+                        ${formatStockStrict(r.teorico, r.pMaster)}
+                    </td>
+                    <td class="py-2 px-3 text-center text-xs">
+                        ${formatStockStrict(r.fisico, r.pMaster)}
+                    </td>
+                    <td class="py-2 px-3 text-center align-middle border-l border-gray-200">
+                        ${diffHtml}
+                    </td>
+                </tr>
+            `;
+        });
+
+        if (filtered.length === 0) {
+            html = `<tr><td colspan="4" class="text-center py-8 text-gray-500 font-medium">No se encontraron resultados con estos filtros.</td></tr>`;
+        }
+
+        tbody.innerHTML = html;
     }
 
 })();
