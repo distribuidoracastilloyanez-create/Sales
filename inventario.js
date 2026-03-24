@@ -98,20 +98,23 @@
         const vPor = p.ventaPor || {und: true};
         const baseUnits = forcedStockBase !== null ? forcedStockBase : (p.cantidadUnidades || 0);
         
+        let prefixColor = "text-gray-800";
+        if (baseUnits < 0) prefixColor = "text-red-600 font-black"; // Resaltar negativos en pantalla
+        
         if (vPor.und) {
             // REGLA 1: Si se vende por unidades, forzar mostrar siempre en unidades.
-            return `<span class="font-bold text-gray-800">${baseUnits} Und</span>`;
+            return `<span class="font-bold ${prefixColor}">${baseUnits} Und</span>`;
         } else {
             // REGLA 2: Si NO se vende por unidades, mostrar Cajas/Paquetes exactos y ocultar residuos.
             if (vPor.cj && p.unidadesPorCaja > 1) {
                 const cjas = Math.floor(baseUnits / p.unidadesPorCaja);
-                return `<span class="font-bold text-blue-700">${cjas} Cj</span>`;
+                return `<span class="font-bold ${baseUnits < 0 ? 'text-red-600' : 'text-blue-700'}">${cjas} Cj</span>`;
             } else if (vPor.paq && p.unidadesPorPaquete > 1) {
                 const paqs = Math.floor(baseUnits / p.unidadesPorPaquete);
-                return `<span class="font-bold text-blue-700">${paqs} Pq</span>`;
+                return `<span class="font-bold ${baseUnits < 0 ? 'text-red-600' : 'text-blue-700'}">${paqs} Pq</span>`;
             }
             // Fallback por si la configuración está corrupta
-            return `<span class="font-bold text-gray-800">${baseUnits} Und</span>`;
+            return `<span class="font-bold ${prefixColor}">${baseUnits} Und</span>`;
         }
     }
 
@@ -1136,8 +1139,6 @@
         const updatedData = getProductoDataFromForm(true); 
         if (!updatedData.rubro||!updatedData.segmento||!updatedData.marca||!updatedData.presentacion){_showModal('Error','Completa Rubro, Segmento, Marca y Presentación.');return;} if (!updatedData.ventaPor.und&&!updatedData.ventaPor.paq&&!updatedData.ventaPor.cj){_showModal('Error','Selecciona al menos una forma de venta.');return;} if (updatedData.manejaVacios&&!updatedData.tipoVacio){_showModal('Error','Si maneja vacío, selecciona el tipo.');document.getElementById('tipoVacioSelect')?.focus();return;} let precioValido=(updatedData.ventaPor.und&&updatedData.precios.und>0)||(updatedData.ventaPor.paq&&updatedData.precios.paq>0)||(updatedData.ventaPor.cj&&updatedData.precios.cj>0); if(!precioValido){_showModal('Error','Ingresa al menos un precio válido (> 0) para la forma de venta seleccionada.');document.querySelector('#preciosContainer input[required]')?.focus();return;}
         
-        // CORRECCIÓN CRÍTICA: NO SOBREESCRIBIR EL INVENTARIO CON CERO. 
-        // Si no eliminamos la variable de cantidad, admin.js lo sobreescribirá.
         delete updatedData.cantidadUnidades; 
 
         _showModal('Progreso','Guardando cambios en Catálogo Maestro...', null, '', null, false); 
@@ -1164,7 +1165,6 @@
         _showModal('Confirmación Extrema', `¿Estás SEGURO de eliminar TODOS los productos del inventario? Esta acción es IRREVERSIBLE y se propagará.`, async () => { 
             _showModal('Progreso', 'Eliminando productos...', null, '', null, false); 
             try { 
-                // APAGAR LISTENERS
                 _listenersUnsubscribes.forEach(unsub => { try { unsub(); } catch(e) {} });
                 _listenersUnsubscribes = [];
 
@@ -1178,7 +1178,7 @@
                     for (const productId of productIds) { 
                         try { 
                             await window.adminModule.propagateProductChange(productId, null); 
-                            await new Promise(r => setTimeout(r, 50)); // Respiro de red
+                            await new Promise(r => setTimeout(r, 50)); 
                         } catch (propError) { 
                             console.error(`Error propagando eliminación de ${productId}:`, propError); propagationErrors++; 
                         } 
@@ -1230,7 +1230,6 @@
                 _showModal('Confirmación Final', `Se eliminarán ${totalToDelete} datos maestros no utilizados (${itemsToDelete.rubros.length} Rubros, ${itemsToDelete.segmentos.length} Segmentos, ${itemsToDelete.marcas.length} Marcas). Esta acción se propagará. ¿Continuar?`, async () => {
                     _showModal('Progreso', `Eliminando ${totalToDelete} datos maestros localmente...`, null, '', null, false);
                     try { 
-                        // APAGAR LISTENERS
                         _listenersUnsubscribes.forEach(unsub => { try { unsub(); } catch(e) {} });
                         _listenersUnsubscribes = [];
 
@@ -1240,7 +1239,7 @@
                                 for (const item of itemsToDelete[colName]) {
                                     try {
                                          await window.adminModule.propagateCategoryChange(colName, item.id, null);
-                                         await new Promise(r => setTimeout(r, 50)); // Respiro de red
+                                         await new Promise(r => setTimeout(r, 50)); 
                                     } catch (propError) {
                                          console.error(`Error propagando eliminación de ${colName}/${item.id}:`, propError);
                                          propagationErrors++;
@@ -1362,7 +1361,6 @@
             
             const vPor = p.ventaPor || {und:true};
             
-            // PRIORIDAD LÓGICA DE RECARGA: Unidades > Paquetes > Cajas (La más pequeña disponible)
             let factor = 1;
             let unitLabel = 'Und';
 
@@ -1377,6 +1375,7 @@
                 unitLabel = 'Cj';
             }
 
+            // Aquí formatStockDisplay mostrará en rojo si está negativo
             const currentDisplayStockHtml = formatStockDisplay(p);
 
             let inputValue = '';
@@ -1426,70 +1425,74 @@
         let invalidValues = false;
         const recargaDetalles = []; 
 
-        _inventarioCache.forEach(p => {
+        // Ordenar primero para que el Snapshot del historial mantenga el orden visual
+        let productosOrdenados = [..._inventarioCache];
+        const sortFunction = await window.getGlobalProductSortFunction();
+        productosOrdenados.sort(sortFunction);
+
+        productosOrdenados.forEach(p => {
+            let inputValStr = '';
             if (_recargaTempState.hasOwnProperty(p.id)) {
-                const inputValStr = String(_recargaTempState[p.id]).trim();
-                const inputVal = parseInt(inputValStr, 10);
+                inputValStr = String(_recargaTempState[p.id]).trim();
+            }
+            const inputVal = inputValStr === '' ? 0 : parseInt(inputValStr, 10);
 
-                if (inputValStr === '') return; // Ignorar vacíos
+            if (isNaN(inputVal) || inputVal < 0) {
+                invalidValues = true;
+                return; 
+            }
 
-                if (isNaN(inputVal) || inputVal < 0) {
-                    invalidValues = true;
-                    return; 
-                }
+            const vPor = p.ventaPor || {und:true};
+            let factor = 1;
+            if (vPor.und) factor = 1;
+            else if (vPor.paq) factor = p.unidadesPorPaquete || 1;
+            else if (vPor.cj) factor = p.unidadesPorCaja || 1;
 
-                if (inputVal > 0) {
-                    const vPor = p.ventaPor || {und:true};
-                    
-                    let factor = 1;
-                    if (vPor.und) {
-                        factor = 1;
-                    } else if (vPor.paq) {
-                        factor = p.unidadesPorPaquete || 1;
-                    } else if (vPor.cj) {
-                        factor = p.unidadesPorCaja || 1;
-                    }
+            const currentBaseRaw = p.cantidadUnidades || 0;
+            // AUTO-CURACIÓN: Si el stock actual es negativo, lo ignoramos y lo tratamos como 0
+            const currentBaseSano = currentBaseRaw < 0 ? 0 : currentBaseRaw;
+            const unitsToAdd = inputVal * factor;
+            const newBaseTotal = currentBaseSano + unitsToAdd;
 
-                    const currentBase = p.cantidadUnidades || 0;
-                    const unitsToAdd = inputVal * factor;
-                    const newBaseTotal = currentBase + unitsToAdd;
+            // Siempre guardamos el registro en el historial para auditoría (Snapshot completo)
+            recargaDetalles.push({
+                productoId: p.id,
+                presentacion: p.presentacion,
+                marca: p.marca || 'S/M',
+                segmento: p.segmento || 'S/S',
+                rubro: p.rubro || 'SIN RUBRO',
+                unidadesAnteriores: currentBaseRaw,
+                unidadesNuevas: newBaseTotal,
+                diferenciaUnidades: unitsToAdd,
+                factorUtilizado: factor
+            });
 
-                    const docRef = _doc(_db, `artifacts/${_appId}/users/${_userId}/inventario`, p.id);
-                    
-                    if (_increment) {
-                         batch.set(docRef, { cantidadUnidades: _increment(unitsToAdd) }, { merge: true });
-                    } else {
-                         batch.set(docRef, { cantidadUnidades: newBaseTotal }, { merge: true });
-                    }
-                    
-                    recargaDetalles.push({
-                        productoId: p.id,
-                        presentacion: p.presentacion,
-                        unidadesAnteriores: currentBase,
-                        unidadesNuevas: newBaseTotal,
-                        diferenciaUnidades: unitsToAdd,
-                        factorUtilizado: factor
-                    });
-                    changesCount++;
-                }
+            // Solo tocamos Firebase si el admin metió una recarga o si tenemos que curar un número negativo
+            if (unitsToAdd > 0 || currentBaseRaw < 0) {
+                const docRef = _doc(_db, `artifacts/${_appId}/users/${_userId}/inventario`, p.id);
+                // Usamos SET en lugar de increment para garantizar que el valor se fije sano
+                batch.set(docRef, { cantidadUnidades: newBaseTotal }, { merge: true });
+                changesCount++;
             }
         });
 
-        if (invalidValues) { _showModal('Error', 'Hay valores inválidos (negativos). Por favor revise.'); return; }
-        if (changesCount === 0) { _showModal('Aviso', 'No se ha ingresado ninguna cantidad para recargar.'); return; }
+        if (invalidValues) { _showModal('Error', 'Hay valores inválidos (negativos) en las casillas. Por favor revise.'); return; }
 
-        _showModal('Confirmar Recarga', `Se añadirán cantidades a ${changesCount} productos. ¿Continuar?`, async () => {
+        _showModal('Confirmar Recarga', `Se guardará un reporte del catálogo completo (${recargaDetalles.length} items) y se actualizará el stock de ${changesCount} productos (incluyendo limpieza automática de negativos). ¿Continuar?`, async () => {
             _showModal('Progreso', 'Procesando recarga...', null, '', null, false);
             try {
                 const recargaLogRef = _collection(_db, `artifacts/${_appId}/users/${_userId}/recargas`);
                 await _addDoc(recargaLogRef, {
                     fecha: new Date().toISOString(), 
                     usuarioId: _userId,
-                    totalProductos: changesCount,
+                    totalProductos: recargaDetalles.length,
+                    itemsModificados: changesCount,
                     detalles: recargaDetalles
                 });
 
-                await batch.commit();
+                if (changesCount > 0) {
+                    await batch.commit();
+                }
                 
                 _recargaTempState = {};
                 renderRecargaList(); 
@@ -1500,7 +1503,7 @@
                 }
 
                 setTimeout(() => {
-                     _showModal('Recarga Exitosa', 'La carga se realizó exitosamente y se guardó el registro.', () => {}, 'Continuar');
+                     _showModal('Recarga Exitosa', 'La recarga y el registro histórico se guardaron correctamente.', () => {}, 'Continuar');
                 }, 300);
                 
             } catch (error) {
