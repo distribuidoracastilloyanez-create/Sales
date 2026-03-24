@@ -431,14 +431,19 @@
 
             await loadMasterCatalog();
             
-            let items = [];
+            let itemsGlobales = [];
+            let rubrosDisponibles = new Set();
+
             mapaStockEfectivo.forEach((qty, pId) => {
                 if (qty > 0) {
                     const pMaster = _masterMapCache[pId] || {};
-                    items.push({
+                    const rubroName = pMaster.rubro || 'SIN RUBRO';
+                    rubrosDisponibles.add(rubroName);
+
+                    itemsGlobales.push({
                         id: pId,
                         presentacion: pMaster.presentacion || 'Desconocido',
-                        rubro: pMaster.rubro || 'SIN RUBRO',
+                        rubro: rubroName,
                         segmento: pMaster.segmento || 'SIN SEGMENTO',
                         marca: pMaster.marca || 'S/M',
                         cantidadUnidades: qty,
@@ -450,66 +455,93 @@
                 }
             });
 
-            if (items.length === 0) {
+            if (itemsGlobales.length === 0) {
                 _showModal('Aviso', `El Punto de Partida Efectivo está vacío (0 productos).<br><br>Fecha del registro base: <b>${fechaStr}</b>`);
                 return;
             }
 
-            // Aplicar el mismo ordenamiento estricto de inventario.js
+            // Aplicar el mismo ordenamiento estricto global
             if (window.getGlobalProductSortFunction) {
                 const sortFn = await window.getGlobalProductSortFunction();
-                items.sort(sortFn);
+                itemsGlobales.sort(sortFn);
             } else {
-                items.sort((a,b) => (a.presentacion || '').localeCompare(b.presentacion || ''));
+                itemsGlobales.sort((a,b) => (a.presentacion || '').localeCompare(b.presentacion || ''));
             }
 
-            let html = '';
-            let currentGroup = null;
+            // --- Lógica de Renderizado Dinámico para el Filtro ---
+            const renderTableRows = (filterRubro = '') => {
+                let html = '';
+                let currentGroup = null;
 
-            items.forEach(p => {
-                const rName = (p.rubro || 'SIN RUBRO').toUpperCase();
-                const sName = (p.segmento || 'SIN SEGMENTO').toUpperCase();
-                const groupName = `${rName} > ${sName}`;
+                const itemsFiltrados = filterRubro ? itemsGlobales.filter(i => i.rubro === filterRubro) : itemsGlobales;
 
-                if (groupName !== currentGroup) {
-                    currentGroup = groupName;
+                if (itemsFiltrados.length === 0) {
+                    return `<tr><td colspan="2" class="text-center py-8 text-gray-500 font-medium">No hay productos en este rubro.</td></tr>`;
+                }
+
+                itemsFiltrados.forEach(p => {
+                    const rName = (p.rubro || 'SIN RUBRO').toUpperCase();
+                    const sName = (p.segmento || 'SIN SEGMENTO').toUpperCase();
+                    const groupName = `${rName} > ${sName}`;
+
+                    if (groupName !== currentGroup) {
+                        currentGroup = groupName;
+                        html += `
+                            <tr class="bg-blue-50/90 border-t border-blue-200">
+                                <td colspan="2" class="py-1.5 px-3 font-extrabold text-blue-900 tracking-wide text-[10px] uppercase">
+                                    📁 ${currentGroup}
+                                </td>
+                            </tr>
+                        `;
+                    }
+
                     html += `
-                        <tr class="bg-blue-50/90 border-t border-blue-200">
-                            <td colspan="2" class="py-1.5 px-3 font-extrabold text-blue-900 tracking-wide text-[10px] uppercase">
-                                📁 ${currentGroup}
+                        <tr class="hover:bg-gray-50 border-b border-gray-100">
+                            <td class="py-1.5 px-3">
+                                <div class="font-bold text-gray-800 text-xs">${p.presentacion}</div>
+                                <div class="text-[10px] text-gray-500 uppercase">${p.marca}</div>
+                            </td>
+                            <td class="py-1.5 px-3 text-right text-xs align-middle">
+                                ${formatStockStrict(p.cantidadUnidades, p.pMaster)}
                             </td>
                         </tr>
                     `;
-                }
+                });
+                return html;
+            };
 
-                html += `
-                    <tr class="hover:bg-gray-50 border-b border-gray-100">
-                        <td class="py-1.5 px-3">
-                            <div class="font-bold text-gray-800 text-xs">${p.presentacion}</div>
-                            <div class="text-[10px] text-gray-500 uppercase">${p.marca}</div>
-                        </td>
-                        <td class="py-1.5 px-3 text-right text-xs align-middle">
-                            ${formatStockStrict(p.cantidadUnidades, p.pMaster)}
-                        </td>
-                    </tr>
-                `;
+            // Construir las opciones del selector de rubros
+            let rubrosOptions = `<option value="">Todos los Rubros</option>`;
+            Array.from(rubrosDisponibles).sort().forEach(r => {
+                rubrosOptions += `<option value="${r}">${r}</option>`;
             });
 
             const modalHtml = `
-                <div class="text-left">
-                    <p class="text-sm text-gray-600 mb-4 bg-gray-100 p-2 rounded border border-gray-200">
-                        Fecha del registro base: <br><b class="text-blue-700">${fechaStr}</b>
-                        <br><span class="text-xs text-gray-500">(Incluye recargas y correcciones posteriores)</span>
-                    </p>
-                    <div class="max-h-[50vh] overflow-y-auto border border-gray-300 rounded-lg shadow-inner bg-white">
-                        <table class="w-full text-sm">
+                <div class="text-left flex flex-col h-full">
+                    <div class="flex flex-col sm:flex-row justify-between gap-2 mb-4">
+                        <div class="text-xs text-gray-600 bg-gray-100 p-2 rounded border border-gray-200 flex-grow">
+                            Fecha base: <b class="text-blue-700">${fechaStr}</b>
+                            <br><span class="text-[9px] text-gray-500">(Suma recargas y correcciones)</span>
+                        </div>
+                        <div class="flex-shrink-0 min-w-[150px]">
+                            <label class="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Filtrar Rubro:</label>
+                            <select id="modalRubroFilter" class="w-full border border-blue-300 rounded p-1.5 text-xs focus:ring-2 focus:ring-blue-500 outline-none bg-white font-semibold">
+                                ${rubrosOptions}
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="flex-grow max-h-[50vh] overflow-y-auto border border-gray-300 rounded-lg shadow-inner bg-white relative">
+                        <table class="min-w-full text-sm">
                             <thead class="bg-gray-800 text-white sticky top-0 shadow-sm z-10">
                                 <tr>
                                     <th class="py-2 px-3 text-left font-semibold">Producto</th>
                                     <th class="py-2 px-3 text-right font-semibold">Carga Efectiva</th>
                                 </tr>
                             </thead>
-                            <tbody>${html}</tbody>
+                            <tbody id="modalSnapshotTableBody">
+                                ${renderTableRows('')}
+                            </tbody>
                         </table>
                     </div>
                 </div>
@@ -517,12 +549,22 @@
 
             _showModal('Carga Inicial Efectiva', modalHtml, null, 'Cerrar');
 
+            // Añadir el listener dinámico después de que el modal se dibuje en el DOM
+            setTimeout(() => {
+                const rubroFilter = document.getElementById('modalRubroFilter');
+                const tableBody = document.getElementById('modalSnapshotTableBody');
+                if (rubroFilter && tableBody) {
+                    rubroFilter.addEventListener('change', (e) => {
+                        tableBody.innerHTML = renderTableRows(e.target.value);
+                    });
+                }
+            }, 100);
+
         } catch (err) {
             console.error(err);
             _showModal('Error', 'Fallo al obtener el snapshot: ' + err.message);
         }
     }
-
     // --- 3. Ejecución principal de Auditoría ---
     async function executeAudit() {
         const userId = document.getElementById('auditUserSelect').value;
