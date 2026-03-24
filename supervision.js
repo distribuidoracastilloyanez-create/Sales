@@ -24,7 +24,7 @@
         _where = dependencies.where;
         _doc = dependencies.doc;
 
-        console.log("Módulo Supervisión Inicializado con Gestor de Snapshots y Filtros Robustos.");
+        console.log("Módulo Supervisión Inicializado con Gestor de Correcciones.");
     };
 
     async function loadMasterCatalog() {
@@ -375,7 +375,6 @@
                     correcciones.forEach(c => {
                         if (c.tipoAjuste === 'LIMPIEZA_PROFUNDA') return;
                         (c.detalles || []).forEach(d => {
-                            // Extractor de ajuste ultra seguro
                             const ajuste = d.ajusteBase !== undefined ? d.ajusteBase : (d.ajuste !== undefined ? d.ajuste : (d.diferenciaUnidades || d.diferencia || 0));
                             if (d.productoId && d.productoId !== 'ALL') {
                                 mapaStockEfectivo.set(d.productoId, (mapaStockEfectivo.get(d.productoId) || 0) + ajuste);
@@ -635,7 +634,7 @@
                 return;
             }
 
-            // Descargas seguras (sin filtro where de firebase para evitar bugs de strings ISO vs Timestamps)
+            // Descargas seguras
             const [vSnap, oSnap, iSnap, rSnapFull, cSnapFull] = await Promise.all([
                 _getDocs(_collection(_db, `artifacts/${_appId}/users/${userId}/ventas`)),
                 _getDocs(_collection(_db, `artifacts/${_appId}/users/${userId}/obsequios_entregados`)),
@@ -648,7 +647,7 @@
             const obsequios = oSnap.docs.map(d => d.data());
             const inventarioActualMap = new Map(iSnap.docs.map(d => [d.id, d.data().cantidadUnidades || 0]));
 
-            // Filtrado seguro en memoria (JavaScript)
+            // Filtrado seguro en memoria
             const recargas = rSnapFull.docs.map(d => d.data()).filter(r => {
                 const dObj = r.fecha?.toDate ? r.fecha.toDate() : new Date(r.fecha);
                 return dObj >= fechaCargaInicial;
@@ -765,7 +764,7 @@
                 summary.innerHTML = `
                     <div>
                         <h3 class="font-black text-lg">⚠️ Discrepancias Detectadas (${discrepanciasCount})</h3>
-                        <p class="text-sm">El inventario físico no cuadra con las operaciones registradas. Revise las filas resaltadas.</p>
+                        <p class="text-sm">El inventario físico no cuadra con las operaciones registradas. Utilice el botón "Corregir".</p>
                     </div>
                 `;
             }
@@ -827,11 +826,15 @@
                 const signo = r.diff > 0 ? '+' : '';
                 const etiqueta = isFaltante ? 'FALTANTE' : 'SOBRANTE';
                 
+                // Botón de corrección
+                const actionBtn = `<button onclick="window.supervisionModule.showCorrectionModal('${r.id}')" class="mt-1.5 text-[10px] bg-white text-indigo-700 border border-indigo-300 px-2 py-0.5 rounded hover:bg-indigo-50 transition font-bold shadow-sm block mx-auto w-full">Corregir</button>`;
+
                 diffHtml = `
                     <div class="${textColor} font-black">
                         ${signo}${r.diff} Und
                         <div class="text-[9px] uppercase">${etiqueta}</div>
                     </div>
+                    ${actionBtn}
                 `;
             }
 
@@ -860,5 +863,88 @@
 
         tbody.innerHTML = html;
     }
+
+    // =========================================================================
+    // LÓGICA DE CORRECCIÓN (Decidir la verdad absoluta)
+    // =========================================================================
+    window.supervisionModule = {
+        showCorrectionModal: function(pId) {
+            const item = _lastAuditData.find(r => r.id === pId);
+            if (!item) return;
+
+            const diff = item.fisico - item.teorico;
+
+            const html = `
+                <div class="text-left">
+                    <p class="mb-4 text-sm text-gray-700">Existe una discrepancia en <b>${item.presentacion}</b>.</p>
+                    <div class="flex justify-between bg-gray-100 p-3 rounded-lg border border-gray-300 mb-4 text-sm">
+                        <div class="text-center w-1/2 border-r border-gray-300">
+                            <span class="block text-[10px] font-bold text-gray-500 uppercase">Teórico (Matemática)</span>
+                            <span class="text-xl font-black text-gray-800">${item.teorico}</span>
+                        </div>
+                        <div class="text-center w-1/2">
+                            <span class="block text-[10px] font-bold text-gray-500 uppercase">Físico (BD Vendedor)</span>
+                            <span class="text-xl font-black text-gray-800">${item.fisico}</span>
+                        </div>
+                    </div>
+
+                    <p class="text-xs font-bold text-gray-600 mb-2 uppercase tracking-wide">Seleccione la solución a aplicar:</p>
+
+                    <div class="space-y-3">
+                        <button onclick="window.supervisionModule.applyCorrection('${pId}', 'TO_TEORICO', ${item.teorico}, ${item.fisico})" class="w-full text-left p-3 border border-gray-300 rounded-lg hover:bg-blue-50 hover:border-blue-400 transition group">
+                            <div class="font-bold text-blue-800 group-hover:text-blue-900">Mantener el Teórico (${item.teorico})</div>
+                            <div class="text-xs text-gray-500 mt-1">Obliga a la Base de Datos a igualarse a la matemática. (Útil si alguien alteró el inventario manual por error).</div>
+                        </button>
+
+                        <button onclick="window.supervisionModule.applyCorrection('${pId}', 'TO_FISICO', ${item.teorico}, ${item.fisico})" class="w-full text-left p-3 border border-gray-300 rounded-lg hover:bg-orange-50 hover:border-orange-400 transition group">
+                            <div class="font-bold text-orange-800 group-hover:text-orange-900">Mantener el Físico (${item.fisico})</div>
+                            <div class="text-xs text-gray-500 mt-1">Se creará un registro de ajuste de <b class="text-gray-700">${diff > 0 ? '+'+diff : diff} Und</b> en el historial para que la matemática cuadre. (Útil si el vendedor físicamente tiene ese producto).</div>
+                        </button>
+                    </div>
+                </div>
+            `;
+
+            _showModal('Resolución de Discrepancia', html, null, 'Cerrar');
+        },
+        
+        applyCorrection: async function(pId, type, teorico, fisico) {
+            const userId = document.getElementById('auditUserSelect').value;
+            if (!userId) return;
+            const diff = fisico - teorico;
+
+            _showModal('Progreso', 'Aplicando corrección de auditoría...', null, '', null, false);
+
+            try {
+                if (type === 'TO_TEORICO') {
+                    // Cambiar el físico para igualar al teórico
+                    const invRef = _doc(_db, `artifacts/${_appId}/users/${userId}/inventario`, pId);
+                    await _setDoc(invRef, { cantidadUnidades: teorico }, { merge: true });
+
+                } else if (type === 'TO_FISICO') {
+                    // Mantener el físico creando un ajuste en el historial (teórico se iguala al físico)
+                    const corrRef = _doc(_collection(_db, `artifacts/${_appId}/users/${userId}/historial_correcciones`));
+                    await _setDoc(corrRef, {
+                        fecha: new Date(),
+                        usuarioId: _userId,
+                        tipoAjuste: 'AUDITORIA_RESOLUCION',
+                        detalles: [{
+                            productoId: pId,
+                            ajusteBase: diff,
+                            nota: 'Ajuste de cuadre en auditoría (Físico marcado como verdad absoluta)'
+                        }]
+                    });
+                }
+
+                // Recargar automáticamente la auditoría
+                await executeAudit();
+
+                setTimeout(() => _showModal('Éxito', 'Corrección aplicada y cuadre actualizado exitosamente.'), 400);
+
+            } catch(e) {
+                console.error(e);
+                _showModal('Error', 'Fallo al corregir el inventario: ' + e.message);
+            }
+        }
+    };
 
 })();
