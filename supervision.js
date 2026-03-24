@@ -255,7 +255,7 @@
                             </div>
                             
                             <div class="flex gap-2 pt-3 border-t border-red-200">
-                                <button id="btnVerSnapshot" class="flex-1 bg-white text-blue-700 border border-blue-300 px-4 py-2 rounded-md text-xs font-bold hover:bg-blue-50 shadow-sm transition">👁️ Ver Carga Inicial Actual</button>
+                                <button id="btnVerSnapshot" class="flex-1 bg-white text-blue-700 border border-blue-300 px-4 py-2 rounded-md text-xs font-bold hover:bg-blue-50 shadow-sm transition">👁️ Ver Carga Inicial Efectiva Actual</button>
                                 <button id="btnFijarSnapshot" class="flex-1 bg-white text-orange-700 border border-orange-300 px-4 py-2 rounded-md text-xs font-bold hover:bg-orange-50 shadow-sm transition">📸 Fijar Nuevo Punto de Partida</button>
                             </div>
                         </div>
@@ -286,7 +286,6 @@
         document.getElementById('btnBackSup2').addEventListener('click', window.showSupervisionMenu);
         document.getElementById('btnEjecutarAuditoria').addEventListener('click', executeAudit);
         
-        // Asignación de los nuevos botones de Snapshot
         document.getElementById('btnVerSnapshot').addEventListener('click', handleViewSnapshot);
         document.getElementById('btnFijarSnapshot').addEventListener('click', handleCreateSnapshot);
     }
@@ -312,46 +311,58 @@
         return `<span class="font-bold">${baseUnits} Und</span>`;
     }
 
-    // --- 1. Crear Nuevo Snapshot Matemáticamente Perfecto ---
+    // --- 1. Fijar Punto de Partida (Tomando la Carga Efectiva Consolidada) ---
     async function handleCreateSnapshot() {
         const userId = document.getElementById('auditUserSelect').value;
         if (!userId) { _showModal('Error', 'Seleccione un vendedor primero.'); return; }
         
-        _showModal('Fijar Punto de Partida', `¿Desea fijar el inventario actual como el nuevo Punto de Partida (Carga Inicial)?<br><br>
-            <span class="text-sm text-gray-600">Esto tomará el stock físico actual y le sumará las ventas/obsequios activos para cuadrar la matemática perfectamente si el vendedor está en medio de su jornada.</span>`, 
+        _showModal('Fijar Punto de Partida', `¿Desea consolidar y guardar los valores de la "Carga Inicial Efectiva" como el nuevo Punto de Partida limpio?<br><br>
+            <span class="text-sm text-gray-600">Esto calculará la base inicial sumando las recargas recientes y guardará ese resultado como la nueva base matemática para el cierre de hoy. <b>Tus ventas y obsequios del día no se verán afectados.</b></span>`, 
             async () => {
-                _showModal('Progreso', 'Calculando y guardando Punto de Partida...', null, '', null, false);
+                _showModal('Progreso', 'Guardando nuevo punto de partida...', null, '', null, false);
                 try {
-                    await loadMasterCatalog();
+                    const SNAPSHOT_DOC_PATH = `artifacts/${_appId}/users/${userId}/config/cargaInicialSnapshot`;
+                    const snap = await _getDoc(_doc(_db, SNAPSHOT_DOC_PATH));
+                    
+                    let baseItems = [];
+                    let fechaCargaInicial = new Date(0);
+                    if (snap.exists()) {
+                        const data = snap.data();
+                        fechaCargaInicial = data.fecha?.toDate ? data.fecha.toDate() : new Date(data.fecha);
+                        baseItems = data.inventario || [];
+                    }
 
-                    // 1. Obtener Inventario Físico (Lo que hay ahora en la BD)
-                    const invSnap = await _getDocs(_collection(_db, `artifacts/${_appId}/users/${userId}/inventario`));
-                    const baseStock = new Map();
-                    invSnap.docs.forEach(d => baseStock.set(d.id, d.data().cantidadUnidades || 0));
+                    const rQuery = _query(_collection(_db, `artifacts/${_appId}/users/${userId}/recargas`), _where("fecha", ">=", fechaCargaInicial.toISOString()));
+                    const rSnap = await _getDocs(rQuery);
+                    const recargas = rSnap.docs.map(d => d.data());
 
-                    // 2. Obtener Ventas Activas (Se devuelven al teórico inicial)
-                    const vSnap = await _getDocs(_collection(_db, `artifacts/${_appId}/users/${userId}/ventas`));
-                    const ventas = vSnap.docs.map(d => d.data());
+                    const cQuery = _query(_collection(_db, `artifacts/${_appId}/users/${userId}/historial_correcciones`), _where("fecha", ">=", fechaCargaInicial));
+                    const cSnap = await _getDocs(cQuery);
+                    const correcciones = cSnap.docs.map(d => d.data());
 
-                    ventas.forEach(v => {
-                        (v.productos || []).forEach(p => {
-                            baseStock.set(p.id, (baseStock.get(p.id) || 0) + (p.totalUnidadesVendidas || 0));
+                    const mapaStockEfectivo = new Map();
+                    baseItems.forEach(item => mapaStockEfectivo.set(item.productoId || item.id, item.cantidadUnidades || 0));
+
+                    recargas.forEach(r => {
+                        (r.detalles || []).forEach(d => {
+                            mapaStockEfectivo.set(d.productoId, (mapaStockEfectivo.get(d.productoId) || 0) + (d.diferenciaUnidades || 0));
                         });
                     });
 
-                    // 3. Obtener Obsequios Activos (Se devuelven al teórico inicial)
-                    const oSnap = await _getDocs(_collection(_db, `artifacts/${_appId}/users/${userId}/obsequios_entregados`));
-                    const obsequios = oSnap.docs.map(d => d.data());
-
-                    obsequios.forEach(o => {
-                        const pMaster = _masterMapCache[o.productoId] || { unidadesPorCaja: 1 };
-                        const uRegaladas = (o.cantidadCajas || 0) * (pMaster.unidadesPorCaja || 1);
-                        baseStock.set(o.productoId, (baseStock.get(o.productoId) || 0) + uRegaladas);
+                    correcciones.forEach(c => {
+                        if (c.tipoAjuste === 'LIMPIEZA_PROFUNDA') return;
+                        (c.detalles || []).forEach(d => {
+                            const ajuste = d.ajusteBase !== undefined ? d.ajusteBase : (d.ajuste || 0);
+                            if (d.productoId && d.productoId !== 'ALL') {
+                                mapaStockEfectivo.set(d.productoId, (mapaStockEfectivo.get(d.productoId) || 0) + ajuste);
+                            }
+                        });
                     });
 
-                    // 4. Construir Array del Snapshot final y guardarlo
+                    await loadMasterCatalog();
+                    
                     const snapshotArray = [];
-                    baseStock.forEach((qty, pId) => {
+                    mapaStockEfectivo.forEach((qty, pId) => {
                         if (qty > 0) {
                             const pMaster = _masterMapCache[pId] || {};
                             snapshotArray.push({
@@ -365,18 +376,17 @@
                         }
                     });
 
-                    const SNAPSHOT_DOC_PATH = `artifacts/${_appId}/users/${userId}/config/cargaInicialSnapshot`;
                     await _setDoc(_doc(_db, SNAPSHOT_DOC_PATH), {
                         fecha: new Date(),
                         inventario: snapshotArray
                     });
 
-                    _showModal('Éxito', 'Punto de Partida (Carga Inicial) fijado correctamente. Ahora la Auditoría y el Cierre de Ventas se guiarán desde este punto exacto.');
+                    _showModal('Éxito', '✅ El punto de partida se ha tomado y guardado correctamente. Las ventas y obsequios del día no se han visto afectados.');
                 } catch (err) {
                     console.error(err);
-                    _showModal('Error', 'Fallo al fijar el snapshot: ' + err.message);
+                    _showModal('Error', 'Fallo al guardar: ' + err.message);
                 }
-            }, 'Sí, Fijar Punto de Partida', null, true);
+            }, 'Sí, Guardar Punto de Partida', null, true);
     }
 
     // --- 2. Ver Snapshot (Carga Inicial) Efectivo Actual ---
@@ -400,7 +410,6 @@
             
             let baseItems = data.inventario || [];
 
-            // --- SUMAR RECARGAS Y CORRECCIONES PARA MOSTRAR LA CARGA EFECTIVA REAL ---
             const rQuery = _query(_collection(_db, `artifacts/${_appId}/users/${userId}/recargas`), _where("fecha", ">=", fechaCargaInicial.toISOString()));
             const rSnap = await _getDocs(rQuery);
             const recargas = rSnap.docs.map(d => d.data());
@@ -460,7 +469,6 @@
                 return;
             }
 
-            // Aplicar el mismo ordenamiento estricto global
             if (window.getGlobalProductSortFunction) {
                 const sortFn = await window.getGlobalProductSortFunction();
                 itemsGlobales.sort(sortFn);
@@ -468,7 +476,6 @@
                 itemsGlobales.sort((a,b) => (a.presentacion || '').localeCompare(b.presentacion || ''));
             }
 
-            // --- Lógica de Renderizado Dinámico para el Filtro ---
             const renderTableRows = (filterRubro = '') => {
                 let html = '';
                 let currentGroup = null;
@@ -510,7 +517,6 @@
                 return html;
             };
 
-            // Construir las opciones del selector de rubros
             let rubrosOptions = `<option value="">Todos los Rubros</option>`;
             Array.from(rubrosDisponibles).sort().forEach(r => {
                 rubrosOptions += `<option value="${r}">${r}</option>`;
@@ -549,7 +555,6 @@
 
             _showModal('Carga Inicial Efectiva', modalHtml, null, 'Cerrar');
 
-            // Añadir el listener dinámico después de que el modal se dibuje en el DOM
             setTimeout(() => {
                 const rubroFilter = document.getElementById('modalRubroFilter');
                 const tableBody = document.getElementById('modalSnapshotTableBody');
@@ -565,6 +570,7 @@
             _showModal('Error', 'Fallo al obtener el snapshot: ' + err.message);
         }
     }
+
     // --- 3. Ejecución principal de Auditoría ---
     async function executeAudit() {
         const userId = document.getElementById('auditUserSelect').value;
