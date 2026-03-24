@@ -24,10 +24,9 @@
         _where = dependencies.where;
         _doc = dependencies.doc;
 
-        console.log("Módulo Supervisión Inicializado con Gestor de Snapshots y Filtros.");
+        console.log("Módulo Supervisión Inicializado con Gestor de Snapshots y Filtros Robustos.");
     };
 
-    // CORRECCIÓN: Asegurar que el ID se guarde dentro del objeto de caché
     async function loadMasterCatalog() {
         if (Object.keys(_masterMapCache).length > 0) return _masterMapCache;
         const masterRef = _collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/productos`);
@@ -305,7 +304,6 @@
         document.getElementById('btnVerSnapshot').addEventListener('click', handleViewSnapshot);
         document.getElementById('btnFijarSnapshot').addEventListener('click', handleCreateSnapshot);
 
-        // Listeners para los filtros de auditoría
         document.getElementById('auditSearchInput').addEventListener('input', renderAuditTable);
         document.getElementById('auditRubroFilter').addEventListener('change', renderAuditTable);
         document.getElementById('auditMarcaFilter').addEventListener('change', renderAuditTable);
@@ -352,13 +350,18 @@
                         baseItems = data.inventario || [];
                     }
 
-                    const rQuery = _query(_collection(_db, `artifacts/${_appId}/users/${userId}/recargas`), _where("fecha", ">=", fechaCargaInicial.toISOString()));
-                    const rSnap = await _getDocs(rQuery);
-                    const recargas = rSnap.docs.map(d => d.data());
+                    // FILTRO SEGURO EN MEMORIA CONTRA BUGS DE FECHA EN FIREBASE
+                    const rSnap = await _getDocs(_collection(_db, `artifacts/${_appId}/users/${userId}/recargas`));
+                    const recargas = rSnap.docs.map(d => d.data()).filter(r => {
+                        const dObj = r.fecha?.toDate ? r.fecha.toDate() : new Date(r.fecha);
+                        return dObj >= fechaCargaInicial;
+                    });
 
-                    const cQuery = _query(_collection(_db, `artifacts/${_appId}/users/${userId}/historial_correcciones`), _where("fecha", ">=", fechaCargaInicial));
-                    const cSnap = await _getDocs(cQuery);
-                    const correcciones = cSnap.docs.map(d => d.data());
+                    const cSnap = await _getDocs(_collection(_db, `artifacts/${_appId}/users/${userId}/historial_correcciones`));
+                    const correcciones = cSnap.docs.map(d => d.data()).filter(c => {
+                        const dObj = c.fecha?.toDate ? c.fecha.toDate() : new Date(c.fecha);
+                        return dObj >= fechaCargaInicial;
+                    });
 
                     const mapaStockEfectivo = new Map();
                     baseItems.forEach(item => mapaStockEfectivo.set(item.productoId || item.id, item.cantidadUnidades || 0));
@@ -372,7 +375,8 @@
                     correcciones.forEach(c => {
                         if (c.tipoAjuste === 'LIMPIEZA_PROFUNDA') return;
                         (c.detalles || []).forEach(d => {
-                            const ajuste = d.ajusteBase !== undefined ? d.ajusteBase : (d.ajuste || 0);
+                            // Extractor de ajuste ultra seguro
+                            const ajuste = d.ajusteBase !== undefined ? d.ajusteBase : (d.ajuste !== undefined ? d.ajuste : (d.diferenciaUnidades || d.diferencia || 0));
                             if (d.productoId && d.productoId !== 'ALL') {
                                 mapaStockEfectivo.set(d.productoId, (mapaStockEfectivo.get(d.productoId) || 0) + ajuste);
                             }
@@ -414,13 +418,13 @@
         const userId = document.getElementById('auditUserSelect').value;
         if (!userId) { _showModal('Error', 'Seleccione un vendedor primero.'); return; }
 
-        _showModal('Progreso', 'Obteniendo Punto de Partida y calculando ajustes...', null, '', null, false);
+        _showModal('Progreso', 'Calculando ajustes en memoria...', null, '', null, false);
         try {
             const SNAPSHOT_DOC_PATH = `artifacts/${_appId}/users/${userId}/config/cargaInicialSnapshot`;
             const snap = await _getDoc(_doc(_db, SNAPSHOT_DOC_PATH));
             
             if (!snap.exists()) {
-                _showModal('Aviso', 'No hay ningún Punto de Partida (Carga Inicial) registrado para este vendedor actualmente.');
+                _showModal('Aviso', 'No hay ningún Punto de Partida registrado.');
                 return;
             }
 
@@ -430,28 +434,32 @@
             
             let baseItems = data.inventario || [];
 
-            const rQuery = _query(_collection(_db, `artifacts/${_appId}/users/${userId}/recargas`), _where("fecha", ">=", fechaCargaInicial.toISOString()));
-            const rSnap = await _getDocs(rQuery);
-            const recargas = rSnap.docs.map(d => d.data());
+            // FILTRO SEGURO EN MEMORIA
+            const rSnap = await _getDocs(_collection(_db, `artifacts/${_appId}/users/${userId}/recargas`));
+            const recargas = rSnap.docs.map(d => d.data()).filter(r => {
+                const dObj = r.fecha?.toDate ? r.fecha.toDate() : new Date(r.fecha);
+                return dObj >= fechaCargaInicial;
+            });
 
-            const cQuery = _query(_collection(_db, `artifacts/${_appId}/users/${userId}/historial_correcciones`), _where("fecha", ">=", fechaCargaInicial));
-            const cSnap = await _getDocs(cQuery);
-            const correcciones = cSnap.docs.map(d => d.data());
+            const cSnap = await _getDocs(_collection(_db, `artifacts/${_appId}/users/${userId}/historial_correcciones`));
+            const correcciones = cSnap.docs.map(d => d.data()).filter(c => {
+                const dObj = c.fecha?.toDate ? c.fecha.toDate() : new Date(c.fecha);
+                return dObj >= fechaCargaInicial;
+            });
 
             const mapaStockEfectivo = new Map();
             baseItems.forEach(item => mapaStockEfectivo.set(item.productoId || item.id, item.cantidadUnidades || 0));
 
             recargas.forEach(r => {
                 (r.detalles || []).forEach(d => {
-                    const pId = d.productoId;
-                    mapaStockEfectivo.set(pId, (mapaStockEfectivo.get(pId) || 0) + (d.diferenciaUnidades || 0));
+                    mapaStockEfectivo.set(d.productoId, (mapaStockEfectivo.get(d.productoId) || 0) + (d.diferenciaUnidades || 0));
                 });
             });
 
             correcciones.forEach(c => {
                 if (c.tipoAjuste === 'LIMPIEZA_PROFUNDA') return;
                 (c.detalles || []).forEach(d => {
-                    const ajuste = d.ajusteBase !== undefined ? d.ajusteBase : (d.ajuste || 0);
+                    const ajuste = d.ajusteBase !== undefined ? d.ajusteBase : (d.ajuste !== undefined ? d.ajuste : (d.diferenciaUnidades || d.diferencia || 0));
                     if (d.productoId && d.productoId !== 'ALL') {
                         mapaStockEfectivo.set(d.productoId, (mapaStockEfectivo.get(d.productoId) || 0) + ajuste);
                     }
@@ -600,7 +608,7 @@
 
         if (!userId) { _showModal('Error', 'Seleccione un vendedor.'); return; }
 
-        emptyState.innerHTML = '<span class="animate-pulse font-bold text-red-600">Calculando el algoritmo de auditoría...</span>';
+        emptyState.innerHTML = '<span class="animate-pulse font-bold text-red-600">Calculando con Filtros en Memoria...</span>';
         emptyState.classList.remove('hidden');
         panel.classList.add('hidden');
         panel.classList.remove('flex');
@@ -620,31 +628,36 @@
             } else {
                 emptyState.innerHTML = `
                     <div class="text-center p-4">
-                        <p class="text-red-500 font-bold mb-2">El vendedor no tiene un Cierre Previo (Carga Inicial) registrado.</p>
-                        <p class="text-sm text-gray-500 mb-6">No se puede auditar de forma precisa sin un punto de partida.</p>
+                        <p class="text-red-500 font-bold mb-2">El vendedor no tiene un Punto de Partida registrado.</p>
                         <button onclick="document.getElementById('btnFijarSnapshot').click()" class="bg-orange-600 text-white px-5 py-2.5 rounded-lg shadow-md hover:bg-orange-700 font-bold text-sm transition transform hover:scale-105">📸 Generar Punto de Partida Ahora</button>
                     </div>
                 `;
                 return;
             }
 
-            const [vSnap, oSnap, iSnap] = await Promise.all([
+            // Descargas seguras (sin filtro where de firebase para evitar bugs de strings ISO vs Timestamps)
+            const [vSnap, oSnap, iSnap, rSnapFull, cSnapFull] = await Promise.all([
                 _getDocs(_collection(_db, `artifacts/${_appId}/users/${userId}/ventas`)),
                 _getDocs(_collection(_db, `artifacts/${_appId}/users/${userId}/obsequios_entregados`)),
-                _getDocs(_collection(_db, `artifacts/${_appId}/users/${userId}/inventario`))
+                _getDocs(_collection(_db, `artifacts/${_appId}/users/${userId}/inventario`)), // FÍSICO
+                _getDocs(_collection(_db, `artifacts/${_appId}/users/${userId}/recargas`)),
+                _getDocs(_collection(_db, `artifacts/${_appId}/users/${userId}/historial_correcciones`))
             ]);
 
             const ventas = vSnap.docs.map(d => d.data());
             const obsequios = oSnap.docs.map(d => d.data());
             const inventarioActualMap = new Map(iSnap.docs.map(d => [d.id, d.data().cantidadUnidades || 0]));
 
-            const rQuery = _query(_collection(_db, `artifacts/${_appId}/users/${userId}/recargas`), _where("fecha", ">=", fechaCargaInicial.toISOString()));
-            const rSnap = await _getDocs(rQuery);
-            const recargas = rSnap.docs.map(d => d.data());
+            // Filtrado seguro en memoria (JavaScript)
+            const recargas = rSnapFull.docs.map(d => d.data()).filter(r => {
+                const dObj = r.fecha?.toDate ? r.fecha.toDate() : new Date(r.fecha);
+                return dObj >= fechaCargaInicial;
+            });
 
-            const cQuery = _query(_collection(_db, `artifacts/${_appId}/users/${userId}/historial_correcciones`), _where("fecha", ">=", fechaCargaInicial));
-            const cSnap = await _getDocs(cQuery);
-            const correcciones = cSnap.docs.map(d => d.data());
+            const correcciones = cSnapFull.docs.map(d => d.data()).filter(c => {
+                const dObj = c.fecha?.toDate ? c.fecha.toDate() : new Date(c.fecha);
+                return dObj >= fechaCargaInicial;
+            });
 
             const mapaStockTeorico = new Map(); 
             
@@ -655,15 +668,14 @@
 
             recargas.forEach(r => {
                 (r.detalles || []).forEach(d => {
-                    const pId = d.productoId;
-                    mapaStockTeorico.set(pId, (mapaStockTeorico.get(pId) || 0) + (d.diferenciaUnidades || 0));
+                    mapaStockTeorico.set(d.productoId, (mapaStockTeorico.get(d.productoId) || 0) + (d.diferenciaUnidades || 0));
                 });
             });
 
             correcciones.forEach(c => {
                 if (c.tipoAjuste === 'LIMPIEZA_PROFUNDA') return; 
                 (c.detalles || []).forEach(d => {
-                    const ajuste = d.ajusteBase !== undefined ? d.ajusteBase : (d.ajuste || 0);
+                    const ajuste = d.ajusteBase !== undefined ? d.ajusteBase : (d.ajuste !== undefined ? d.ajuste : (d.diferenciaUnidades || d.diferencia || 0));
                     if (d.productoId && d.productoId !== 'ALL') {
                         mapaStockTeorico.set(d.productoId, (mapaStockTeorico.get(d.productoId) || 0) + ajuste);
                     }
@@ -672,8 +684,7 @@
 
             ventas.forEach(v => {
                 (v.productos || []).forEach(vp => {
-                    const pId = vp.id;
-                    mapaStockTeorico.set(pId, (mapaStockTeorico.get(pId) || 0) - (vp.totalUnidadesVendidas || 0));
+                    mapaStockTeorico.set(vp.id, (mapaStockTeorico.get(vp.id) || 0) - (vp.totalUnidadesVendidas || 0));
                 });
             });
 
@@ -705,11 +716,13 @@
                     teorico,
                     fisico,
                     diff,
-                    pMaster
+                    pMaster,
+                    ordenSegmento: pMaster.ordenSegmento ?? 9999,
+                    ordenMarca: pMaster.ordenMarca ?? 9999,
+                    ordenProducto: pMaster.ordenProducto ?? 9999
                 });
             });
 
-            // Ordenamiento global estricto
             if (window.getGlobalProductSortFunction) {
                 const sortFn = await window.getGlobalProductSortFunction();
                 results.sort(sortFn);
@@ -717,9 +730,8 @@
                 results.sort((a, b) => a.presentacion.localeCompare(b.presentacion));
             }
 
-            _lastAuditData = results; // Guardar para filtros
+            _lastAuditData = results; 
 
-            // Preparar filtros
             const rubrosSet = new Set();
             const marcasSet = new Set();
             let discrepanciasCount = 0;
@@ -759,7 +771,7 @@
             }
 
             document.getElementById('auditFilters').classList.remove('hidden');
-            renderAuditTable(); // Renderizar tabla inicial
+            renderAuditTable(); 
 
             panel.classList.remove('hidden');
             panel.classList.add('flex');
@@ -771,7 +783,6 @@
         }
     }
 
-    // --- Renderizado Dinámico con Filtros ---
     function renderAuditTable() {
         const tbody = document.getElementById('auditTableBody');
         const searchTerm = document.getElementById('auditSearchInput').value.toLowerCase();
