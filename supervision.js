@@ -1,11 +1,11 @@
 (function() {
     let _db, _userId, _userRole, _appId, _mainContent, _floatingControls;
-    let _showMainMenu, _showModal, _collection, _getDocs, _getDoc, _query, _where, _doc, _setDoc;
+    let _showMainMenu, _showModal, _collection, _getDocs, _getDoc, _query, _where, _doc, _setDoc, _writeBatch;
 
     const PUBLIC_DATA_ID = window.AppConfig.PUBLIC_DATA_ID;
     let _usersCache = [];
     let _masterMapCache = {};
-    let _lastAuditData = []; // Caché para los filtros de auditoría
+    let _lastAuditData = []; 
 
     window.initSupervision = function(dependencies) {
         _db = dependencies.db;
@@ -23,8 +23,9 @@
         _query = dependencies.query;
         _where = dependencies.where;
         _doc = dependencies.doc;
+        _writeBatch = dependencies.writeBatch;
 
-        console.log("Módulo Supervisión Inicializado con Gestor de Correcciones.");
+        console.log("Módulo Supervisión Inicializado con Auditoría Perpetua y Corrección Masiva.");
     };
 
     async function loadMasterCatalog() {
@@ -63,7 +64,7 @@
                                 <span class="text-xl">📡</span> Monitoreo de Ventas en Vivo
                             </button>
                             <button id="btnAuditoria" class="w-full px-6 py-4 bg-red-600 text-white font-bold rounded-lg shadow-md hover:bg-red-700 transition flex items-center justify-center gap-2">
-                                <span class="text-xl">⚖️</span> Auditoría de Cuadre (Pre-Cierre)
+                                <span class="text-xl">⚖️</span> Auditoría de Cuadre
                             </button>
                             <button id="btnVolverMenuSup" class="w-full px-6 py-3 bg-gray-400 text-white font-bold rounded-lg shadow-md hover:bg-gray-500 transition mt-4">
                                 Volver al Menú Principal
@@ -184,7 +185,7 @@
             });
 
             if (operaciones.length === 0) {
-                emptyState.innerHTML = '<span class="text-gray-500 font-bold">El vendedor no tiene facturas ni obsequios activos (sin cerrar) en este momento.</span>';
+                emptyState.innerHTML = '<span class="text-gray-500 font-bold">El vendedor no tiene facturas ni obsequios activos en este momento.</span>';
                 return;
             }
 
@@ -225,7 +226,7 @@
     }
 
     // =========================================================================
-    // VISTA 2: AUDITORÍA DE CUADRE Y GESTIÓN DE SNAPSHOTS
+    // VISTA 2: AUDITORÍA DE CUADRE PERPETUO
     // =========================================================================
     async function showAuditoriaView() {
         await loadUsers();
@@ -238,7 +239,7 @@
                         <div class="flex justify-between items-center mb-4">
                             <div>
                                 <h2 class="text-2xl font-black text-red-900 tracking-tight">⚖️ Auditoría de Inventario</h2>
-                                <p class="text-xs text-gray-500 font-medium mt-1">Compara el Stock Matemático (Teórico) vs la Base de Datos (Físico)</p>
+                                <p class="text-xs text-gray-500 font-medium mt-1">Compara el Stock Matemático Perpetuo vs la Base de Datos Físico Actual</p>
                             </div>
                             <button id="btnBackSup2" class="px-4 py-2 bg-gray-500 text-white font-bold rounded shadow hover:bg-gray-600 transition text-sm">Volver</button>
                         </div>
@@ -256,7 +257,7 @@
                             </div>
                             
                             <div class="flex gap-2 pt-3 border-t border-red-200">
-                                <button id="btnVerSnapshot" class="flex-1 bg-white text-blue-700 border border-blue-300 px-4 py-2 rounded-md text-xs font-bold hover:bg-blue-50 shadow-sm transition">👁️ Ver Carga Inicial Efectiva Actual</button>
+                                <button id="btnVerSnapshot" class="flex-1 bg-white text-blue-700 border border-blue-300 px-4 py-2 rounded-md text-xs font-bold hover:bg-blue-50 shadow-sm transition">👁️ Ver Registro del Punto de Partida</button>
                                 <button id="btnFijarSnapshot" class="flex-1 bg-white text-orange-700 border border-orange-300 px-4 py-2 rounded-md text-xs font-bold hover:bg-orange-50 shadow-sm transition">📸 Fijar Nuevo Punto de Partida</button>
                             </div>
                         </div>
@@ -312,7 +313,7 @@
 
     function formatStockStrict(baseUnits, pMaster) {
         if (baseUnits === 0) return `<span class="text-gray-400">0</span>`;
-        const vPor = pMaster.ventaPor || {und: true};
+        const vPor = pMaster?.ventaPor || {und: true};
         
         if (vPor.cj && pMaster.unidadesPorCaja > 1) {
             const cjas = Math.floor(baseUnits / pMaster.unidadesPorCaja);
@@ -330,63 +331,28 @@
         return `<span class="font-bold">${baseUnits} Und</span>`;
     }
 
-    // --- 1. Fijar Punto de Partida ---
+    // --- 1. FIJAR NUEVO PUNTO DE PARTIDA (Puro Físico) ---
     async function handleCreateSnapshot() {
         const userId = document.getElementById('auditUserSelect').value;
         if (!userId) { _showModal('Error', 'Seleccione un vendedor primero.'); return; }
         
-        _showModal('Fijar Punto de Partida', `¿Desea guardar los valores exactos que muestra el botón "Ver Carga Inicial Actual" como el nuevo punto de partida?`, 
+        _showModal('Fijar Punto de Partida Permanente', `¿Desea fijar el <b>inventario físico actual de la base de datos</b> como el nuevo punto de partida absoluto?<br><br>
+            <span class="text-sm text-gray-600">Al confirmar, el sistema tomará una fotografía de todo lo que el vendedor tiene AHORA MISMO y la matemática a futuro (incluyendo mañana y la próxima semana) se calculará desde aquí.</span>`, 
             async () => {
-                _showModal('Progreso', 'Guardando...', null, '', null, false);
+                _showModal('Progreso', 'Tomando fotografía del inventario...', null, '', null, false);
                 try {
-                    const SNAPSHOT_DOC_PATH = `artifacts/${_appId}/users/${userId}/config/cargaInicialSnapshot`;
-                    const snap = await _getDoc(_doc(_db, SNAPSHOT_DOC_PATH));
+                    const AUDIT_SNAPSHOT_PATH = `artifacts/${_appId}/users/${userId}/config/auditoriaBaseSnapshot`;
                     
-                    let baseItems = [];
-                    let fechaCargaInicial = new Date(0);
-                    if (snap.exists()) {
-                        const data = snap.data();
-                        fechaCargaInicial = data.fecha?.toDate ? data.fecha.toDate() : new Date(data.fecha);
-                        baseItems = data.inventario || [];
-                    }
-
-                    // FILTRO SEGURO EN MEMORIA CONTRA BUGS DE FECHA EN FIREBASE
-                    const rSnap = await _getDocs(_collection(_db, `artifacts/${_appId}/users/${userId}/recargas`));
-                    const recargas = rSnap.docs.map(d => d.data()).filter(r => {
-                        const dObj = r.fecha?.toDate ? r.fecha.toDate() : new Date(r.fecha);
-                        return dObj >= fechaCargaInicial;
-                    });
-
-                    const cSnap = await _getDocs(_collection(_db, `artifacts/${_appId}/users/${userId}/historial_correcciones`));
-                    const correcciones = cSnap.docs.map(d => d.data()).filter(c => {
-                        const dObj = c.fecha?.toDate ? c.fecha.toDate() : new Date(c.fecha);
-                        return dObj >= fechaCargaInicial;
-                    });
-
-                    const mapaStockEfectivo = new Map();
-                    baseItems.forEach(item => mapaStockEfectivo.set(item.productoId || item.id, item.cantidadUnidades || 0));
-
-                    recargas.forEach(r => {
-                        (r.detalles || []).forEach(d => {
-                            mapaStockEfectivo.set(d.productoId, (mapaStockEfectivo.get(d.productoId) || 0) + (d.diferenciaUnidades || 0));
-                        });
-                    });
-
-                    correcciones.forEach(c => {
-                        if (c.tipoAjuste === 'LIMPIEZA_PROFUNDA') return;
-                        (c.detalles || []).forEach(d => {
-                            const ajuste = d.ajusteBase !== undefined ? d.ajusteBase : (d.ajuste !== undefined ? d.ajuste : (d.diferenciaUnidades || d.diferencia || 0));
-                            if (d.productoId && d.productoId !== 'ALL') {
-                                mapaStockEfectivo.set(d.productoId, (mapaStockEfectivo.get(d.productoId) || 0) + ajuste);
-                            }
-                        });
-                    });
-
                     await loadMasterCatalog();
                     
+                    // Físico actual
+                    const iSnap = await _getDocs(_collection(_db, `artifacts/${_appId}/users/${userId}/inventario`));
+                    
                     const snapshotArray = [];
-                    mapaStockEfectivo.forEach((qty, pId) => {
+                    iSnap.docs.forEach(d => {
+                        const qty = d.data().cantidadUnidades || 0;
                         if (qty > 0) {
+                            const pId = d.id;
                             const pMaster = _masterMapCache[pId] || {};
                             snapshotArray.push({
                                 productoId: pId,
@@ -399,102 +365,61 @@
                         }
                     });
 
-                    await _setDoc(_doc(_db, SNAPSHOT_DOC_PATH), {
+                    await _setDoc(_doc(_db, AUDIT_SNAPSHOT_PATH), {
                         fecha: new Date(),
                         inventario: snapshotArray
                     });
 
-                    _showModal('Éxito', 'Punto de Partida actualizado exitosamente con los valores de la Carga Inicial Efectiva.');
+                    _showModal('Éxito', '✅ Punto de Partida permanente actualizado exitosamente con el stock físico actual. La auditoría se reinició.');
+                    if (!document.getElementById('auditResultsPanel').classList.contains('hidden')) {
+                        executeAudit(); 
+                    }
                 } catch (err) {
                     console.error(err);
-                    _showModal('Error', 'Fallo al guardar: ' + err.message);
+                    _showModal('Error', 'Fallo al guardar el punto de partida: ' + err.message);
                 }
-            }, 'Sí, Guardar', null, true);
+            }, 'Sí, Fijar Inventario Base', null, true);
     }
 
-    // --- 2. Ver Snapshot (Carga Inicial Efectiva) ---
+    // --- 2. VER SNAPSHOT (Lo que se fijó) ---
     async function handleViewSnapshot() {
         const userId = document.getElementById('auditUserSelect').value;
         if (!userId) { _showModal('Error', 'Seleccione un vendedor primero.'); return; }
 
-        _showModal('Progreso', 'Calculando ajustes en memoria...', null, '', null, false);
+        _showModal('Progreso', 'Leyendo base de datos...', null, '', null, false);
         try {
-            const SNAPSHOT_DOC_PATH = `artifacts/${_appId}/users/${userId}/config/cargaInicialSnapshot`;
-            const snap = await _getDoc(_doc(_db, SNAPSHOT_DOC_PATH));
+            const AUDIT_SNAPSHOT_PATH = `artifacts/${_appId}/users/${userId}/config/auditoriaBaseSnapshot`;
+            const snap = await _getDoc(_doc(_db, AUDIT_SNAPSHOT_PATH));
             
             if (!snap.exists()) {
-                _showModal('Aviso', 'No hay ningún Punto de Partida registrado.');
+                _showModal('Aviso', 'No hay ningún Punto de Partida Permanente registrado para este vendedor. Genere uno ahora.');
                 return;
             }
 
             const data = snap.data();
-            const fechaCargaInicial = data.fecha?.toDate ? data.fecha.toDate() : new Date(data.fecha);
-            const fechaStr = fechaCargaInicial.toLocaleString('es-ES');
-            
-            let baseItems = data.inventario || [];
-
-            // FILTRO SEGURO EN MEMORIA
-            const rSnap = await _getDocs(_collection(_db, `artifacts/${_appId}/users/${userId}/recargas`));
-            const recargas = rSnap.docs.map(d => d.data()).filter(r => {
-                const dObj = r.fecha?.toDate ? r.fecha.toDate() : new Date(r.fecha);
-                return dObj >= fechaCargaInicial;
-            });
-
-            const cSnap = await _getDocs(_collection(_db, `artifacts/${_appId}/users/${userId}/historial_correcciones`));
-            const correcciones = cSnap.docs.map(d => d.data()).filter(c => {
-                const dObj = c.fecha?.toDate ? c.fecha.toDate() : new Date(c.fecha);
-                return dObj >= fechaCargaInicial;
-            });
-
-            const mapaStockEfectivo = new Map();
-            baseItems.forEach(item => mapaStockEfectivo.set(item.productoId || item.id, item.cantidadUnidades || 0));
-
-            recargas.forEach(r => {
-                (r.detalles || []).forEach(d => {
-                    mapaStockEfectivo.set(d.productoId, (mapaStockEfectivo.get(d.productoId) || 0) + (d.diferenciaUnidades || 0));
-                });
-            });
-
-            correcciones.forEach(c => {
-                if (c.tipoAjuste === 'LIMPIEZA_PROFUNDA') return;
-                (c.detalles || []).forEach(d => {
-                    const ajuste = d.ajusteBase !== undefined ? d.ajusteBase : (d.ajuste !== undefined ? d.ajuste : (d.diferenciaUnidades || d.diferencia || 0));
-                    if (d.productoId && d.productoId !== 'ALL') {
-                        mapaStockEfectivo.set(d.productoId, (mapaStockEfectivo.get(d.productoId) || 0) + ajuste);
-                    }
-                });
-            });
+            const fechaStr = data.fecha?.toDate ? data.fecha.toDate().toLocaleString('es-ES') : new Date(data.fecha).toLocaleString('es-ES');
+            let itemsGlobales = data.inventario || [];
 
             await loadMasterCatalog();
-            
-            let itemsGlobales = [];
             let rubrosDisponibles = new Set();
 
-            mapaStockEfectivo.forEach((qty, pId) => {
-                if (qty > 0) {
-                    const pMaster = _masterMapCache[pId] || {};
-                    const rubroName = pMaster.rubro || 'SIN RUBRO';
-                    rubrosDisponibles.add(rubroName);
-
-                    itemsGlobales.push({
-                        id: pId,
-                        presentacion: pMaster.presentacion || 'Desconocido',
-                        rubro: rubroName,
-                        segmento: pMaster.segmento || 'SIN SEGMENTO',
-                        marca: pMaster.marca || 'S/M',
-                        cantidadUnidades: qty,
-                        ordenSegmento: pMaster.ordenSegmento ?? 9999,
-                        ordenMarca: pMaster.ordenMarca ?? 9999,
-                        ordenProducto: pMaster.ordenProducto ?? 9999,
-                        pMaster: pMaster
-                    });
-                }
+            // Mapeamos para el ordenamiento
+            itemsGlobales = itemsGlobales.map(item => {
+                const pMaster = _masterMapCache[item.productoId] || {};
+                const rubroName = pMaster.rubro || item.rubro || 'SIN RUBRO';
+                rubrosDisponibles.add(rubroName);
+                
+                return {
+                    ...item,
+                    rubro: rubroName,
+                    segmento: pMaster.segmento || item.segmento || 'SIN SEGMENTO',
+                    marca: pMaster.marca || item.marca || 'S/M',
+                    ordenSegmento: pMaster.ordenSegmento ?? 9999,
+                    ordenMarca: pMaster.ordenMarca ?? 9999,
+                    ordenProducto: pMaster.ordenProducto ?? 9999,
+                    pMaster: pMaster
+                };
             });
-
-            if (itemsGlobales.length === 0) {
-                _showModal('Aviso', `El Punto de Partida Efectivo está vacío (0 productos).<br><br>Fecha del registro base: <b>${fechaStr}</b>`);
-                return;
-            }
 
             if (window.getGlobalProductSortFunction) {
                 const sortFn = await window.getGlobalProductSortFunction();
@@ -553,8 +478,7 @@
                 <div class="text-left flex flex-col h-full">
                     <div class="flex flex-col sm:flex-row justify-between gap-2 mb-4">
                         <div class="text-xs text-gray-600 bg-gray-100 p-2 rounded border border-gray-200 flex-grow">
-                            Fecha base: <b class="text-blue-700">${fechaStr}</b>
-                            <br><span class="text-[9px] text-gray-500">(Suma recargas y correcciones)</span>
+                            Fecha de Registro: <br><b class="text-blue-700">${fechaStr}</b>
                         </div>
                         <div class="flex-shrink-0 min-w-[150px]">
                             <label class="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Filtrar Rubro:</label>
@@ -569,7 +493,7 @@
                             <thead class="bg-gray-800 text-white sticky top-0 shadow-sm z-10">
                                 <tr>
                                     <th class="py-2 px-3 text-left font-semibold">Producto</th>
-                                    <th class="py-2 px-3 text-right font-semibold">Carga Efectiva</th>
+                                    <th class="py-2 px-3 text-right font-semibold">Stock Fijado</th>
                                 </tr>
                             </thead>
                             <tbody id="modalSnapshotTableBody">
@@ -580,7 +504,7 @@
                 </div>
             `;
 
-            _showModal('Carga Inicial Efectiva', modalHtml, null, 'Cerrar');
+            _showModal('Punto de Partida Registrado', modalHtml, null, 'Cerrar');
 
             setTimeout(() => {
                 const rubroFilter = document.getElementById('modalRubroFilter');
@@ -594,11 +518,11 @@
 
         } catch (err) {
             console.error(err);
-            _showModal('Error', 'Fallo al obtener el snapshot: ' + err.message);
+            _showModal('Error', 'Fallo al obtener el registro: ' + err.message);
         }
     }
 
-    // --- 3. Ejecución principal de Auditoría ---
+    // --- 3. Ejecución principal de Auditoría Perpetua ---
     async function executeAudit() {
         const userId = document.getElementById('auditUserSelect').value;
         const panel = document.getElementById('auditResultsPanel');
@@ -607,7 +531,7 @@
 
         if (!userId) { _showModal('Error', 'Seleccione un vendedor.'); return; }
 
-        emptyState.innerHTML = '<span class="animate-pulse font-bold text-red-600">Calculando con Filtros en Memoria...</span>';
+        emptyState.innerHTML = '<span class="animate-pulse font-bold text-red-600">Realizando cálculos matemáticos del inventario...</span>';
         emptyState.classList.remove('hidden');
         panel.classList.add('hidden');
         panel.classList.remove('flex');
@@ -615,39 +539,41 @@
         try {
             await loadMasterCatalog();
 
-            const SNAPSHOT_DOC_PATH = `artifacts/${_appId}/users/${userId}/config/cargaInicialSnapshot`;
-            let cargaInicialInventario = [];
+            const AUDIT_SNAPSHOT_PATH = `artifacts/${_appId}/users/${userId}/config/auditoriaBaseSnapshot`;
+            let baseItems = [];
             let fechaCargaInicial = null;
             
-            const snapshotDoc = await _getDoc(_doc(_db, SNAPSHOT_DOC_PATH));
+            const snapshotDoc = await _getDoc(_doc(_db, AUDIT_SNAPSHOT_PATH));
             if (snapshotDoc.exists()) {
                 const data = snapshotDoc.data();
-                cargaInicialInventario = data.inventario || [];
+                baseItems = data.inventario || [];
                 fechaCargaInicial = data.fecha?.toDate ? data.fecha.toDate() : new Date(data.fecha);
             } else {
                 emptyState.innerHTML = `
                     <div class="text-center p-4">
-                        <p class="text-red-500 font-bold mb-2">El vendedor no tiene un Punto de Partida registrado.</p>
-                        <button onclick="document.getElementById('btnFijarSnapshot').click()" class="bg-orange-600 text-white px-5 py-2.5 rounded-lg shadow-md hover:bg-orange-700 font-bold text-sm transition transform hover:scale-105">📸 Generar Punto de Partida Ahora</button>
+                        <p class="text-red-500 font-bold mb-2">El vendedor no tiene un Punto de Partida Permanente registrado.</p>
+                        <p class="text-sm text-gray-500 mb-6">Para usar este nuevo sistema avanzado de auditoría que sobrevive a los cierres diarios, fije el inventario una vez.</p>
+                        <button onclick="document.getElementById('btnFijarSnapshot').click()" class="bg-orange-600 text-white px-5 py-2.5 rounded-lg shadow-md hover:bg-orange-700 font-bold text-sm transition transform hover:scale-105">📸 Fijar Punto de Partida Ahora</button>
                     </div>
                 `;
                 return;
             }
 
-            // Descargas seguras
-            const [vSnap, oSnap, iSnap, rSnapFull, cSnapFull] = await Promise.all([
+            // Descargas
+            const [vSnap, oSnap, iSnap, rSnapFull, cSnapFull, cierresSnapFull] = await Promise.all([
                 _getDocs(_collection(_db, `artifacts/${_appId}/users/${userId}/ventas`)),
                 _getDocs(_collection(_db, `artifacts/${_appId}/users/${userId}/obsequios_entregados`)),
                 _getDocs(_collection(_db, `artifacts/${_appId}/users/${userId}/inventario`)), // FÍSICO
                 _getDocs(_collection(_db, `artifacts/${_appId}/users/${userId}/recargas`)),
-                _getDocs(_collection(_db, `artifacts/${_appId}/users/${userId}/historial_correcciones`))
+                _getDocs(_collection(_db, `artifacts/${_appId}/users/${userId}/historial_correcciones`)),
+                _getDocs(_collection(_db, `artifacts/${_appId}/users/${userId}/cierres`)) // Cierres pasados
             ]);
 
-            const ventas = vSnap.docs.map(d => d.data());
-            const obsequios = oSnap.docs.map(d => d.data());
             const inventarioActualMap = new Map(iSnap.docs.map(d => [d.id, d.data().cantidadUnidades || 0]));
+            const ventasActivas = vSnap.docs.map(d => d.data());
+            const obsequiosActivos = oSnap.docs.map(d => d.data());
 
-            // Filtrado seguro en memoria
+            // Filtrado Seguro en Memoria
             const recargas = rSnapFull.docs.map(d => d.data()).filter(r => {
                 const dObj = r.fecha?.toDate ? r.fecha.toDate() : new Date(r.fecha);
                 return dObj >= fechaCargaInicial;
@@ -658,19 +584,28 @@
                 return dObj >= fechaCargaInicial;
             });
 
+            const cierres = cierresSnapFull.docs.map(d => d.data()).filter(c => {
+                const dObj = c.fecha?.toDate ? c.fecha.toDate() : new Date(c.fecha);
+                return dObj >= fechaCargaInicial;
+            });
+
+            // EL GRAN CÁLCULO TEÓRICO MATEMÁTICO
             const mapaStockTeorico = new Map(); 
             
-            cargaInicialInventario.forEach(item => {
+            // 1. Sumamos el Snapshot Base
+            baseItems.forEach(item => {
                 const pId = item.productoId || item.id;
                 mapaStockTeorico.set(pId, item.cantidadUnidades || 0);
             });
 
+            // 2. Sumamos Recargas
             recargas.forEach(r => {
                 (r.detalles || []).forEach(d => {
                     mapaStockTeorico.set(d.productoId, (mapaStockTeorico.get(d.productoId) || 0) + (d.diferenciaUnidades || 0));
                 });
             });
 
+            // 3. Sumamos Correcciones
             correcciones.forEach(c => {
                 if (c.tipoAjuste === 'LIMPIEZA_PROFUNDA') return; 
                 (c.detalles || []).forEach(d => {
@@ -681,13 +616,15 @@
                 });
             });
 
-            ventas.forEach(v => {
+            // 4. Restamos Ventas Activas
+            ventasActivas.forEach(v => {
                 (v.productos || []).forEach(vp => {
                     mapaStockTeorico.set(vp.id, (mapaStockTeorico.get(vp.id) || 0) - (vp.totalUnidadesVendidas || 0));
                 });
             });
 
-            obsequios.forEach(o => {
+            // 5. Restamos Obsequios Activos
+            obsequiosActivos.forEach(o => {
                 const pId = o.productoId;
                 const pMaster = _masterMapCache[pId] || { unidadesPorCaja: 1 };
                 const factorMultiplicador = o.unidadesPorCaja || pMaster.unidadesPorCaja || 1;
@@ -695,6 +632,22 @@
                 mapaStockTeorico.set(pId, (mapaStockTeorico.get(pId) || 0) - uRegaladas);
             });
 
+            // 6. Restamos Ventas y Obsequios empaquetados en los CIERRES que sucedieron DESPUÉS del Snapshot
+            cierres.forEach(c => {
+                (c.ventas || []).forEach(v => {
+                    (v.productos || []).forEach(vp => {
+                        mapaStockTeorico.set(vp.id, (mapaStockTeorico.get(vp.id) || 0) - (vp.totalUnidadesVendidas || 0));
+                    });
+                });
+                (c.obsequios || []).forEach(o => {
+                    const pId = o.productoId;
+                    const pMaster = _masterMapCache[pId] || { unidadesPorCaja: 1 };
+                    const factorMultiplicador = o.unidadesPorCaja || pMaster.unidadesPorCaja || 1;
+                    mapaStockTeorico.set(pId, (mapaStockTeorico.get(pId) || 0) - ((o.cantidadCajas || 0) * factorMultiplicador));
+                });
+            });
+
+            // COMPARACIÓN
             const allIdsSet = new Set([...mapaStockTeorico.keys(), ...inventarioActualMap.keys()]);
             const results = [];
 
@@ -760,11 +713,16 @@
                     </div>
                 `;
             } else {
-                summary.className = 'mb-4 p-4 rounded-lg border border-red-300 bg-red-50 text-red-800 flex items-center justify-between shadow-sm';
+                summary.className = 'mb-4 p-4 rounded-lg border border-red-300 bg-red-50 text-red-800 shadow-sm';
                 summary.innerHTML = `
-                    <div>
-                        <h3 class="font-black text-lg">⚠️ Discrepancias Detectadas (${discrepanciasCount})</h3>
-                        <p class="text-sm">El inventario físico no cuadra con las operaciones registradas. Utilice el botón "Corregir".</p>
+                    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                        <div>
+                            <h3 class="font-black text-lg">⚠️ Discrepancias Detectadas (${discrepanciasCount})</h3>
+                            <p class="text-sm">El inventario físico no cuadra con las operaciones registradas.</p>
+                        </div>
+                        <div class="flex gap-2">
+                             <button onclick="window.supervisionModule.showBulkCorrectionModal()" class="bg-red-700 text-white px-4 py-2 rounded text-sm font-bold shadow hover:bg-red-800 transition">🛠️ Corrección Masiva</button>
+                        </div>
                     </div>
                 `;
             }
@@ -826,7 +784,6 @@
                 const signo = r.diff > 0 ? '+' : '';
                 const etiqueta = isFaltante ? 'FALTANTE' : 'SOBRANTE';
                 
-                // Botón de corrección
                 const actionBtn = `<button onclick="window.supervisionModule.showCorrectionModal('${r.id}')" class="mt-1.5 text-[10px] bg-white text-indigo-700 border border-indigo-300 px-2 py-0.5 rounded hover:bg-indigo-50 transition font-bold shadow-sm block mx-auto w-full">Corregir</button>`;
 
                 diffHtml = `
@@ -865,7 +822,7 @@
     }
 
     // =========================================================================
-    // LÓGICA DE CORRECCIÓN (Decidir la verdad absoluta)
+    // LÓGICA DE CORRECCIONES (INDIVIDUAL Y MASIVA)
     // =========================================================================
     window.supervisionModule = {
         showCorrectionModal: function(pId) {
@@ -893,18 +850,18 @@
                     <div class="space-y-3">
                         <button onclick="window.supervisionModule.applyCorrection('${pId}', 'TO_TEORICO', ${item.teorico}, ${item.fisico})" class="w-full text-left p-3 border border-gray-300 rounded-lg hover:bg-blue-50 hover:border-blue-400 transition group">
                             <div class="font-bold text-blue-800 group-hover:text-blue-900">Mantener el Teórico (${item.teorico})</div>
-                            <div class="text-xs text-gray-500 mt-1">Obliga a la Base de Datos a igualarse a la matemática. (Útil si alguien alteró el inventario manual por error).</div>
+                            <div class="text-xs text-gray-500 mt-1">Sobrescribe la Base de Datos para igualarla a la matemática.</div>
                         </button>
 
                         <button onclick="window.supervisionModule.applyCorrection('${pId}', 'TO_FISICO', ${item.teorico}, ${item.fisico})" class="w-full text-left p-3 border border-gray-300 rounded-lg hover:bg-orange-50 hover:border-orange-400 transition group">
                             <div class="font-bold text-orange-800 group-hover:text-orange-900">Mantener el Físico (${item.fisico})</div>
-                            <div class="text-xs text-gray-500 mt-1">Se creará un registro de ajuste de <b class="text-gray-700">${diff > 0 ? '+'+diff : diff} Und</b> en el historial para que la matemática cuadre. (Útil si el vendedor físicamente tiene ese producto).</div>
+                            <div class="text-xs text-gray-500 mt-1">Crea un registro de ajuste de <b class="text-gray-700">${diff > 0 ? '+'+diff : diff} Und</b> en el historial para cuadrar la matemática.</div>
                         </button>
                     </div>
                 </div>
             `;
 
-            _showModal('Resolución de Discrepancia', html, null, 'Cerrar');
+            _showModal('Resolución Individual', html, null, 'Cerrar');
         },
         
         applyCorrection: async function(pId, type, teorico, fisico) {
@@ -916,12 +873,10 @@
 
             try {
                 if (type === 'TO_TEORICO') {
-                    // Cambiar el físico para igualar al teórico
                     const invRef = _doc(_db, `artifacts/${_appId}/users/${userId}/inventario`, pId);
                     await _setDoc(invRef, { cantidadUnidades: teorico }, { merge: true });
 
                 } else if (type === 'TO_FISICO') {
-                    // Mantener el físico creando un ajuste en el historial (teórico se iguala al físico)
                     const corrRef = _doc(_collection(_db, `artifacts/${_appId}/users/${userId}/historial_correcciones`));
                     await _setDoc(corrRef, {
                         fecha: new Date(),
@@ -930,19 +885,89 @@
                         detalles: [{
                             productoId: pId,
                             ajusteBase: diff,
-                            nota: 'Ajuste de cuadre en auditoría (Físico marcado como verdad absoluta)'
+                            nota: 'Ajuste de cuadre en auditoría (Físico manda)'
                         }]
                     });
                 }
 
-                // Recargar automáticamente la auditoría
                 await executeAudit();
-
-                setTimeout(() => _showModal('Éxito', 'Corrección aplicada y cuadre actualizado exitosamente.'), 400);
+                setTimeout(() => _showModal('Éxito', 'Corrección aplicada exitosamente.'), 400);
 
             } catch(e) {
                 console.error(e);
-                _showModal('Error', 'Fallo al corregir el inventario: ' + e.message);
+                _showModal('Error', 'Fallo al corregir: ' + e.message);
+            }
+        },
+
+        showBulkCorrectionModal: function() {
+            const errores = _lastAuditData.filter(r => r.diff !== 0);
+            if (errores.length === 0) return;
+
+            const html = `
+                <div class="text-left">
+                    <p class="mb-4 text-sm text-gray-700">Se han detectado <b>${errores.length} productos</b> con diferencias entre la matemática y la base de datos.</p>
+                    
+                    <div class="space-y-3">
+                        <button onclick="window.supervisionModule.applyBulkCorrection('TO_TEORICO')" class="w-full text-left p-3 border border-gray-300 rounded-lg hover:bg-blue-50 hover:border-blue-400 transition group">
+                            <div class="font-bold text-blue-800 group-hover:text-blue-900">Mantener el Teórico en Todos (La Matemática Manda)</div>
+                            <div class="text-xs text-gray-500 mt-1">Se sobrescribirá el stock de la base de datos de los ${errores.length} productos para igualarlos a la matemática del sistema.</div>
+                        </button>
+
+                        <button onclick="window.supervisionModule.applyBulkCorrection('TO_FISICO')" class="w-full text-left p-3 border border-gray-300 rounded-lg hover:bg-orange-50 hover:border-orange-400 transition group">
+                            <div class="font-bold text-orange-800 group-hover:text-orange-900">Mantener el Físico en Todos (La Realidad Manda)</div>
+                            <div class="text-xs text-gray-500 mt-1">Se creará un único registro maestro de ajuste en el historial que justificará las diferencias de estos ${errores.length} productos.</div>
+                        </button>
+                    </div>
+                </div>
+            `;
+            _showModal('Corrección Masiva de Errores', html, null, 'Cancelar');
+        },
+
+        applyBulkCorrection: async function(type) {
+            const userId = document.getElementById('auditUserSelect').value;
+            if (!userId) return;
+
+            const errores = _lastAuditData.filter(r => r.diff !== 0);
+            if (errores.length === 0) return;
+
+            _showModal('Progreso', 'Aplicando corrección masiva en lote...', null, '', null, false);
+
+            try {
+                let batch = _writeBatch(_db);
+                let ops = 0;
+
+                if (type === 'TO_TEORICO') {
+                    for (const item of errores) {
+                        const invRef = _doc(_db, `artifacts/${_appId}/users/${userId}/inventario`, item.id);
+                        batch.set(invRef, { cantidadUnidades: item.teorico }, { merge: true });
+                        ops++;
+                        if (ops >= 400) { await batch.commit(); batch = _writeBatch(_db); ops = 0; }
+                    }
+                    if (ops > 0) await batch.commit();
+
+                } else if (type === 'TO_FISICO') {
+                    const detalles = errores.map(item => ({
+                        productoId: item.id,
+                        ajusteBase: item.diff,
+                        nota: 'Ajuste masivo de cuadre en auditoría'
+                    }));
+
+                    const corrRef = _doc(_collection(_db, `artifacts/${_appId}/users/${userId}/historial_correcciones`));
+                    batch.set(corrRef, {
+                        fecha: new Date(),
+                        usuarioId: _userId,
+                        tipoAjuste: 'AUDITORIA_RESOLUCION_MASIVA',
+                        detalles: detalles
+                    });
+                    await batch.commit();
+                }
+
+                await executeAudit();
+                setTimeout(() => _showModal('Éxito', 'Corrección masiva aplicada exitosamente.'), 400);
+
+            } catch(e) {
+                console.error(e);
+                _showModal('Error', 'Fallo al corregir en lote: ' + e.message);
             }
         }
     };
