@@ -25,7 +25,7 @@
         _doc = dependencies.doc;
         _writeBatch = dependencies.writeBatch;
 
-        console.log("Módulo Supervisión Inicializado con Auditoría Perpetua y Corrección Masiva.");
+        console.log("Módulo Supervisión Inicializado con Auditoría Perpetua y Corrección Masiva Segura.");
     };
 
     async function loadMasterCatalog() {
@@ -185,7 +185,7 @@
             });
 
             if (operaciones.length === 0) {
-                emptyState.innerHTML = '<span class="text-gray-500 font-bold">El vendedor no tiene facturas ni obsequios activos en este momento.</span>';
+                emptyState.innerHTML = '<span class="text-gray-500 font-bold">El vendedor no tiene facturas ni obsequios activos (sin cerrar) en este momento.</span>';
                 return;
             }
 
@@ -570,8 +570,18 @@
             ]);
 
             const inventarioActualMap = new Map(iSnap.docs.map(d => [d.id, d.data().cantidadUnidades || 0]));
-            const ventasActivas = vSnap.docs.map(d => d.data());
-            const obsequiosActivos = oSnap.docs.map(d => d.data());
+            
+            // --- INICIO DEL FIX DE FECHAS (DOBLE RESTA) ---
+            // Solo restamos ventas y obsequios que se hayan hecho DESPUÉS de fijar el punto de partida
+            const ventasActivas = vSnap.docs.map(d => d.data()).filter(v => {
+                const dObj = v.fecha?.toDate ? v.fecha.toDate() : new Date(v.fecha);
+                return dObj >= fechaCargaInicial;
+            });
+            const obsequiosActivos = oSnap.docs.map(d => d.data()).filter(o => {
+                const dObj = o.fecha?.toDate ? o.fecha.toDate() : new Date(o.fecha);
+                return dObj >= fechaCargaInicial;
+            });
+            // --- FIN DEL FIX ---
 
             // Filtrado Seguro en Memoria
             const recargas = rSnapFull.docs.map(d => d.data()).filter(r => {
@@ -616,14 +626,14 @@
                 });
             });
 
-            // 4. Restamos Ventas Activas
+            // 4. Restamos Ventas Activas (Ya filtradas por fecha)
             ventasActivas.forEach(v => {
                 (v.productos || []).forEach(vp => {
                     mapaStockTeorico.set(vp.id, (mapaStockTeorico.get(vp.id) || 0) - (vp.totalUnidadesVendidas || 0));
                 });
             });
 
-            // 5. Restamos Obsequios Activos
+            // 5. Restamos Obsequios Activos (Ya filtrados por fecha)
             obsequiosActivos.forEach(o => {
                 const pId = o.productoId;
                 const pMaster = _masterMapCache[pId] || { unidadesPorCaja: 1 };
