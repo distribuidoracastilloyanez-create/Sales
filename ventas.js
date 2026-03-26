@@ -51,7 +51,7 @@
         if (!_runTransaction) console.error("Error Crítico: 'runTransaction' no disponible en initVentas.");
         if (!_increment) console.warn("Advertencia: 'increment' no disponible. Ventas offline limitadas.");
         
-        console.log("Módulo Ventas inicializado (Con Auto-Healing Silencioso). Public ID:", PUBLIC_DATA_ID);
+        console.log("Módulo Ventas inicializado (Con Cierre Seguro). Public ID:", PUBLIC_DATA_ID);
     };
 
     window.showVentasView = function() {
@@ -312,7 +312,7 @@
     }
 
     async function _processAndSaveVenta() {
-        const SNAPSHOT_DOC_PATH = `artifacts/${_appId}/users/${_userId}/config/cargaInicialSnapshot`;
+        const SNAPSHOT_DOC_PATH = `artifacts/${_appId}/users/${_userId}/config/auditoriaBaseSnapshot`;
         const snapshotRef = _doc(_db, SNAPSHOT_DOC_PATH);
         try {
             const snapshotDoc = await _getDoc(snapshotRef);
@@ -561,146 +561,82 @@
         renderVentasList();
     }
 
-    // --- MOTOR CRONOLÓGICO DE AUDITORÍA Y AUTO-HEALING ---
+    // --- NUEVO MOTOR CRONOLÓGICO PARA CIERRE PERPETUO ---
     async function calcularStockTeoricoExacto(userId, ventasActivas, obsequiosActivos) {
         await ensureHybridCacheLoaded();
         
-        // 1. Buscar el Último Cierre y el último Snapshot manual
-        const cierresRef = _collection(_db, `artifacts/${_appId}/users/${userId}/cierres`);
-        const qUltimo = _query(cierresRef, _orderBy('fecha', 'desc'), _limit(1));
-        const snapUltimo = await _getDocs(qUltimo);
-
-        const snapshotRef = _doc(_db, `artifacts/${_appId}/users/${userId}/config/cargaInicialSnapshot`);
-        const snapshotDoc = await _getDoc(snapshotRef);
-
-        let fechaBase = new Date(0);
-        let eventos = [];
-
-        let fechaUltimoCierre = new Date(0);
-        let fechaSnapshot = new Date(0);
-
-        if (!snapUltimo.empty) {
-            const d = snapUltimo.docs[0].data();
-            fechaUltimoCierre = d.fecha?.toDate ? d.fecha.toDate() : new Date(d.fecha);
-        }
-        if (snapshotDoc.exists()) {
-            const d = snapshotDoc.data();
-            fechaSnapshot = d.fecha?.toDate ? d.fecha.toDate() : new Date(d.fecha);
-        }
-
-        // SOLUCIÓN PUNTO 1: Inteligencia de Fechas (Qué ocurrió de último)
-        if (snapshotDoc.exists() && fechaSnapshot > fechaUltimoCierre) {
-            fechaBase = fechaSnapshot;
-            const inv = snapshotDoc.data().inventario || [];
-            inv.forEach(i => eventos.push({ tipo: 'CARGA', fecha: fechaBase, id: i.productoId || i.id, qty: i.cantidadUnidades || 0 }));
-        } else if (!snapUltimo.empty) {
-            fechaBase = fechaUltimoCierre;
-            const uCierre = snapUltimo.docs[0].data();
-            (uCierre.cargaInicialInventario || []).forEach(i => eventos.push({ tipo: 'CARGA', fecha: fechaBase, id: i.productoId || i.id, qty: i.cantidadUnidades || 0 }));
-            // Descontar ventas del cierre base
-            (uCierre.ventas || []).forEach(v => (v.productos || []).forEach(p => eventos.push({ tipo: 'RESTA_CIERRE', fecha: fechaBase, id: p.id, qty: -(p.totalUnidadesVendidas || 0) })));
-            (uCierre.obsequios || []).forEach(o => {
-                const pMaster = _masterCatalogCache[o.productoId] || { unidadesPorCaja: 1 };
-                eventos.push({ tipo: 'RESTA_CIERRE', fecha: fechaBase, id: o.productoId, qty: -((o.cantidadCajas || 0) * (pMaster.unidadesPorCaja || 1)) });
-            });
-        }
-
-        // 2. Extraer eventos intermedios (Recargas y Correcciones)
-        const qRecargas = _query(_collection(_db, `artifacts/${_appId}/users/${userId}/recargas`), _where("fecha", ">=", fechaBase.toISOString()));
-        const snapRecargas = await _getDocs(qRecargas);
-        snapRecargas.docs.forEach(doc => {
-            const r = doc.data(); const f = new Date(r.fecha);
-            (r.detalles || []).forEach(d => eventos.push({ tipo: 'RECARGA', fecha: f, id: d.productoId, qty: d.diferenciaUnidades || 0 }));
-        });
-
-        // --- INICIO FIX: BÚSQUEDA MULTI-CARPETA PROTEGIDA CONTRA REGLAS DE FIREBASE ---
-        let idsToSearch = [userId]; // Por defecto siempre buscar en la carpeta del propio vendedor
+        const AUDIT_SNAPSHOT_PATH = `artifacts/${_appId}/users/${userId}/config/auditoriaBaseSnapshot`;
+        let baseItems = [];
+        let fechaCargaInicial = new Date(0);
         
-        try {
-            // Intentamos buscar administradores (Solo funcionará si el que ejecuta esto es un Admin)
-            const usersRef = _collection(_db, 'users');
-            const usersSnap = await _getDocs(usersRef);
-            const adminIds = usersSnap.docs.filter(d => d.data().role === 'admin').map(d => d.id);
-            idsToSearch = [...new Set([userId, ...adminIds])];
-        } catch (permError) {
-            // Si da "Missing permissions", es porque es un Vendedor normal. 
-            // Ignoramos el error silenciosamente y continuamos solo con su userId.
-            console.warn("Búsqueda restringida: El usuario no es admin, solo leerá su propia carpeta de correcciones.");
+        const snapshotDoc = await _getDoc(_doc(_db, AUDIT_SNAPSHOT_PATH));
+        if (snapshotDoc.exists()) {
+            const data = snapshotDoc.data();
+            baseItems = data.inventario || [];
+            fechaCargaInicial = data.fecha?.toDate ? data.fecha.toDate() : new Date(data.fecha);
         }
 
-        for (const searchUid of idsToSearch) {
-            try {
-                const qCorr = _query(_collection(_db, `artifacts/${_appId}/users/${searchUid}/historial_correcciones`), _where("fecha", ">=", fechaBase)); 
-                const snapCorr = await _getDocs(qCorr);
-                
-                snapCorr.docs.forEach(doc => {
-                    const c = doc.data(); 
-                    // Filtramos: Solo nos importan las correcciones donde el target es este vendedor 
-                    if (c.targetUserId === userId || (!c.targetUserId && searchUid === userId)) {
-                        const f = c.fecha?.toDate ? c.fecha.toDate() : new Date(c.fecha);
-                        
-                        if (c.tipoAjuste === 'LIMPIEZA_PROFUNDA') {
-                            eventos.push({ tipo: 'WIPE', fecha: f });
-                        } else {
-                            (c.detalles || []).forEach(d => {
-                                const ajuste = d.ajusteBase !== undefined ? d.ajusteBase : (d.ajuste || 0);
-                                if (d.productoId && d.productoId !== 'ALL') {
-                                    eventos.push({ tipo: 'CORRECCION', fecha: f, id: d.productoId, qty: ajuste });
-                                }
-                            });
-                        }
-                    }
-                });
-            } catch (folderError) {
-                // Si Firebase rechaza leer la carpeta de un admin específico por permisos, se ignora.
-            }
-        }
-        // --- FIN FIX CORRECCIONES ---
-        // 3. Extraer Ventas y Obsequios activos
-        ventasActivas.forEach(v => {
-            const f = v.fecha?.toDate ? v.fecha.toDate() : new Date(v.fecha);
-            (v.productos || []).forEach(p => eventos.push({ tipo: 'VENTA_ACTIVA', fecha: f, id: p.id, qty: -(p.totalUnidadesVendidas || 0) }));
+        const [rSnapFull, cSnapFull, cierresSnapFull] = await Promise.all([
+            _getDocs(_collection(_db, `artifacts/${_appId}/users/${userId}/recargas`)),
+            _getDocs(_collection(_db, `artifacts/${_appId}/users/${userId}/historial_correcciones`)),
+            _getDocs(_collection(_db, `artifacts/${_appId}/users/${userId}/cierres`))
+        ]);
+
+        const recargas = rSnapFull.docs.map(d => d.data()).filter(r => (r.fecha?.toDate ? r.fecha.toDate() : new Date(r.fecha)) >= fechaCargaInicial);
+        const correcciones = cSnapFull.docs.map(d => d.data()).filter(c => (c.fecha?.toDate ? c.fecha.toDate() : new Date(c.fecha)) >= fechaCargaInicial);
+        const cierresPasados = cierresSnapFull.docs.map(d => d.data()).filter(c => (c.fecha?.toDate ? c.fecha.toDate() : new Date(c.fecha)) >= fechaCargaInicial);
+
+        const cargaInicialExcelMap = new Map(); 
+
+        baseItems.forEach(item => { 
+            cargaInicialExcelMap.set(item.productoId || item.id, item.cantidadUnidades || 0); 
         });
 
-        obsequiosActivos.forEach(o => {
-            const f = o.fecha?.toDate ? o.fecha.toDate() : new Date(o.fecha);
-            const pMaster = _masterCatalogCache[o.productoId] || { unidadesPorCaja: 1 };
-            eventos.push({ tipo: 'OBSEQUIO_ACTIVO', fecha: f, id: o.productoId, qty: -((o.cantidadCajas || 0) * (pMaster.unidadesPorCaja || 1)) });
+        recargas.forEach(r => {
+            (r.detalles || []).forEach(d => {
+                cargaInicialExcelMap.set(d.productoId, (cargaInicialExcelMap.get(d.productoId) || 0) + (d.diferenciaUnidades || 0));
+            });
         });
 
-        // 4. SIMULACIÓN CRONOLÓGICA DE EVENTOS (Recreamos la historia paso a paso)
-        eventos.sort((a, b) => a.fecha - b.fecha);
-
-        let stockTeorico = new Map();
-        let cargaInicialExcelMap = new Map();
-
-        eventos.forEach(ev => {
-            if (ev.tipo === 'WIPE') {
-                // Si hubo limpieza, la matemática vuelve a CERO en ese segundo.
-                stockTeorico.clear();
-                cargaInicialExcelMap.clear(); 
-            } else {
-                stockTeorico.set(ev.id, (stockTeorico.get(ev.id) || 0) + ev.qty);
-                // Si no es una venta u obsequio actual, pertenece a la "Carga Inicial" de hoy
-                if (ev.tipo !== 'VENTA_ACTIVA' && ev.tipo !== 'OBSEQUIO_ACTIVO') {
-                    cargaInicialExcelMap.set(ev.id, (cargaInicialExcelMap.get(ev.id) || 0) + ev.qty);
+        correcciones.forEach(c => {
+            if (c.tipoAjuste === 'LIMPIEZA_PROFUNDA') return;
+            (c.detalles || []).forEach(d => {
+                const ajuste = d.ajusteBase !== undefined ? d.ajusteBase : (d.ajuste !== undefined ? d.ajuste : (d.diferenciaUnidades || d.diferencia || 0));
+                if (d.productoId && d.productoId !== 'ALL') {
+                    cargaInicialExcelMap.set(d.productoId, (cargaInicialExcelMap.get(d.productoId) || 0) + ajuste);
                 }
-            }
+            });
         });
 
-        // 5. Preparar la estructura requerida para el Excel
+        cierresPasados.forEach(c => {
+            (c.ventas || []).forEach(v => {
+                (v.productos || []).forEach(vp => {
+                    cargaInicialExcelMap.set(vp.id, (cargaInicialExcelMap.get(vp.id) || 0) - (vp.totalUnidadesVendidas || 0));
+                });
+            });
+            (c.obsequios || []).forEach(o => {
+                const pMaster = _masterCatalogCache[o.productoId] || { unidadesPorCaja: 1 };
+                const factor = o.unidadesPorCaja || pMaster.unidadesPorCaja || 1;
+                cargaInicialExcelMap.set(o.productoId, (cargaInicialExcelMap.get(o.productoId) || 0) - ((o.cantidadCajas || 0) * factor));
+            });
+        });
+
         const cargaParaExcel = [];
         cargaInicialExcelMap.forEach((qty, pId) => {
-            if (qty > 0 || ventasActivas.some(v => v.productos.some(vp => vp.id === pId))) {
+            if (qty > 0 || ventasActivas.some(v => v.productos.some(vp => vp.id === pId)) || obsequiosActivos.some(o => o.productoId === pId)) {
                 const pMaster = _masterCatalogCache[pId] || {};
                 cargaParaExcel.push({
-                    productoId: pId, presentacion: pMaster.presentacion || 'Desconocido', rubro: pMaster.rubro || 'SIN RUBRO',
-                    segmento: pMaster.segmento || 'SIN SEGMENTO', marca: pMaster.marca || 'S/M', cantidadUnidades: qty
+                    productoId: pId,
+                    presentacion: pMaster.presentacion || 'Desconocido',
+                    rubro: pMaster.rubro || 'SIN RUBRO',
+                    segmento: pMaster.segmento || 'SIN SEGMENTO',
+                    marca: pMaster.marca || 'S/M',
+                    cantidadUnidades: qty
                 });
             }
         });
 
-        return { stockTeorico, cargaParaExcel };
+        return { cargaParaExcel };
     }
 
     async function handleDescargarCierrePrevio() {
@@ -908,7 +844,6 @@
             const TIPOS_VACIO_GLOBAL = window.TIPOS_VACIO_GLOBAL || ["1/4 - 1/3", "ret 350 ml", "ret 1.25 Lts"];
             const localVacios = {};
             
-            // Procesar Ventas Normales
             ventas.forEach(v => {
                 const cName = v.clienteNombre || 'Desconocido';
                 if (!localVacios[cName]) localVacios[cName] = {};
@@ -926,7 +861,6 @@
                 });
             });
 
-            // Procesar Obsequios (Estructura de datos diferente)
             obsequios.forEach(o => {
                 const cName = o.clienteNombre || 'Desconocido';
                 if (!localVacios[cName]) localVacios[cName] = {};
@@ -963,7 +897,7 @@
 
     async function ejecutarCierre() {
         _showModal('Confirmar Cierre Definitivo', 'Se generará el reporte y se limpiará la jornada para iniciar una nueva. ¿Deseas continuar?', async () => {
-            _showModal('Progreso', 'Realizando auditoría silenciosa y guardando cierre...', null, '', null, false);
+            _showModal('Progreso', 'Guardando reporte de cierre y limpiando jornada...', null, '', null, false);
             try {
                 const ventasRef = _collection(_db, `artifacts/${_appId}/users/${_userId}/ventas`); 
                 const ventasSnap = await _getDocs(ventasRef); 
@@ -973,32 +907,10 @@
                 const obsequiosSnap = await _getDocs(obsequiosRef);
                 const obsequios = obsequiosSnap.docs.map(d => ({id: d.id, ...d.data()}));
 
-                if (ventas.length === 0 && obsequios.length === 0) { _showModal('Aviso', 'No hay ventas activas.'); return false; }
+                if (ventas.length === 0 && obsequios.length === 0) { _showModal('Aviso', 'No hay ventas activas ni obsequios para cerrar.'); return false; }
 
-                const { stockTeorico, cargaParaExcel } = await calcularStockTeoricoExacto(_userId, ventas, obsequios);
-
-                const inventarioRef = _collection(_db, `artifacts/${_appId}/users/${_userId}/inventario`);
-                const snapInventario = await _getDocs(inventarioRef);
-                const inventarioFisicoMap = new Map(snapInventario.docs.map(d => [d.id, {ref: d.ref, data: d.data()}]));
-
-                const discrepanciasDetectadas = [];
-                const batchLimp = _writeBatch(_db);
-                let ops = 0;
-
-                new Set([...stockTeorico.keys(), ...inventarioFisicoMap.keys()]).forEach(pId => {
-                    const teorico = stockTeorico.get(pId) || 0;
-                    const fisicoObj = inventarioFisicoMap.get(pId);
-                    const fisico = fisicoObj ? (fisicoObj.data.cantidadUnidades || 0) : 0;
-                    
-                    if (teorico !== fisico) {
-                        const pMaster = _masterCatalogCache[pId] || { presentacion: 'Desconocido', marca: 'S/M' };
-                        discrepanciasDetectadas.push({ id: pId, presentacion: pMaster.presentacion, marca: pMaster.marca, teorico: teorico, fisico: fisico, diferencia: fisico - teorico });
-                        
-                        if (fisicoObj) batchLimp.update(fisicoObj.ref, { cantidadUnidades: teorico });
-                        else batchLimp.set(_doc(inventarioRef, pId), { ...pMaster, cantidadUnidades: teorico });
-                        ops++;
-                    }
-                });
+                // Obtenemos SOLO la carga inicial para el Excel (ya no calculamos discrepancias aquí ni tocamos el físico)
+                const { cargaParaExcel } = await calcularStockTeoricoExacto(_userId, ventas, obsequios);
 
                 _showModal('Progreso', 'Generando Reporte y Finalizando...');
                 let vendedorInfo = {};
@@ -1012,20 +924,26 @@
                 obsequios.forEach(o => { obsequiosTotal += (o.cantidadCajas || 0) * (_masterCatalogCache[o.productoId]?.precios?.cj || 0); });
                  
                 const cierreData = { 
-                     fecha: fechaCierre, ventas: ventas.map(({id,...r})=>r), obsequios: obsequios.map(({id,...r})=>r),
+                     fecha: fechaCierre, 
+                     ventas: ventas.map(({id,...r})=>r), 
+                     obsequios: obsequios.map(({id,...r})=>r),
                      total: ventas.reduce((s,v)=>s+(v.total||0),0) + obsequiosTotal,
-                     cargaInicialInventario: cargaParaExcel, vendedorInfo: vendedorInfo, discrepanciasAuditoria: discrepanciasDetectadas 
+                     cargaInicialInventario: cargaParaExcel, 
+                     vendedorInfo: vendedorInfo 
+                     // Ya no enviamos discrepanciasAuditoria. El cierre NO audita.
                 }; 
 
                 if (window.dataModule?.exportSingleClosingToExcel) await window.dataModule.exportSingleClosingToExcel({ ...cierreData, fecha: { toDate: () => fechaCierre } });
                  
-                batchLimp.set(_doc(_collection(_db, `artifacts/${_appId}/users/${_userId}/cierres`)), cierreData); ops++;
-                ventas.forEach(v => { batchLimp.delete(_doc(ventasRef, v.id)); ops++; });
-                obsequios.forEach(o => { batchLimp.delete(_doc(obsequiosRef, o.id)); ops++; });
-                try { batchLimp.delete(_doc(_db, `artifacts/${_appId}/users/${_userId}/config/cargaInicialSnapshot`)); ops++; } catch(e) {}
+                const batchLimp = _writeBatch(_db);
+                batchLimp.set(_doc(_collection(_db, `artifacts/${_appId}/users/${_userId}/cierres`)), cierreData);
+                ventas.forEach(v => { batchLimp.delete(_doc(ventasRef, v.id)); });
+                obsequios.forEach(o => { batchLimp.delete(_doc(obsequiosRef, o.id)); });
+
+                // IMPORTANTE: NO tocamos el inventario físico ni borramos el auditoriaBaseSnapshot.
 
                 await batchLimp.commit();
-                _showModal('Éxito', 'Cierre completado.', showVentasTotalesView); return true;
+                _showModal('Éxito', 'Cierre completado. La jornada se ha limpiado correctamente.', showVentasTotalesView); return true;
             } catch(e) { _showModal('Error', `Error al cerrar: ${e.message}`); return false; }
         }, 'Sí, Ejecutar Cierre', null, true);
     }
