@@ -51,7 +51,7 @@
         if (!_runTransaction) console.error("Error Crítico: 'runTransaction' no disponible en initVentas.");
         if (!_increment) console.warn("Advertencia: 'increment' no disponible. Ventas offline limitadas.");
         
-        console.log("Módulo Ventas inicializado (Con Cierre Seguro). Public ID:", PUBLIC_DATA_ID);
+        console.log("Módulo Ventas inicializado (Con Auto-Healing Silencioso). Public ID:", PUBLIC_DATA_ID);
     };
 
     window.showVentasView = function() {
@@ -194,8 +194,10 @@
         const body = document.getElementById('inventarioTableBody'), rF = document.getElementById('rubroFilter'); if (!body || !rF) return; body.innerHTML = `<tr><td colspan="4" class="text-center text-gray-500">Cargando...</td></tr>`;
         const selRubro = rF.value; const invFilt = _inventarioCache.filter(p => (p.cantidadUnidades || 0) > 0 || _ventaActual.productos[p.id]); let filtInv = selRubro ? invFilt.filter(p => p.rubro === selRubro) : invFilt;
         
-        const sortFunc = await window.getGlobalProductSortFunction();
-        filtInv.sort(sortFunc);
+        if (window.getGlobalProductSortFunction) {
+            const sortFunc = await window.getGlobalProductSortFunction();
+            filtInv.sort(sortFunc);
+        }
         
         body.innerHTML = window.ventasUI.getInventoryTableRows(filtInv, _ventaActual.productos, _monedaActual, _tasaCOP, _tasaBs, 'segmento');
         
@@ -209,8 +211,10 @@
         let invToShow = _inventarioCache.filter(p => _originalVentaForEdit.productos.some(oP => oP.id === p.id) || (p.cantidadUnidades || 0) > 0);
         if (selRubro) invToShow = invToShow.filter(p => p.rubro === selRubro);
         
-        const sortFunc = await window.getGlobalProductSortFunction(); 
-        invToShow.sort(sortFunc);
+        if (window.getGlobalProductSortFunction) {
+            const sortFunc = await window.getGlobalProductSortFunction(); 
+            invToShow.sort(sortFunc);
+        }
         
         const mappedInv = invToShow.map(p => {
              const copy = { ...p };
@@ -561,7 +565,7 @@
         renderVentasList();
     }
 
-    // --- NUEVO MOTOR CRONOLÓGICO PARA CIERRE PERPETUO ---
+    // --- NUEVO MOTOR CRONOLÓGICO (Filtra las ventas después del Snapshot) ---
     async function calcularStockTeoricoExacto(userId, ventasActivas, obsequiosActivos) {
         await ensureHybridCacheLoaded();
         
@@ -585,6 +589,17 @@
         const recargas = rSnapFull.docs.map(d => d.data()).filter(r => (r.fecha?.toDate ? r.fecha.toDate() : new Date(r.fecha)) >= fechaCargaInicial);
         const correcciones = cSnapFull.docs.map(d => d.data()).filter(c => (c.fecha?.toDate ? c.fecha.toDate() : new Date(c.fecha)) >= fechaCargaInicial);
         const cierresPasados = cierresSnapFull.docs.map(d => d.data()).filter(c => (c.fecha?.toDate ? c.fecha.toDate() : new Date(c.fecha)) >= fechaCargaInicial);
+
+        // FILTRO DE DOBLE RESTA (Ignoramos las ventas viejas que ya están descontadas del snapshot)
+        const ventasPostSnapshot = ventasActivas.filter(v => {
+            const dObj = v.fecha?.toDate ? v.fecha.toDate() : new Date(v.fecha);
+            return dObj >= fechaCargaInicial;
+        });
+
+        const obsequiosPostSnapshot = obsequiosActivos.filter(o => {
+            const dObj = o.fecha?.toDate ? o.fecha.toDate() : new Date(o.fecha);
+            return dObj >= fechaCargaInicial;
+        });
 
         const cargaInicialExcelMap = new Map(); 
 
@@ -623,7 +638,8 @@
 
         const cargaParaExcel = [];
         cargaInicialExcelMap.forEach((qty, pId) => {
-            if (qty > 0 || ventasActivas.some(v => v.productos.some(vp => vp.id === pId)) || obsequiosActivos.some(o => o.productoId === pId)) {
+            // Evaluamos contra ventasPostSnapshot para que salga en el Excel solo si fue relevante desde el punto de partida
+            if (qty > 0 || ventasPostSnapshot.some(v => v.productos.some(vp => vp.id === pId)) || obsequiosPostSnapshot.some(o => o.productoId === pId)) {
                 const pMaster = _masterCatalogCache[pId] || {};
                 cargaParaExcel.push({
                     productoId: pId,
@@ -636,7 +652,7 @@
             }
         });
 
-        return { cargaParaExcel };
+        return { cargaParaExcel, ventasPostSnapshot, obsequiosPostSnapshot };
     }
 
     async function handleDescargarCierrePrevio() {
@@ -799,12 +815,13 @@
 
             if (ventas.length === 0 && obsequios.length === 0) { _showModal('Aviso', 'No hay ventas ni obsequios.'); return; }
 
-            const { cargaParaExcel } = await calcularStockTeoricoExacto(_userId, ventas, obsequios);
+            const { cargaParaExcel, ventasPostSnapshot, obsequiosPostSnapshot } = await calcularStockTeoricoExacto(_userId, ventas, obsequios);
             
             if (!window.dataModule?._processSalesDataForModal) throw new Error("Módulo de datos no disponible.");
 
+            // Usamos ventasPostSnapshot en lugar de todas las ventas para no duplicar en el modal de cierre
             const { clientData, clientTotals, grandTotalValue, sortedClients, finalProductOrder } = 
-                await window.dataModule._processSalesDataForModal(ventas, obsequios, cargaParaExcel, _userId);
+                await window.dataModule._processSalesDataForModal(ventasPostSnapshot, obsequiosPostSnapshot, cargaParaExcel, _userId);
 
             const enrichedProductOrder = finalProductOrder.map(p => {
                 const liveProd = _inventarioCache.find(inv => inv.id === p.id);
@@ -844,7 +861,8 @@
             const TIPOS_VACIO_GLOBAL = window.TIPOS_VACIO_GLOBAL || ["1/4 - 1/3", "ret 350 ml", "ret 1.25 Lts"];
             const localVacios = {};
             
-            ventas.forEach(v => {
+            // Procesar Ventas Normales (Solo las recientes)
+            ventasPostSnapshot.forEach(v => {
                 const cName = v.clienteNombre || 'Desconocido';
                 if (!localVacios[cName]) localVacios[cName] = {};
                 (v.productos || []).forEach(p => {
@@ -861,7 +879,8 @@
                 });
             });
 
-            obsequios.forEach(o => {
+            // Procesar Obsequios (Solo los recientes)
+            obsequiosPostSnapshot.forEach(o => {
                 const cName = o.clienteNombre || 'Desconocido';
                 if (!localVacios[cName]) localVacios[cName] = {};
                 if (o.tipoVacio) {
@@ -909,8 +928,7 @@
 
                 if (ventas.length === 0 && obsequios.length === 0) { _showModal('Aviso', 'No hay ventas activas ni obsequios para cerrar.'); return false; }
 
-                // Obtenemos SOLO la carga inicial para el Excel (ya no calculamos discrepancias aquí ni tocamos el físico)
-                const { cargaParaExcel } = await calcularStockTeoricoExacto(_userId, ventas, obsequios);
+                const { cargaParaExcel, ventasPostSnapshot, obsequiosPostSnapshot } = await calcularStockTeoricoExacto(_userId, ventas, obsequios);
 
                 _showModal('Progreso', 'Generando Reporte y Finalizando...');
                 let vendedorInfo = {};
@@ -921,26 +939,25 @@
 
                 const fechaCierre = new Date();
                 let obsequiosTotal = 0;
-                obsequios.forEach(o => { obsequiosTotal += (o.cantidadCajas || 0) * (_masterCatalogCache[o.productoId]?.precios?.cj || 0); });
+                obsequiosPostSnapshot.forEach(o => { obsequiosTotal += (o.cantidadCajas || 0) * (_masterCatalogCache[o.productoId]?.precios?.cj || 0); });
                  
                 const cierreData = { 
                      fecha: fechaCierre, 
-                     ventas: ventas.map(({id,...r})=>r), 
-                     obsequios: obsequios.map(({id,...r})=>r),
-                     total: ventas.reduce((s,v)=>s+(v.total||0),0) + obsequiosTotal,
+                     ventas: ventasPostSnapshot.map(({id,...r})=>r), 
+                     obsequios: obsequiosPostSnapshot.map(({id,...r})=>r),
+                     total: ventasPostSnapshot.reduce((s,v)=>s+(v.total||0),0) + obsequiosTotal,
                      cargaInicialInventario: cargaParaExcel, 
                      vendedorInfo: vendedorInfo 
-                     // Ya no enviamos discrepanciasAuditoria. El cierre NO audita.
                 }; 
 
                 if (window.dataModule?.exportSingleClosingToExcel) await window.dataModule.exportSingleClosingToExcel({ ...cierreData, fecha: { toDate: () => fechaCierre } });
                  
                 const batchLimp = _writeBatch(_db);
                 batchLimp.set(_doc(_collection(_db, `artifacts/${_appId}/users/${_userId}/cierres`)), cierreData);
-                ventas.forEach(v => { batchLimp.delete(_doc(ventasRef, v.id)); });
-                obsequios.forEach(o => { batchLimp.delete(_doc(obsequiosRef, o.id)); });
-
-                // IMPORTANTE: NO tocamos el inventario físico ni borramos el auditoriaBaseSnapshot.
+                
+                // Limpiamos SOLO las ventas y obsequios que se acaban de facturar en este cierre
+                ventasPostSnapshot.forEach(v => { batchLimp.delete(_doc(ventasRef, v.id)); });
+                obsequiosPostSnapshot.forEach(o => { batchLimp.delete(_doc(obsequiosRef, o.id)); });
 
                 await batchLimp.commit();
                 _showModal('Éxito', 'Cierre completado. La jornada se ha limpiado correctamente.', showVentasTotalesView); return true;
