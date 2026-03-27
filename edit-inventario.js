@@ -547,7 +547,6 @@
                         });
                     }
 
-                    // --- INICIO FIX: DOBLE GUARDADO PARA EVITAR ERRORES DE PERMISOS ---
                     const logData = {
                         fecha: fecha, adminId: _userId, targetUserId: targetUser.id, targetUserEmail: targetUser.email,
                         totalItemsAfectados: changes.length, detalles: detallesLog
@@ -557,18 +556,19 @@
                     transaction.set(logRef, logData);
                     
                     // 2. Guardamos una COPIA exacta en el historial del Vendedor
-                    // (Así el algoritmo de cierre del vendedor lo puede leer sin violar la seguridad)
                     if (_userId !== targetUser.id) {
                         const userLogRef = _doc(_collection(_db, `artifacts/${_appId}/users/${targetUser.id}/historial_correcciones`));
                         transaction.set(userLogRef, logData);
                     }
-                    // --- FIN FIX ---
                 });
                 
-                // --- NUEVO MENSAJE DE CONFIRMACIÓN Y RECARGA ---
-                _showModal('¡Corrección Exitosa!', '✅ Los ajustes manuales se han guardado y aplicado correctamente al inventario del vendedor.', () => {
-                    loadUserInventory(targetUser); // Recarga la tabla para ver el nuevo stock
-                });
+                // Mensaje de confirmación final con reseteo
+                document.getElementById('modalContainer').classList.add('hidden');
+                setTimeout(() => {
+                    _showModal('¡Corrección Exitosa!', '✅ Los ajustes manuales se han guardado y aplicado correctamente al inventario del vendedor.', () => {
+                        setTimeout(() => loadUserInventory(targetUser), 100);
+                    }, 'Aceptar');
+                }, 100);
 
             } catch (error) {
                 console.error("Transaction Error:", error);
@@ -692,6 +692,8 @@
         document.getElementById('btnExportRecargas').classList.add('hidden');
 
         try {
+            await loadMasterCatalog(); // Garantizar catálogo antes
+
             const [sYear, sMonth, sDay] = dateStartStr.split('-');
             const startDate = new Date(sYear, sMonth - 1, sDay, 0, 0, 0, 0);
             const [eYear, eMonth, eDay] = dateEndStr.split('-');
@@ -715,8 +717,6 @@
                 return;
             }
 
-            loadMasterCatalog();
-
             document.getElementById('btnExportRecargas').classList.remove('hidden');
             container.innerHTML = '';
 
@@ -724,6 +724,9 @@
                 const fecha = new Date(r.fecha);
                 const fechaStr = fecha.toLocaleString('es-ES', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' });
                 
+                // Filtrar para mostrar la cantidad REAL de items modificados en la tarjeta
+                const realItemsCount = (r.detalles || []).filter(d => (d.diferenciaUnidades || 0) > 0).length;
+
                 const card = document.createElement('div');
                 card.className = 'border border-gray-200 rounded-lg shadow-sm bg-white hover:bg-blue-50 transition-colors duration-200';
                 card.innerHTML = `
@@ -731,7 +734,7 @@
                         <div>
                             <span class="block font-black text-gray-800 text-lg capitalize mb-1">📅 ${fechaStr}</span>
                             <span class="text-xs text-blue-800 bg-blue-100 px-3 py-1 rounded-full border border-blue-200 font-bold inline-flex items-center">
-                                📦 ${r.totalProductos} Productos Recargados
+                                📦 ${realItemsCount} Productos Recargados
                             </span>
                         </div>
                         <button onclick="window.editInventarioModule.verDetalleRecarga('${r.id}')" class="w-full sm:w-auto px-6 py-2.5 bg-teal-600 text-white text-sm font-bold rounded-lg shadow hover:bg-teal-700 active:bg-teal-800 transition flex justify-center items-center gap-2">
@@ -766,24 +769,38 @@
             document.getElementById('recargasDetailContainer').classList.add('flex');
 
             const fecha = new Date(_currentDetalleRecarga.fecha).toLocaleString('es-ES', { dateStyle: 'full', timeStyle: 'short' });
-            document.getElementById('detalleRecargaInfo').innerHTML = `Fecha: <b class="text-gray-800">${fecha}</b> <span class="mx-2 text-gray-300">|</span> Items: <b class="text-gray-800">${_currentDetalleRecarga.totalProductos}</b>`;
+            // Contar items reales
+            const realItemsCount = (_currentDetalleRecarga.detalles || []).filter(d => (d.diferenciaUnidades || 0) > 0).length;
+            document.getElementById('detalleRecargaInfo').innerHTML = `Fecha: <b class="text-gray-800">${fecha}</b> <span class="mx-2 text-gray-300">|</span> Items: <b class="text-gray-800">${realItemsCount}</b>`;
 
             _detalleFilters = { search: '', rubro: '', segmento: '', marca: '' };
-            setupDetalleFilters();
+            await setupDetalleFilters();
         }
     };
 
-    function setupDetalleFilters() {
-        const enrichedDetails = (_currentDetalleRecarga.detalles || []).map(d => {
-            const masterData = _masterMapCache[d.productoId] || {};
-            return {
-                ...d,
-                rubro: masterData.rubro || 'OTROS',
-                segmento: masterData.segmento || 'SIN SEGMENTO',
-                marca: masterData.marca || 'S/M',
-                masterData: masterData
-            };
-        });
+    async function setupDetalleFilters() {
+        // FILTRAR PRODUCTOS CON CERO RECARGAS Y ENRIQUECER
+        const enrichedDetails = (_currentDetalleRecarga.detalles || [])
+            .filter(d => (d.diferenciaUnidades || 0) > 0)
+            .map(d => {
+                const masterData = _masterMapCache[d.productoId] || {};
+                return {
+                    ...d,
+                    rubro: masterData.rubro || 'OTROS',
+                    segmento: masterData.segmento || 'SIN SEGMENTO',
+                    marca: masterData.marca || 'S/M',
+                    ordenSegmento: masterData.ordenSegmento ?? 9999,
+                    ordenMarca: masterData.ordenMarca ?? 9999,
+                    ordenProducto: masterData.ordenProducto ?? 9999,
+                    masterData: masterData
+                };
+            });
+
+        // ORDENAMIENTO GLOBAL
+        if (window.getGlobalProductSortFunction) {
+            const sortFn = await window.getGlobalProductSortFunction();
+            enrichedDetails.sort(sortFn);
+        }
 
         const renderOptions = (selectId, valuesSet, label, currentVal) => {
             const selectEl = document.getElementById(selectId);
@@ -842,6 +859,7 @@
             renderDetalleRows(enrichedDetails);
         };
 
+        // Clonar elementos para quitar event listeners viejos y evitar duplicados
         const oldRubroSel = document.getElementById('detRubro');
         const newRubroSel = oldRubroSel.cloneNode(true); oldRubroSel.parentNode.replaceChild(newRubroSel, oldRubroSel);
         
@@ -888,16 +906,10 @@
             emptyState.classList.add('hidden');
         }
 
-        filtered.sort((a, b) => {
-            if (a.rubro !== b.rubro) return a.rubro.localeCompare(b.rubro);
-            if (a.segmento !== b.segmento) return a.segmento.localeCompare(b.segmento);
-            if (a.marca !== b.marca) return a.marca.localeCompare(b.marca);
-            return (a.presentacion || '').localeCompare(b.presentacion || '');
-        });
-
         let html = '';
         let lastHeader = null;
 
+        // "filtered" ya viene ordenado desde setupDetalleFilters, por lo que podemos dibujar directamente
         filtered.forEach(d => {
             const currentHeader = `${d.rubro} > ${d.segmento}`;
             if (currentHeader !== lastHeader) {
@@ -960,6 +972,9 @@
         if (!_recargasSearchCache || _recargasSearchCache.length === 0) return;
         _showModal('Progreso', 'Generando Reporte Excel...', null, '', null, false);
         try {
+            await loadMasterCatalog();
+            const sortFn = window.getGlobalProductSortFunction ? await window.getGlobalProductSortFunction() : null;
+
             const workbook = new ExcelJS.Workbook();
             const sheet = workbook.addWorksheet('Reporte Recargas');
             
@@ -999,11 +1014,26 @@
 
             _recargasSearchCache.forEach(recarga => {
                 const fecha = new Date(recarga.fecha).toLocaleString();
-                const detalles = recarga.detalles || [];
+                // 1. Filtrar recargas en 0
+                let detalles = (recarga.detalles || []).filter(d => (d.diferenciaUnidades || 0) > 0);
+
+                // 2. Ordenar globalmente para el Excel
+                if (sortFn) {
+                    detalles.forEach(d => {
+                        const m = _masterMapCache[d.productoId] || {};
+                        d.rubro = d.rubro || m.rubro || '';
+                        d.segmento = d.segmento || m.segmento || '';
+                        d.marca = d.marca || m.marca || '';
+                        d.ordenSegmento = m.ordenSegmento ?? 9999;
+                        d.ordenMarca = m.ordenMarca ?? 9999;
+                        d.ordenProducto = m.ordenProducto ?? 9999;
+                    });
+                    detalles.sort(sortFn);
+                }
 
                 sheet.mergeCells(`A${currentRow}:E${currentRow}`);
                 const groupCell = sheet.getCell(`A${currentRow}`);
-                groupCell.value = `RECARGA: ${fecha}  |  Items: ${recarga.totalProductos}  |  ID: ${recarga.id.substring(0,8)}...`;
+                groupCell.value = `RECARGA: ${fecha}  |  Items: ${detalles.length}  |  ID: ${recarga.id.substring(0,8)}...`;
                 groupCell.fill = subHeaderFill; groupCell.font = { bold: true, color: { argb: 'FF000000' } }; groupCell.border = borderStyle;
                 currentRow++;
 
@@ -1387,12 +1417,12 @@
             return textMatch && rMatch && sMatch && mMatch;
         });
 
-        // INTEGRACIÓN DEL MOTOR DE ORDENAMIENTO (Mismo de Inventario y Data)
+        // INTEGRACIÓN DEL MOTOR DE ORDENAMIENTO GLOBAL
         if (window.getGlobalProductSortFunction) {
             const sortFn = await window.getGlobalProductSortFunction();
             filtrados.sort(sortFn);
         } else {
-            // Fallback alfabético si no carga el motor global
+            // Fallback alfabético
             filtrados.sort((a, b) => {
                 if (a.rubro !== b.rubro) return (a.rubro || '').localeCompare(b.rubro || '');
                 if (a.segmento !== b.segmento) return (a.segmento || '').localeCompare(b.segmento || '');
@@ -1476,12 +1506,12 @@
             const workbook = new ExcelJS.Workbook();
 
             // --- Estilos Base ---
-            const headerFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A8A' } }; // Azul oscuro (indigo-900)
+            const headerFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A8A' } }; 
             const headerFont = { color: { argb: 'FFFFFFFF' }, bold: true, size: 12 };
-            const subHeaderFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEFF6FF' } }; // Azul claro (blue-50)
+            const subHeaderFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEFF6FF' } }; 
             const subHeaderFont = { color: { argb: 'FF1E3A8A' }, bold: true, size: 11 };
             const borderStyle = { top: {style:'thin'}, left: {style:'thin'}, bottom: {style:'thin'}, right: {style:'thin'} };
-            const borderLight = { bottom: {style:'hair', color:{argb:'FFE5E7EB'}} }; // Gris claro
+            const borderLight = { bottom: {style:'hair', color:{argb:'FFE5E7EB'}} }; 
 
             // Ordenamos TODOS los items independientemente de los filtros de la pantalla
             let exportData = [..._currentSnapshotItems];
@@ -1502,12 +1532,10 @@
                 return;
             }
 
-            // Crear una hoja por cada Rubro
             rubrosArray.forEach(rubroName => {
                 const safeSheetName = rubroName.replace(/[\/\\?*\[\]]/g, '').substring(0, 31);
                 const sheet = workbook.addWorksheet(safeSheetName);
 
-                // --- Encabezado General de la Hoja ---
                 sheet.mergeCells('A1:E1');
                 const titleCell = sheet.getCell('A1');
                 titleCell.value = `INVENTARIO DE ${_lastSnapshotInfo.type.toUpperCase()} - ${rubroName}`;
@@ -1524,7 +1552,6 @@
                 sheet.getCell('A3').value = infoText;
                 sheet.getCell('A3').font = { italic: true, color: { argb: 'FF4B5563' } };
 
-                // --- Columnas ---
                 sheet.getRow(5).values = ['Presentación', 'Marca', 'Cajas', 'Paquetes', 'Unidades'];
                 sheet.columns = [
                     { key: 'pres', width: 45 },
@@ -1542,7 +1569,6 @@
                     c.border = borderStyle;
                 });
 
-                // Filtrar solo los productos correspondientes a este Rubro
                 const itemsRubro = exportData.filter(p => (p.rubro || 'SIN RUBRO').toUpperCase() === rubroName);
                 
                 let currentRow = 6;
@@ -1566,21 +1592,19 @@
                     const vPor = p.vPor || {und: true};
                     let cj = '', paq = '', und = p.cantidadUnidades || 0;
 
-                    // REGLAS ESTRICTAS DE EXCEL
                     if (und > 0) {
                         if (vPor.und) {
-                            // Todo a unidades (no mostramos cajas ni paquetes si maneja unidades)
                             cj = '';
                             paq = '';
                         } else {
                             if (vPor.cj && p.unidadesPorCaja > 1) {
                                 const calCj = Math.floor(und / p.unidadesPorCaja);
                                 if (calCj > 0) cj = calCj;
-                                und = ''; // Ocultamos residuos
+                                und = ''; 
                             } else if (vPor.paq && p.unidadesPorPaquete > 1) {
                                 const calPaq = Math.floor(und / p.unidadesPorPaquete);
                                 if (calPaq > 0) paq = calPaq;
-                                und = ''; // Ocultamos residuos
+                                und = ''; 
                             }
                         }
                     } else {
@@ -1613,7 +1637,6 @@
                     currentRow++;
                 });
 
-                // Congelar paneles para la navegación cómoda
                 sheet.views = [{ state: 'frozen', xSplit: 0, ySplit: 5 }];
             });
 
@@ -1666,6 +1689,8 @@
         document.getElementById('btnExportHistorial').addEventListener('click', exportHistorialToExcel);
 
         try {
+            await loadMasterCatalog(); // Garantizar catálogo para ordenamiento
+
             const logRef = _collection(_db, `artifacts/${_appId}/users/${_userId}/historial_correcciones`);
             const q = _query(logRef, _orderBy('fecha', 'desc'), _limit(50));
             const snap = await _getDocs(q);
@@ -1675,6 +1700,26 @@
             if (logs.length === 0) {
                 container.innerHTML = `<p class="text-center text-gray-500">No hay registros de correcciones.</p>`;
                 return;
+            }
+
+            // Ordenar detalles de cada log con la función global
+            const sortFn = window.getGlobalProductSortFunction ? await window.getGlobalProductSortFunction() : null;
+
+            if (sortFn) {
+                logs.forEach(log => {
+                    if (log.detalles) {
+                        log.detalles.forEach(d => {
+                            const m = _masterMapCache[d.productoId] || {};
+                            d.rubro = d.rubro || m.rubro || '';
+                            d.segmento = d.segmento || m.segmento || '';
+                            d.marca = d.marca || m.marca || '';
+                            d.ordenSegmento = m.ordenSegmento ?? 9999;
+                            d.ordenMarca = m.ordenMarca ?? 9999;
+                            d.ordenProducto = m.ordenProducto ?? 9999;
+                        });
+                        log.detalles.sort(sortFn);
+                    }
+                });
             }
 
             container.innerHTML = '';
