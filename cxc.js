@@ -623,7 +623,7 @@
                                             if (navigator.share && blob) {
                                                 try {
                                                     await navigator.share({ 
-                                                        files: [new File([blob], `Ticket_${ventaFicticia.cliente.nombreComercial.replace(/[\\s/]/g,'_')}.png`, {type:"image/png"})],
+                                                        files: [new File([blob], `Ticket_${ventaFicticia.cliente.nombreComercial.replace(/[\s/]/g,'_')}.png`, {type:"image/png"})],
                                                         title: 'Ticket de Venta'
                                                     });
                                                 } catch(e) { console.warn("Share cancelado", e); }
@@ -772,7 +772,9 @@
             try {
                 const data = new Uint8Array(e.target.result);
                 const workbook = XLSX.read(data, { type: 'array', cellDates: true });
+                
                 let allClients = [];
+                let currentClientData = null; // MEMORIA PARA "ARRASTRAR" CLIENTES EN HOJAS SIN CABECERA
 
                 workbook.SheetNames.forEach(sheetName => {
                     const sheet = workbook.Sheets[sheetName];
@@ -784,6 +786,7 @@
                     let transactions = [];
                     let isClientSheet = false;
 
+                    // 1. Intentamos buscar la cabecera explícita en esta hoja
                     const headerRowIndex = rows.findIndex(r => r[0] && r[0].toString().toUpperCase().includes('CLIENTE'));
                     if (headerRowIndex !== -1 && rows[headerRowIndex][1]) {
                         clientName = rows[headerRowIndex][1].toString().trim();
@@ -797,43 +800,83 @@
                          }
                     }
 
-                    if (!isClientSheet || !clientName) return;
+                    // --- LA MAGIA: Si no encontramos cabecera, pero la hoja empieza con fechas, usamos la memoria del cliente anterior ---
+                    if (!isClientSheet && !clientName) {
+                        // Validamos si la primera o segunda celda de la fila 0 o 1 parece una fecha válida (yyyy-mm-dd o dd/mm/yyyy)
+                        const looksLikeDataSheet = rows.slice(0, 3).some(r => {
+                            if (!r || !r[0]) return false;
+                            const val = r[0].toString().trim();
+                            return val.match(/^\d{4}-\d{2}-\d{2}/) || val.match(/^\d{2}\/\d{2}\/\d{4}/);
+                        });
 
+                        if (looksLikeDataSheet && currentClientData) {
+                            clientName = currentClientData.name;
+                            isClientSheet = true;
+                        } else {
+                            // No es una hoja de cliente, ignoramos
+                            return; 
+                        }
+                    } else if (isClientSheet && clientName) {
+                        // Si SÍ encontramos cabecera en esta hoja, creamos un nuevo cliente en nuestra memoria
+                        currentClientData = { name: clientName, amount: 0, sheetName: sheetName, transactions: [] };
+                        allClients.push(currentClientData);
+                    }
+
+                    // 2. Extraer el TOTAL (Si la hoja lo tiene)
                     const totalRow = rows.find(r => r[0] && r[0].toString().toUpperCase() === 'TOTALES');
                     if (totalRow) {
                         for (let i = 1; i < totalRow.length; i++) {
                             let valStr = (totalRow[i] || '').toString().replace(/[^0-9.-]/g, '');
                             if (valStr && !isNaN(parseFloat(valStr))) {
                                 totalAmount = parseFloat(valStr);
+                                if (currentClientData) currentClientData.amount = totalAmount;
                                 break; 
                             }
                         }
                     }
 
+                    // 3. Extraer TRANSSACIONES
+                    // Si tiene cabecera "FECHA", empezamos desde ahí. Si no tiene (es una hoja de continuación), empezamos desde la fila 0.
+                    let startRowIndex = 0;
                     const tableHeaderIndex = rows.findIndex(r => r[0] && r[0].toString().toUpperCase().includes('FECHA'));
                     if (tableHeaderIndex !== -1) {
-                        for (let i = tableHeaderIndex + 1; i < rows.length; i++) {
-                            const row = rows[i];
-                            if (!row || row.length < 2) continue;
-                            const dateRaw = row[0]; 
-                            let type = (row[1] || '').toString().trim().toUpperCase(); 
-                            let amountRaw = 0;
-                            if (type === 'R') amountRaw = row[6]; else amountRaw = row[2];
+                        startRowIndex = tableHeaderIndex + 1;
+                    }
 
-                            if (dateRaw && (amountRaw || amountRaw === 0)) {
-                                let amountVal = 0;
-                                if (typeof amountRaw === 'number') amountVal = amountRaw;
-                                else amountVal = parseFloat(amountRaw.toString().replace(/[^0-9.-]/g, ''));
+                    for (let i = startRowIndex; i < rows.length; i++) {
+                        const row = rows[i];
+                        if (!row || row.length < 2) continue;
+                        
+                        const dateRaw = row[0]; 
+                        let type = (row[1] || '').toString().trim().toUpperCase(); 
+                        let amountRaw = 0;
+                        
+                        // Si no hay "Tipo" en la columna 2, asumimos que es Venta (F) por defecto
+                        if (!type) type = 'F';
 
-                                if (!isNaN(amountVal)) {
-                                    if (type === '%') { if (amountVal > 0) amountVal = -amountVal; } 
-                                    else if (type === 'R') { if (amountVal > 0) amountVal = -amountVal; }
-                                    transactions.push({ date: dateRaw.toString(), type: type, amount: amountVal });
+                        if (type === 'R') amountRaw = row[6]; else amountRaw = row[2];
+
+                        if (dateRaw && (amountRaw || amountRaw === 0)) {
+                            let amountVal = 0;
+                            if (typeof amountRaw === 'number') amountVal = amountRaw;
+                            else amountVal = parseFloat(amountRaw.toString().replace(/[^0-9.-]/g, ''));
+
+                            if (!isNaN(amountVal)) {
+                                // Excepciones matemáticas
+                                if (type === '%') { if (amountVal > 0) amountVal = -amountVal; } 
+                                else if (type === 'R') { if (amountVal > 0) amountVal = -amountVal; }
+                                
+                                // Insertar la transacción directamente en la memoria del cliente actual
+                                if (currentClientData) {
+                                    currentClientData.transactions.push({ 
+                                        date: dateRaw.toString(), 
+                                        type: type, 
+                                        amount: amountVal 
+                                    });
                                 }
                             }
                         }
                     }
-                    allClients.push({ name: clientName, amount: totalAmount, sheetName: sheetName, transactions: transactions });
                 });
 
                 if (allClients.length === 0) { _showModal('Error', 'No se encontraron clientes.'); return; }
