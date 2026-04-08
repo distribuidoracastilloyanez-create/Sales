@@ -359,7 +359,10 @@
         const safeClientName = client.name.replace(/'/g, "\\'").replace(/"/g, '&quot;');
 
         if (client.transactions && client.transactions.length > 0) {
-            client.transactions.forEach(t => {
+            // INVERTIMOS EL ARREGLO PARA MOSTRAR LAS MÁS NUEVAS PRIMERO
+            const reversedTransactions = [...client.transactions].reverse();
+            
+            reversedTransactions.forEach(t => {
                 const amountClass = t.amount > 0 ? 'text-red-600' : 'text-green-600';
                 const sign = t.amount > 0 ? '+' : '';
                 
@@ -432,7 +435,7 @@
                     </div>
                 </div>
                 
-                <h3 class="font-bold text-gray-700 mb-1 px-1 text-xs uppercase tracking-wider">Historial de Movimientos</h3>
+                <h3 class="font-bold text-gray-700 mb-1 px-1 text-xs uppercase tracking-wider">Historial de Movimientos (Nuevos Primero)</h3>
                 <div class="overflow-y-auto max-h-[55vh] border rounded bg-white shadow-sm">
                     <table class="w-full text-left border-collapse">
                         <thead class="bg-gray-200/80 backdrop-blur-sm sticky top-0 z-10">
