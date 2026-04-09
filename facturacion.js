@@ -30,7 +30,7 @@
         _orderBy = dependencies.orderBy;
         _limit = dependencies.limit;
 
-        console.log("Módulo Facturación Inicializado (Formato Bs).");
+        console.log("Módulo Facturación Inicializado (Fix html2canvas).");
     };
 
     window.showFacturacionView = async function() {
@@ -234,9 +234,8 @@
                         _ventasEncontradas.push({ id: d.id, origen: 'Activa (Hoy)', ...v, fechaObj: f });
                     });
 
-                    // 2. Buscar en Cierres Pasados (Buscamos en los últimos meses para no colapsar la app)
+                    // 2. Buscar en Cierres Pasados
                     const cierresRef = _collection(_db, `artifacts/${_appId}/users/${uid}/cierres`);
-                    // Ordenamos por fecha descendente y limitamos a los últimos 150 cierres por vendedor
                     const qCierres = _query(cierresRef, _orderBy("fecha", "desc"), _limit(150)); 
                     const snapCierres = await _getDocs(qCierres);
 
@@ -250,7 +249,7 @@
                         });
                     });
 
-                } catch (e) { /* Ignorar errores de permisos si el admin/user no tiene acceso a x carpeta */ }
+                } catch (e) { /* Ignorar errores de permisos */ }
             }
 
             if (_ventasEncontradas.length === 0) {
@@ -297,7 +296,7 @@
             return;
         }
 
-        _showModal('Procesando', 'Generando factura fiscal...', null, '', null, false);
+        _showModal('Procesando', 'Generando diseño de la factura...', null, '', null, false);
 
         // LÓGICA DE CÁLCULO FISCAL
         let subtotalBase = 0;
@@ -307,7 +306,6 @@
         const productosProcesados = [];
 
         (_ventaParaFacturar.productos || []).forEach(p => {
-            // Calcular total de la linea como lo hace el sistema de ventas
             const pCj = p.precios?.cj || 0;
             const pPaq = p.precios?.paq || 0;
             const pUnd = p.precios?.und || p.precioPorUnidad || 0;
@@ -318,14 +316,12 @@
 
             const totalLinea = (qCj * pCj) + (qPaq * pPaq) + (qUnd * pUnd);
             
-            // Extraer Cantidad Total para mostrar en diseño
             let cantDisplay = '';
             if (qCj > 0) cantDisplay += `${qCj} Cj `;
             if (qPaq > 0) cantDisplay += `${qPaq} Pq `;
             if (qUnd > 0) cantDisplay += `${qUnd} Un`;
             if (cantDisplay === '') cantDisplay = `${p.totalUnidadesVendidas} Un`;
 
-            // Verificar IVA (Extraer Base Imponible. Base = Total / 1.16)
             let esExento = !(p.iva > 0);
             let precioUnitarioBaseUSD = 0;
             let totalLineaBaseUSD = 0;
@@ -342,7 +338,6 @@
                 precioUnitarioBaseUSD = totalLineaBaseUSD / (p.totalUnidadesVendidas || 1);
             }
 
-            // Cálculos en Bolívares para la línea
             const precioUnitarioBaseBs = precioUnitarioBaseUSD * tasaBs;
             const totalLineaBaseBs = totalLineaBaseUSD * tasaBs;
 
@@ -377,10 +372,10 @@
         // RENDERIZAR PLANTILLA
         const facturaHtml = crearPlantillaFactura(
             _clienteSeleccionado, 
-            document.getElementById('facFechaTasa').value, // Fecha seleccionada para la emisión
+            document.getElementById('facFechaTasa').value, 
             tasaBs, 
             productosProcesados,
-            { totalOperacion, totalPagar }, // Solo necesitamos enviar estos para la referencia en USD
+            { totalOperacion, totalPagar }, 
             { totalBaseBs, totalExentoBs, totalIvaBs, totalOperacionBs, retencionBs, totalPagarBs }
         );
 
@@ -404,46 +399,58 @@
         _showModal('Factura Fiscal Simulada', modalWrapper, null, 'Cerrar');
 
         setTimeout(() => {
-            const handleImageGeneration = async (action) => {
+            const handleImageGeneration = async (action, btnElement) => {
                 const element = document.getElementById('captureFacturaArea');
-                _showModal('Progreso', 'Renderizando factura...');
+                
+                // Efecto visual en el botón sin destruir el DOM del modal
+                const originalText = btnElement.innerHTML;
+                btnElement.innerHTML = '<span class="animate-pulse">Generando...</span>';
+                btnElement.disabled = true;
+
                 try {
+                    await new Promise(r => setTimeout(r, 50)); 
+                    
                     const canvas = await html2canvas(element, { scale: 2, backgroundColor: '#ffffff' });
                     const blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
                     
                     if (action === 'share' && navigator.share) {
-                        const file = new File([blob], `Factura_${_clienteSeleccionado.nombreComercial.replace(/\s+/g, '_')}.png`, { type: 'image/png' });
+                        const file = new File([blob], `Factura_${_clienteSeleccionado.nombreComercial.replace(/\\s+/g, '_')}.png`, { type: 'image/png' });
                         await navigator.share({ files: [file], title: 'Factura Simulada' });
-                        document.getElementById('modalContainer').classList.add('hidden');
                     } else {
                         const dataUrl = URL.createObjectURL(blob);
                         const link = document.createElement('a');
                         link.href = dataUrl;
-                        link.download = `Factura_${_clienteSeleccionado.nombreComercial.replace(/\s+/g, '_')}.png`;
+                        link.download = `Factura_${_clienteSeleccionado.nombreComercial.replace(/\\s+/g, '_')}.png`;
                         link.click();
-                        document.getElementById('modalContainer').classList.add('hidden');
                     }
+                    
+                    btnElement.innerHTML = originalText;
+                    btnElement.disabled = false;
+                    
                 } catch (err) {
                     console.error(err);
+                    btnElement.innerHTML = originalText;
+                    btnElement.disabled = false;
                     _showModal('Error', 'Fallo al procesar la imagen de la factura.');
                 }
             };
 
-            document.getElementById('btnDescargarFactura').onclick = () => handleImageGeneration('download');
-            document.getElementById('btnCompartirFactura').onclick = () => handleImageGeneration('share');
+            const btnDesc = document.getElementById('btnDescargarFactura');
+            const btnComp = document.getElementById('btnCompartirFactura');
+
+            btnDesc.onclick = () => handleImageGeneration('download', btnDesc);
+            btnComp.onclick = () => handleImageGeneration('share', btnComp);
+
         }, 300);
     }
 
     function crearPlantillaFactura(cliente, fechaEmisionISO, tasaBs, productos, totalesUSD, totalesBs) {
-        // Formateadores
         const fUSD = (n) => `${n.toFixed(2)}`;
         const fBS = (n) => `${n.toLocaleString('es-VE', {minimumFractionDigits:2, maximumFractionDigits:2})}`;
         
-        // Parsear fecha de emisión correctamente
         const [year, month, day] = fechaEmisionISO.split('-');
         const fechaStr = `${day}/${month}/${year}`;
 
-        // Filas de productos
         let filasProd = '';
         productos.forEach(p => {
             filasProd += `
