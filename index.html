@@ -182,15 +182,12 @@
     <script src="obsequios.js" defer></script>
     <script src="edit-inventario.js" defer></script> 
     <script src="cxc.js" defer></script>
-    
     <script src="supervision.js" defer></script>
-
-    <script type="module"> 
+    <script src="facturacion.js" defer></script> <script type="module"> 
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAnalytics } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-analytics.js";
         import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, createUserWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         
-        // 1. CORRECCIÓN: Importar persistentMultipleTabManager para soportar multi-pestañas
         import { 
             getFirestore, 
             doc, getDoc, addDoc, setDoc, deleteDoc, onSnapshot, collection, writeBatch, runTransaction, getDocs, 
@@ -198,7 +195,6 @@
             initializeFirestore, persistentLocalCache, persistentMultipleTabManager
         } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // 2. VERIFICACIÓN DE CONFIGURACIÓN Y CARGA CENTRALIZADA
         if (!window.AppConfig) {
             console.error("CRITICAL ERROR: config.js no se ha cargado.");
             alert("Error de Sistema: No se pudo cargar la configuración. Verifique que 'config.js' existe y se carga correctamente.");
@@ -311,7 +307,6 @@
                 const name = document.getElementById('newItemInput').value.trim().toUpperCase();
                 const msg = document.getElementById('addItemMessage');
                 try {
-                    // Si la ruta comienza con 'artifacts', usarla tal cual (público), si no, construir ruta de usuario (privado)
                     const colRef = collection(db, collectionName.startsWith('artifacts') ? collectionName : `artifacts/${appId}/users/${userId}/${collectionName}`);
                     
                     await addDoc(colRef, { name });
@@ -332,7 +327,6 @@
             if (!select) return;
             select.innerHTML = `<option value="">Cargando...</option>`;
             try {
-                // Determinar ruta completa si es necesario
                 const fullPath = collectionPath.startsWith('artifacts') ? collectionPath : `artifacts/${appId}/users/${userId}/${collectionPath}`;
                 const snap = await getDocs(collection(db, fullPath));
                 const items = snap.docs.map(d => d.data().name).sort((a,b) => a.localeCompare(b));
@@ -344,7 +338,6 @@
                     select.appendChild(opt);
                 });
             } catch (err) {
-                // Ignorar error si es por desconexión/permisos al salir
                 if (err.code !== 'permission-denied') {
                     console.warn(`Error cargando dropdown ${itemName}:`, err);
                     select.innerHTML = `<option value="">Error al cargar</option>`;
@@ -352,25 +345,19 @@
             }
         };
 
-        // Pre-carga de datos para optimizar offline (ACTUALIZADO: FASE 2)
+        // Pre-carga de datos para optimizar offline
         async function preloadAllData() {
             const collectionsToPreload = [
-                // Datos Privados
                 { path: `artifacts/${appId}/users/${userId}/inventario` },
-                
-                // Datos Públicos (Maestros) - Esencial para que el ordenamiento funcione offline
                 { path: `artifacts/${PUBLIC_DATA_ID}/public/data/rubros` },
                 { path: `artifacts/${PUBLIC_DATA_ID}/public/data/segmentos` },
                 { path: `artifacts/${PUBLIC_DATA_ID}/public/data/marcas` },
-                { path: `artifacts/${PUBLIC_DATA_ID}/public/data/productos` }, // Catálogo maestro
-                
-                // Otros Públicos
+                { path: `artifacts/${PUBLIC_DATA_ID}/public/data/productos` }, 
                 { path: `artifacts/${PUBLIC_DATA_ID}/public/data/clientes` },
                 { path: `artifacts/${PUBLIC_DATA_ID}/public/data/sectores` },
                 { path: `artifacts/${PUBLIC_DATA_ID}/public/data/config/obsequio` }
             ];
             
-            // Lanzar todas las peticiones (Settled permite que algunas fallen sin detener el login)
             await Promise.allSettled(collectionsToPreload.map(col => {
                 if (col.path.includes('/config/')) return getDoc(doc(db, col.path));
                 return getDocs(collection(db, col.path));
@@ -391,24 +378,28 @@
                     <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl text-center">
                         <h1 class="text-3xl font-bold text-gray-800 mb-6">Menú Principal</h1>
                         <div class="space-y-4">
-                            <button id="inventarioBtn" class="w-full px-6 py-3 bg-blue-500 text-white rounded-lg shadow-md hover:bg-blue-600 font-bold">Inventario</button>
+                            <button id="inventarioBtn" class="w-full px-6 py-3 bg-blue-500 text-white rounded-lg shadow-md hover:bg-blue-600 font-bold transition transform hover:-translate-y-1">Inventario</button>
                             
-                            ${isAdmin ? `<button id="editInventarioBtn" class="w-full px-6 py-3 bg-amber-600 text-white rounded-lg shadow-md hover:bg-amber-700 font-bold">Edición de Inventario</button>` : ''}
+                            ${isAdmin ? `<button id="editInventarioBtn" class="w-full px-6 py-3 bg-amber-600 text-white rounded-lg shadow-md hover:bg-amber-700 font-bold transition transform hover:-translate-y-1">Edición de Inventario</button>` : ''}
                             
-                            <button id="clientesBtn" class="w-full px-6 py-3 bg-indigo-500 text-white rounded-lg shadow-md hover:bg-indigo-600 font-bold">Clientes</button>
+                            <button id="clientesBtn" class="w-full px-6 py-3 bg-indigo-500 text-white rounded-lg shadow-md hover:bg-indigo-600 font-bold transition transform hover:-translate-y-1">Clientes</button>
                             
-                            <button id="ventasBtn" class="w-full px-6 py-3 bg-green-500 text-white rounded-lg shadow-md hover:bg-green-600 font-bold">Ventas</button>
+                            <button id="ventasBtn" class="w-full px-6 py-3 bg-green-500 text-white rounded-lg shadow-md hover:bg-green-600 font-bold transition transform hover:-translate-y-1">Ventas</button>
                             
-                            <button id="cxcBtn" class="w-full px-6 py-3 bg-orange-500 text-white rounded-lg shadow-md hover:bg-orange-600 font-bold">CXC</button>
+                            <button id="cxcBtn" class="w-full px-6 py-3 bg-orange-500 text-white rounded-lg shadow-md hover:bg-orange-600 font-bold transition transform hover:-translate-y-1">CXC</button>
+
+                            <button id="facturacionBtn" class="w-full px-6 py-3 bg-gray-700 text-white font-bold rounded-lg shadow-md hover:bg-gray-800 transition transform hover:-translate-y-1 flex items-center justify-center gap-2">
+                                <span class="text-xl">🧾</span> Facturación (Simulador)
+                            </button>
                             
-                            <button id="obsequiosBtn" class="w-full px-6 py-3 bg-cyan-500 text-white rounded-lg shadow-md hover:bg-cyan-600 font-bold">Obsequios</button>
+                            <button id="obsequiosBtn" class="w-full px-6 py-3 bg-cyan-500 text-white rounded-lg shadow-md hover:bg-cyan-600 font-bold transition transform hover:-translate-y-1">Obsequios</button>
                             
-                            <button id="catalogoBtn" class="w-full px-6 py-3 bg-purple-500 text-white rounded-lg shadow-md hover:bg-purple-600 font-bold">Catálogo</button>
+                            <button id="catalogoBtn" class="w-full px-6 py-3 bg-purple-500 text-white rounded-lg shadow-md hover:bg-purple-600 font-bold transition transform hover:-translate-y-1">Catálogo</button>
                             
-                            <button id="profileAdminBtn" class="w-full px-6 py-3 bg-gray-700 text-white rounded-lg shadow-md hover:bg-gray-800 font-bold">${isAdmin ? 'Admin Panel' : 'Mi Perfil'}</button>
+                            <button id="profileAdminBtn" class="w-full px-6 py-3 bg-gray-700 text-white rounded-lg shadow-md hover:bg-gray-800 font-bold transition transform hover:-translate-y-1">${isAdmin ? 'Admin Panel' : 'Mi Perfil'}</button>
                             
-                            ${isAdmin ? `<button id="dataBtn" class="w-full px-6 py-3 bg-red-700 text-white rounded-lg shadow-md hover:bg-red-800 font-bold">Data</button>` : ''}
-                            ${isAdmin ? `<button id="supervisionBtn" class="w-full px-6 py-3 bg-pink-600 text-white rounded-lg shadow-md hover:bg-pink-700 font-bold flex items-center justify-center gap-2"><span class="text-xl">🛡️</span> Supervisión y Auditoría</button>` : ''}
+                            ${isAdmin ? `<button id="dataBtn" class="w-full px-6 py-3 bg-red-700 text-white rounded-lg shadow-md hover:bg-red-800 font-bold transition transform hover:-translate-y-1">Data</button>` : ''}
+                            ${isAdmin ? `<button id="supervisionBtn" class="w-full px-6 py-3 bg-pink-600 text-white rounded-lg shadow-md hover:bg-pink-700 font-bold flex items-center justify-center gap-2 transition transform hover:-translate-y-1"><span class="text-xl">🛡️</span> Supervisión y Auditoría</button>` : ''}
                         </div>
                         <div class="mt-8 pt-4 border-t flex items-center justify-center space-x-3">
                              <span id="offline-toggle-text" class="text-sm font-medium text-gray-700">Online (Manual)</span>
@@ -419,7 +410,7 @@
                 </div>
             `;
 
-            // Listeners Seguros (Evita crashes si faltan módulos)
+            // Listeners Seguros
             const safeNav = (fn, name) => {
                 if (typeof fn === 'function') {
                     floatingControls.classList.add('hidden'); 
@@ -435,6 +426,7 @@
             document.getElementById('clientesBtn')?.addEventListener('click', () => safeNav(window.showClientesSubMenu, 'Clientes'));
             document.getElementById('ventasBtn')?.addEventListener('click', () => safeNav(window.showVentasView, 'Ventas'));
             document.getElementById('cxcBtn')?.addEventListener('click', () => safeNav(window.showCXCView, 'CXC'));
+            document.getElementById('facturacionBtn')?.addEventListener('click', () => safeNav(window.showFacturacionView, 'Facturación')); // LISTENER DEL NUEVO BOTÓN
             document.getElementById('obsequiosBtn')?.addEventListener('click', () => safeNav(window.showGestionObsequiosView, 'Obsequios'));
             document.getElementById('catalogoBtn')?.addEventListener('click', () => safeNav(window.showCatalogoSubMenu, 'Catálogo'));
             document.getElementById('profileAdminBtn')?.addEventListener('click', () => safeNav(window.showAdminOrProfileView, 'Perfil/Admin'));
@@ -455,14 +447,11 @@
                     updateConnectionDisplay(navigator.onLine);
                 }
             });
-
-            // ELIMINADO: Listener a .info/connected que causaba el error de permisos en Firestore
         };
 
         async function initializeAppAndListeners() {
             const app = initializeApp(firebaseConfig);
             
-            // 3. NUEVA INICIALIZACIÓN DE FIRESTORE CON PERSISTENCIA Y SINCRONIZACIÓN MULTI-PESTAÑA
             db = initializeFirestore(app, {
                 localCache: persistentLocalCache({
                     tabManager: persistentMultipleTabManager()
@@ -481,7 +470,7 @@
                     document.getElementById('loginContent').classList.add('hidden');
                     document.getElementById('registerContent').classList.add('hidden');
                     mainContent.classList.remove('hidden');
-                    mainContent.innerHTML = `<div class="p-8 text-center text-white font-bold text-xl">Sincronizando Base de Datos...</div>`;
+                    mainContent.innerHTML = `<div class="p-8 text-center text-white font-bold text-xl drop-shadow-md">Sincronizando Base de Datos...</div>`;
                     
                     await preloadAllData();
                     
@@ -505,6 +494,7 @@
                     if (window.initCXC) window.initCXC(deps); else console.warn("Módulo CXC no encontrado");
                     if (window.initEditInventario) window.initEditInventario(deps); else console.warn("Módulo Edit Inventario no encontrado");
                     if (window.initSupervision) window.initSupervision(deps); else console.warn("Módulo Supervisión no encontrado");
+                    if (window.initFacturacion) window.initFacturacion(deps); else console.warn("Módulo Facturación no encontrado"); // NUEVO INIT
 
                     showMainMenu();
                 } else {
