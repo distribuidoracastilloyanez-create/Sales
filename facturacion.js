@@ -30,7 +30,7 @@
         _orderBy = dependencies.orderBy;
         _limit = dependencies.limit;
 
-        console.log("Módulo Facturación Inicializado (Con Desplegable de Ventas).");
+        console.log("Módulo Facturación Inicializado (Formato Bs).");
     };
 
     window.showFacturacionView = async function() {
@@ -327,26 +327,31 @@
 
             // Verificar IVA (Extraer Base Imponible. Base = Total / 1.16)
             let esExento = !(p.iva > 0);
-            let precioUnitarioBase = 0;
-            let totalLineaBase = 0;
+            let precioUnitarioBaseUSD = 0;
+            let totalLineaBaseUSD = 0;
 
             if (esExento) {
                 subtotalExento += totalLinea;
-                precioUnitarioBase = totalLinea / (p.totalUnidadesVendidas || 1);
-                totalLineaBase = totalLinea;
+                precioUnitarioBaseUSD = totalLinea / (p.totalUnidadesVendidas || 1);
+                totalLineaBaseUSD = totalLinea;
             } else {
-                totalLineaBase = totalLinea / 1.16;
-                const ivaLinea = totalLinea - totalLineaBase;
-                subtotalBase += totalLineaBase;
+                totalLineaBaseUSD = totalLinea / 1.16;
+                const ivaLinea = totalLinea - totalLineaBaseUSD;
+                subtotalBase += totalLineaBaseUSD;
                 ivaTotal += ivaLinea;
-                precioUnitarioBase = totalLineaBase / (p.totalUnidadesVendidas || 1);
+                precioUnitarioBaseUSD = totalLineaBaseUSD / (p.totalUnidadesVendidas || 1);
             }
+
+            // Cálculos en Bolívares para la línea
+            const precioUnitarioBaseBs = precioUnitarioBaseUSD * tasaBs;
+            const totalLineaBaseBs = totalLineaBaseUSD * tasaBs;
 
             productosProcesados.push({
                 cantidad: cantDisplay.trim(),
                 descripcion: p.presentacion,
-                precioUnitario: precioUnitarioBase,
-                total: totalLineaBase,
+                precioUnitarioUSD: precioUnitarioBaseUSD,
+                precioUnitarioBs: precioUnitarioBaseBs,
+                totalBs: totalLineaBaseBs,
                 exento: esExento
             });
         });
@@ -361,7 +366,7 @@
 
         const totalPagar = totalOperacion - retencionIva;
 
-        // Conversiones a Bolívares
+        // Conversiones a Bolívares de los totales
         const totalBaseBs = subtotalBase * tasaBs;
         const totalExentoBs = subtotalExento * tasaBs;
         const totalIvaBs = ivaTotal * tasaBs;
@@ -375,13 +380,13 @@
             document.getElementById('facFechaTasa').value, // Fecha seleccionada para la emisión
             tasaBs, 
             productosProcesados,
-            { subtotalBase, subtotalExento, ivaTotal, totalOperacion, retencionIva, totalPagar },
+            { totalOperacion, totalPagar }, // Solo necesitamos enviar estos para la referencia en USD
             { totalBaseBs, totalExentoBs, totalIvaBs, totalOperacionBs, retencionBs, totalPagarBs }
         );
 
         const modalWrapper = `
             <div class="flex flex-col items-center max-h-[75vh] overflow-y-auto bg-gray-200 p-2 sm:p-4 rounded-lg">
-                <div id="captureFacturaArea" class="bg-white p-6 sm:p-8 w-full max-w-3xl shadow-lg border border-gray-300 relative" style="font-family: 'Courier New', Courier, monospace;">
+                <div id="captureFacturaArea" class="bg-white p-6 sm:p-8 w-full max-w-4xl shadow-lg border border-gray-300 relative" style="font-family: 'Courier New', Courier, monospace;">
                     ${facturaHtml}
                 </div>
             </div>
@@ -429,10 +434,10 @@
         }, 300);
     }
 
-    function crearPlantillaFactura(cliente, fechaEmisionISO, tasaBs, productos, totales, totalesBs) {
+    function crearPlantillaFactura(cliente, fechaEmisionISO, tasaBs, productos, totalesUSD, totalesBs) {
         // Formateadores
-        const fUSD = (n) => `$${n.toFixed(2)}`;
-        const fBS = (n) => `Bs ${n.toLocaleString('es-VE', {minimumFractionDigits:2, maximumFractionDigits:2})}`;
+        const fUSD = (n) => `${n.toFixed(2)}`;
+        const fBS = (n) => `${n.toLocaleString('es-VE', {minimumFractionDigits:2, maximumFractionDigits:2})}`;
         
         // Parsear fecha de emisión correctamente
         const [year, month, day] = fechaEmisionISO.split('-');
@@ -445,8 +450,9 @@
                 <tr class="text-xs sm:text-sm">
                     <td class="py-1.5 border-b border-dashed border-gray-300 text-center font-semibold">${p.cantidad}</td>
                     <td class="py-1.5 border-b border-dashed border-gray-300">${p.descripcion} <span class="font-bold">${p.exento ? '(E)' : ''}</span></td>
-                    <td class="py-1.5 border-b border-dashed border-gray-300 text-right">${fUSD(p.precioUnitario)}</td>
-                    <td class="py-1.5 border-b border-dashed border-gray-300 text-right font-semibold">${fUSD(p.total)}</td>
+                    <td class="py-1.5 border-b border-dashed border-gray-300 text-right">${fUSD(p.precioUnitarioUSD)}</td>
+                    <td class="py-1.5 border-b border-dashed border-gray-300 text-right">${fBS(p.precioUnitarioBs)}</td>
+                    <td class="py-1.5 border-b border-dashed border-gray-300 text-right font-semibold">${fBS(p.totalBs)}</td>
                 </tr>
             `;
         });
@@ -487,10 +493,11 @@
                 <table class="w-full mb-6">
                     <thead>
                         <tr class="border-y-2 border-black text-left text-xs sm:text-sm">
-                            <th class="py-2 w-1/6 text-center">CANT.</th>
-                            <th class="py-2 w-1/2">DESCRIPCIÓN</th>
-                            <th class="py-2 w-1/6 text-right">P. UNIT ($)</th>
-                            <th class="py-2 w-1/6 text-right">TOTAL ($)</th>
+                            <th class="py-2 w-24 text-center">CANT.</th>
+                            <th class="py-2">DESCRIPCIÓN</th>
+                            <th class="py-2 w-24 text-right">P. UNIT ($)</th>
+                            <th class="py-2 w-28 text-right">P. UNIT (Bs)</th>
+                            <th class="py-2 w-32 text-right">TOTAL (Bs)</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -498,38 +505,48 @@
                     </tbody>
                 </table>
 
-                <div class="flex flex-col sm:flex-row justify-between mt-8 gap-6 sm:gap-2">
-                    
-                    <div class="w-full sm:w-[48%] border border-gray-400 p-3 rounded bg-gray-50 text-xs sm:text-sm h-fit shadow-sm">
-                        <p class="font-black mb-2 border-b border-gray-300 pb-1 tracking-wide">EQUIVALENTE EN BOLÍVARES</p>
-                        <p class="mb-2"><strong>Tasa BCV Aplicada:</strong> ${fBS(tasaBs).replace('Bs ', '')}</p>
-                        <div class="space-y-1.5 mt-2">
-                            <div class="flex justify-between"><span class="text-gray-600">Sub-Total Exento:</span> <span>${fBS(totalesBs.totalExentoBs)}</span></div>
-                            <div class="flex justify-between"><span class="text-gray-600">Sub-Total Base:</span> <span>${fBS(totalesBs.totalBaseBs)}</span></div>
-                            <div class="flex justify-between"><span class="text-gray-600">IVA (16%):</span> <span>${fBS(totalesBs.totalIvaBs)}</span></div>
-                            <div class="flex justify-between font-bold pt-1.5 border-t border-gray-300"><span>TOTAL FACTURA:</span> <span>${fBS(totalesBs.totalOperacionBs)}</span></div>
-                            ${cliente.aplicaRetencion ? `<div class="flex justify-between text-red-600 mt-1 font-bold"><span>Retención IVA (75%):</span> <span>-${fBS(totalesBs.retencionBs)}</span></div>` : ''}
+                <div class="flex flex-col items-end mt-8">
+                    <div class="w-full sm:w-2/3 md:w-1/2 text-xs sm:text-sm">
+                        
+                        <div class="flex justify-between mb-4 border-b border-gray-300 pb-1">
+                            <span class="font-bold text-gray-700 uppercase tracking-wider">Tasa BCV Aplicada:</span> 
+                            <span class="font-bold">Bs ${fBS(tasaBs)}</span>
                         </div>
-                        <div class="flex justify-between font-black text-base sm:text-lg mt-3 pt-2 border-t-2 border-black">
-                            <span>TOTAL A PAGAR:</span> <span class="text-blue-800">${fBS(totalesBs.totalPagarBs)}</span>
-                        </div>
-                    </div>
 
-                    <div class="w-full sm:w-[48%] text-xs sm:text-sm flex flex-col justify-end">
                         <div class="space-y-1.5">
-                            <div class="flex justify-between"><span class="font-bold text-gray-600">Sub-Total Exento:</span> <span>${fUSD(totales.subtotalExento)}</span></div>
-                            <div class="flex justify-between"><span class="font-bold text-gray-600">Sub-Total Base Imponible:</span> <span>${fUSD(totales.subtotalBase)}</span></div>
-                            <div class="flex justify-between"><span class="font-bold text-gray-600">I.V.A (16%):</span> <span>${fUSD(totales.ivaTotal)}</span></div>
-                            <div class="flex justify-between font-black text-sm sm:text-base pt-1.5 mt-1.5 border-t border-gray-400"><span>TOTAL FACTURA:</span> <span>${fUSD(totales.totalOperacion)}</span></div>
+                            <div class="flex justify-between">
+                                <span class="font-bold text-gray-600">Base Imponible:</span> 
+                                <span>Bs ${fBS(totalesBs.totalBaseBs)}</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span class="font-bold text-gray-600">Monto Exento:</span> 
+                                <span>Bs ${fBS(totalesBs.totalExentoBs)}</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span class="font-bold text-gray-600">I.V.A (16%):</span> 
+                                <span>Bs ${fBS(totalesBs.totalIvaBs)}</span>
+                            </div>
+                            
+                            <div class="flex justify-between font-black text-sm sm:text-base pt-1.5 mt-1.5 border-t border-gray-400">
+                                <span>TOTAL FACTURA:</span> 
+                                <span>Bs ${fBS(totalesBs.totalOperacionBs)}</span>
+                            </div>
                             
                             ${cliente.aplicaRetencion ? `
                             <div class="flex justify-between text-red-600 mt-2 font-bold bg-red-50 p-1 px-2 rounded">
-                                <span>Retención IVA (75%):</span> <span>-${fUSD(totales.retencionIva)}</span>
+                                <span>Retención IVA (75%):</span> 
+                                <span>-Bs ${fBS(totalesBs.retencionBs)}</span>
                             </div>
                             ` : ''}
                         </div>
+                        
                         <div class="flex justify-between font-black text-lg sm:text-xl mt-4 pt-2 border-t-2 border-black">
-                            <span>TOTAL A PAGAR:</span> <span class="text-blue-800">${fUSD(totales.totalPagar)}</span>
+                            <span>TOTAL A PAGAR:</span> 
+                            <span class="text-blue-800">Bs ${fBS(totalesBs.totalPagarBs)}</span>
+                        </div>
+                        
+                        <div class="flex justify-end mt-1 text-gray-500 font-bold text-xs">
+                            Equivalente a: $${fUSD(totalesUSD.totalPagar)} USD
                         </div>
                     </div>
                 </div>
