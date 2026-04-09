@@ -2,7 +2,7 @@
 
 (function() {
     let _db, _userId, _userRole, _appId, _mainContent, _floatingControls;
-    let _showMainMenu, _showModal, _collection, _getDocs, _query, _where, _getDoc, _doc;
+    let _showMainMenu, _showModal, _collection, _getDocs, _query, _where, _getDoc, _doc, _orderBy, _limit;
 
     const PUBLIC_DATA_ID = window.AppConfig.PUBLIC_DATA_ID;
     
@@ -10,6 +10,7 @@
     let _tasasCache = {};
     let _ventasEncontradas = [];
     let _clienteSeleccionado = null;
+    let _ventaParaFacturar = null;
 
     window.initFacturacion = function(dependencies) {
         _db = dependencies.db;
@@ -26,8 +27,10 @@
         _where = dependencies.where;
         _getDoc = dependencies.getDoc;
         _doc = dependencies.doc;
+        _orderBy = dependencies.orderBy;
+        _limit = dependencies.limit;
 
-        console.log("Módulo Facturación Inicializado.");
+        console.log("Módulo Facturación Inicializado (Con Desplegable de Ventas).");
     };
 
     window.showFacturacionView = async function() {
@@ -43,59 +46,53 @@
                         <button id="btnVolverFacturacion" class="px-4 py-2 bg-gray-500 text-white font-bold rounded shadow hover:bg-gray-600 transition">Volver al Menú</button>
                     </div>
 
-                    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6 p-5 bg-gray-50 rounded-lg border border-gray-200 shadow-inner">
-                        <div class="md:col-span-2 relative">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6 p-5 bg-gray-50 rounded-lg border border-gray-200 shadow-inner">
+                        <div class="relative">
                             <label class="block text-xs font-bold text-gray-700 mb-1 uppercase tracking-wider">1. Seleccionar Cliente:</label>
-                            <input type="text" id="facClientSearch" placeholder="Escriba para buscar..." class="w-full border border-gray-300 rounded-md p-2.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none shadow-sm">
+                            <input type="text" id="facClientSearch" placeholder="Escriba el nombre o RIF..." class="w-full border border-gray-300 rounded-md p-2.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none shadow-sm transition">
                             <div id="facClientDropdown" class="absolute z-50 w-full bg-white border border-gray-300 rounded-b-md shadow-lg hidden max-h-60 overflow-y-auto mt-1"></div>
-                            <div id="facClientSelected" class="hidden mt-2 p-2 bg-blue-100 text-blue-800 font-bold rounded flex justify-between items-center border border-blue-200">
+                            
+                            <div id="facClientSelected" class="hidden mt-2 p-2 bg-blue-100 text-blue-800 font-bold rounded flex justify-between items-center border border-blue-200 shadow-sm">
                                 <span id="facClientName"></span>
-                                <button id="facClientClear" class="text-red-500 hover:text-red-700 text-lg leading-none">&times;</button>
+                                <button id="facClientClear" class="text-red-500 hover:text-red-700 text-xl leading-none font-black px-2">&times;</button>
                             </div>
                         </div>
                         
                         <div>
-                            <label class="block text-xs font-bold text-gray-700 mb-1 uppercase tracking-wider">2. Fecha de Venta:</label>
-                            <input type="date" id="facFechaVenta" value="${today}" class="w-full border border-gray-300 rounded-md p-2.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none shadow-sm">
-                        </div>
-
-                        <div class="flex items-end">
-                            <button id="btnBuscarVentaFac" class="w-full bg-blue-600 text-white py-2.5 rounded-md shadow hover:bg-blue-700 font-bold transition flex justify-center items-center gap-2">
-                                <span>🔍</span> Buscar Venta
-                            </button>
+                            <label class="block text-xs font-bold text-gray-700 mb-1 uppercase tracking-wider">2. Seleccionar Venta:</label>
+                            <select id="facSelectVenta" class="w-full border border-gray-300 rounded-md p-2.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none shadow-sm disabled:bg-gray-200 disabled:text-gray-500 transition cursor-pointer" disabled>
+                                <option value="">Primero seleccione un cliente...</option>
+                            </select>
                         </div>
                     </div>
 
-                    <div id="facResultadosContainer" class="hidden flex-col flex-grow overflow-hidden">
-                        <h3 class="font-bold text-gray-700 border-b pb-2 mb-3">Ventas Encontradas:</h3>
-                        <div id="facListaVentas" class="space-y-2 overflow-y-auto mb-4 max-h-40"></div>
-
-                        <div id="facPanelTasa" class="hidden grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-indigo-50 border border-indigo-200 rounded-lg mt-4 items-end">
+                    <div id="facPanelTasa" class="hidden flex-col bg-indigo-50 border border-indigo-200 rounded-lg p-5 shadow-sm mt-2">
+                        <h3 class="font-bold text-indigo-900 border-b border-indigo-200 pb-2 mb-4">3. Datos de Emisión</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
                             <div>
-                                <label class="block text-xs font-bold text-indigo-900 mb-1 uppercase tracking-wider">3. Fecha Tasa BCV:</label>
+                                <label class="block text-xs font-bold text-indigo-800 mb-1 uppercase tracking-wider">Fecha Tasa BCV:</label>
                                 <input type="date" id="facFechaTasa" value="${today}" class="w-full border border-indigo-300 rounded-md p-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
                             </div>
                             <div>
-                                <label class="block text-xs font-bold text-indigo-900 mb-1 uppercase tracking-wider">Valor Tasa (Bs):</label>
+                                <label class="block text-xs font-bold text-indigo-800 mb-1 uppercase tracking-wider">Valor Tasa (Bs):</label>
                                 <input type="number" id="facValorTasa" step="0.0001" placeholder="Ej: 36.50" class="w-full border border-indigo-300 rounded-md p-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-indigo-900">
                             </div>
                             <div>
-                                <button id="btnGenerarFactura" class="w-full bg-green-600 text-white py-2 rounded-md shadow hover:bg-green-700 font-bold transition text-sm">
-                                    Generar Factura
+                                <button id="btnGenerarFactura" class="w-full bg-green-600 text-white py-2.5 rounded-md shadow hover:bg-green-700 font-bold transition text-sm flex items-center justify-center gap-2">
+                                    <span>📄</span> Generar Factura
                                 </button>
                             </div>
                         </div>
                     </div>
 
-                    <div id="facEmptyState" class="flex-grow flex items-center justify-center text-gray-400 font-medium border-2 border-dashed border-gray-200 rounded-lg bg-gray-50">
-                        Seleccione un cliente y una fecha para buscar sus ventas.
+                    <div id="facEmptyState" class="flex-grow flex items-center justify-center text-gray-400 font-medium border-2 border-dashed border-gray-200 rounded-lg bg-gray-50 mt-4">
+                        Seleccione un cliente para cargar su historial de ventas.
                     </div>
                 </div>
             </div>
         `;
 
         document.getElementById('btnVolverFacturacion').addEventListener('click', _showMainMenu);
-        document.getElementById('btnBuscarVentaFac').addEventListener('click', buscarVentasFiscales);
         
         const searchInput = document.getElementById('facClientSearch');
         searchInput.addEventListener('input', (e) => {
@@ -103,17 +100,39 @@
             const filtered = _clientesCache.filter(c => 
                 (c.nombreComercial || '').toLowerCase().includes(term) || 
                 (c.rif || '').toLowerCase().includes(term)
-            ).slice(0, 10);
+            ).slice(0, 15);
             renderClientDropdown(filtered);
         });
 
         document.getElementById('facClientClear').addEventListener('click', () => {
             _clienteSeleccionado = null;
+            _ventaParaFacturar = null;
+            
+            // Resetear UI
             document.getElementById('facClientSelected').classList.add('hidden');
             document.getElementById('facClientSearch').classList.remove('hidden');
             document.getElementById('facClientSearch').value = '';
-            document.getElementById('facResultadosContainer').classList.add('hidden');
+            
+            const selectVenta = document.getElementById('facSelectVenta');
+            selectVenta.innerHTML = '<option value="">Primero seleccione un cliente...</option>';
+            selectVenta.disabled = true;
+            
+            document.getElementById('facPanelTasa').classList.add('hidden');
             document.getElementById('facEmptyState').classList.remove('hidden');
+        });
+
+        // Al cambiar el desplegable de ventas, mostrar panel de tasa
+        document.getElementById('facSelectVenta').addEventListener('change', (e) => {
+            if (e.target.value !== "") {
+                _ventaParaFacturar = _ventasEncontradas[parseInt(e.target.value)];
+                document.getElementById('facPanelTasa').classList.remove('hidden');
+                document.getElementById('facEmptyState').classList.add('hidden');
+                document.getElementById('btnGenerarFactura').onclick = generarFacturaFiscal;
+            } else {
+                _ventaParaFacturar = null;
+                document.getElementById('facPanelTasa').classList.add('hidden');
+                document.getElementById('facEmptyState').classList.remove('hidden');
+            }
         });
 
         document.getElementById('facFechaTasa').addEventListener('change', (e) => cargarTasaBcvPorFecha(e.target.value));
@@ -148,9 +167,10 @@
         
         clientes.forEach(c => {
             const div = document.createElement('div');
-            div.className = 'p-3 border-b hover:bg-blue-50 cursor-pointer text-sm text-gray-800';
-            const badge = c.aplicaRetencion ? `<span class="ml-2 text-[9px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded font-bold">Retiene IVA</span>` : '';
-            div.innerHTML = `<span class="font-bold">${c.nombreComercial}</span> <span class="text-xs text-gray-500">(${c.rif || 'Sin RIF'})</span> ${badge}`;
+            div.className = 'p-3 border-b hover:bg-blue-50 cursor-pointer text-sm text-gray-800 transition';
+            const badge = c.aplicaRetencion ? `<span class="ml-2 text-[9px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded font-bold uppercase tracking-wider">Aplica Retención</span>` : '';
+            div.innerHTML = `<span class="font-bold">${c.nombreComercial}</span> <span class="text-xs text-gray-500 ml-1">(${c.rif || 'Sin RIF'})</span> ${badge}`;
+            
             div.onclick = () => {
                 _clienteSeleccionado = c;
                 document.getElementById('facClientSearch').classList.add('hidden');
@@ -158,6 +178,9 @@
                 const selDiv = document.getElementById('facClientSelected');
                 selDiv.classList.remove('hidden');
                 document.getElementById('facClientName').innerHTML = `${c.nombreComercial} ${badge}`;
+                
+                // Activar búsqueda de ventas
+                cargarVentasCliente(c);
             };
             dropdown.appendChild(div);
         });
@@ -180,121 +203,97 @@
         }
     }
 
-    async function buscarVentasFiscales() {
-        if (!_clienteSeleccionado) { _showModal('Atención', 'Debe seleccionar un cliente primero.'); return; }
-        const fechaStr = document.getElementById('facFechaVenta').value;
-        if (!fechaStr) { _showModal('Atención', 'Debe seleccionar una fecha de venta.'); return; }
-
+    async function cargarVentasCliente(cliente) {
+        const selectVenta = document.getElementById('facSelectVenta');
         const emptyState = document.getElementById('facEmptyState');
-        const container = document.getElementById('facResultadosContainer');
-        const lista = document.getElementById('facListaVentas');
         
-        emptyState.classList.add('hidden');
-        container.classList.remove('hidden');
-        container.classList.add('flex');
-        lista.innerHTML = '<p class="text-center text-gray-500 py-4 animate-pulse">Buscando en base de datos...</p>';
+        // Estado de Carga
+        selectVenta.innerHTML = '<option value="">Buscando historial de ventas...</option>';
+        selectVenta.disabled = true;
         document.getElementById('facPanelTasa').classList.add('hidden');
+        emptyState.innerHTML = '<p class="animate-pulse">Consultando base de datos...</p>';
+        emptyState.classList.remove('hidden');
 
         try {
-            // Buscamos en todas las carpetas de usuarios
+            // Obtenemos todos los vendedores para buscar las ventas de este cliente en todas las rutas
             const usersSnap = await _getDocs(_collection(_db, "users"));
             const userIds = usersSnap.docs.map(d => d.id);
             
-            const targetDate = new Date(fechaStr + 'T00:00:00');
-            const nextDay = new Date(targetDate);
-            nextDay.setDate(targetDate.getDate() + 1);
-
             _ventasEncontradas = [];
 
             for (const uid of userIds) {
                 try {
-                    // 1. Buscar en Ventas Activas
+                    // 1. Buscar en Ventas Activas del día
                     const vActivasRef = _collection(_db, `artifacts/${_appId}/users/${uid}/ventas`);
-                    const qActivas = _query(vActivasRef, _where("clienteId", "==", _clienteSeleccionado.id));
+                    const qActivas = _query(vActivasRef, _where("clienteId", "==", cliente.id));
                     const snapActivas = await _getDocs(qActivas);
                     
                     snapActivas.docs.forEach(d => {
                         const v = d.data();
                         const f = v.fecha?.toDate ? v.fecha.toDate() : new Date(v.fecha);
-                        if (f >= targetDate && f < nextDay) {
-                            _ventasEncontradas.push({ id: d.id, origen: 'Activa', ...v, fechaObj: f });
-                        }
+                        _ventasEncontradas.push({ id: d.id, origen: 'Activa (Hoy)', ...v, fechaObj: f });
                     });
 
-                    // 2. Buscar en Cierres Pasados
+                    // 2. Buscar en Cierres Pasados (Buscamos en los últimos meses para no colapsar la app)
                     const cierresRef = _collection(_db, `artifacts/${_appId}/users/${uid}/cierres`);
-                    const qCierres = _query(cierresRef, _where("fecha", ">=", targetDate), _where("fecha", "<", nextDay));
+                    // Ordenamos por fecha descendente y limitamos a los últimos 150 cierres por vendedor
+                    const qCierres = _query(cierresRef, _orderBy("fecha", "desc"), _limit(150)); 
                     const snapCierres = await _getDocs(qCierres);
 
                     snapCierres.docs.forEach(docCierre => {
                         const cierre = docCierre.data();
                         (cierre.ventas || []).forEach(v => {
-                            if (v.clienteId === _clienteSeleccionado.id) {
+                            if (v.clienteId === cliente.id) {
                                 const f = v.fecha?.toDate ? v.fecha.toDate() : new Date(v.fecha || cierre.fecha);
-                                _ventasEncontradas.push({ id: docCierre.id + '-' + Math.random().toString(36).substr(2,5), origen: 'Cierre', ...v, fechaObj: f });
+                                _ventasEncontradas.push({ id: docCierre.id + '-' + Math.random().toString(36).substr(2,5), origen: 'Cierre Histórico', ...v, fechaObj: f });
                             }
                         });
                     });
 
-                } catch (e) { /* Ignorar errores de permisos por carpeta */ }
+                } catch (e) { /* Ignorar errores de permisos si el admin/user no tiene acceso a x carpeta */ }
             }
 
             if (_ventasEncontradas.length === 0) {
-                lista.innerHTML = `<div class="p-4 bg-yellow-50 text-yellow-800 rounded border border-yellow-200 text-sm">No se encontraron ventas para <b>${_clienteSeleccionado.nombreComercial}</b> en la fecha <b>${targetDate.toLocaleDateString()}</b>.</div>`;
+                selectVenta.innerHTML = '<option value="">El cliente no tiene ventas registradas.</option>';
+                emptyState.innerHTML = 'El cliente seleccionado no posee historial de compras.';
                 return;
             }
 
-            // Renderizar lista
-            lista.innerHTML = '';
+            // Ordenar de MÁS RECIENTE a MÁS ANTIGUA
             _ventasEncontradas.sort((a,b) => b.fechaObj - a.fechaObj);
 
+            // Poblar el select
+            selectVenta.innerHTML = '<option value="">-- Despliegue para seleccionar una venta --</option>';
             _ventasEncontradas.forEach((v, index) => {
-                const fStr = v.fechaObj.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
-                const div = document.createElement('div');
-                div.className = 'flex justify-between items-center p-3 border border-gray-200 rounded hover:bg-blue-50 bg-white shadow-sm transition cursor-pointer';
-                div.innerHTML = `
-                    <div>
-                        <span class="font-bold text-gray-800">Venta: $${v.total.toFixed(2)}</span>
-                        <span class="text-xs text-gray-500 ml-2">Hora: ${fStr} | Estado: ${v.origen}</span>
-                    </div>
-                    <button class="px-4 py-1.5 bg-blue-100 text-blue-700 font-bold text-xs rounded border border-blue-300 hover:bg-blue-200">Seleccionar</button>
-                `;
-                div.onclick = () => seleccionarVentaParaFactura(index, div);
-                lista.appendChild(div);
+                const fechaFormat = v.fechaObj.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' });
+                const horaFormat = v.fechaObj.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+                
+                const option = document.createElement('option');
+                option.value = index;
+                option.textContent = `📅 ${fechaFormat} a las ${horaFormat} | Total: $${v.total.toFixed(2)}  (${v.origen})`;
+                selectVenta.appendChild(option);
             });
 
+            selectVenta.disabled = false;
+            emptyState.innerHTML = '← Seleccione una venta en el menú desplegable superior.';
+
         } catch (error) {
-            console.error(error);
-            lista.innerHTML = `<p class="text-red-500">Error al buscar ventas: ${error.message}</p>`;
+            console.error("Error al cargar historial de ventas:", error);
+            selectVenta.innerHTML = '<option value="">Error al cargar historial</option>';
+            emptyState.innerHTML = 'Ocurrió un error al consultar la base de datos.';
         }
-    }
-
-    let _ventaParaFacturar = null;
-    function seleccionarVentaParaFactura(index, elementDiv) {
-        _ventaParaFacturar = _ventasEncontradas[index];
-        
-        // Efecto visual
-        const lista = document.getElementById('facListaVentas');
-        Array.from(lista.children).forEach(c => {
-            c.classList.remove('ring-2', 'ring-blue-500', 'bg-blue-50');
-            c.querySelector('button').innerText = 'Seleccionar';
-            c.querySelector('button').className = 'px-4 py-1.5 bg-blue-100 text-blue-700 font-bold text-xs rounded border border-blue-300 hover:bg-blue-200';
-        });
-        
-        elementDiv.classList.add('ring-2', 'ring-blue-500', 'bg-blue-50');
-        const btn = elementDiv.querySelector('button');
-        btn.innerText = 'Seleccionada';
-        btn.className = 'px-4 py-1.5 bg-blue-600 text-white font-bold text-xs rounded shadow';
-
-        // Mostrar panel de tasa
-        document.getElementById('facPanelTasa').classList.remove('hidden');
-        document.getElementById('btnGenerarFactura').onclick = generarFacturaFiscal;
     }
 
     function generarFacturaFiscal() {
         const tasaBs = parseFloat(document.getElementById('facValorTasa').value);
         if (isNaN(tasaBs) || tasaBs <= 0) {
             _showModal('Error', 'Debe ingresar una Tasa BCV válida mayor a 0 para generar la factura.');
+            document.getElementById('facValorTasa').focus();
+            return;
+        }
+
+        if (!_ventaParaFacturar) {
+            _showModal('Error', 'Debe seleccionar una venta de la lista.');
             return;
         }
 
@@ -308,7 +307,7 @@
         const productosProcesados = [];
 
         (_ventaParaFacturar.productos || []).forEach(p => {
-            // Calcular total de la linea
+            // Calcular total de la linea como lo hace el sistema de ventas
             const pCj = p.precios?.cj || 0;
             const pPaq = p.precios?.paq || 0;
             const pUnd = p.precios?.und || p.precioPorUnidad || 0;
@@ -319,15 +318,14 @@
 
             const totalLinea = (qCj * pCj) + (qPaq * pPaq) + (qUnd * pUnd);
             
-            // Extraer Cantidad Total para mostrar
+            // Extraer Cantidad Total para mostrar en diseño
             let cantDisplay = '';
             if (qCj > 0) cantDisplay += `${qCj} Cj `;
             if (qPaq > 0) cantDisplay += `${qPaq} Pq `;
             if (qUnd > 0) cantDisplay += `${qUnd} Un`;
             if (cantDisplay === '') cantDisplay = `${p.totalUnidadesVendidas} Un`;
 
-            // Verificar IVA (Si p.iva > 0 asumimos que el precio ya INCLUYE IVA en la BD según el estandar del sistema)
-            // Para la factura, debemos extraer la Base Imponible. Base = Total / 1.16
+            // Verificar IVA (Extraer Base Imponible. Base = Total / 1.16)
             let esExento = !(p.iva > 0);
             let precioUnitarioBase = 0;
             let totalLineaBase = 0;
@@ -353,8 +351,8 @@
             });
         });
 
-        // Totales Finales
-        const totalOperacion = subtotalBase + subtotalExento + ivaTotal; // Debería coincidir con _ventaParaFacturar.total
+        // Totales Finales Matemáticos
+        const totalOperacion = subtotalBase + subtotalExento + ivaTotal;
         let retencionIva = 0;
 
         if (_clienteSeleccionado.aplicaRetencion) {
@@ -363,7 +361,7 @@
 
         const totalPagar = totalOperacion - retencionIva;
 
-        // Conversiones a Bs
+        // Conversiones a Bolívares
         const totalBaseBs = subtotalBase * tasaBs;
         const totalExentoBs = subtotalExento * tasaBs;
         const totalIvaBs = ivaTotal * tasaBs;
@@ -374,7 +372,7 @@
         // RENDERIZAR PLANTILLA
         const facturaHtml = crearPlantillaFactura(
             _clienteSeleccionado, 
-            _ventaParaFacturar.fechaObj, 
+            document.getElementById('facFechaTasa').value, // Fecha seleccionada para la emisión
             tasaBs, 
             productosProcesados,
             { subtotalBase, subtotalExento, ivaTotal, totalOperacion, retencionIva, totalPagar },
@@ -382,14 +380,18 @@
         );
 
         const modalWrapper = `
-            <div class="flex flex-col items-center max-h-[75vh] overflow-y-auto bg-gray-200 p-4 rounded-lg">
-                <div id="captureFacturaArea" class="bg-white p-8 w-full max-w-3xl shadow-lg border border-gray-300" style="font-family: 'Courier New', Courier, monospace;">
+            <div class="flex flex-col items-center max-h-[75vh] overflow-y-auto bg-gray-200 p-2 sm:p-4 rounded-lg">
+                <div id="captureFacturaArea" class="bg-white p-6 sm:p-8 w-full max-w-3xl shadow-lg border border-gray-300 relative" style="font-family: 'Courier New', Courier, monospace;">
                     ${facturaHtml}
                 </div>
             </div>
-            <div class="mt-4 flex gap-2">
+            <div class="mt-4 flex flex-col sm:flex-row gap-2">
+                <button id="btnCompartirFactura" class="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded shadow transition flex justify-center items-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" /></svg>
+                    Compartir
+                </button>
                 <button id="btnDescargarFactura" class="w-full py-3 bg-green-600 hover:bg-green-700 text-white font-bold rounded shadow transition flex justify-center items-center gap-2">
-                    <span>⬇️</span> Descargar Imagen
+                    <span>⬇️</span> Descargar
                 </button>
             </div>
         `;
@@ -397,115 +399,138 @@
         _showModal('Factura Fiscal Simulada', modalWrapper, null, 'Cerrar');
 
         setTimeout(() => {
-            document.getElementById('btnDescargarFactura').onclick = async () => {
+            const handleImageGeneration = async (action) => {
                 const element = document.getElementById('captureFacturaArea');
-                _showModal('Progreso', 'Generando imagen...');
+                _showModal('Progreso', 'Renderizando factura...');
                 try {
-                    const canvas = await html2canvas(element, { scale: 2 });
-                    const dataUrl = canvas.toDataURL('image/png');
-                    const link = document.createElement('a');
-                    link.href = dataUrl;
-                    link.download = `Factura_${_clienteSeleccionado.nombreComercial.replace(/\\s+/g, '_')}.png`;
-                    link.click();
-                    document.getElementById('modalContainer').classList.add('hidden');
+                    const canvas = await html2canvas(element, { scale: 2, backgroundColor: '#ffffff' });
+                    const blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
+                    
+                    if (action === 'share' && navigator.share) {
+                        const file = new File([blob], `Factura_${_clienteSeleccionado.nombreComercial.replace(/\s+/g, '_')}.png`, { type: 'image/png' });
+                        await navigator.share({ files: [file], title: 'Factura Simulada' });
+                        document.getElementById('modalContainer').classList.add('hidden');
+                    } else {
+                        const dataUrl = URL.createObjectURL(blob);
+                        const link = document.createElement('a');
+                        link.href = dataUrl;
+                        link.download = `Factura_${_clienteSeleccionado.nombreComercial.replace(/\s+/g, '_')}.png`;
+                        link.click();
+                        document.getElementById('modalContainer').classList.add('hidden');
+                    }
                 } catch (err) {
                     console.error(err);
-                    _showModal('Error', 'Fallo al generar la imagen de la factura.');
+                    _showModal('Error', 'Fallo al procesar la imagen de la factura.');
                 }
             };
+
+            document.getElementById('btnDescargarFactura').onclick = () => handleImageGeneration('download');
+            document.getElementById('btnCompartirFactura').onclick = () => handleImageGeneration('share');
         }, 300);
     }
 
-    function crearPlantillaFactura(cliente, fecha, tasaBs, productos, totales, totalesBs) {
+    function crearPlantillaFactura(cliente, fechaEmisionISO, tasaBs, productos, totales, totalesBs) {
         // Formateadores
         const fUSD = (n) => `$${n.toFixed(2)}`;
         const fBS = (n) => `Bs ${n.toLocaleString('es-VE', {minimumFractionDigits:2, maximumFractionDigits:2})}`;
-        const fechaStr = fecha.toLocaleDateString('es-ES', {day:'2-digit', month:'2-digit', year:'numeric'});
+        
+        // Parsear fecha de emisión correctamente
+        const [year, month, day] = fechaEmisionISO.split('-');
+        const fechaStr = `${day}/${month}/${year}`;
 
         // Filas de productos
         let filasProd = '';
         productos.forEach(p => {
             filasProd += `
-                <tr class="text-sm">
-                    <td class="py-1 border-b border-dashed border-gray-300">${p.cantidad}</td>
-                    <td class="py-1 border-b border-dashed border-gray-300">${p.descripcion} ${p.exento ? '(E)' : ''}</td>
-                    <td class="py-1 border-b border-dashed border-gray-300 text-right">${fUSD(p.precioUnitario)}</td>
-                    <td class="py-1 border-b border-dashed border-gray-300 text-right">${fUSD(p.total)}</td>
+                <tr class="text-xs sm:text-sm">
+                    <td class="py-1.5 border-b border-dashed border-gray-300 text-center font-semibold">${p.cantidad}</td>
+                    <td class="py-1.5 border-b border-dashed border-gray-300">${p.descripcion} <span class="font-bold">${p.exento ? '(E)' : ''}</span></td>
+                    <td class="py-1.5 border-b border-dashed border-gray-300 text-right">${fUSD(p.precioUnitario)}</td>
+                    <td class="py-1.5 border-b border-dashed border-gray-300 text-right font-semibold">${fUSD(p.total)}</td>
                 </tr>
             `;
         });
 
-        const numFactura = Math.floor(100000 + Math.random() * 900000); // Simulamos un Nro Control
+        const numFactura = Math.floor(100000 + Math.random() * 900000);
 
         return `
-            <div class="text-center mb-6">
-                <h1 class="text-2xl font-bold font-sans">DISTRIBUIDORA CASTILLO YAÑEZ C.A.</h1>
-                <p class="text-sm">RIF: J-40214875-5</p>
-                <p class="text-xs mt-1 text-gray-500">*** DOCUMENTO SIMULADO SIN VALIDEZ FISCAL ***</p>
+            <div class="absolute inset-0 z-0 flex items-center justify-center opacity-[0.03] pointer-events-none select-none">
+                <span class="text-8xl font-black transform -rotate-45 tracking-widest">SIMULADOR</span>
             </div>
 
-            <div class="flex justify-between items-end border-b-2 border-black pb-2 mb-4">
-                <div>
-                    <p><strong>Lugar y Fecha:</strong> San Cristóbal, ${fechaStr}</p>
+            <div class="relative z-10">
+                <div class="text-center mb-6">
+                    <h1 class="text-xl sm:text-2xl font-bold font-sans tracking-wide">DISTRIBUIDORA CASTILLO YAÑEZ C.A.</h1>
+                    <p class="text-sm font-semibold">RIF: J-40214875-5</p>
+                    <p class="text-[10px] mt-1 text-gray-500 font-bold tracking-widest">*** DOCUMENTO SIMULADO SIN VALIDEZ FISCAL ***</p>
                 </div>
-                <div class="text-right">
-                    <p class="text-xl font-bold text-red-600">FACTURA</p>
-                    <p><strong>Nro Control:</strong> 00-${numFactura}</p>
-                </div>
-            </div>
 
-            <div class="mb-6 space-y-1 text-sm">
-                <p><strong>Razón Social:</strong> ${cliente.nombreComercial}</p>
-                <p><strong>RIF/Cédula:</strong> ${cliente.rif || 'N/A'}</p>
-                <p><strong>Dirección:</strong> ${cliente.direccion || 'N/A'}</p>
-                <p><strong>Teléfono:</strong> ${cliente.telefono || 'N/A'}</p>
-            </div>
-
-            <table class="w-full mb-6">
-                <thead>
-                    <tr class="border-y-2 border-black text-left">
-                        <th class="py-2 w-1/6">CANT.</th>
-                        <th class="py-2 w-1/2">DESCRIPCIÓN</th>
-                        <th class="py-2 w-1/6 text-right">P. UNIT ($)</th>
-                        <th class="py-2 w-1/6 text-right">TOTAL ($)</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${filasProd}
-                </tbody>
-            </table>
-
-            <div class="flex justify-between mt-8">
-                <div class="w-[45%] border border-gray-400 p-3 rounded bg-gray-50 text-sm h-fit">
-                    <p class="font-bold mb-2 border-b border-gray-300 pb-1">EQUIVALENTE EN BOLÍVARES</p>
-                    <p><strong>Tasa BCV:</strong> ${fBS(tasaBs).replace('Bs ', '')}</p>
-                    <div class="space-y-1 mt-2">
-                        <div class="flex justify-between"><span class="text-gray-600">Sub-Total Exento:</span> <span>${fBS(totalesBs.totalExentoBs)}</span></div>
-                        <div class="flex justify-between"><span class="text-gray-600">Sub-Total Base:</span> <span>${fBS(totalesBs.totalBaseBs)}</span></div>
-                        <div class="flex justify-between"><span class="text-gray-600">IVA (16%):</span> <span>${fBS(totalesBs.totalIvaBs)}</span></div>
-                        <div class="flex justify-between font-bold pt-1 border-t border-gray-300"><span>TOTAL FACTURA:</span> <span>${fBS(totalesBs.totalOperacionBs)}</span></div>
-                        ${cliente.aplicaRetencion ? `<div class="flex justify-between text-red-600 mt-1"><span>Retención IVA (75%):</span> <span>-${fBS(totalesBs.retencionBs)}</span></div>` : ''}
+                <div class="flex justify-between items-end border-b-2 border-black pb-2 mb-4">
+                    <div>
+                        <p class="text-sm"><strong>Lugar y Fecha:</strong> San Cristóbal, ${fechaStr}</p>
                     </div>
-                    <div class="flex justify-between font-black text-lg mt-3 pt-2 border-t-2 border-black">
-                        <span>TOTAL A PAGAR:</span> <span>${fBS(totalesBs.totalPagarBs)}</span>
+                    <div class="text-right">
+                        <p class="text-xl font-black text-red-600 tracking-wider">FACTURA</p>
+                        <p class="text-sm"><strong>Nro Control:</strong> 00-${numFactura}</p>
                     </div>
                 </div>
 
-                <div class="w-[45%] text-sm flex flex-col justify-end">
-                    <div class="space-y-1">
-                        <div class="flex justify-between"><span class="font-bold">Sub-Total Exento:</span> <span>${fUSD(totales.subtotalExento)}</span></div>
-                        <div class="flex justify-between"><span class="font-bold">Sub-Total Base Imponible:</span> <span>${fUSD(totales.subtotalBase)}</span></div>
-                        <div class="flex justify-between"><span class="font-bold">I.V.A (16%):</span> <span>${fUSD(totales.ivaTotal)}</span></div>
-                        <div class="flex justify-between font-black text-base pt-1 mt-1 border-t border-gray-400"><span>TOTAL FACTURA:</span> <span>${fUSD(totales.totalOperacion)}</span></div>
-                        
-                        ${cliente.aplicaRetencion ? `
-                        <div class="flex justify-between text-red-600 mt-2 font-bold">
-                            <span>Retención IVA (75%):</span> <span>-${fUSD(totales.retencionIva)}</span>
+                <div class="mb-6 space-y-1 text-xs sm:text-sm bg-gray-50 p-3 border border-gray-200 rounded">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <p><strong>Razón Social:</strong> ${cliente.nombreComercial}</p>
+                        <p><strong>RIF/Cédula:</strong> ${cliente.rif || 'N/A'}</p>
+                    </div>
+                    <p><strong>Dirección:</strong> ${cliente.direccion || 'N/A'}</p>
+                    <p><strong>Teléfono:</strong> ${cliente.telefono || 'N/A'}</p>
+                </div>
+
+                <table class="w-full mb-6">
+                    <thead>
+                        <tr class="border-y-2 border-black text-left text-xs sm:text-sm">
+                            <th class="py-2 w-1/6 text-center">CANT.</th>
+                            <th class="py-2 w-1/2">DESCRIPCIÓN</th>
+                            <th class="py-2 w-1/6 text-right">P. UNIT ($)</th>
+                            <th class="py-2 w-1/6 text-right">TOTAL ($)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${filasProd}
+                    </tbody>
+                </table>
+
+                <div class="flex flex-col sm:flex-row justify-between mt-8 gap-6 sm:gap-2">
+                    
+                    <div class="w-full sm:w-[48%] border border-gray-400 p-3 rounded bg-gray-50 text-xs sm:text-sm h-fit shadow-sm">
+                        <p class="font-black mb-2 border-b border-gray-300 pb-1 tracking-wide">EQUIVALENTE EN BOLÍVARES</p>
+                        <p class="mb-2"><strong>Tasa BCV Aplicada:</strong> ${fBS(tasaBs).replace('Bs ', '')}</p>
+                        <div class="space-y-1.5 mt-2">
+                            <div class="flex justify-between"><span class="text-gray-600">Sub-Total Exento:</span> <span>${fBS(totalesBs.totalExentoBs)}</span></div>
+                            <div class="flex justify-between"><span class="text-gray-600">Sub-Total Base:</span> <span>${fBS(totalesBs.totalBaseBs)}</span></div>
+                            <div class="flex justify-between"><span class="text-gray-600">IVA (16%):</span> <span>${fBS(totalesBs.totalIvaBs)}</span></div>
+                            <div class="flex justify-between font-bold pt-1.5 border-t border-gray-300"><span>TOTAL FACTURA:</span> <span>${fBS(totalesBs.totalOperacionBs)}</span></div>
+                            ${cliente.aplicaRetencion ? `<div class="flex justify-between text-red-600 mt-1 font-bold"><span>Retención IVA (75%):</span> <span>-${fBS(totalesBs.retencionBs)}</span></div>` : ''}
                         </div>
-                        ` : ''}
+                        <div class="flex justify-between font-black text-base sm:text-lg mt-3 pt-2 border-t-2 border-black">
+                            <span>TOTAL A PAGAR:</span> <span class="text-blue-800">${fBS(totalesBs.totalPagarBs)}</span>
+                        </div>
                     </div>
-                    <div class="flex justify-between font-black text-xl mt-4 pt-2 border-t-2 border-black">
-                        <span>TOTAL A PAGAR:</span> <span>${fUSD(totales.totalPagar)}</span>
+
+                    <div class="w-full sm:w-[48%] text-xs sm:text-sm flex flex-col justify-end">
+                        <div class="space-y-1.5">
+                            <div class="flex justify-between"><span class="font-bold text-gray-600">Sub-Total Exento:</span> <span>${fUSD(totales.subtotalExento)}</span></div>
+                            <div class="flex justify-between"><span class="font-bold text-gray-600">Sub-Total Base Imponible:</span> <span>${fUSD(totales.subtotalBase)}</span></div>
+                            <div class="flex justify-between"><span class="font-bold text-gray-600">I.V.A (16%):</span> <span>${fUSD(totales.ivaTotal)}</span></div>
+                            <div class="flex justify-between font-black text-sm sm:text-base pt-1.5 mt-1.5 border-t border-gray-400"><span>TOTAL FACTURA:</span> <span>${fUSD(totales.totalOperacion)}</span></div>
+                            
+                            ${cliente.aplicaRetencion ? `
+                            <div class="flex justify-between text-red-600 mt-2 font-bold bg-red-50 p-1 px-2 rounded">
+                                <span>Retención IVA (75%):</span> <span>-${fUSD(totales.retencionIva)}</span>
+                            </div>
+                            ` : ''}
+                        </div>
+                        <div class="flex justify-between font-black text-lg sm:text-xl mt-4 pt-2 border-t-2 border-black">
+                            <span>TOTAL A PAGAR:</span> <span class="text-blue-800">${fUSD(totales.totalPagar)}</span>
+                        </div>
                     </div>
                 </div>
             </div>
