@@ -279,7 +279,7 @@
                 <div class="container mx-auto max-w-4xl">
                     <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl">
                         <h2 class="text-2xl font-bold text-gray-800 mb-4 text-center">Importar Clientes desde CSV/Excel</h2>
-                        <p class="text-center text-gray-600 mb-6">Selecciona un archivo .csv o .xlsx. La primera fila debe contener los encabezados: Sector, Nombre Comercial, Nombre Personal, telefono, CEP, y opcionalmente: Coordenadas (o X, Y / Latitud, Longitud).</p>
+                        <p class="text-center text-gray-600 mb-6">Selecciona un archivo .csv o .xlsx. La primera fila debe contener los encabezados: Sector, Nombre Comercial, Nombre Personal, telefono, CEP, y opcionalmente: Retención IVA, Coordenadas (o X, Y / Latitud, Longitud).</p>
                         <input type="file" id="excel-uploader" accept=".xlsx, .xls, .csv" class="w-full p-4 border-2 border-dashed rounded-lg">
                         <div id="preview-container" class="mt-6 overflow-auto max-h-96"></div>
                         <div id="import-actions" class="mt-6 flex flex-col sm:flex-row gap-4 hidden">
@@ -380,7 +380,8 @@
 
             const headers = jsonData[0].map(h => (h ? h.toString().toLowerCase().trim().replace(/\s+/g, '') : ''));
             const requiredHeaders = ['sector', 'nombrecomercial', 'nombrepersonal', 'telefono', 'cep'];
-            const optionalHeaders = ['coordenadas', 'x', 'y', 'latitud', 'longitud', 'lat', 'lon']; 
+            // Se agregan los headers opcionales de retención y coordenadas
+            const optionalHeaders = ['retencioniva', 'apilicaretencion', 'coordenadas', 'x', 'y', 'latitud', 'longitud', 'lat', 'lon']; 
             const headerMap = {};
             let missingHeader = false;
 
@@ -434,6 +435,16 @@
                     }
                 }
 
+                // Extracción de estado de Retención IVA
+                let aplicaRetencion = false;
+                if (headerMap['retencioniva'] !== undefined || headerMap['apilicaretencion'] !== undefined) {
+                    const retIndex = headerMap['retencioniva'] !== undefined ? headerMap['retencioniva'] : headerMap['apilicaretencion'];
+                    const retValue = (row[retIndex] || '').toString().trim().toUpperCase();
+                    if (retValue === 'SI' || retValue === 'SÍ' || retValue === 'TRUE' || retValue === '1') {
+                        aplicaRetencion = true;
+                    }
+                }
+
                 const saldoVaciosInicial = {};
                 TIPOS_VACIO.forEach(tipo => saldoVaciosInicial[tipo] = 0);
 
@@ -444,7 +455,8 @@
                     telefono: (row[headerMap['telefono']] || '').toString().trim(),
                     codigoCEP: (row[headerMap['cep']] || 'N/A').toString().trim(),
                     coordenadas: coordenadas,
-                    saldoVacios: saldoVaciosInicial
+                    aplicaRetencion: aplicaRetencion,
+                    saldoVacios: saldoVaciosInicial 
                 };
                 if (!cliente.codigoCEP) cliente.codigoCEP = 'N/A';
                 if (!cliente.nombreComercial && !cliente.nombrePersonal) {
@@ -494,6 +506,7 @@
                                     <th class="py-1 px-2 text-left">N. Personal</th>
                                     <th class="py-1 px-2 text-left">Teléfono</th>
                                     <th class="py-1 px-2 text-left">CEP</th>
+                                    <th class="py-1 px-2 text-left">Retención IVA</th>
                                     <th class="py-1 px-2 text-left">Coordenadas</th>
                                 </tr></thead><tbody>`;
 
@@ -504,6 +517,7 @@
                 <td class="py-1 px-2">${c.nombrePersonal}</td>
                 <td class="py-1 px-2">${c.telefono}</td>
                 <td class="py-1 px-2">${c.codigoCEP}</td>
+                <td class="py-1 px-2">${c.aplicaRetencion ? 'SI' : 'NO'}</td>
                 <td class="py-1 px-2">${c.coordenadas || 'N/A'}</td>
             </tr>`;
         });
@@ -663,6 +677,15 @@
                                     <button type="button" id="getCoordsBtn" class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600">GPS</button>
                                 </div>
                             </div>
+                            
+                            <div class="mt-4 bg-gray-50 p-4 rounded-lg border border-gray-200">
+                                <label class="flex items-center space-x-3 cursor-pointer">
+                                    <input type="checkbox" id="aplicaRetencion" class="form-checkbox h-5 w-5 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500">
+                                    <span class="text-gray-800 font-bold text-sm">Este cliente es agente de Retención de IVA</span>
+                                </label>
+                                <p class="text-xs text-gray-500 mt-1 ml-8">Márcalo solo si el cliente retiene IVA en sus pagos.</p>
+                            </div>
+
                             <button type="submit" class="w-full px-6 py-3 bg-green-500 text-white font-semibold rounded-lg shadow-md hover:bg-green-600">Guardar Cliente</button>
                         </form>
                         <button id="backToClientesBtn" class="mt-4 w-full px-6 py-3 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500">Volver</button>
@@ -701,6 +724,9 @@
         const telefono = form.telefono.value.trim();
         const codigoCEP = form.codigoCEP.value.trim();
         const coordenadas = form.coordenadas.value.trim();
+        
+        // Leer estado de la casilla de retención
+        const aplicaRetencion = document.getElementById('aplicaRetencion').checked;
 
         if (!sector) {
             _showModal('Error', 'Debes seleccionar o agregar un sector.');
@@ -757,6 +783,7 @@
                 telefono: telefono,
                 codigoCEP: codigoCEP,
                 coordenadas: coordenadas,
+                aplicaRetencion: aplicaRetencion, // Guardado en BD
                 saldoVacios: saldoVaciosInicial 
             };
             try {
@@ -769,6 +796,7 @@
                     cepNACheckbox.checked = false;
                     document.getElementById('codigoCEP').disabled = false;
                 }
+                document.getElementById('aplicaRetencion').checked = false; // Reset checkbox
             } catch (error) {
                 console.error("Error al agregar cliente:", error);
                 _showModal('Error', 'Hubo un error al guardar el cliente.');
@@ -982,6 +1010,9 @@
         const cliente = _clientesCache.find(c => c.id === clienteId);
         if (!cliente) return;
 
+        // Verificar estado de la casilla para pintar en HTML
+        const isRetencionChecked = cliente.aplicaRetencion ? 'checked' : '';
+
         _mainContent.innerHTML = `
             <div class="p-4">
                 <div class="container mx-auto">
@@ -1020,6 +1051,14 @@
                                     <button type="button" id="getEditCoordsBtn" class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600">GPS</button>
                                 </div>
                             </div>
+
+                            <div class="mt-4 bg-gray-50 p-4 rounded-lg border border-gray-200">
+                                <label class="flex items-center space-x-3 cursor-pointer">
+                                    <input type="checkbox" id="editAplicaRetencion" class="form-checkbox h-5 w-5 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500" ${isRetencionChecked}>
+                                    <span class="text-gray-800 font-bold text-sm">Este cliente es agente de Retención de IVA</span>
+                                </label>
+                            </div>
+
                             <button type="submit" class="w-full px-6 py-3 bg-blue-500 text-white font-semibold rounded-lg shadow-md hover:bg-blue-600">Guardar Cambios</button>
                         </form>
                         <button id="backToVerClientesBtn" class="mt-4 w-full px-6 py-3 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500">Volver</button>
@@ -1064,6 +1103,10 @@
                  _showModal('Error', 'Debes seleccionar un sector.');
                  return;
              }
+
+            // Capturar valor del checkbox
+            const aplicaRetencion = document.getElementById('editAplicaRetencion').checked;
+
             const updatedData = {
                 sector: sectorValue.toUpperCase(),
                 nombreComercial: (document.getElementById('editNombreComercial').value || '').toUpperCase(),
@@ -1071,6 +1114,7 @@
                 telefono: document.getElementById('editTelefono').value || '',
                 codigoCEP: document.getElementById('editCodigoCEP').value || '',
                 coordenadas: (document.getElementById('editCoordenadas').value || '').trim(),
+                aplicaRetencion: aplicaRetencion, // Se guarda la actualización
                 saldoVacios: cliente.saldoVacios || {} 
             };
 
@@ -1371,6 +1415,11 @@
         }
         const cliente = _clientesCache[clienteIndex];
 
+        // Insignia visual si el cliente es agente de retención
+        const retencionBadge = cliente.aplicaRetencion 
+            ? '<span class="px-2 py-1 bg-red-100 text-red-800 text-xs font-bold rounded-full border border-red-300">Aplica Retención IVA</span>' 
+            : '';
+
         const saldoVacios = cliente.saldoVacios || {};
         let detalleHTML = '<ul class="space-y-2 mb-4">';
         let hasSaldos = false;
@@ -1388,15 +1437,17 @@
             detalleHTML = '<p class="text-center text-gray-500 mb-4 text-sm">Este cliente no tiene saldos pendientes.</p>';
         }
 
-
         let optionsHTML = '<option value="">Seleccione tipo...</option>';
         TIPOS_VACIO.forEach(tipo => {
             optionsHTML += `<option value="${tipo}">${tipo}</option>`;
         });
 
         const modalContentHTML = `
-            <h3 class="text-xl font-bold text-gray-800 mb-4">Ajuste de Saldo: ${cliente.nombreComercial}</h3>
-            <div class="mb-6 border-b pb-4">${detalleHTML}</div>
+            <div class="flex flex-col gap-1 mb-4 border-b pb-2">
+                <h3 class="text-xl font-bold text-gray-800 leading-tight">${cliente.nombreComercial}</h3>
+                <div>${retencionBadge}</div>
+            </div>
+            <div class="mb-6">${detalleHTML}</div>
             <h4 class="text-lg font-semibold mb-2">Ajuste Manual</h4>
             <div class="space-y-4">
                 <div>
@@ -1440,7 +1491,6 @@
              }
              handleAjusteManualVacios(clienteId, tipoVacio, cantidad, tipoAjuste);
         };
-
 
         if(devolucionBtn) {
             devolucionBtn.addEventListener('click', () => performAdjustment('devolucion'));
@@ -1505,7 +1555,7 @@
         editSector,
         deleteSector,
         showSaldoDetalleModal,
-        showEditSaldoModal // Añadido para el botón del Admin
+        showEditSaldoModal 
     };
 
 })();
