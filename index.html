@@ -168,6 +168,8 @@
         </div>
     </div>
 
+    <div id="temp-ticket-for-image" style="position: absolute; left: -9999px; top: 0; width: auto; height: auto;"></div>
+
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
     
     <script src="config.js"></script>
@@ -183,7 +185,9 @@
     <script src="edit-inventario.js" defer></script> 
     <script src="cxc.js" defer></script>
     <script src="supervision.js" defer></script>
-    <script src="facturacion.js" defer></script> <script type="module"> 
+    <script src="facturacion.js" defer></script> 
+
+    <script type="module"> 
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAnalytics } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-analytics.js";
         import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, createUserWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
@@ -426,7 +430,7 @@
             document.getElementById('clientesBtn')?.addEventListener('click', () => safeNav(window.showClientesSubMenu, 'Clientes'));
             document.getElementById('ventasBtn')?.addEventListener('click', () => safeNav(window.showVentasView, 'Ventas'));
             document.getElementById('cxcBtn')?.addEventListener('click', () => safeNav(window.showCXCView, 'CXC'));
-            document.getElementById('facturacionBtn')?.addEventListener('click', () => safeNav(window.showFacturacionView, 'Facturación')); // LISTENER DEL NUEVO BOTÓN
+            document.getElementById('facturacionBtn')?.addEventListener('click', () => safeNav(window.showFacturacionView, 'Facturación')); 
             document.getElementById('obsequiosBtn')?.addEventListener('click', () => safeNav(window.showGestionObsequiosView, 'Obsequios'));
             document.getElementById('catalogoBtn')?.addEventListener('click', () => safeNav(window.showCatalogoSubMenu, 'Catálogo'));
             document.getElementById('profileAdminBtn')?.addEventListener('click', () => safeNav(window.showAdminOrProfileView, 'Perfil/Admin'));
@@ -494,7 +498,7 @@
                     if (window.initCXC) window.initCXC(deps); else console.warn("Módulo CXC no encontrado");
                     if (window.initEditInventario) window.initEditInventario(deps); else console.warn("Módulo Edit Inventario no encontrado");
                     if (window.initSupervision) window.initSupervision(deps); else console.warn("Módulo Supervisión no encontrado");
-                    if (window.initFacturacion) window.initFacturacion(deps); else console.warn("Módulo Facturación no encontrado"); // NUEVO INIT
+                    if (window.initFacturacion) window.initFacturacion(deps); else console.warn("Módulo Facturación no encontrado"); 
 
                     showMainMenu();
                 } else {
