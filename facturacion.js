@@ -30,7 +30,7 @@
         _orderBy = dependencies.orderBy;
         _limit = dependencies.limit;
 
-        console.log("Módulo Facturación Inicializado (Fix Renderizado + Vista Responsive).");
+        console.log("Módulo Facturación Inicializado (Mejoras UI y Sector).");
     };
 
     window.showFacturacionView = async function() {
@@ -108,7 +108,6 @@
             _clienteSeleccionado = null;
             _ventaParaFacturar = null;
             
-            // Resetear UI
             document.getElementById('facClientSelected').classList.add('hidden');
             document.getElementById('facClientSearch').classList.remove('hidden');
             document.getElementById('facClientSearch').value = '';
@@ -121,7 +120,6 @@
             document.getElementById('facEmptyState').classList.remove('hidden');
         });
 
-        // Al cambiar el desplegable de ventas, mostrar panel de tasa
         document.getElementById('facSelectVenta').addEventListener('change', (e) => {
             if (e.target.value !== "") {
                 _ventaParaFacturar = _ventasEncontradas[parseInt(e.target.value)];
@@ -179,7 +177,6 @@
                 selDiv.classList.remove('hidden');
                 document.getElementById('facClientName').innerHTML = `${c.nombreComercial} ${badge}`;
                 
-                // Activar búsqueda de ventas
                 cargarVentasCliente(c);
             };
             dropdown.appendChild(div);
@@ -207,7 +204,6 @@
         const selectVenta = document.getElementById('facSelectVenta');
         const emptyState = document.getElementById('facEmptyState');
         
-        // Estado de Carga
         selectVenta.innerHTML = '<option value="">Buscando historial de ventas...</option>';
         selectVenta.disabled = true;
         document.getElementById('facPanelTasa').classList.add('hidden');
@@ -215,7 +211,6 @@
         emptyState.classList.remove('hidden');
 
         try {
-            // Obtenemos todos los vendedores para buscar las ventas de este cliente en todas las rutas
             const usersSnap = await _getDocs(_collection(_db, "users"));
             const userIds = usersSnap.docs.map(d => d.id);
             
@@ -223,7 +218,6 @@
 
             for (const uid of userIds) {
                 try {
-                    // 1. Buscar en Ventas Activas del día
                     const vActivasRef = _collection(_db, `artifacts/${_appId}/users/${uid}/ventas`);
                     const qActivas = _query(vActivasRef, _where("clienteId", "==", cliente.id));
                     const snapActivas = await _getDocs(qActivas);
@@ -234,7 +228,6 @@
                         _ventasEncontradas.push({ id: d.id, origen: 'Activa (Hoy)', ...v, fechaObj: f });
                     });
 
-                    // 2. Buscar en Cierres Pasados
                     const cierresRef = _collection(_db, `artifacts/${_appId}/users/${uid}/cierres`);
                     const qCierres = _query(cierresRef, _orderBy("fecha", "desc"), _limit(150)); 
                     const snapCierres = await _getDocs(qCierres);
@@ -258,10 +251,8 @@
                 return;
             }
 
-            // Ordenar de MÁS RECIENTE a MÁS ANTIGUA
             _ventasEncontradas.sort((a,b) => b.fechaObj - a.fechaObj);
 
-            // Poblar el select
             selectVenta.innerHTML = '<option value="">-- Despliegue para seleccionar una venta --</option>';
             _ventasEncontradas.forEach((v, index) => {
                 const fechaFormat = v.fechaObj.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' });
@@ -351,51 +342,42 @@
 
         // Totales Finales Matemáticos
         const totalOperacion = subtotalBase + subtotalExento + ivaTotal;
-        let retencionIva = 0;
+        let retencionIvaUSD = 0;
+        let retencionIvaBs = 0;
 
         if (_clienteSeleccionado.aplicaRetencion) {
-            retencionIva = ivaTotal * 0.75;
+            retencionIvaUSD = ivaTotal * 0.75;
+            retencionIvaBs = retencionIvaUSD * tasaBs;
         }
 
-        const totalPagar = totalOperacion - retencionIva;
+        const totalPagar = totalOperacion - retencionIvaUSD;
 
         // Conversiones a Bolívares de los totales
         const totalBaseBs = subtotalBase * tasaBs;
         const totalExentoBs = subtotalExento * tasaBs;
         const totalIvaBs = ivaTotal * tasaBs;
         const totalOperacionBs = totalOperacion * tasaBs;
-        const retencionBs = retencionIva * tasaBs;
         const totalPagarBs = totalPagar * tasaBs;
 
-        // Generamos DOS plantillas: 
-        // 1. Una para mostrar en el modal (Responsive, adaptable)
-        // 2. Una para capturar la imagen (Fija a 800px, estructurada perfecta)
-        
-        const facturaHtmlResponsive = crearPlantillaFactura(
-            _clienteSeleccionado, document.getElementById('facFechaTasa').value, tasaBs, productosProcesados,
-            { totalOperacion, totalPagar }, { totalBaseBs, totalExentoBs, totalIvaBs, totalOperacionBs, retencionBs, totalPagarBs },
-            false // isForCapture = false
+        // Crear la plantilla HTML
+        const facturaHtml = crearPlantillaFactura(
+            _clienteSeleccionado, 
+            document.getElementById('facFechaTasa').value, 
+            tasaBs, 
+            productosProcesados,
+            { totalOperacion, totalPagar, retencionIvaUSD }, 
+            { totalBaseBs, totalExentoBs, totalIvaBs, totalOperacionBs, retencionBs: retencionIvaBs, totalPagarBs }
         );
 
-        const facturaHtmlCapture = crearPlantillaFactura(
-            _clienteSeleccionado, document.getElementById('facFechaTasa').value, tasaBs, productosProcesados,
-            { totalOperacion, totalPagar }, { totalBaseBs, totalExentoBs, totalIvaBs, totalOperacionBs, retencionBs, totalPagarBs },
-            true // isForCapture = true
-        );
-
-        // Inyectamos el HTML de captura en el contenedor OCULTO del index.html
-        const captureContainer = document.getElementById('temp-ticket-for-image');
-        if (captureContainer) {
-            captureContainer.innerHTML = facturaHtmlCapture;
-        } else {
-            alert("Error: No se encontró el contenedor de captura (temp-ticket-for-image) en el index.html");
-            return;
-        }
-
-        // Mostramos el modal con la versión responsiva
+        // Estructura del Modal
         const modalWrapper = `
-            <div class="flex flex-col items-center max-h-[70vh] w-full overflow-y-auto overflow-x-hidden bg-gray-100 p-2 sm:p-4 rounded-lg">
-                ${facturaHtmlResponsive}
+            <div class="flex flex-col items-center max-h-[75vh] w-full overflow-x-auto overflow-y-auto bg-gray-200 p-2 sm:p-4 rounded-lg">
+                <div id="captureFacturaAreaWrapper" class="w-max mx-auto"> 
+                    <div id="captureFacturaArea" class="bg-white p-6 sm:p-10 shadow-lg border border-gray-300 relative" 
+                         style="width: 800px; font-family: 'Courier New', Courier, monospace;">
+                        ${facturaHtml}
+                    </div>
+                </div>
             </div>
             <div class="mt-4 flex flex-col sm:flex-row gap-2">
                 <button id="btnCompartirFactura" class="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded shadow transition flex justify-center items-center gap-2">
@@ -408,29 +390,39 @@
             </div>
         `;
 
-        _showModal('Factura Fiscal Simulada', modalWrapper, null, 'Cerrar');
+        _showModal('Vista Previa de Factura', modalWrapper, null, 'Cerrar');
 
+        // Lógica de los botones de descarga/compartir
         setTimeout(() => {
             const handleImageGeneration = async (action, btnElement) => {
-                // Tomamos la foto del contenedor oculto, que tiene medidas perfectas
-                const elementToCapture = document.getElementById('temp-ticket-for-image').firstElementChild;
-                
+                const elementToCapture = document.getElementById('captureFacturaArea');
                 if (!elementToCapture) return;
 
-                // Efecto en el botón
                 const originalText = btnElement.innerHTML;
                 btnElement.innerHTML = '<span class="animate-pulse">Generando...</span>';
                 btnElement.disabled = true;
 
                 try {
-                    await new Promise(r => setTimeout(r, 100)); // Breve pausa
+                    // Truco para capturar sin que afecte el modal: Lo clonamos al body invisible
+                    const clone = elementToCapture.cloneNode(true);
+                    clone.style.position = 'absolute';
+                    clone.style.top = '-9999px';
+                    clone.style.left = '-9999px';
+                    clone.style.width = '800px'; 
+                    clone.style.height = 'auto'; 
+                    clone.style.margin = '0';
+                    document.body.appendChild(clone);
+
+                    await new Promise(r => setTimeout(r, 100)); 
                     
-                    const canvas = await html2canvas(elementToCapture, { 
+                    const canvas = await html2canvas(clone, { 
                         scale: 2, 
                         backgroundColor: '#ffffff',
                         logging: false,
                         useCORS: true 
                     });
+                    
+                    document.body.removeChild(clone);
 
                     const blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
                     const fileName = `Factura_${_clienteSeleccionado.nombreComercial.replace(/\\s+/g, '_')}.png`;
@@ -452,7 +444,7 @@
                     
                 } catch (err) {
                     console.error("Error en HTML2Canvas:", err);
-                    alert('Fallo al procesar la imagen de la factura. ' + err.message);
+                    alert('Fallo al procesar la imagen. ' + err.message);
                 } finally {
                     btnElement.innerHTML = originalText;
                     btnElement.disabled = false;
@@ -468,29 +460,19 @@
         }, 300);
     }
 
-    /**
-     * @param {boolean} isForCapture - Si es true, genera HTML con anchos fijos (800px). Si es false, usa clases responsive (w-full, sm:text-lg, etc.)
-     */
-    function crearPlantillaFactura(cliente, fechaEmisionISO, tasaBs, productos, totalesUSD, totalesBs, isForCapture) {
+    function crearPlantillaFactura(cliente, fechaEmisionISO, tasaBs, productos, totalesUSD, totalesBs) {
         const fUSD = (n) => `${n.toFixed(2)}`;
         const fBS = (n) => `${n.toLocaleString('es-VE', {minimumFractionDigits:2, maximumFractionDigits:2})}`;
         
         const [year, month, day] = fechaEmisionISO.split('-');
         const fechaStr = `${day}/${month}/${year}`;
 
-        // Variables de diseño según el destino (Captura perfecta vs Modal responsivo)
-        const containerClasses = isForCapture ? "bg-white p-10 w-[800px] border border-gray-200" : "bg-white p-4 sm:p-6 w-full max-w-3xl shadow-sm border border-gray-300";
-        const tableTextSize = isForCapture ? "text-sm" : "text-xs sm:text-sm";
-        const titleSize = isForCapture ? "text-2xl" : "text-xl sm:text-2xl";
-        const fontSizeContainer = isForCapture ? "16px" : "14px";
-        const totalsWidth = isForCapture ? "w-[400px]" : "w-full sm:w-[350px] md:w-[400px]";
-
         let filasProd = '';
         productos.forEach(p => {
             filasProd += `
-                <tr class="${tableTextSize}">
+                <tr class="text-sm">
                     <td class="py-2 border-b border-dashed border-gray-400 text-center font-semibold">${p.cantidad}</td>
-                    <td class="py-2 border-b border-dashed border-gray-400 pl-2 pr-1">${p.descripcion} <span class="font-bold">${p.exento ? '(E)' : ''}</span></td>
+                    <td class="py-2 border-b border-dashed border-gray-400 pl-2">${p.descripcion} <span class="font-bold">${p.exento ? '(E)' : ''}</span></td>
                     <td class="py-2 border-b border-dashed border-gray-400 text-right pr-2">${fUSD(p.precioUnitarioUSD)}</td>
                     <td class="py-2 border-b border-dashed border-gray-400 text-right pr-2">${fBS(p.precioUnitarioBs)}</td>
                     <td class="py-2 border-b border-dashed border-gray-400 text-right font-semibold">${fBS(p.totalBs)}</td>
@@ -498,101 +480,97 @@
             `;
         });
 
-        // La estructura HTML es la misma, solo cambian las clases Tailwind inyectadas arriba
+        // Resolvemos el nombre de la Zona/Sector
+        const zonaCliente = cliente.sector || cliente.sectorNombre || 'N/A';
+
         return `
-            <div class="${containerClasses} relative mx-auto" style="font-family: 'Courier New', Courier, monospace; font-size: ${fontSizeContainer};">
-                
-                <div class="absolute inset-0 z-0 flex items-center justify-center opacity-[0.03] pointer-events-none select-none overflow-hidden">
-                    <span class="text-7xl sm:text-9xl font-black transform -rotate-45 tracking-widest text-black">SIMULADOR</span>
+            <div class="absolute inset-0 z-0 flex items-center justify-center opacity-[0.03] pointer-events-none select-none">
+                <span class="text-[130px] font-black transform -rotate-45 tracking-widest text-black">SIMULADOR</span>
+            </div>
+
+            <div class="relative z-10 w-full">
+                <div class="text-center mb-6">
+                    <h1 class="text-3xl font-bold font-sans tracking-wide mb-1">DISTRIBUIDORA CASTILLO YAÑEZ C.A.</h1>
+                    <p class="text-lg font-semibold">RIF: J-40214875-5</p>
+                    <p class="text-xs mt-2 text-gray-500 font-bold tracking-widest">*** DOCUMENTO SIMULADO SIN VALIDEZ FISCAL ***</p>
                 </div>
 
-                <div class="relative z-10 w-full">
-                    <div class="text-center mb-6 sm:mb-8">
-                        <h1 class="${titleSize} font-bold font-sans tracking-wide mb-1">DISTRIBUIDORA CASTILLO YAÑEZ C.A.</h1>
-                        <p class="font-semibold text-sm sm:text-base">RIF: J-40214875-5</p>
-                        <p class="text-[10px] sm:text-xs mt-2 text-gray-500 font-bold tracking-widest uppercase">*** Documento Simulado - Sin Validez Fiscal ***</p>
+                <div class="flex justify-between items-end border-b-2 border-black pb-3 mb-6">
+                    <div>
+                        <p class="text-base"><strong>Lugar y Fecha:</strong> San Cristóbal, ${fechaStr}</p>
                     </div>
+                </div>
 
-                    <div class="flex flex-col sm:flex-row sm:justify-between sm:items-end border-b-2 border-black pb-3 mb-4 sm:mb-6 gap-2 sm:gap-0">
-                        <div>
-                            <p class="text-sm sm:text-base"><strong>Lugar y Fecha:</strong> San Cristóbal, ${fechaStr}</p>
+                <div class="mb-8 space-y-2 text-base bg-gray-50 p-4 border border-gray-300 rounded">
+                    <div class="grid grid-cols-2 gap-4">
+                        <p><strong>Razón Social:</strong> ${cliente.nombreComercial}</p>
+                        <p><strong>RIF/Cédula:</strong> ${cliente.rif || 'N/A'}</p>
+                    </div>
+                    <p><strong>Zona:</strong> ${zonaCliente}</p>
+                    <p><strong>Teléfono:</strong> ${cliente.telefono || 'N/A'}</p>
+                </div>
+
+                <table class="w-full mb-8 border-collapse">
+                    <thead>
+                        <tr class="border-y-2 border-black text-left text-sm bg-gray-100">
+                            <th class="py-3 w-20 text-center font-bold">CANT.</th>
+                            <th class="py-3 pl-2 font-bold">DESCRIPCIÓN</th>
+                            <th class="py-3 w-24 text-right pr-2 font-bold">P. UNIT ($)</th>
+                            <th class="py-3 w-28 text-right pr-2 font-bold">P. UNIT (Bs)</th>
+                            <th class="py-3 w-32 text-right font-bold">TOTAL (Bs)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${filasProd}
+                    </tbody>
+                </table>
+
+                <div class="flex justify-end mt-10">
+                    <div class="w-[380px] text-base border border-gray-400 p-4 rounded-lg bg-gray-50 shadow-sm">
+                        
+                        <div class="flex justify-between mb-4 border-b-2 border-gray-300 pb-2">
+                            <span class="font-bold text-gray-700 uppercase tracking-wider">Tasa BCV Aplicada:</span> 
+                            <span class="font-bold text-blue-800 text-lg">Bs ${fBS(tasaBs)}</span>
                         </div>
-                    </div>
 
-                    <div class="mb-6 sm:mb-8 space-y-1 sm:space-y-2 text-sm sm:text-base bg-gray-50 p-3 sm:p-4 border border-gray-300 rounded">
-                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-1 sm:gap-4">
-                            <p class="truncate" title="${cliente.nombreComercial}"><strong>Razón Social:</strong> ${cliente.nombreComercial}</p>
-                            <p><strong>RIF/Cédula:</strong> ${cliente.rif || 'N/A'}</p>
-                        </div>
-                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-1 sm:gap-4">
-                            <p class="truncate" title="${cliente.sectorNombre || 'N/A'}"><strong>Zona:</strong> ${cliente.sectorNombre || 'N/A'}</p>
-                            <p><strong>Teléfono:</strong> ${cliente.telefono || 'N/A'}</p>
-                        </div>
-                    </div>
-
-                    <div class="overflow-x-auto pb-2">
-                        <table class="w-full mb-6 sm:mb-8 border-collapse min-w-[500px]">
-                            <thead>
-                                <tr class="border-y-2 border-black text-left ${tableTextSize} bg-gray-100">
-                                    <th class="py-2 sm:py-3 w-12 sm:w-16 text-center font-bold">CANT.</th>
-                                    <th class="py-2 sm:py-3 pl-2 font-bold min-w-[150px]">DESCRIPCIÓN</th>
-                                    <th class="py-2 sm:py-3 w-20 sm:w-24 text-right pr-2 font-bold leading-tight">P. UNIT<br>($)</th>
-                                    <th class="py-2 sm:py-3 w-24 sm:w-28 text-right pr-2 font-bold leading-tight">P. UNIT<br>(Bs)</th>
-                                    <th class="py-2 sm:py-3 w-28 sm:w-32 text-right font-bold">TOTAL<br>(Bs)</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                ${filasProd}
-                            </tbody>
-                        </table>
-                    </div>
-
-                    <div class="flex justify-end mt-6 sm:mt-10">
-                        <div class="${totalsWidth} text-sm sm:text-base border border-gray-400 p-3 sm:p-4 rounded-lg bg-gray-50 shadow-sm">
-                            
-                            <div class="flex justify-between mb-3 sm:mb-4 border-b-2 border-gray-300 pb-2 items-center">
-                                <span class="font-bold text-gray-700 uppercase tracking-wider text-xs sm:text-sm">Tasa BCV:</span> 
-                                <span class="font-bold text-blue-800 text-base sm:text-lg">Bs ${fBS(tasaBs)}</span>
+                        <div class="space-y-2">
+                            <div class="flex justify-between">
+                                <span class="font-bold text-gray-600">Base Imponible:</span> 
+                                <span>Bs ${fBS(totalesBs.totalBaseBs)}</span>
                             </div>
-
-                            <div class="space-y-1.5 sm:space-y-2">
-                                <div class="flex justify-between">
-                                    <span class="font-bold text-gray-600">Base Imponible:</span> 
-                                    <span>Bs ${fBS(totalesBs.totalBaseBs)}</span>
-                                </div>
-                                <div class="flex justify-between">
-                                    <span class="font-bold text-gray-600">Monto Exento:</span> 
-                                    <span>Bs ${fBS(totalesBs.totalExentoBs)}</span>
-                                </div>
-                                <div class="flex justify-between">
-                                    <span class="font-bold text-gray-600">I.V.A (16%):</span> 
-                                    <span>Bs ${fBS(totalesBs.totalIvaBs)}</span>
-                                </div>
-                                
-                                <div class="flex justify-between font-black text-sm sm:text-base pt-2 mt-2 border-t border-gray-400">
-                                    <span>TOTAL:</span> 
-                                    <span>Bs ${fBS(totalesBs.totalOperacionBs)}</span>
-                                </div>
-                                
-                                ${cliente.aplicaRetencion ? `
-                                <div class="flex justify-between text-red-600 mt-2 sm:mt-3 font-bold bg-red-50 p-1.5 sm:p-2 rounded border border-red-200">
-                                    <span>Retención (75%):</span> 
-                                    <span>-Bs ${fBS(totalesBs.retencionBs)}</span>
-                                </div>
-                                ` : ''}
+                            <div class="flex justify-between">
+                                <span class="font-bold text-gray-600">Monto Exento:</span> 
+                                <span>Bs ${fBS(totalesBs.totalExentoBs)}</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span class="font-bold text-gray-600">I.V.A (16%):</span> 
+                                <span>Bs ${fBS(totalesBs.totalIvaBs)}</span>
                             </div>
                             
-                            <div class="flex justify-between items-center font-black text-lg sm:text-xl mt-4 sm:mt-5 pt-2 sm:pt-3 border-t-4 border-black">
-                                <span>A PAGAR:</span> 
-                                <span class="text-black">Bs ${fBS(totalesBs.totalPagarBs)}</span>
+                            <div class="flex justify-between font-black text-lg pt-2 mt-2 border-t border-gray-400">
+                                <span>TOTAL:</span> 
+                                <span>Bs ${fBS(totalesBs.totalOperacionBs)}</span>
                             </div>
                             
-                            <div class="flex justify-end mt-2">
-                                <div class="text-gray-600 font-bold text-[11px] sm:text-xs bg-gray-200 py-1 px-2 rounded inline-block">
-                                    Ref: $${fUSD(totalesUSD.totalPagar)} USD
+                            ${cliente.aplicaRetencion ? `
+                            <div class="flex flex-col text-red-600 mt-3 font-bold bg-red-50 p-2 rounded border border-red-200">
+                                <div class="flex justify-between">
+                                    <span>Retención IVA (75%):</span> 
+                                    <span class="text-sm">-$${fUSD(totalesUSD.retencionIvaUSD)} USD &nbsp;|&nbsp; -Bs ${fBS(totalesBs.retencionBs)}</span>
                                 </div>
                             </div>
+                            ` : ''}
                         </div>
+                        
+                        <div class="flex justify-between font-black text-xl mt-5 pt-3 border-t-4 border-black">
+                            <span>TOTAL A PAGAR:</span> 
+                            <span class="text-black">Bs ${fBS(totalesBs.totalPagarBs)}</span>
+                        </div>
+                        
+                        <div class="flex justify-end mt-2 text-gray-600 font-bold text-sm bg-gray-200 border border-gray-300 py-1 px-2 rounded inline-block float-right shadow-inner">
+                            Ref: $${fUSD(totalesUSD.totalPagar)} USD
+                        </div>
+                        <div class="clear-both"></div>
                     </div>
                 </div>
             </div>
