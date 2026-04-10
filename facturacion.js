@@ -30,7 +30,7 @@
         _orderBy = dependencies.orderBy;
         _limit = dependencies.limit;
 
-        console.log("Módulo Facturación Inicializado (Matemática PVP y Scroll Horizontal Corregidos).");
+        console.log("Módulo Facturación Inicializado (Descripciones Detalladas e IVA numérico).");
     };
 
     window.showFacturacionView = async function() {
@@ -108,6 +108,7 @@
             _clienteSeleccionado = null;
             _ventaParaFacturar = null;
             
+            // Resetear UI
             document.getElementById('facClientSelected').classList.add('hidden');
             document.getElementById('facClientSearch').classList.remove('hidden');
             document.getElementById('facClientSearch').value = '';
@@ -120,6 +121,7 @@
             document.getElementById('facEmptyState').classList.remove('hidden');
         });
 
+        // Al cambiar el desplegable de ventas, mostrar panel de tasa
         document.getElementById('facSelectVenta').addEventListener('change', (e) => {
             if (e.target.value !== "") {
                 _ventaParaFacturar = _ventasEncontradas[parseInt(e.target.value)];
@@ -177,6 +179,7 @@
                 selDiv.classList.remove('hidden');
                 document.getElementById('facClientName').innerHTML = `${c.nombreComercial} ${badge}`;
                 
+                // Activar búsqueda de ventas
                 cargarVentasCliente(c);
             };
             dropdown.appendChild(div);
@@ -204,6 +207,7 @@
         const selectVenta = document.getElementById('facSelectVenta');
         const emptyState = document.getElementById('facEmptyState');
         
+        // Estado de Carga
         selectVenta.innerHTML = '<option value="">Buscando historial de ventas...</option>';
         selectVenta.disabled = true;
         document.getElementById('facPanelTasa').classList.add('hidden');
@@ -218,6 +222,7 @@
 
             for (const uid of userIds) {
                 try {
+                    // 1. Buscar en Ventas Activas del día
                     const vActivasRef = _collection(_db, `artifacts/${_appId}/users/${uid}/ventas`);
                     const qActivas = _query(vActivasRef, _where("clienteId", "==", cliente.id));
                     const snapActivas = await _getDocs(qActivas);
@@ -228,6 +233,7 @@
                         _ventasEncontradas.push({ id: d.id, origen: 'Activa (Hoy)', ...v, fechaObj: f });
                     });
 
+                    // 2. Buscar en Cierres Pasados (Buscamos en los últimos meses para no colapsar la app)
                     const cierresRef = _collection(_db, `artifacts/${_appId}/users/${uid}/cierres`);
                     const qCierres = _query(cierresRef, _orderBy("fecha", "desc"), _limit(150)); 
                     const snapCierres = await _getDocs(qCierres);
@@ -251,8 +257,10 @@
                 return;
             }
 
+            // Ordenar de MÁS RECIENTE a MÁS ANTIGUA
             _ventasEncontradas.sort((a,b) => b.fechaObj - a.fechaObj);
 
+            // Poblar el select
             selectVenta.innerHTML = '<option value="">-- Despliegue para seleccionar una venta --</option>';
             _ventasEncontradas.forEach((v, index) => {
                 const fechaFormat = v.fechaObj.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' });
@@ -295,13 +303,21 @@
 
         (_ventaParaFacturar.productos || []).forEach(p => {
             
-            // Evaluamos con total seguridad si es Exento de IVA o no
-            let esExento = true; // Exento por defecto
-            if (p.iva === true || p.iva === "true" || parseFloat(p.iva) > 0) {
-                esExento = false;
+            // Evaluación estricta de IVA basada en número (16 o 0 según inventario.js)
+            let esExento = true; // Por defecto asumimos que es exento
+            if (p.iva && parseFloat(p.iva) > 0) {
+                esExento = false; // Si el IVA es mayor a 0 (ej. 16), es gravado
             }
 
-            // Los precios del inventario son PVP (Con IVA Incluido)
+            // Construcción Inteligente de la Descripción (Marca Segmento Presentacion)
+            const marcaStr = (p.marca && p.marca !== 'S/M' && p.marca.toLowerCase() !== 'sin marca') ? p.marca : '';
+            const segmentoStr = (p.segmento && p.segmento !== 'S/S' && p.segmento.toLowerCase() !== 'sin segmento') ? p.segmento : '';
+            const presStr = p.presentacion || '';
+            
+            // Unimos ignorando espacios vacíos
+            const descCompleta = [marcaStr, segmentoStr, presStr].filter(Boolean).join(' ');
+
+            // Los precios del inventario son PVP (Con IVA Incluido en sistema)
             const pCj = parseFloat(p.precios?.cj) || 0;
             const pPaq = parseFloat(p.precios?.paq) || 0;
             const pUnd = parseFloat(p.precios?.und) || parseFloat(p.precioPorUnidad) || 0;
@@ -310,7 +326,7 @@
             const qPaq = parseInt(p.cantidadVendida?.paq) || 0;
             const qUnd = parseInt(p.cantidadVendida?.und) || 0;
 
-            // Función interna para procesar y desglosar cada línea de la factura individualmente
+            // Función interna para procesar y desglosar cada línea
             const procesarLineaFactura = (cantidad, unidadMedida, precioUnitarioPVP_USD) => {
                 if (cantidad <= 0 || precioUnitarioPVP_USD <= 0) return;
 
@@ -320,12 +336,10 @@
                 let totalLineaBaseUSD = 0;
 
                 if (esExento) {
-                    // Producto Exento: La base es el PVP directo
                     totalLineaBaseUSD = totalLineaPVP_USD;
                     precioUnitarioBaseUSD = precioUnitarioPVP_USD;
                     subtotalExento += totalLineaBaseUSD;
                 } else {
-                    // Producto Gravado: Extraer IVA (Base = PVP / 1.16)
                     totalLineaBaseUSD = totalLineaPVP_USD / 1.16;
                     const ivaLineaUSD = totalLineaPVP_USD - totalLineaBaseUSD;
                     
@@ -341,7 +355,7 @@
 
                 productosProcesados.push({
                     cantidad: `${cantidad} ${unidadMedida}`,
-                    descripcion: p.presentacion,
+                    descripcion: descCompleta,
                     precioUnitarioUSD: precioUnitarioBaseUSD,
                     precioUnitarioBs: precioUnitarioBaseBs,
                     totalBs: totalLineaBaseBs,
@@ -349,14 +363,13 @@
                 });
             };
 
-            // Ejecutar la separación de líneas de venta (No promedios)
+            // Ejecutar la separación de líneas de venta por unidad de medida
             procesarLineaFactura(qCj, 'Cj', pCj);
             procesarLineaFactura(qPaq, 'Pq', pPaq);
             procesarLineaFactura(qUnd, 'Un', pUnd);
 
             // Respaldo de seguridad para tickets muy viejos que no separaban Cj/Pq/Un
             if (qCj === 0 && qPaq === 0 && qUnd === 0) {
-                // Si p.cantidad está vacío, intentamos derivarlo del total y el precio unidad
                 const fallbackQty = parseInt(p.cantidad) || parseInt(p.totalUnidadesVendidas) || 1;
                 const fallbackPrice = pUnd > 0 ? pUnd : ((p.total || 0) / fallbackQty);
                 if (fallbackPrice > 0) {
@@ -384,22 +397,32 @@
         const totalOperacionBs = totalOperacion * tasaBs;
         const totalPagarBs = totalPagar * tasaBs;
 
-        const facturaHtml = crearPlantillaFactura(
-            _clienteSeleccionado, 
-            document.getElementById('facFechaTasa').value, 
-            tasaBs, 
-            productosProcesados,
-            { totalOperacion, totalPagar, retencionIvaUSD }, 
-            { totalBaseBs, totalExentoBs, totalIvaBs, totalOperacionBs, retencionBs: retencionIvaBs, totalPagarBs }
+        const facturaHtmlResponsive = crearPlantillaFactura(
+            _clienteSeleccionado, document.getElementById('facFechaTasa').value, tasaBs, productosProcesados,
+            { totalOperacion, totalPagar, retencionIvaUSD }, { totalBaseBs, totalExentoBs, totalIvaBs, totalOperacionBs, retencionBs: retencionIvaBs, totalPagarBs },
+            false 
         );
 
-        // Estructura del Modal con scroll horizontal asegurado (w-max y overflow-x-auto)
+        const facturaHtmlCapture = crearPlantillaFactura(
+            _clienteSeleccionado, document.getElementById('facFechaTasa').value, tasaBs, productosProcesados,
+            { totalOperacion, totalPagar, retencionIvaUSD }, { totalBaseBs, totalExentoBs, totalIvaBs, totalOperacionBs, retencionBs: retencionIvaBs, totalPagarBs },
+            true 
+        );
+
+        const captureContainer = document.getElementById('temp-ticket-for-image');
+        if (captureContainer) {
+            captureContainer.innerHTML = facturaHtmlCapture;
+        } else {
+            alert("Error: No se encontró el contenedor de captura (temp-ticket-for-image) en el index.html");
+            return;
+        }
+
         const modalWrapper = `
             <div class="flex flex-col items-center max-h-[75vh] w-full overflow-x-auto overflow-y-auto bg-gray-200 p-2 sm:p-4 rounded-lg">
                 <div id="captureFacturaAreaWrapper" class="w-max mx-auto"> 
                     <div id="captureFacturaArea" class="bg-white p-6 sm:p-10 shadow-lg border border-gray-300 relative" 
                          style="width: 800px; min-width: 800px; font-family: 'Courier New', Courier, monospace;">
-                        ${facturaHtml}
+                        ${facturaHtmlResponsive}
                     </div>
                 </div>
             </div>
@@ -418,7 +441,8 @@
 
         setTimeout(() => {
             const handleImageGeneration = async (action, btnElement) => {
-                const elementToCapture = document.getElementById('captureFacturaArea');
+                const elementToCapture = document.getElementById('temp-ticket-for-image').firstElementChild;
+                
                 if (!elementToCapture) return;
 
                 const originalText = btnElement.innerHTML;
@@ -426,7 +450,6 @@
                 btnElement.disabled = true;
 
                 try {
-                    // Truco seguro para HTML2Canvas en modales con scroll
                     const clone = elementToCapture.cloneNode(true);
                     clone.style.position = 'absolute';
                     clone.style.top = '-9999px';
@@ -575,7 +598,7 @@
                             </div>
                             
                             <div class="flex justify-between font-black text-lg pt-2 mt-2 border-t border-gray-400">
-                                <span>TOTAL:</span> 
+                                <span>TOTAL FACTURA:</span> 
                                 <span>Bs ${fBS(totalesBs.totalOperacionBs)}</span>
                             </div>
                             
