@@ -30,7 +30,7 @@
         _orderBy = dependencies.orderBy;
         _limit = dependencies.limit;
 
-        console.log("Módulo Facturación Inicializado (Fijado IVA y Precios Unitarios).");
+        console.log("Módulo Facturación Inicializado (Matemática PVP y Scroll Horizontal Corregidos).");
     };
 
     window.showFacturacionView = async function() {
@@ -301,6 +301,7 @@
                 esExento = false;
             }
 
+            // Los precios del inventario son PVP (Con IVA Incluido)
             const pCj = parseFloat(p.precios?.cj) || 0;
             const pPaq = parseFloat(p.precios?.paq) || 0;
             const pUnd = parseFloat(p.precios?.und) || parseFloat(p.precioPorUnidad) || 0;
@@ -309,24 +310,26 @@
             const qPaq = parseInt(p.cantidadVendida?.paq) || 0;
             const qUnd = parseInt(p.cantidadVendida?.und) || 0;
 
-            // Función interna para procesar y agregar cada línea de la factura individualmente
-            const procesarLineaFactura = (cantidad, unidadMedida, precioUnitarioConIva) => {
-                if (cantidad <= 0 || precioUnitarioConIva <= 0) return;
+            // Función interna para procesar y desglosar cada línea de la factura individualmente
+            const procesarLineaFactura = (cantidad, unidadMedida, precioUnitarioPVP_USD) => {
+                if (cantidad <= 0 || precioUnitarioPVP_USD <= 0) return;
 
-                const totalLineaConIva = cantidad * precioUnitarioConIva;
+                const totalLineaPVP_USD = cantidad * precioUnitarioPVP_USD;
+                
                 let precioUnitarioBaseUSD = 0;
                 let totalLineaBaseUSD = 0;
 
                 if (esExento) {
-                    // La base es igual al total porque no hay IVA que extraer
-                    totalLineaBaseUSD = totalLineaConIva;
-                    precioUnitarioBaseUSD = precioUnitarioConIva;
+                    // Producto Exento: La base es el PVP directo
+                    totalLineaBaseUSD = totalLineaPVP_USD;
+                    precioUnitarioBaseUSD = precioUnitarioPVP_USD;
                     subtotalExento += totalLineaBaseUSD;
                 } else {
-                    // Extraer IVA de un precio que ya lo tiene incluido (Base = Total / 1.16)
-                    totalLineaBaseUSD = totalLineaConIva / 1.16;
-                    const ivaLineaUSD = totalLineaConIva - totalLineaBaseUSD;
-                    precioUnitarioBaseUSD = precioUnitarioConIva / 1.16;
+                    // Producto Gravado: Extraer IVA (Base = PVP / 1.16)
+                    totalLineaBaseUSD = totalLineaPVP_USD / 1.16;
+                    const ivaLineaUSD = totalLineaPVP_USD - totalLineaBaseUSD;
+                    
+                    precioUnitarioBaseUSD = precioUnitarioPVP_USD / 1.16;
                     
                     subtotalBase += totalLineaBaseUSD;
                     ivaTotal += ivaLineaUSD;
@@ -346,14 +349,15 @@
                 });
             };
 
-            // Ejecutar la separación de líneas inteligentes (No más promedios extraños)
+            // Ejecutar la separación de líneas de venta (No promedios)
             procesarLineaFactura(qCj, 'Cj', pCj);
             procesarLineaFactura(qPaq, 'Pq', pPaq);
             procesarLineaFactura(qUnd, 'Un', pUnd);
 
-            // Respaldo de seguridad por si es un registro viejo que no se separó en CJ/PAQ/UND
+            // Respaldo de seguridad para tickets muy viejos que no separaban Cj/Pq/Un
             if (qCj === 0 && qPaq === 0 && qUnd === 0) {
-                const fallbackQty = parseInt(p.totalUnidadesVendidas) || parseInt(p.cantidad) || 1;
+                // Si p.cantidad está vacío, intentamos derivarlo del total y el precio unidad
+                const fallbackQty = parseInt(p.cantidad) || parseInt(p.totalUnidadesVendidas) || 1;
                 const fallbackPrice = pUnd > 0 ? pUnd : ((p.total || 0) / fallbackQty);
                 if (fallbackPrice > 0) {
                     procesarLineaFactura(fallbackQty, 'Un', fallbackPrice);
@@ -380,29 +384,24 @@
         const totalOperacionBs = totalOperacion * tasaBs;
         const totalPagarBs = totalPagar * tasaBs;
 
-        const facturaHtmlResponsive = crearPlantillaFactura(
-            _clienteSeleccionado, document.getElementById('facFechaTasa').value, tasaBs, productosProcesados,
-            { totalOperacion, totalPagar, retencionIvaUSD }, { totalBaseBs, totalExentoBs, totalIvaBs, totalOperacionBs, retencionBs: retencionIvaBs, totalPagarBs },
-            false 
+        const facturaHtml = crearPlantillaFactura(
+            _clienteSeleccionado, 
+            document.getElementById('facFechaTasa').value, 
+            tasaBs, 
+            productosProcesados,
+            { totalOperacion, totalPagar, retencionIvaUSD }, 
+            { totalBaseBs, totalExentoBs, totalIvaBs, totalOperacionBs, retencionBs: retencionIvaBs, totalPagarBs }
         );
 
-        const facturaHtmlCapture = crearPlantillaFactura(
-            _clienteSeleccionado, document.getElementById('facFechaTasa').value, tasaBs, productosProcesados,
-            { totalOperacion, totalPagar, retencionIvaUSD }, { totalBaseBs, totalExentoBs, totalIvaBs, totalOperacionBs, retencionBs: retencionIvaBs, totalPagarBs },
-            true 
-        );
-
-        const captureContainer = document.getElementById('temp-ticket-for-image');
-        if (captureContainer) {
-            captureContainer.innerHTML = facturaHtmlCapture;
-        } else {
-            alert("Error: No se encontró el contenedor de captura (temp-ticket-for-image) en el index.html");
-            return;
-        }
-
+        // Estructura del Modal con scroll horizontal asegurado (w-max y overflow-x-auto)
         const modalWrapper = `
-            <div class="flex flex-col items-center max-h-[70vh] w-full overflow-y-auto overflow-x-hidden bg-gray-100 p-2 sm:p-4 rounded-lg">
-                ${facturaHtmlResponsive}
+            <div class="flex flex-col items-center max-h-[75vh] w-full overflow-x-auto overflow-y-auto bg-gray-200 p-2 sm:p-4 rounded-lg">
+                <div id="captureFacturaAreaWrapper" class="w-max mx-auto"> 
+                    <div id="captureFacturaArea" class="bg-white p-6 sm:p-10 shadow-lg border border-gray-300 relative" 
+                         style="width: 800px; min-width: 800px; font-family: 'Courier New', Courier, monospace;">
+                        ${facturaHtml}
+                    </div>
+                </div>
             </div>
             <div class="mt-4 flex flex-col sm:flex-row gap-2">
                 <button id="btnCompartirFactura" class="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded shadow transition flex justify-center items-center gap-2">
@@ -419,8 +418,7 @@
 
         setTimeout(() => {
             const handleImageGeneration = async (action, btnElement) => {
-                const elementToCapture = document.getElementById('temp-ticket-for-image').firstElementChild;
-                
+                const elementToCapture = document.getElementById('captureFacturaArea');
                 if (!elementToCapture) return;
 
                 const originalText = btnElement.innerHTML;
@@ -428,6 +426,7 @@
                 btnElement.disabled = true;
 
                 try {
+                    // Truco seguro para HTML2Canvas en modales con scroll
                     const clone = elementToCapture.cloneNode(true);
                     clone.style.position = 'absolute';
                     clone.style.top = '-9999px';
@@ -484,25 +483,19 @@
         }, 300);
     }
 
-    function crearPlantillaFactura(cliente, fechaEmisionISO, tasaBs, productos, totalesUSD, totalesBs, isForCapture) {
+    function crearPlantillaFactura(cliente, fechaEmisionISO, tasaBs, productos, totalesUSD, totalesBs) {
         const fUSD = (n) => `${n.toFixed(2)}`;
         const fBS = (n) => `${n.toLocaleString('es-VE', {minimumFractionDigits:2, maximumFractionDigits:2})}`;
         
         const [year, month, day] = fechaEmisionISO.split('-');
         const fechaStr = `${day}/${month}/${year}`;
 
-        const containerClasses = isForCapture ? "bg-white p-8 w-[800px] border border-gray-200" : "bg-white p-4 sm:p-6 w-full max-w-3xl shadow-sm border border-gray-300";
-        const tableTextSize = isForCapture ? "text-sm" : "text-xs sm:text-sm";
-        const titleSize = isForCapture ? "text-2xl" : "text-xl sm:text-2xl";
-        const fontSizeContainer = isForCapture ? "16px" : "14px";
-        const totalsWidth = isForCapture ? "w-[400px]" : "w-full sm:w-[350px] md:w-[400px]";
-
         let filasProd = '';
         productos.forEach(p => {
             filasProd += `
-                <tr class="${tableTextSize}">
+                <tr class="text-sm">
                     <td class="py-2 border-b border-dashed border-gray-400 text-center font-semibold">${p.cantidad}</td>
-                    <td class="py-2 border-b border-dashed border-gray-400 pl-2 pr-1">${p.descripcion} <span class="font-bold">${p.exento ? '(E)' : ''}</span></td>
+                    <td class="py-2 border-b border-dashed border-gray-400 pl-2">${p.descripcion} <span class="font-bold">${p.exento ? '(E)' : ''}</span></td>
                     <td class="py-2 border-b border-dashed border-gray-400 text-right pr-2">${fUSD(p.precioUnitarioUSD)}</td>
                     <td class="py-2 border-b border-dashed border-gray-400 text-right pr-2">${fBS(p.precioUnitarioBs)}</td>
                     <td class="py-2 border-b border-dashed border-gray-400 text-right font-semibold">${fBS(p.totalBs)}</td>
@@ -511,101 +504,100 @@
         });
 
         const zonaCliente = cliente.sector || cliente.sectorNombre || 'N/A';
+        const numFactura = Math.floor(100000 + Math.random() * 900000);
 
         return `
-            <div class="${containerClasses} relative mx-auto" style="font-family: 'Courier New', Courier, monospace; font-size: ${fontSizeContainer};">
-                
-                <div class="absolute inset-0 z-0 flex items-center justify-center opacity-[0.03] pointer-events-none select-none overflow-hidden">
-                    <span class="text-7xl sm:text-9xl font-black transform -rotate-45 tracking-widest text-black">SIMULADOR</span>
+            <div class="absolute inset-0 z-0 flex items-center justify-center opacity-[0.03] pointer-events-none select-none">
+                <span class="text-[150px] font-black transform -rotate-45 tracking-widest text-black">SIMULADOR</span>
+            </div>
+
+            <div class="relative z-10 w-full">
+                <div class="text-center mb-8">
+                    <h1 class="text-3xl font-bold font-sans tracking-wide mb-1">DISTRIBUIDORA CASTILLO YAÑEZ C.A.</h1>
+                    <p class="text-lg font-semibold">RIF: J-40214875-5</p>
+                    <p class="text-xs mt-2 text-gray-500 font-bold tracking-widest">*** DOCUMENTO SIMULADO SIN VALIDEZ FISCAL ***</p>
                 </div>
 
-                <div class="relative z-10 w-full">
-                    <div class="text-center mb-6 sm:mb-8">
-                        <h1 class="${titleSize} font-bold font-sans tracking-wide mb-1">DISTRIBUIDORA CASTILLO YAÑEZ C.A.</h1>
-                        <p class="font-semibold text-sm sm:text-base">RIF: J-40214875-5</p>
-                        <p class="text-[10px] sm:text-xs mt-2 text-gray-500 font-bold tracking-widest uppercase">*** Documento Simulado - Sin Validez Fiscal ***</p>
+                <div class="flex justify-between items-end border-b-2 border-black pb-3 mb-6">
+                    <div>
+                        <p class="text-base"><strong>Lugar y Fecha:</strong> San Cristóbal, ${fechaStr}</p>
                     </div>
+                    <div class="text-right">
+                        <p class="text-2xl font-black text-red-600 tracking-widest">FACTURA</p>
+                        <p class="text-base mt-1"><strong>Nro Control:</strong> 00-${numFactura}</p>
+                    </div>
+                </div>
 
-                    <div class="flex flex-col sm:flex-row sm:justify-between sm:items-end border-b-2 border-black pb-3 mb-4 sm:mb-6 gap-2 sm:gap-0">
-                        <div>
-                            <p class="text-sm sm:text-base"><strong>Lugar y Fecha:</strong> San Cristóbal, ${fechaStr}</p>
+                <div class="mb-8 space-y-2 text-base bg-gray-50 p-4 border border-gray-300 rounded">
+                    <div class="grid grid-cols-2 gap-4">
+                        <p><strong>Razón Social:</strong> ${cliente.nombreComercial}</p>
+                        <p><strong>RIF/Cédula:</strong> ${cliente.rif || 'N/A'}</p>
+                    </div>
+                    <p><strong>Zona:</strong> ${zonaCliente}</p>
+                    <p><strong>Teléfono:</strong> ${cliente.telefono || 'N/A'}</p>
+                </div>
+
+                <table class="w-full mb-8 border-collapse">
+                    <thead>
+                        <tr class="border-y-2 border-black text-left text-sm bg-gray-100">
+                            <th class="py-3 w-20 text-center font-bold">CANT.</th>
+                            <th class="py-3 pl-2 font-bold">DESCRIPCIÓN</th>
+                            <th class="py-3 w-24 text-right pr-2 font-bold">P. UNIT ($)</th>
+                            <th class="py-3 w-28 text-right pr-2 font-bold">P. UNIT (Bs)</th>
+                            <th class="py-3 w-32 text-right font-bold">TOTAL (Bs)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${filasProd}
+                    </tbody>
+                </table>
+
+                <div class="flex justify-end mt-10">
+                    <div class="w-[380px] text-base border border-gray-400 p-4 rounded-lg bg-gray-50 shadow-sm">
+                        
+                        <div class="flex justify-between mb-4 border-b-2 border-gray-300 pb-2">
+                            <span class="font-bold text-gray-700 uppercase tracking-wider">Tasa BCV Aplicada:</span> 
+                            <span class="font-bold text-blue-800 text-lg">Bs ${fBS(tasaBs)}</span>
                         </div>
-                    </div>
 
-                    <div class="mb-6 sm:mb-8 space-y-1 sm:space-y-2 text-sm sm:text-base bg-gray-50 p-3 sm:p-4 border border-gray-300 rounded">
-                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-1 sm:gap-4">
-                            <p class="truncate" title="${cliente.nombreComercial}"><strong>Razón Social:</strong> ${cliente.nombreComercial}</p>
-                            <p><strong>RIF/Cédula:</strong> ${cliente.rif || 'N/A'}</p>
-                        </div>
-                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-1 sm:gap-4">
-                            <p class="truncate" title="${zonaCliente}"><strong>Zona:</strong> ${zonaCliente}</p>
-                            <p><strong>Teléfono:</strong> ${cliente.telefono || 'N/A'}</p>
-                        </div>
-                    </div>
-
-                    <div class="overflow-x-auto pb-2">
-                        <table class="w-full mb-6 sm:mb-8 border-collapse min-w-[500px]">
-                            <thead>
-                                <tr class="border-y-2 border-black text-left ${tableTextSize} bg-gray-100">
-                                    <th class="py-2 sm:py-3 w-12 sm:w-16 text-center font-bold">CANT.</th>
-                                    <th class="py-2 sm:py-3 pl-2 font-bold min-w-[150px]">DESCRIPCIÓN</th>
-                                    <th class="py-2 sm:py-3 w-20 sm:w-24 text-right pr-2 font-bold leading-tight">P. UNIT<br>($)</th>
-                                    <th class="py-2 sm:py-3 w-24 sm:w-28 text-right pr-2 font-bold leading-tight">P. UNIT<br>(Bs)</th>
-                                    <th class="py-2 sm:py-3 w-28 sm:w-32 text-right font-bold">TOTAL<br>(Bs)</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                ${filasProd}
-                            </tbody>
-                        </table>
-                    </div>
-
-                    <div class="flex justify-end mt-6 sm:mt-10">
-                        <div class="${totalsWidth} text-sm sm:text-base border border-gray-400 p-3 sm:p-4 rounded-lg bg-gray-50 shadow-sm">
-                            
-                            <div class="flex justify-between mb-3 sm:mb-4 border-b-2 border-gray-300 pb-2 items-center">
-                                <span class="font-bold text-gray-700 uppercase tracking-wider text-xs sm:text-sm">Tasa BCV:</span> 
-                                <span class="font-bold text-blue-800 text-base sm:text-lg">Bs ${fBS(tasaBs)}</span>
+                        <div class="space-y-2">
+                            <div class="flex justify-between">
+                                <span class="font-bold text-gray-600">Base Imponible:</span> 
+                                <span>Bs ${fBS(totalesBs.totalBaseBs)}</span>
                             </div>
-
-                            <div class="space-y-1.5 sm:space-y-2">
-                                <div class="flex justify-between">
-                                    <span class="font-bold text-gray-600">Base Imponible:</span> 
-                                    <span>Bs ${fBS(totalesBs.totalBaseBs)}</span>
-                                </div>
-                                <div class="flex justify-between">
-                                    <span class="font-bold text-gray-600">Monto Exento:</span> 
-                                    <span>Bs ${fBS(totalesBs.totalExentoBs)}</span>
-                                </div>
-                                <div class="flex justify-between">
-                                    <span class="font-bold text-gray-600">I.V.A (16%):</span> 
-                                    <span>Bs ${fBS(totalesBs.totalIvaBs)}</span>
-                                </div>
-                                
-                                <div class="flex justify-between font-black text-sm sm:text-base pt-2 mt-2 border-t border-gray-400">
-                                    <span>TOTAL:</span> 
-                                    <span>Bs ${fBS(totalesBs.totalOperacionBs)}</span>
-                                </div>
-                                
-                                ${cliente.aplicaRetencion ? `
-                                <div class="flex justify-between text-red-600 mt-2 sm:mt-3 font-bold bg-red-50 p-1.5 sm:p-2 rounded border border-red-200 flex-col sm:flex-row sm:items-center">
-                                    <span class="mb-1 sm:mb-0">Retención (75%):</span> 
-                                    <span class="text-right">-$${fUSD(totalesUSD.retencionIvaUSD)} USD &nbsp;|&nbsp; -Bs ${fBS(totalesBs.retencionBs)}</span>
-                                </div>
-                                ` : ''}
+                            <div class="flex justify-between">
+                                <span class="font-bold text-gray-600">Monto Exento:</span> 
+                                <span>Bs ${fBS(totalesBs.totalExentoBs)}</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span class="font-bold text-gray-600">I.V.A (16%):</span> 
+                                <span>Bs ${fBS(totalesBs.totalIvaBs)}</span>
                             </div>
                             
-                            <div class="flex justify-between items-center font-black text-lg sm:text-xl mt-4 sm:mt-5 pt-2 sm:pt-3 border-t-4 border-black">
-                                <span>A PAGAR:</span> 
-                                <span class="text-black">Bs ${fBS(totalesBs.totalPagarBs)}</span>
+                            <div class="flex justify-between font-black text-lg pt-2 mt-2 border-t border-gray-400">
+                                <span>TOTAL:</span> 
+                                <span>Bs ${fBS(totalesBs.totalOperacionBs)}</span>
                             </div>
                             
-                            <div class="flex justify-end mt-2">
-                                <div class="text-gray-600 font-bold text-[11px] sm:text-xs bg-gray-200 py-1 px-2 rounded inline-block">
-                                    Ref: $${fUSD(totalesUSD.totalPagar)} USD
+                            ${cliente.aplicaRetencion ? `
+                            <div class="flex flex-col text-red-600 mt-3 font-bold bg-red-50 p-2 rounded border border-red-200">
+                                <div class="flex justify-between">
+                                    <span>Retención IVA (75%):</span> 
+                                    <span class="text-sm">-$${fUSD(totalesUSD.retencionIvaUSD)} USD &nbsp;|&nbsp; -Bs ${fBS(totalesBs.retencionBs)}</span>
                                 </div>
                             </div>
+                            ` : ''}
                         </div>
+                        
+                        <div class="flex justify-between font-black text-xl mt-5 pt-3 border-t-4 border-black">
+                            <span>TOTAL A PAGAR:</span> 
+                            <span class="text-black">Bs ${fBS(totalesBs.totalPagarBs)}</span>
+                        </div>
+                        
+                        <div class="flex justify-end mt-2 text-gray-600 font-bold text-sm bg-gray-200 border border-gray-300 py-1 px-2 rounded inline-block float-right shadow-inner">
+                            Ref: $${fUSD(totalesUSD.totalPagar)} USD
+                        </div>
+                        <div class="clear-both"></div>
                     </div>
                 </div>
             </div>
