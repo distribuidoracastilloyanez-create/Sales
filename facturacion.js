@@ -8,6 +8,7 @@
     
     let _clientesCache = [];
     let _tasasCache = {};
+    let _productosCache = {}; // NUEVO: Caché del catálogo maestro en vivo
     let _ventasEncontradas = [];
     let _clienteSeleccionado = null;
     let _ventaParaFacturar = null;
@@ -30,7 +31,7 @@
         _orderBy = dependencies.orderBy;
         _limit = dependencies.limit;
 
-        console.log("Módulo Facturación Inicializado (Descripciones Detalladas e IVA numérico).");
+        console.log("Módulo Facturación Inicializado (Verificación IVA en Tiempo Real).");
     };
 
     window.showFacturacionView = async function() {
@@ -108,7 +109,6 @@
             _clienteSeleccionado = null;
             _ventaParaFacturar = null;
             
-            // Resetear UI
             document.getElementById('facClientSelected').classList.add('hidden');
             document.getElementById('facClientSearch').classList.remove('hidden');
             document.getElementById('facClientSearch').value = '';
@@ -121,7 +121,6 @@
             document.getElementById('facEmptyState').classList.remove('hidden');
         });
 
-        // Al cambiar el desplegable de ventas, mostrar panel de tasa
         document.getElementById('facSelectVenta').addEventListener('change', (e) => {
             if (e.target.value !== "") {
                 _ventaParaFacturar = _ventasEncontradas[parseInt(e.target.value)];
@@ -137,23 +136,29 @@
 
         document.getElementById('facFechaTasa').addEventListener('change', (e) => cargarTasaBcvPorFecha(e.target.value));
 
-        await cargarClientesYTasas();
+        await cargarDatosIniciales();
     };
 
-    async function cargarClientesYTasas() {
+    async function cargarDatosIniciales() {
         try {
-            const [snapClientes, snapTasas] = await Promise.all([
+            // Obtenemos clientes, tasas y catálogo maestro simultáneamente
+            const [snapClientes, snapTasas, snapProductos] = await Promise.all([
                 _getDocs(_collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/clientes`)),
-                _getDocs(_collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/tasas_bcv`))
+                _getDocs(_collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/tasas_bcv`)),
+                _getDocs(_collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/productos`))
             ]);
             
             _clientesCache = snapClientes.docs.map(d => ({ id: d.id, ...d.data() }));
+            
             _tasasCache = {};
             snapTasas.forEach(d => { _tasasCache[d.id] = d.data().rate; });
             
+            _productosCache = {};
+            snapProductos.docs.forEach(d => { _productosCache[d.id] = d.data(); });
+
             cargarTasaBcvPorFecha(document.getElementById('facFechaTasa').value);
         } catch (e) {
-            console.error("Error cargando datos:", e);
+            console.error("Error cargando datos iniciales:", e);
         }
     }
 
@@ -179,7 +184,6 @@
                 selDiv.classList.remove('hidden');
                 document.getElementById('facClientName').innerHTML = `${c.nombreComercial} ${badge}`;
                 
-                // Activar búsqueda de ventas
                 cargarVentasCliente(c);
             };
             dropdown.appendChild(div);
@@ -207,7 +211,6 @@
         const selectVenta = document.getElementById('facSelectVenta');
         const emptyState = document.getElementById('facEmptyState');
         
-        // Estado de Carga
         selectVenta.innerHTML = '<option value="">Buscando historial de ventas...</option>';
         selectVenta.disabled = true;
         document.getElementById('facPanelTasa').classList.add('hidden');
@@ -222,7 +225,6 @@
 
             for (const uid of userIds) {
                 try {
-                    // 1. Buscar en Ventas Activas del día
                     const vActivasRef = _collection(_db, `artifacts/${_appId}/users/${uid}/ventas`);
                     const qActivas = _query(vActivasRef, _where("clienteId", "==", cliente.id));
                     const snapActivas = await _getDocs(qActivas);
@@ -233,7 +235,6 @@
                         _ventasEncontradas.push({ id: d.id, origen: 'Activa (Hoy)', ...v, fechaObj: f });
                     });
 
-                    // 2. Buscar en Cierres Pasados (Buscamos en los últimos meses para no colapsar la app)
                     const cierresRef = _collection(_db, `artifacts/${_appId}/users/${uid}/cierres`);
                     const qCierres = _query(cierresRef, _orderBy("fecha", "desc"), _limit(150)); 
                     const snapCierres = await _getDocs(qCierres);
@@ -257,10 +258,8 @@
                 return;
             }
 
-            // Ordenar de MÁS RECIENTE a MÁS ANTIGUA
             _ventasEncontradas.sort((a,b) => b.fechaObj - a.fechaObj);
 
-            // Poblar el select
             selectVenta.innerHTML = '<option value="">-- Despliegue para seleccionar una venta --</option>';
             _ventasEncontradas.forEach((v, index) => {
                 const fechaFormat = v.fechaObj.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' });
@@ -303,10 +302,14 @@
 
         (_ventaParaFacturar.productos || []).forEach(p => {
             
-            // Evaluación estricta de IVA basada en número (16 o 0 según inventario.js)
+            // VERIFICACIÓN DE IVA EN TIEMPO REAL
+            // Buscamos el producto en el catálogo maestro para ver su estado ACTUAL.
+            // Si el producto fue eliminado del catálogo, usamos el histórico (p)
+            const prodActualizado = _productosCache[p.id] || p;
+
             let esExento = true; // Por defecto asumimos que es exento
-            if (p.iva && parseFloat(p.iva) > 0) {
-                esExento = false; // Si el IVA es mayor a 0 (ej. 16), es gravado
+            if (prodActualizado.iva && parseFloat(prodActualizado.iva) > 0) {
+                esExento = false; // Si el IVA actual es mayor a 0, es gravado
             }
 
             // Construcción Inteligente de la Descripción (Marca Segmento Presentacion)
@@ -317,7 +320,7 @@
             // Unimos ignorando espacios vacíos
             const descCompleta = [marcaStr, segmentoStr, presStr].filter(Boolean).join(' ');
 
-            // Los precios del inventario son PVP (Con IVA Incluido en sistema)
+            // Los PRECIOS y CANTIDADES siempre se sacan del ticket histórico (PVP original)
             const pCj = parseFloat(p.precios?.cj) || 0;
             const pPaq = parseFloat(p.precios?.paq) || 0;
             const pUnd = parseFloat(p.precios?.und) || parseFloat(p.precioPorUnidad) || 0;
@@ -368,7 +371,7 @@
             procesarLineaFactura(qPaq, 'Pq', pPaq);
             procesarLineaFactura(qUnd, 'Un', pUnd);
 
-            // Respaldo de seguridad para tickets muy viejos que no separaban Cj/Pq/Un
+            // Respaldo de seguridad para tickets muy viejos
             if (qCj === 0 && qPaq === 0 && qUnd === 0) {
                 const fallbackQty = parseInt(p.cantidad) || parseInt(p.totalUnidadesVendidas) || 1;
                 const fallbackPrice = pUnd > 0 ? pUnd : ((p.total || 0) / fallbackQty);
