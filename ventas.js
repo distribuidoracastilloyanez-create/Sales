@@ -264,15 +264,34 @@
 
     async function handleShareTicket(htmlContent, callbackDespuesDeCompartir) {
          _showModal('Progreso', 'Generando imagen...', null, '', null, false);
-        const tempDiv = document.createElement('div'); tempDiv.style.position = 'absolute'; tempDiv.style.left = '-9999px'; tempDiv.style.top = '0'; tempDiv.innerHTML = htmlContent; document.body.appendChild(tempDiv);
-        const ticketElement = document.getElementById('temp-ticket-for-image');
+        const tempDiv = document.createElement('div'); 
+        tempDiv.style.position = 'absolute'; 
+        tempDiv.style.left = '-9999px'; 
+        tempDiv.style.top = '0'; 
+        tempDiv.innerHTML = htmlContent; 
+        document.body.appendChild(tempDiv);
+        
+        // EL FIX ESTÁ AQUÍ: Buscamos el ticket DENTRO del div que acabamos de crear, no globalmente
+        const ticketElement = tempDiv.querySelector('#temp-ticket-for-image') || tempDiv.firstElementChild;
+        
         if (!ticketElement) { _showModal('Error', 'No se pudo encontrar elemento ticket.'); document.body.removeChild(tempDiv); if(callbackDespuesDeCompartir) callbackDespuesDeCompartir(false); return; }
-        try { await new Promise(resolve => setTimeout(resolve, 100)); const canvas = await html2canvas(ticketElement, { scale: 3 }); const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
-            if (navigator.share && blob) { await navigator.share({ files: [new File([blob], "venta.png", { type: "image/png" })], title: "Ticket de Venta" }); }
-            else { _showModal('Error', 'Función compartir no disponible.'); }
+        try { 
+            await new Promise(resolve => setTimeout(resolve, 100)); 
+            const canvas = await html2canvas(ticketElement, { scale: 3 }); 
+            const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+            
+            if (navigator.share && blob) { 
+                await navigator.share({ files: [new File([blob], "venta.png", { type: "image/png" })], title: "Ticket de Venta" }); 
+            } else { 
+                _showModal('Error', 'Función compartir no disponible.'); 
+            }
             if(callbackDespuesDeCompartir) callbackDespuesDeCompartir(true);
-        } catch(e) { _showModal('Error', `No se pudo generar/compartir: ${e.message}`); if(callbackDespuesDeCompartir) callbackDespuesDeCompartir(false); }
-        finally { document.body.removeChild(tempDiv); }
+        } catch(e) { 
+            _showModal('Error', `No se pudo generar/compartir: ${e.message}`); 
+            if(callbackDespuesDeCompartir) callbackDespuesDeCompartir(false); 
+        } finally { 
+            document.body.removeChild(tempDiv); 
+        }
     }
     
     async function handleShareRawText(textContent, callbackDespuesDeCompartir) {
@@ -480,7 +499,8 @@
                         fecha: new Date(),
                         total: totalVenta,
                         productos: itemsVenta,
-                        vaciosDevueltosPorTipo: _ventaActual.vaciosDevueltosPorTipo
+                        vaciosDevueltosPorTipo: _ventaActual.vaciosDevueltosPorTipo,
+                        origen: "offline"
                     };
                     
                     transaction.set(ventaRef, ventaDataToSave);
