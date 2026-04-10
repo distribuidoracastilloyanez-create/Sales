@@ -30,7 +30,7 @@
         _orderBy = dependencies.orderBy;
         _limit = dependencies.limit;
 
-        console.log("Módulo Facturación Inicializado (Formato Carta + Fix Canvas Avanzado).");
+        console.log("Módulo Facturación Inicializado (Sin Nro Control / Fix Tasa).");
     };
 
     window.showFacturacionView = async function() {
@@ -297,6 +297,8 @@
             return;
         }
 
+        _showModal('Procesando', 'Generando diseño de la factura...', null, '', null, false);
+
         // LÓGICA DE CÁLCULO FISCAL
         let subtotalBase = 0;
         let subtotalExento = 0;
@@ -305,7 +307,6 @@
         const productosProcesados = [];
 
         (_ventaParaFacturar.productos || []).forEach(p => {
-            // Calcular total de la linea como lo hace el sistema de ventas
             const pCj = p.precios?.cj || 0;
             const pPaq = p.precios?.paq || 0;
             const pUnd = p.precios?.und || p.precioPorUnidad || 0;
@@ -316,14 +317,12 @@
 
             const totalLinea = (qCj * pCj) + (qPaq * pPaq) + (qUnd * pUnd);
             
-            // Extraer Cantidad Total para mostrar en diseño
             let cantDisplay = '';
             if (qCj > 0) cantDisplay += `${qCj} Cj `;
             if (qPaq > 0) cantDisplay += `${qPaq} Pq `;
             if (qUnd > 0) cantDisplay += `${qUnd} Un`;
             if (cantDisplay === '') cantDisplay = `${p.totalUnidadesVendidas} Un`;
 
-            // Verificar IVA (Extraer Base Imponible. Base = Total / 1.16)
             let esExento = !(p.iva > 0);
             let precioUnitarioBaseUSD = 0;
             let totalLineaBaseUSD = 0;
@@ -340,7 +339,6 @@
                 precioUnitarioBaseUSD = totalLineaBaseUSD / (p.totalUnidadesVendidas || 1);
             }
 
-            // Cálculos en Bolívares para la línea
             const precioUnitarioBaseBs = precioUnitarioBaseUSD * tasaBs;
             const totalLineaBaseBs = totalLineaBaseUSD * tasaBs;
 
@@ -375,10 +373,10 @@
         // RENDERIZAR PLANTILLA
         const facturaHtml = crearPlantillaFactura(
             _clienteSeleccionado, 
-            document.getElementById('facFechaTasa').value, // Fecha seleccionada para la emisión
+            document.getElementById('facFechaTasa').value, 
             tasaBs, 
             productosProcesados,
-            { totalOperacion, totalPagar }, // Solo necesitamos enviar estos para la referencia en USD
+            { totalOperacion, totalPagar }, 
             { totalBaseBs, totalExentoBs, totalIvaBs, totalOperacionBs, retencionBs, totalPagarBs }
         );
 
@@ -414,35 +412,26 @@
                     return;
                 }
 
-                // Efecto visual en el botón
+                // Efecto visual en el botón sin destruir el DOM del modal
                 const originalText = btnElement.innerHTML;
                 btnElement.innerHTML = '<span class="animate-pulse">Generando...</span>';
                 btnElement.disabled = true;
 
                 try {
-                    // TRUCO AVANZADO HTML2CANVAS:
-                    // Para evitar errores de "iframe clonado" o problemas de scroll, 
-                    // sacamos el elemento del modal temporalmente, lo ponemos en el body, 
-                    // le tomamos la foto y lo devolvemos.
-                    
                     const originalParent = elementToCapture.parentNode;
                     const originalNextSibling = elementToCapture.nextSibling;
                     
-                    // Clonamos el elemento para no desarmar la vista del usuario
                     const clone = elementToCapture.cloneNode(true);
                     
-                    // Forzamos estilos absolutos fuera de la pantalla para el clon
                     clone.style.position = 'absolute';
                     clone.style.top = '-9999px';
                     clone.style.left = '-9999px';
-                    // Nos aseguramos que tenga el ancho exacto del A4
                     clone.style.width = '794px'; 
-                    clone.style.height = 'auto'; // Que crezca lo necesario
+                    clone.style.height = 'auto'; 
                     clone.style.margin = '0';
                     
                     document.body.appendChild(clone);
 
-                    // Esperar un frame para que el navegador aplique los estilos al clon
                     await new Promise(r => setTimeout(r, 100)); 
                     
                     const canvas = await html2canvas(clone, { 
@@ -452,7 +441,6 @@
                         useCORS: true 
                     });
                     
-                    // Limpieza del clon
                     document.body.removeChild(clone);
 
                     const blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
@@ -506,8 +494,6 @@
             `;
         });
 
-        const numFactura = Math.floor(100000 + Math.random() * 900000);
-
         return `
             <div class="absolute inset-0 z-0 flex items-center justify-center opacity-[0.03] pointer-events-none select-none">
                 <span class="text-[150px] font-black transform -rotate-45 tracking-widest text-black">SIMULADOR</span>
@@ -524,10 +510,6 @@
                     <div>
                         <p class="text-base"><strong>Lugar y Fecha:</strong> San Cristóbal, ${fechaStr}</p>
                     </div>
-                    <div class="text-right">
-                        <p class="text-2xl font-black text-red-600 tracking-widest">FACTURA</p>
-                        <p class="text-base mt-1"><strong>Nro Control:</strong> 00-${numFactura}</p>
-                    </div>
                 </div>
 
                 <div class="mb-8 space-y-2 text-base bg-gray-50 p-4 border border-gray-300 rounded">
@@ -535,7 +517,7 @@
                         <p><strong>Razón Social:</strong> ${cliente.nombreComercial}</p>
                         <p><strong>RIF/Cédula:</strong> ${cliente.rif || 'N/A'}</p>
                     </div>
-                    <p><strong>Zona:</strong> ${cliente.sectorNombre || 'N/A'}</p>
+                    <p><strong>Sector:</strong> ${cliente.sectorNombre || 'N/A'}</p>
                     <p><strong>Teléfono:</strong> ${cliente.telefono || 'N/A'}</p>
                 </div>
 
