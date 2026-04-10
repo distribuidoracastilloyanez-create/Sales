@@ -30,7 +30,7 @@
         _orderBy = dependencies.orderBy;
         _limit = dependencies.limit;
 
-        console.log("Módulo Facturación Inicializado (Matemática de Extracción de IVA Corregida).");
+        console.log("Módulo Facturación Inicializado (Fijado IVA y Precios Unitarios).");
     };
 
     window.showFacturacionView = async function() {
@@ -108,7 +108,6 @@
             _clienteSeleccionado = null;
             _ventaParaFacturar = null;
             
-            // Resetear UI
             document.getElementById('facClientSelected').classList.add('hidden');
             document.getElementById('facClientSearch').classList.remove('hidden');
             document.getElementById('facClientSearch').value = '';
@@ -121,7 +120,6 @@
             document.getElementById('facEmptyState').classList.remove('hidden');
         });
 
-        // Al cambiar el desplegable de ventas, mostrar panel de tasa
         document.getElementById('facSelectVenta').addEventListener('change', (e) => {
             if (e.target.value !== "") {
                 _ventaParaFacturar = _ventasEncontradas[parseInt(e.target.value)];
@@ -179,7 +177,6 @@
                 selDiv.classList.remove('hidden');
                 document.getElementById('facClientName').innerHTML = `${c.nombreComercial} ${badge}`;
                 
-                // Activar búsqueda de ventas
                 cargarVentasCliente(c);
             };
             dropdown.appendChild(div);
@@ -207,7 +204,6 @@
         const selectVenta = document.getElementById('facSelectVenta');
         const emptyState = document.getElementById('facEmptyState');
         
-        // Estado de Carga
         selectVenta.innerHTML = '<option value="">Buscando historial de ventas...</option>';
         selectVenta.disabled = true;
         document.getElementById('facPanelTasa').classList.add('hidden');
@@ -215,7 +211,6 @@
         emptyState.classList.remove('hidden');
 
         try {
-            // Obtenemos todos los vendedores para buscar las ventas de este cliente en todas las rutas
             const usersSnap = await _getDocs(_collection(_db, "users"));
             const userIds = usersSnap.docs.map(d => d.id);
             
@@ -223,7 +218,6 @@
 
             for (const uid of userIds) {
                 try {
-                    // 1. Buscar en Ventas Activas del día
                     const vActivasRef = _collection(_db, `artifacts/${_appId}/users/${uid}/ventas`);
                     const qActivas = _query(vActivasRef, _where("clienteId", "==", cliente.id));
                     const snapActivas = await _getDocs(qActivas);
@@ -234,9 +228,7 @@
                         _ventasEncontradas.push({ id: d.id, origen: 'Activa (Hoy)', ...v, fechaObj: f });
                     });
 
-                    // 2. Buscar en Cierres Pasados (Buscamos en los últimos meses para no colapsar la app)
                     const cierresRef = _collection(_db, `artifacts/${_appId}/users/${uid}/cierres`);
-                    // Ordenamos por fecha descendente y limitamos a los últimos 150 cierres por vendedor
                     const qCierres = _query(cierresRef, _orderBy("fecha", "desc"), _limit(150)); 
                     const snapCierres = await _getDocs(qCierres);
 
@@ -250,7 +242,7 @@
                         });
                     });
 
-                } catch (e) { /* Ignorar errores de permisos si el admin/user no tiene acceso a x carpeta */ }
+                } catch (e) { /* Ignorar errores de permisos */ }
             }
 
             if (_ventasEncontradas.length === 0) {
@@ -259,10 +251,8 @@
                 return;
             }
 
-            // Ordenar de MÁS RECIENTE a MÁS ANTIGUA
             _ventasEncontradas.sort((a,b) => b.fechaObj - a.fechaObj);
 
-            // Poblar el select
             selectVenta.innerHTML = '<option value="">-- Despliegue para seleccionar una venta --</option>';
             _ventasEncontradas.forEach((v, index) => {
                 const fechaFormat = v.fechaObj.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' });
@@ -297,7 +287,6 @@
             return;
         }
 
-        // LÓGICA DE CÁLCULO FISCAL: EXTRACCIÓN DEL IVA
         let subtotalBase = 0;
         let subtotalExento = 0;
         let ivaTotal = 0;
@@ -305,66 +294,75 @@
         const productosProcesados = [];
 
         (_ventaParaFacturar.productos || []).forEach(p => {
-            // Precio Unitario guardado en Inventario (Ya Incluye IVA en la vida real)
-            const pCj = p.precios?.cj || 0;
-            const pPaq = p.precios?.paq || 0;
-            const pUnd = p.precios?.und || p.precioPorUnidad || 0;
             
-            const qCj = p.cantidadVendida?.cj || 0;
-            const qPaq = p.cantidadVendida?.paq || 0;
-            const qUnd = p.cantidadVendida?.und || 0;
-
-            // Total de la linea con IVA incluido
-            const totalLineaConIva = (qCj * pCj) + (qPaq * pPaq) + (qUnd * pUnd);
-            
-            // Extraer Cantidad Total para mostrar en diseño
-            let cantDisplay = '';
-            if (qCj > 0) cantDisplay += `${qCj} Cj `;
-            if (qPaq > 0) cantDisplay += `${qPaq} Pq `;
-            if (qUnd > 0) cantDisplay += `${qUnd} Un`;
-            if (cantDisplay === '') cantDisplay = `${p.totalUnidadesVendidas} Un`;
-
-            let esExento = !(p.iva > 0);
-            
-            let precioUnitarioBaseUSD = 0;
-            let totalLineaBaseUSD = 0;
-            let ivaLineaUSD = 0;
-
-            if (esExento) {
-                // Producto Exento: El total es directamente la base
-                totalLineaBaseUSD = totalLineaConIva;
-                precioUnitarioBaseUSD = totalLineaBaseUSD / (p.totalUnidadesVendidas || 1);
-                
-                subtotalExento += totalLineaBaseUSD;
-            } else {
-                // Producto Gravado: EXTRAEMOS el IVA del precio de inventario.
-                // Formula: Base = Total / 1.16
-                totalLineaBaseUSD = totalLineaConIva / 1.16;
-                ivaLineaUSD = totalLineaConIva - totalLineaBaseUSD;
-                
-                precioUnitarioBaseUSD = totalLineaBaseUSD / (p.totalUnidadesVendidas || 1);
-                
-                subtotalBase += totalLineaBaseUSD;
-                ivaTotal += ivaLineaUSD;
+            // Evaluamos con total seguridad si es Exento de IVA o no
+            let esExento = true; // Exento por defecto
+            if (p.iva === true || p.iva === "true" || parseFloat(p.iva) > 0) {
+                esExento = false;
             }
 
-            // Conversión a Bolívares por línea
-            const precioUnitarioBaseBs = precioUnitarioBaseUSD * tasaBs;
-            const totalLineaBaseBs = totalLineaBaseUSD * tasaBs;
+            const pCj = parseFloat(p.precios?.cj) || 0;
+            const pPaq = parseFloat(p.precios?.paq) || 0;
+            const pUnd = parseFloat(p.precios?.und) || parseFloat(p.precioPorUnidad) || 0;
+            
+            const qCj = parseInt(p.cantidadVendida?.cj) || 0;
+            const qPaq = parseInt(p.cantidadVendida?.paq) || 0;
+            const qUnd = parseInt(p.cantidadVendida?.und) || 0;
 
-            productosProcesados.push({
-                cantidad: cantDisplay.trim(),
-                descripcion: p.presentacion,
-                precioUnitarioUSD: precioUnitarioBaseUSD,
-                precioUnitarioBs: precioUnitarioBaseBs,
-                totalBs: totalLineaBaseBs,
-                exento: esExento
-            });
+            // Función interna para procesar y agregar cada línea de la factura individualmente
+            const procesarLineaFactura = (cantidad, unidadMedida, precioUnitarioConIva) => {
+                if (cantidad <= 0 || precioUnitarioConIva <= 0) return;
+
+                const totalLineaConIva = cantidad * precioUnitarioConIva;
+                let precioUnitarioBaseUSD = 0;
+                let totalLineaBaseUSD = 0;
+
+                if (esExento) {
+                    // La base es igual al total porque no hay IVA que extraer
+                    totalLineaBaseUSD = totalLineaConIva;
+                    precioUnitarioBaseUSD = precioUnitarioConIva;
+                    subtotalExento += totalLineaBaseUSD;
+                } else {
+                    // Extraer IVA de un precio que ya lo tiene incluido (Base = Total / 1.16)
+                    totalLineaBaseUSD = totalLineaConIva / 1.16;
+                    const ivaLineaUSD = totalLineaConIva - totalLineaBaseUSD;
+                    precioUnitarioBaseUSD = precioUnitarioConIva / 1.16;
+                    
+                    subtotalBase += totalLineaBaseUSD;
+                    ivaTotal += ivaLineaUSD;
+                }
+
+                // Conversiones a Bolívares para la línea
+                const precioUnitarioBaseBs = precioUnitarioBaseUSD * tasaBs;
+                const totalLineaBaseBs = totalLineaBaseUSD * tasaBs;
+
+                productosProcesados.push({
+                    cantidad: `${cantidad} ${unidadMedida}`,
+                    descripcion: p.presentacion,
+                    precioUnitarioUSD: precioUnitarioBaseUSD,
+                    precioUnitarioBs: precioUnitarioBaseBs,
+                    totalBs: totalLineaBaseBs,
+                    exento: esExento
+                });
+            };
+
+            // Ejecutar la separación de líneas inteligentes (No más promedios extraños)
+            procesarLineaFactura(qCj, 'Cj', pCj);
+            procesarLineaFactura(qPaq, 'Pq', pPaq);
+            procesarLineaFactura(qUnd, 'Un', pUnd);
+
+            // Respaldo de seguridad por si es un registro viejo que no se separó en CJ/PAQ/UND
+            if (qCj === 0 && qPaq === 0 && qUnd === 0) {
+                const fallbackQty = parseInt(p.totalUnidadesVendidas) || parseInt(p.cantidad) || 1;
+                const fallbackPrice = pUnd > 0 ? pUnd : ((p.total || 0) / fallbackQty);
+                if (fallbackPrice > 0) {
+                    procesarLineaFactura(fallbackQty, 'Un', fallbackPrice);
+                }
+            }
         });
 
-        // Totales Finales Matemáticos (El totalOperacion cuadra perfecto con el de la venta original)
+        // Totales Finales Matemáticos
         const totalOperacion = subtotalBase + subtotalExento + ivaTotal;
-        
         let retencionIvaUSD = 0;
         let retencionIvaBs = 0;
 
@@ -382,23 +380,18 @@
         const totalOperacionBs = totalOperacion * tasaBs;
         const totalPagarBs = totalPagar * tasaBs;
 
-        // Generamos DOS plantillas: 
-        // 1. Una para mostrar en el modal (Responsive, adaptable a celulares)
-        // 2. Una para capturar la imagen (Fija a 800px, para que la foto no salga distorsionada en móviles)
-        
         const facturaHtmlResponsive = crearPlantillaFactura(
             _clienteSeleccionado, document.getElementById('facFechaTasa').value, tasaBs, productosProcesados,
             { totalOperacion, totalPagar, retencionIvaUSD }, { totalBaseBs, totalExentoBs, totalIvaBs, totalOperacionBs, retencionBs: retencionIvaBs, totalPagarBs },
-            false // isForCapture = false
+            false 
         );
 
         const facturaHtmlCapture = crearPlantillaFactura(
             _clienteSeleccionado, document.getElementById('facFechaTasa').value, tasaBs, productosProcesados,
             { totalOperacion, totalPagar, retencionIvaUSD }, { totalBaseBs, totalExentoBs, totalIvaBs, totalOperacionBs, retencionBs: retencionIvaBs, totalPagarBs },
-            true // isForCapture = true
+            true 
         );
 
-        // Inyectamos el HTML de captura en el contenedor OCULTO del index.html
         const captureContainer = document.getElementById('temp-ticket-for-image');
         if (captureContainer) {
             captureContainer.innerHTML = facturaHtmlCapture;
@@ -407,7 +400,6 @@
             return;
         }
 
-        // Mostramos el modal con la versión responsiva
         const modalWrapper = `
             <div class="flex flex-col items-center max-h-[70vh] w-full overflow-y-auto overflow-x-hidden bg-gray-100 p-2 sm:p-4 rounded-lg">
                 ${facturaHtmlResponsive}
@@ -427,25 +419,34 @@
 
         setTimeout(() => {
             const handleImageGeneration = async (action, btnElement) => {
-                // Tomamos la foto del contenedor oculto, que tiene medidas perfectas (800px)
                 const elementToCapture = document.getElementById('temp-ticket-for-image').firstElementChild;
                 
                 if (!elementToCapture) return;
 
-                // Efecto visual en el botón
                 const originalText = btnElement.innerHTML;
                 btnElement.innerHTML = '<span class="animate-pulse">Generando...</span>';
                 btnElement.disabled = true;
 
                 try {
-                    await new Promise(r => setTimeout(r, 100)); // Breve pausa para asegurar renderizado
+                    const clone = elementToCapture.cloneNode(true);
+                    clone.style.position = 'absolute';
+                    clone.style.top = '-9999px';
+                    clone.style.left = '-9999px';
+                    clone.style.width = '800px'; 
+                    clone.style.height = 'auto'; 
+                    clone.style.margin = '0';
+                    document.body.appendChild(clone);
+
+                    await new Promise(r => setTimeout(r, 100)); 
                     
-                    const canvas = await html2canvas(elementToCapture, { 
+                    const canvas = await html2canvas(clone, { 
                         scale: 2, 
                         backgroundColor: '#ffffff',
                         logging: false,
                         useCORS: true 
                     });
+                    
+                    document.body.removeChild(clone);
 
                     const blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
                     const fileName = `Factura_${_clienteSeleccionado.nombreComercial.replace(/\\s+/g, '_')}.png`;
@@ -483,9 +484,6 @@
         }, 300);
     }
 
-    /**
-     * @param {boolean} isForCapture - Si es true, genera HTML con anchos fijos (800px). Si es false, usa clases responsive.
-     */
     function crearPlantillaFactura(cliente, fechaEmisionISO, tasaBs, productos, totalesUSD, totalesBs, isForCapture) {
         const fUSD = (n) => `${n.toFixed(2)}`;
         const fBS = (n) => `${n.toLocaleString('es-VE', {minimumFractionDigits:2, maximumFractionDigits:2})}`;
@@ -493,7 +491,6 @@
         const [year, month, day] = fechaEmisionISO.split('-');
         const fechaStr = `${day}/${month}/${year}`;
 
-        // Variables de diseño según el destino (Captura perfecta vs Modal responsivo)
         const containerClasses = isForCapture ? "bg-white p-8 w-[800px] border border-gray-200" : "bg-white p-4 sm:p-6 w-full max-w-3xl shadow-sm border border-gray-300";
         const tableTextSize = isForCapture ? "text-sm" : "text-xs sm:text-sm";
         const titleSize = isForCapture ? "text-2xl" : "text-xl sm:text-2xl";
@@ -513,15 +510,13 @@
             `;
         });
 
-        // Resolvemos el nombre de la Zona/Sector
         const zonaCliente = cliente.sector || cliente.sectorNombre || 'N/A';
 
-        // La estructura HTML es la misma, solo cambian las clases Tailwind inyectadas arriba
         return `
             <div class="${containerClasses} relative mx-auto" style="font-family: 'Courier New', Courier, monospace; font-size: ${fontSizeContainer};">
                 
                 <div class="absolute inset-0 z-0 flex items-center justify-center opacity-[0.03] pointer-events-none select-none overflow-hidden">
-                    <span class="text-7xl sm:text-[130px] font-black transform -rotate-45 tracking-widest text-black">SIMULADOR</span>
+                    <span class="text-7xl sm:text-9xl font-black transform -rotate-45 tracking-widest text-black">SIMULADOR</span>
                 </div>
 
                 <div class="relative z-10 w-full">
@@ -593,14 +588,9 @@
                                 </div>
                                 
                                 ${cliente.aplicaRetencion ? `
-                                <div class="flex flex-col text-red-600 mt-2 sm:mt-3 font-bold bg-red-50 p-1.5 sm:p-2 rounded border border-red-200">
-                                    <div class="flex justify-between items-center w-full">
-                                        <span class="text-xs sm:text-sm whitespace-nowrap">Retención (75%):</span> 
-                                        <div class="flex flex-col items-end sm:flex-row sm:items-center sm:gap-2">
-                                            <span class="text-[10px] sm:text-xs bg-white px-1 border border-red-300 rounded shadow-sm">-$${fUSD(totalesUSD.retencionIvaUSD)} USD</span>
-                                            <span class="text-sm sm:text-base">-Bs ${fBS(totalesBs.retencionBs)}</span>
-                                        </div>
-                                    </div>
+                                <div class="flex justify-between text-red-600 mt-2 sm:mt-3 font-bold bg-red-50 p-1.5 sm:p-2 rounded border border-red-200 flex-col sm:flex-row sm:items-center">
+                                    <span class="mb-1 sm:mb-0">Retención (75%):</span> 
+                                    <span class="text-right">-$${fUSD(totalesUSD.retencionIvaUSD)} USD &nbsp;|&nbsp; -Bs ${fBS(totalesBs.retencionBs)}</span>
                                 </div>
                                 ` : ''}
                             </div>
@@ -611,7 +601,7 @@
                             </div>
                             
                             <div class="flex justify-end mt-2">
-                                <div class="text-gray-600 font-bold text-[11px] sm:text-xs bg-gray-200 border border-gray-300 py-1 px-2 rounded inline-block shadow-inner">
+                                <div class="text-gray-600 font-bold text-[11px] sm:text-xs bg-gray-200 py-1 px-2 rounded inline-block">
                                     Ref: $${fUSD(totalesUSD.totalPagar)} USD
                                 </div>
                             </div>
