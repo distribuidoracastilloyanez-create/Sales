@@ -1181,7 +1181,9 @@
                 { header: 'Nombre Personal', key: 'Nombre Personal', width: 30 },
                 { header: 'Teléfono', key: 'Telefono', width: 15 },
                 { header: 'CEP', key: 'CEP', width: 12 },
-                { header: 'Coordenadas (Lat, Lng)', key: 'Coordenadas', width: 25 }
+                { header: 'Coordenadas (Lat, Lng)', key: 'Coordenadas', width: 25 },
+                // AÑADIDO: Datos adicionales en reporte inasistencia para completitud
+                { header: 'Datos Adicionales', key: 'Datos Adicionales', width: 35 }
             ];
 
             worksheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
@@ -1193,7 +1195,8 @@
                 'Nombre Personal': c.nombrePersonal || '',
                 'Telefono': c.telefono || '',
                 'CEP': c.codigoCEP || '',
-                'Coordenadas': c.coordenadas || ''
+                'Coordenadas': c.coordenadas || '',
+                'Datos Adicionales': c.datosAdicionales || ''
             }));
 
             worksheet.addRows(dExport);
@@ -1315,7 +1318,9 @@
                 'CEP': c.codigoCEP||'',
                 'Coordenadas': c.coordenadas||'',
                 '¿Posee ADC?': tieneADC ? 'SI' : 'NO',
-                'Tipos ADC': tiposAdc
+                'Tipos ADC': tiposAdc,
+                // NUEVA COLUMNA PARA DATOS ADICIONALES
+                'Datos Adicionales': c.datosAdicionales || ''
             };
         });
         
@@ -1332,7 +1337,9 @@
             { header: 'CEP', key: 'CEP', width: 15 },
             { header: 'Coordenadas', key: 'Coordenadas', width: 20 },
             { header: '¿Posee ADC?', key: '¿Posee ADC?', width: 12 },
-            { header: 'Tipos ADC', key: 'Tipos ADC', width: 25 }
+            { header: 'Tipos ADC', key: 'Tipos ADC', width: 25 },
+            // AGREGADO EL HEADER DE DATOS ADICIONALES
+            { header: 'Datos Adicionales', key: 'Datos Adicionales', width: 35 }
         ];
         worksheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
         worksheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0ea5e9' } }; 
