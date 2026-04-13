@@ -47,7 +47,7 @@
         _runTransaction = dependencies.runTransaction;
         _limit = dependencies.limit; 
 
-        console.log("Módulo Clientes inicializado (UI Profesional)."); 
+        console.log("Módulo Clientes inicializado (Con Datos Adicionales)."); 
     };
 
     /**
@@ -201,7 +201,7 @@
                 <p class="text-sm text-gray-600 mb-4 border-b pb-2">Cliente: <span class="font-black text-teal-700">${cliente.nombreComercial}</span></p>
                 
                 <div class="bg-yellow-50 p-3 border-l-4 border-yellow-400 rounded mb-4">
-                    <p class="text-xs text-yellow-800 font-bold mb-1">AJUSTE ABSOLUTO</p>
+                    <p class="text-xs text-yellow-800 font-bold mb-1">⚠️ AJUSTE ABSOLUTO</p>
                     <p class="text-xs text-yellow-700">Cambia los números para imponer el saldo exacto actual. Escribe 0 si el cliente no debe ni tiene cajas a favor.</p>
                 </div>
                 
@@ -692,6 +692,11 @@
                             </div>
                         </div>
                         
+                        <div class="mt-4">
+                            <label for="datosAdicionales" class="block text-gray-700 font-medium mb-2">Datos Adicionales (Opcional):</label>
+                            <input type="text" id="datosAdicionales" class="w-full px-4 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Ej: Correo electrónico, referencias de dirección, etc.">
+                        </div>
+                        
                         <div class="mt-4 bg-gray-50 p-4 rounded-lg border border-gray-200">
                             <label class="flex items-center space-x-3 cursor-pointer w-fit">
                                 <input type="checkbox" id="aplicaRetencion" class="form-checkbox h-5 w-5 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500 cursor-pointer">
@@ -741,6 +746,7 @@
         const telefono = form.telefono.value.trim();
         const codigoCEP = form.codigoCEP.value.trim();
         const coordenadas = form.coordenadas.value.trim();
+        const datosAdicionales = form.datosAdicionales.value.trim(); // NUEVO VALOR
         
         const aplicaRetencion = document.getElementById('aplicaRetencion').checked;
 
@@ -804,6 +810,7 @@
                 telefono: telefono,
                 codigoCEP: codigoCEP,
                 coordenadas: coordenadas,
+                datosAdicionales: datosAdicionales, // AGREGADO A LA BD
                 aplicaRetencion: aplicaRetencion,
                 saldoVacios: saldoVaciosInicial 
             };
@@ -907,7 +914,7 @@
                     </div>
                     <div class="flex items-center bg-blue-50 px-3 py-1 rounded border border-blue-200">
                         <input type="checkbox" id="filter-adc" class="h-4 w-4 rounded border-blue-300 text-blue-600 focus:ring-blue-500 cursor-pointer">
-                        <label for="filter-adc" class="ml-2 block text-sm text-blue-800 font-bold cursor-pointer select-none">Con Equipo ADC</label>
+                        <label for="filter-adc" class="ml-2 block text-sm text-blue-900 font-bold cursor-pointer select-none">❄️ Posee Equipo ADC</label>
                     </div>
                 </div>
             </div>
@@ -1025,8 +1032,8 @@
                     <td class="py-2 px-4 text-sm text-gray-600 hidden sm:table-cell align-middle font-mono">${docFormat}</td>
                     <td class="py-2 px-2 text-center align-middle">
                         <div class="flex gap-2 items-center justify-center">
-                            <button onclick="window.clientesModule.showClienteInfo('${cliente.id}')" class="px-3 py-1.5 bg-blue-600 text-white font-bold text-xs rounded hover:bg-blue-700 shadow-sm transition">INFO</button>
-                            <button onclick="window.clientesModule.editCliente('${cliente.id}')" class="px-3 py-1.5 bg-gray-600 text-white font-bold text-xs rounded hover:bg-gray-700 shadow-sm transition">EDITAR</button>
+                            <button onclick="window.clientesModule.showClienteInfo('${cliente.id}')" class="w-full max-w-[110px] px-3 py-1.5 bg-indigo-600 text-white font-bold text-xs rounded hover:bg-indigo-700 shadow-sm transition">INFO</button>
+                            <button onclick="window.clientesModule.editCliente('${cliente.id}')" class="w-full max-w-[110px] px-3 py-1.5 bg-gray-600 text-white font-bold text-xs rounded hover:bg-gray-700 shadow-sm transition">EDITAR</button>
                         </div>
                     </td>
                 </tr>
@@ -1130,6 +1137,10 @@
                                     <p class="flex justify-between"><strong class="text-gray-600">Teléfono:</strong> <span class="font-medium">${cliente.telefono || 'N/A'}</span></p>
                                     <p class="flex justify-between"><strong class="text-gray-600">Sector:</strong> <span class="font-medium">${cliente.sector || 'N/A'}</span></p>
                                     <p class="flex justify-between"><strong class="text-gray-600">CEP:</strong> <span class="font-medium">${cliente.codigoCEP || 'N/A'}</span></p>
+                                </div>
+                                <div class="mt-4 pt-3 border-t border-gray-100">
+                                    <strong class="text-gray-600 text-xs block mb-1 uppercase">Datos Adicionales:</strong>
+                                    <p class="text-sm text-gray-800 font-medium">${cliente.datosAdicionales || '<span class="text-gray-400 italic">Ninguno</span>'}</p>
                                 </div>
                                 <div class="mt-4 pt-3 border-t border-gray-100">
                                     <strong class="text-gray-600 text-xs block mb-1 uppercase">Coordenadas GPS:</strong>
@@ -1245,6 +1256,11 @@
                             </div>
                         </div>
 
+                        <div class="mt-4">
+                            <label for="editDatosAdicionales" class="block text-gray-700 font-bold text-sm mb-1 uppercase">Datos Adicionales (Opcional)</label>
+                            <input type="text" id="editDatosAdicionales" value="${cliente.datosAdicionales || ''}" class="w-full px-4 py-2 border border-gray-300 rounded bg-gray-50 focus:bg-white focus:ring-2 focus:ring-yellow-500 outline-none text-sm" placeholder="Correo electrónico, referencias, etc.">
+                        </div>
+
                         <div class="mt-4 bg-gray-100 p-3 rounded border border-gray-300">
                             <label class="flex items-center space-x-3 cursor-pointer w-fit">
                                 <input type="checkbox" id="editAplicaRetencion" class="form-checkbox h-5 w-5 text-yellow-600 rounded border-gray-400 focus:ring-yellow-500 cursor-pointer" ${isRetencionChecked}>
@@ -1259,8 +1275,9 @@
                     </form>
                     
                     ${_userRole === 'admin' ? `
-                        <div class="mt-8 pt-6 border-t border-red-200">
-                            <p class="text-[10px] text-red-500 mb-1 font-black uppercase tracking-wider text-center">Precaución: Acción Destructiva</p>
+                        <div class="mt-8 pt-6 border-t border-red-200 bg-red-50 p-4 rounded text-left">
+                            <p class="text-xs text-red-600 mb-2 font-black uppercase tracking-wider">Zona de Peligro</p>
+                            <p class="text-xs text-red-500 mb-3 font-medium">Eliminar a este cliente borrará su información básica del sistema. Su historial de ventas pasadas se mantendrá en las estadísticas.</p>
                             <button type="button" onclick="window.clientesModule.deleteCliente('${cliente.id}')" class="w-full px-4 py-2 bg-white text-red-600 border border-red-400 hover:bg-red-600 hover:text-white font-bold rounded shadow-sm transition text-xs uppercase">
                                 Eliminar Cliente Permanentemente
                             </button>
@@ -1310,6 +1327,7 @@
 
             const tipoDoc = document.getElementById('editTipoDoc').value;
             const numDoc = document.getElementById('editNumDoc').value.trim();
+            const datosAdicionales = document.getElementById('editDatosAdicionales').value.trim(); // NUEVO VALOR EDITADO
             const aplicaRetencion = document.getElementById('editAplicaRetencion').checked;
 
             const updatedData = {
@@ -1321,6 +1339,7 @@
                 telefono: document.getElementById('editTelefono').value || '',
                 codigoCEP: document.getElementById('editCodigoCEP').value || '',
                 coordenadas: (document.getElementById('editCoordenadas').value || '').trim(),
+                datosAdicionales: datosAdicionales, // SE GUARDA EN BD
                 aplicaRetencion: aplicaRetencion,
                 saldoVacios: cliente.saldoVacios || {} 
             };
@@ -1743,7 +1762,6 @@
             _showModal('Error', `No se pudo actualizar el saldo: ${error.message || error}`);
         }
     }
-
 
     // Exponer funciones públicas al objeto window
     window.clientesModule = {
