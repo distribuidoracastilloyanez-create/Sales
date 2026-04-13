@@ -186,8 +186,7 @@
     <script src="cxc.js" defer></script>
     <script src="supervision.js" defer></script>
     <script src="facturacion.js" defer></script> 
-
-    <script type="module"> 
+    <script src="archivos.js" defer></script> <script type="module"> 
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAnalytics } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-analytics.js";
         import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, createUserWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
@@ -199,6 +198,17 @@
             initializeFirestore, persistentLocalCache, persistentMultipleTabManager
         } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
+        // ---> IMPORTACIÓN PARA STORAGE <---
+        import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
+
+        // Exportar funciones de Storage al objeto global
+        window.firebaseStorageFunctions = {
+            ref: ref,
+            uploadBytes: uploadBytes,
+            getDownloadURL: getDownloadURL,
+            deleteObject: deleteObject
+        };
+
         if (!window.AppConfig) {
             console.error("CRITICAL ERROR: config.js no se ha cargado.");
             alert("Error de Sistema: No se pudo cargar la configuración. Verifique que 'config.js' existe y se carga correctamente.");
@@ -208,7 +218,7 @@
         const appId = firebaseConfig.projectId;
         const PUBLIC_DATA_ID = window.AppConfig.PUBLIC_DATA_ID; // Usar ID centralizado
 
-        let db, auth, userId;
+        let db, auth, storage, userId;
         window.userRole = 'user'; 
         let activeListeners = [];
         window.isLoggingOut = false; 
@@ -395,6 +405,10 @@
                             <button id="facturacionBtn" class="w-full px-6 py-3 bg-gray-700 text-white font-bold rounded-lg shadow-md hover:bg-gray-800 transition transform hover:-translate-y-1 flex items-center justify-center gap-2">
                                 <span class="text-xl">🧾</span> Facturación (Simulador)
                             </button>
+
+                            <button id="archivosBtn" class="w-full px-6 py-3 bg-teal-600 text-white font-bold rounded-lg shadow-md hover:bg-teal-700 transition transform hover:-translate-y-1 flex items-center justify-center gap-2">
+                                <span class="text-xl">📁</span> Archivos y ADC
+                            </button>
                             
                             <button id="obsequiosBtn" class="w-full px-6 py-3 bg-cyan-500 text-white rounded-lg shadow-md hover:bg-cyan-600 font-bold transition transform hover:-translate-y-1">Obsequios</button>
                             
@@ -431,6 +445,7 @@
             document.getElementById('ventasBtn')?.addEventListener('click', () => safeNav(window.showVentasView, 'Ventas'));
             document.getElementById('cxcBtn')?.addEventListener('click', () => safeNav(window.showCXCView, 'CXC'));
             document.getElementById('facturacionBtn')?.addEventListener('click', () => safeNav(window.showFacturacionView, 'Facturación')); 
+            document.getElementById('archivosBtn')?.addEventListener('click', () => safeNav(window.showArchivosView, 'Archivos'));
             document.getElementById('obsequiosBtn')?.addEventListener('click', () => safeNav(window.showGestionObsequiosView, 'Obsequios'));
             document.getElementById('catalogoBtn')?.addEventListener('click', () => safeNav(window.showCatalogoSubMenu, 'Catálogo'));
             document.getElementById('profileAdminBtn')?.addEventListener('click', () => safeNav(window.showAdminOrProfileView, 'Perfil/Admin'));
@@ -462,6 +477,7 @@
                 }) 
             });
 
+            storage = getStorage(app); // Inicializando Storage
             auth = getAuth(app);
 
             onAuthStateChanged(auth, async (user) => {
@@ -479,7 +495,7 @@
                     await preloadAllData();
                     
                     const deps = { 
-                        db, userId, appId, mainContent, floatingControls, activeListeners, 
+                        db, storage, userId, appId, mainContent, floatingControls, activeListeners, 
                         userRole: window.userRole, showMainMenu, showModal: window.showModal, 
                         showAddItemModal: window.showAddItemModal, populateDropdown: window.populateDropdown, 
                         collection, onSnapshot, doc, getDoc, addDoc, setDoc, deleteDoc, getDocs, 
@@ -499,6 +515,7 @@
                     if (window.initEditInventario) window.initEditInventario(deps); else console.warn("Módulo Edit Inventario no encontrado");
                     if (window.initSupervision) window.initSupervision(deps); else console.warn("Módulo Supervisión no encontrado");
                     if (window.initFacturacion) window.initFacturacion(deps); else console.warn("Módulo Facturación no encontrado"); 
+                    if (window.initArchivos) window.initArchivos(deps); else console.warn("Módulo Archivos no encontrado");
 
                     showMainMenu();
                 } else {
