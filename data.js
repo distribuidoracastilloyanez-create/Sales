@@ -5,6 +5,7 @@
     let _consolidatedClientsCache = [];
     let _filteredClientsCache = [];
     let _usersMapCache = new Map();
+    let _adcEquiposMap = new Map(); // NUEVO: Caché para saber quién tiene equipos ADC
 
     let mapInstance = null;
     let mapMarkers = new Map(); 
@@ -1232,37 +1233,91 @@
     async function loadAndRenderConsolidatedClients() {
         const cont = document.getElementById('consolidated-clients-container'), filtCont = document.getElementById('consolidated-clients-filters'); if(!cont || !filtCont) return;
         try {
+            // 1. Cargar Clientes
             const cliRef = _collection(_db, CLIENTES_COLLECTION_PATH); 
             const cliSnaps = await _getDocs(cliRef);
             _consolidatedClientsCache = cliSnaps.docs.map(d => ({id: d.id, ...d.data()}));
+            
+            // 2. Cargar ADC del Storage/Archivos (Para la columna ¿Posee ADC?)
+            const archivosRef = _collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/archivos_clientes`);
+            const adcSnaps = await _getDocs(_query(archivosRef, _where("categoria", "==", "adc")));
+            
+            _adcEquiposMap.clear();
+            adcSnaps.forEach(doc => {
+                const data = doc.data();
+                if(data.clienteId && data.adcInfo) {
+                    if(!_adcEquiposMap.has(data.clienteId)) {
+                        _adcEquiposMap.set(data.clienteId, []);
+                    }
+                    _adcEquiposMap.get(data.clienteId).push(data.adcInfo.division || data.adcInfo.empresa || 'Equipo ADC');
+                }
+            });
+
             filtCont.innerHTML = `<div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 p-4 border rounded-lg bg-gray-50"> <input type="text" id="client-search-input" placeholder="Buscar..." class="md:col-span-2 w-full px-4 py-2 border rounded-lg text-sm"> <div> <label for="client-filter-sector" class="block text-xs mb-1">Sector</label> <select id="client-filter-sector" class="w-full px-2 py-1 border rounded-lg text-sm"><option value="">Todos</option></select> </div> <button id="clear-client-filters-btn" class="bg-gray-300 text-xs font-semibold text-gray-700 rounded-lg self-end py-1.5 px-3 hover:bg-gray-400 transition duration-150">Limpiar</button> </div>`;
             const uSectors = [...new Set(_consolidatedClientsCache.map(c => c.sector).filter(Boolean))].sort(); const sFilt = document.getElementById('client-filter-sector'); uSectors.forEach(s => { const o=document.createElement('option'); o.value=s; o.textContent=s; sFilt.appendChild(o); });
             document.getElementById('client-search-input').addEventListener('input', renderConsolidatedClientsList); sFilt.addEventListener('change', renderConsolidatedClientsList); document.getElementById('clear-client-filters-btn').addEventListener('click', () => { document.getElementById('client-search-input').value = ''; sFilt.value = ''; renderConsolidatedClientsList(); });
-            renderConsolidatedClientsList(); document.getElementById('downloadClientsBtn').classList.remove('hidden');
+            
+            renderConsolidatedClientsList(); 
+            document.getElementById('downloadClientsBtn').classList.remove('hidden');
         } catch (error) { console.error("Error clientes consolidados:", error); cont.innerHTML = `<p class="text-red-500">Error al cargar.</p>`; }
     }
 
     function renderConsolidatedClientsList() {
         const cont=document.getElementById('consolidated-clients-container'), sInp=document.getElementById('client-search-input'), sFilt=document.getElementById('client-filter-sector'); if(!cont||!sInp||!sFilt) return;
         const sTerm = sInp.value.toLowerCase(), selSec = sFilt.value;
-        _filteredClientsCache = _consolidatedClientsCache.filter(cli => { const nComL=(cli.nombreComercial||'').toLowerCase(), nPerL=(cli.nombrePersonal||'').toLowerCase(), cepL=(cli.codigoCEP||'').toLowerCase(); const searchM=!sTerm||nComL.includes(sTerm)||nPerL.includes(sTerm)||(cli.codigoCEP&&cepL.includes(sTerm)); const secM=!selSec||cli.sector===selSec; return searchM&&secM; });
+        
+        _filteredClientsCache = _consolidatedClientsCache.filter(cli => { 
+            const nComL=(cli.nombreComercial||'').toLowerCase();
+            const nPerL=(cli.nombrePersonal||'').toLowerCase();
+            const docL=(cli.numeroDocumento||'').toLowerCase();
+            const cepL=(cli.codigoCEP||'').toLowerCase(); 
+            
+            const searchM=!sTerm||nComL.includes(sTerm)||nPerL.includes(sTerm)||docL.includes(sTerm)||(cli.codigoCEP&&cepL.includes(sTerm)); 
+            const secM=!selSec||cli.sector===selSec; 
+            return searchM&&secM; 
+        });
+
         if (_filteredClientsCache.length === 0) { cont.innerHTML = `<p class="text-center text-gray-500 p-4">No se encontraron clientes.</p>`; return; }
-        let tHTML = `<table class="min-w-full bg-white text-sm"> <thead class="bg-gray-200 sticky top-0 z-10"> <tr> <th class="py-2 px-3 border-b text-left">Sector</th> <th class="py-2 px-3 border-b text-left">N. Comercial</th> <th class="py-2 px-3 border-b text-left">N. Personal</th> <th class="py-2 px-3 border-b text-left">Teléfono</th> <th class="py-2 px-3 border-b text-left">CEP</th> </tr> </thead> <tbody>`;
-        _filteredClientsCache.sort((a,b)=>(a.nombreComercial||'').localeCompare(b.nombreComercial||'')).forEach(c=>{tHTML+=`<tr class="hover:bg-gray-50 border-b"><td class="py-2 px-3">${c.sector||'N/A'}</td><td class="py-2 px-3 font-semibold">${c.nombreComercial||'N/A'}</td><td class="py-2 px-3">${c.nombrePersonal||'N/A'}</td><td class="py-2 px-3">${c.telefono||'N/A'}</td><td class="py-2 px-3">${c.codigoCEP||'N/A'}</td></tr>`;});
+        
+        let tHTML = `<table class="min-w-full bg-white text-sm"> <thead class="bg-gray-200 sticky top-0 z-10"> <tr> <th class="py-2 px-3 border-b text-left">Sector</th> <th class="py-2 px-3 border-b text-left">N. Comercial</th> <th class="py-2 px-3 border-b text-left">Documento</th> <th class="py-2 px-3 border-b text-left">Teléfono</th> <th class="py-2 px-3 border-b text-left">CEP</th> <th class="py-2 px-3 border-b text-center">ADC</th> </tr> </thead> <tbody>`;
+        
+        _filteredClientsCache.sort((a,b)=>(a.nombreComercial||'').localeCompare(b.nombreComercial||'')).forEach(c=>{
+            const docFormat = c.numeroDocumento ? `${c.tipoDocumento}-${c.numeroDocumento}` : 'S/D';
+            const tieneADC = _adcEquiposMap.has(c.id);
+            const adcLabel = tieneADC ? 'Sí' : 'No';
+            const adcClass = tieneADC ? 'text-blue-600 font-bold' : 'text-gray-400';
+
+            tHTML+=`<tr class="hover:bg-gray-50 border-b"><td class="py-2 px-3">${c.sector||'N/A'}</td><td class="py-2 px-3 font-semibold">${c.nombreComercial||'N/A'}</td><td class="py-2 px-3 font-mono">${docFormat}</td><td class="py-2 px-3">${c.telefono||'N/A'}</td><td class="py-2 px-3">${c.codigoCEP||'N/A'}</td><td class="py-2 px-3 text-center ${adcClass}">${adcLabel}</td></tr>`;
+        });
+        
         tHTML += '</tbody></table>'; cont.innerHTML = tHTML;
     }
     
     async function handleDownloadFilteredClients() {
          if (typeof ExcelJS === 'undefined' || _filteredClientsCache.length === 0) { _showModal('Aviso', typeof ExcelJS === 'undefined'?'Librería ExcelJS no cargada.':'No hay clientes.'); return; }
         
-        const dExport = _filteredClientsCache.map(c => ({
-            'Sector':c.sector||'',
-            'Nombre Comercial':c.nombreComercial||'',
-            'Nombre Personal':c.nombrePersonal||'',
-            'Telefono':c.telefono||'',
-            'CEP':c.codigoCEP||'',
-            'Coordenadas':c.coordenadas||''
-        }));
+        const dExport = _filteredClientsCache.map(c => {
+            const tieneADC = _adcEquiposMap.has(c.id);
+            let tiposAdc = '';
+            if (tieneADC) {
+                // Obtener arreglo de divisiones (limpiando duplicados y vacíos)
+                const divisiones = [...new Set(_adcEquiposMap.get(c.id))];
+                tiposAdc = divisiones.join(', ');
+            }
+
+            return {
+                'Sector': c.sector||'',
+                'Nombre Comercial': c.nombreComercial||'',
+                'Nombre Personal': c.nombrePersonal||'',
+                'Tipo Doc': c.tipoDocumento || 'V',
+                'Nº Documento': c.numeroDocumento || '',
+                'Telefono': c.telefono||'',
+                'CEP': c.codigoCEP||'',
+                'Coordenadas': c.coordenadas||'',
+                '¿Posee ADC?': tieneADC ? 'SI' : 'NO',
+                'Tipos ADC': tiposAdc
+            };
+        });
         
         const workbook = new ExcelJS.Workbook();
         const worksheet = workbook.addWorksheet('Clientes Consolidados');
@@ -1271,11 +1326,16 @@
             { header: 'Sector', key: 'Sector', width: 20 },
             { header: 'Nombre Comercial', key: 'Nombre Comercial', width: 30 },
             { header: 'Nombre Personal', key: 'Nombre Personal', width: 30 },
+            { header: 'Tipo Doc', key: 'Tipo Doc', width: 10 },
+            { header: 'Nº Documento', key: 'Nº Documento', width: 15 },
             { header: 'Telefono', key: 'Telefono', width: 15 },
             { header: 'CEP', key: 'CEP', width: 15 },
-            { header: 'Coordenadas', key: 'Coordenadas', width: 20 }
+            { header: 'Coordenadas', key: 'Coordenadas', width: 20 },
+            { header: '¿Posee ADC?', key: '¿Posee ADC?', width: 12 },
+            { header: 'Tipos ADC', key: 'Tipos ADC', width: 25 }
         ];
-        worksheet.getRow(1).font = { bold: true };
+        worksheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
+        worksheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0ea5e9' } }; 
         worksheet.addRows(dExport);
 
         const today = new Date().toISOString().slice(0, 10);
