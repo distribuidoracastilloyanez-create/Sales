@@ -8,6 +8,7 @@
 
     let _clientesCache = []; // Caché local para búsquedas y ediciones rápidas
     let _clientesParaImportar = []; // Caché para la data del Excel a importar
+    let _clientesConAdc = new Set(); // Caché reactivo de IDs de clientes con ADC
 
     // Definir rutas usando la configuración global para datos públicos
     const PUBLIC_DATA_ID = window.AppConfig.PUBLIC_DATA_ID;
@@ -46,7 +47,7 @@
         _runTransaction = dependencies.runTransaction;
         _limit = dependencies.limit; 
 
-        console.log("Módulo Clientes inicializado. Public ID:", PUBLIC_DATA_ID); 
+        console.log("Módulo Clientes inicializado (Con Doc Legal y Filtro ADC)."); 
     };
 
     /**
@@ -626,58 +627,84 @@
     function showAgregarClienteView() {
          _floatingControls.classList.add('hidden');
         _mainContent.innerHTML = `
-            <div class="p-4 pt-8">
-                <div class="container mx-auto">
-                    <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl text-center">
-                        <h2 class="text-2xl font-bold text-gray-800 mb-6">Agregar Cliente</h2>
-                        <form id="clienteForm" class="space-y-4 text-left">
+            <div class="p-4 pt-8 w-full max-w-4xl mx-auto flex flex-col">
+                <div class="bg-white/90 backdrop-blur-sm p-6 sm:p-8 rounded-lg shadow-xl border-t-4 border-indigo-600">
+                    <h2 class="text-2xl font-bold text-gray-800 mb-6 text-center">Agregar Cliente</h2>
+                    <form id="clienteForm" class="space-y-4 text-left">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
                                 <label for="sector" class="block text-gray-700 font-medium mb-2">Sector / Zona:</label>
                                 <div class="flex items-center space-x-2">
-                                    <select id="sector" class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" required></select>
-                                    <button type="button" id="addSectorBtn" class="px-4 py-2 bg-gray-400 text-white rounded-lg hover:bg-gray-500">Agregar</button>
+                                    <select id="sector" class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" required></select>
+                                    <button type="button" id="addSectorBtn" class="px-4 py-2 bg-gray-400 text-white font-bold rounded-lg hover:bg-gray-500 transition">+</button>
                                 </div>
                             </div>
+
+                            <div class="grid grid-cols-3 gap-2">
+                                <div class="col-span-1">
+                                    <label for="tipoDoc" class="block text-gray-700 font-medium mb-2">Doc:</label>
+                                    <select id="tipoDoc" class="w-full px-2 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-indigo-500" required>
+                                        <option value="V">V (Cédula)</option>
+                                        <option value="J">J (Jurídico)</option>
+                                        <option value="E">E (Emprend.)</option>
+                                        <option value="FP">FP (Firma)</option>
+                                    </select>
+                                </div>
+                                <div class="col-span-2">
+                                    <label for="numDoc" class="block text-gray-700 font-medium mb-2">Número:</label>
+                                    <input type="text" inputmode="numeric" id="numDoc" class="w-full px-4 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Ej: 12345678" oninput="this.value = this.value.replace(/[^0-9]/g, '')" required>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
                             <div>
                                 <label for="nombreComercial" class="block text-gray-700 font-medium mb-2">Nombre Comercial:</label>
-                                <input type="text" id="nombreComercial" class="w-full px-4 py-2 border rounded-lg" required>
+                                <input type="text" id="nombreComercial" class="w-full px-4 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-indigo-500" required>
                             </div>
                             <div>
-                                <label for="nombrePersonal" class="block text-gray-700 font-medium mb-2">Nombre Personal (Representante):</label>
-                                <input type="text" id="nombrePersonal" class="w-full px-4 py-2 border rounded-lg" required>
+                                <label for="nombrePersonal" class="block text-gray-700 font-medium mb-2">Nombre Representante:</label>
+                                <input type="text" id="nombrePersonal" class="w-full px-4 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-indigo-500" required>
                             </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
                             <div>
                                 <label for="telefono" class="block text-gray-700 font-medium mb-2">Teléfono:</label>
-                                <input type="tel" id="telefono" class="w-full px-4 py-2 border rounded-lg" required>
+                                <input type="tel" id="telefono" class="w-full px-4 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-indigo-500" required>
                             </div>
                             <div>
                                 <label for="codigoCEP" class="block text-gray-700 font-medium mb-2">Código CEP:</label>
-                                <div class="flex items-center">
-                                    <input type="text" id="codigoCEP" class="w-full px-4 py-2 border rounded-lg">
-                                    <input type="checkbox" id="cepNA" class="ml-4 h-5 w-5">
-                                    <label for="cepNA" class="ml-2 text-gray-700">No Aplica</label>
+                                <div class="flex items-center bg-white border rounded-lg overflow-hidden focus-within:ring-2 focus-within:ring-indigo-500">
+                                    <input type="text" id="codigoCEP" class="w-full px-4 py-2 outline-none">
+                                    <div class="flex items-center pr-3 bg-gray-50 border-l px-2 py-2">
+                                        <input type="checkbox" id="cepNA" class="h-4 w-4 cursor-pointer">
+                                        <label for="cepNA" class="ml-1 text-xs text-gray-600 font-bold cursor-pointer whitespace-nowrap">N/A</label>
+                                    </div>
                                 </div>
                             </div>
                             <div>
                                 <label for="coordenadas" class="block text-gray-700 font-medium mb-2">Coordenadas:</label>
                                 <div class="flex items-center space-x-2">
-                                    <input type="text" id="coordenadas" class="w-full px-4 py-2 border rounded-lg" placeholder="Ej: 8.29, -71.98">
-                                    <button type="button" id="getCoordsBtn" class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600">GPS</button>
+                                    <input type="text" id="coordenadas" class="w-full px-4 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 font-mono text-sm" placeholder="Ej: 8.29, -71.98">
+                                    <button type="button" id="getCoordsBtn" class="px-4 py-2 bg-blue-500 text-white font-bold rounded-lg hover:bg-blue-600 transition">GPS</button>
                                 </div>
                             </div>
-                            
-                            <div class="mt-4 bg-gray-50 p-4 rounded-lg border border-gray-200">
-                                <label class="flex items-center space-x-3 cursor-pointer">
-                                    <input type="checkbox" id="aplicaRetencion" class="form-checkbox h-5 w-5 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500">
-                                    <span class="text-gray-800 font-bold text-sm">Este cliente es agente de Retención de IVA</span>
-                                </label>
-                                <p class="text-xs text-gray-500 mt-1 ml-8">Márcalo solo si el cliente retiene IVA en sus pagos.</p>
-                            </div>
+                        </div>
+                        
+                        <div class="mt-4 bg-gray-50 p-4 rounded-lg border border-gray-200">
+                            <label class="flex items-center space-x-3 cursor-pointer w-fit">
+                                <input type="checkbox" id="aplicaRetencion" class="form-checkbox h-5 w-5 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500 cursor-pointer">
+                                <span class="text-gray-800 font-bold text-sm select-none">Este cliente es agente de Retención de IVA</span>
+                            </label>
+                            <p class="text-xs text-gray-500 mt-1 ml-8">Márcalo solo si el cliente retiene IVA en sus pagos.</p>
+                        </div>
 
-                            <button type="submit" class="w-full px-6 py-3 bg-green-500 text-white font-semibold rounded-lg shadow-md hover:bg-green-600">Guardar Cliente</button>
-                        </form>
-                        <button id="backToClientesBtn" class="mt-4 w-full px-6 py-3 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500">Volver</button>
-                    </div>
+                        <div class="flex flex-col sm:flex-row gap-3 pt-4 border-t border-gray-200 mt-6">
+                            <button type="submit" class="w-full sm:w-2/3 px-6 py-3 bg-green-600 text-white font-bold text-lg rounded-lg shadow-md hover:bg-green-700 transition">💾 Guardar Cliente</button>
+                            <button type="button" id="backToClientesBtn" class="w-full sm:w-1/3 px-6 py-3 bg-gray-400 text-white font-bold rounded-lg shadow-md hover:bg-gray-500 transition">Cancelar</button>
+                        </div>
+                    </form>
                 </div>
             </div>
         `;
@@ -706,9 +733,11 @@
         e.preventDefault();
         const form = e.target;
 
+        const sector = form.sector.value.toUpperCase(); 
+        const tipoDoc = form.tipoDoc.value;
+        const numDoc = form.numDoc.value.trim();
         const nombreComercial = form.nombreComercial.value.trim().toUpperCase();
         const nombrePersonal = form.nombrePersonal.value.trim().toUpperCase();
-        const sector = form.sector.value.toUpperCase(); 
         const telefono = form.telefono.value.trim();
         const codigoCEP = form.codigoCEP.value.trim();
         const coordenadas = form.coordenadas.value.trim();
@@ -730,6 +759,7 @@
              if (c.nombreComercial.toLowerCase() === normComercial) { duplicado = c; motivo = "nombre comercial"; break; }
              if (c.nombrePersonal.toLowerCase() === normPersonal) { duplicado = c; motivo = "nombre personal"; break; }
              if (c.telefono === telefono) { duplicado = c; motivo = "teléfono"; break; }
+             if (c.numeroDocumento === numDoc) { duplicado = c; motivo = "número de documento"; break; }
              if (codigoCEP && codigoCEP.toLowerCase() !== 'n/a' && c.codigoCEP === codigoCEP) { duplicado = c; motivo = "código CEP"; break; }
          }
 
@@ -739,18 +769,21 @@
                 const qComercial = _query(clientesRef, _where("nombreComercial", "==", nombreComercial));
                 const qPersonal = _query(clientesRef, _where("nombrePersonal", "==", nombrePersonal));
                 const qTel = _query(clientesRef, _where("telefono", "==", telefono));
+                const qDoc = _query(clientesRef, _where("numeroDocumento", "==", numDoc));
                 const qCEP = codigoCEP && codigoCEP.toLowerCase() !== 'n/a' ? _query(clientesRef, _where("codigoCEP", "==", codigoCEP)) : null;
 
-                const [snapComercial, snapPersonal, snapTel, snapCEP] = await Promise.all([
+                const [snapComercial, snapPersonal, snapTel, snapDoc, snapCEP] = await Promise.all([
                      _getDocs(qComercial), 
                      _getDocs(qPersonal),
                      _getDocs(qTel),
+                     _getDocs(qDoc),
                      qCEP ? _getDocs(qCEP) : { empty: true }
                 ]);
 
                 if (!snapComercial.empty) { duplicado = { id: snapComercial.docs[0].id, ...snapComercial.docs[0].data() }; motivo = "nombre comercial"; }
                 else if (!snapPersonal.empty) { duplicado = { id: snapPersonal.docs[0].id, ...snapPersonal.docs[0].data() }; motivo = "nombre personal"; }
                 else if (!snapTel.empty) { duplicado = { id: snapTel.docs[0].id, ...snapTel.docs[0].data() }; motivo = "teléfono"; }
+                else if (!snapDoc.empty) { duplicado = { id: snapDoc.docs[0].id, ...snapDoc.docs[0].data() }; motivo = "número de documento"; }
                 else if (qCEP && !snapCEP.empty) { duplicado = { id: snapCEP.docs[0].id, ...snapCEP.docs[0].data() }; motivo = "código CEP"; }
 
              } catch (queryError) {
@@ -758,23 +791,24 @@
              }
         }
 
-
         const guardar = async () => {
             const saldoVaciosInicial = {};
             TIPOS_VACIO.forEach(tipo => saldoVaciosInicial[tipo] = 0);
 
             const clienteData = {
                 sector: sector,
+                tipoDocumento: tipoDoc,
+                numeroDocumento: numDoc,
                 nombreComercial: nombreComercial,
                 nombrePersonal: nombrePersonal,
                 telefono: telefono,
                 codigoCEP: codigoCEP,
                 coordenadas: coordenadas,
-                aplicaRetencion: aplicaRetencion, // Guardado en BD
+                aplicaRetencion: aplicaRetencion,
                 saldoVacios: saldoVaciosInicial 
             };
             try {
-                const docRef = await _addDoc(_collection(_db, CLIENTES_COLLECTION_PATH), clienteData);
+                await _addDoc(_collection(_db, CLIENTES_COLLECTION_PATH), clienteData);
                 _showModal('Éxito', 'Cliente agregado correctamente.');
                 form.reset();
                  _populateDropdown(SECTORES_COLLECTION_PATH, 'sector', 'Sector'); 
@@ -783,7 +817,7 @@
                     cepNACheckbox.checked = false;
                     document.getElementById('codigoCEP').disabled = false;
                 }
-                document.getElementById('aplicaRetencion').checked = false; // Reset checkbox
+                document.getElementById('aplicaRetencion').checked = false;
             } catch (error) {
                 console.error("Error al agregar cliente:", error);
                 _showModal('Error', 'Hubo un error al guardar el cliente.');
@@ -816,10 +850,10 @@
                         <div class="text-sm text-gray-600 mb-2 p-2 bg-yellow-100 border border-yellow-300 rounded-lg">
                             <span class="font-bold">Nota:</span> Las filas resaltadas en amarillo y marcadas con '⚠️' indican que faltan datos del cliente (nombre, teléfono o coordenadas).
                         </div>
-                        <div id="clientesListContainer" class="overflow-x-auto max-h-[60vh]">
-                            <p class="text-gray-500 text-center">Cargando clientes...</p>
+                        <div id="clientesListContainer" class="overflow-x-auto max-h-[60vh] border border-gray-200 rounded-lg shadow-inner bg-gray-50">
+                            <p class="text-gray-500 text-center py-6 animate-pulse">Cargando clientes...</p>
                         </div>
-                        <button id="backToClientesBtn" class="mt-6 w-full px-6 py-3 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500 transition">Volver</button>
+                        <button id="backToClientesBtn" class="mt-6 w-full px-6 py-3 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500 transition">Volver al Menú</button>
                     </div>
                 </div>
             </div>
@@ -827,20 +861,28 @@
         document.getElementById('backToClientesBtn').addEventListener('click', showClientesSubMenu);
         setupFiltros('clientesListContainer'); 
 
+        // Escuchar cambios en ADC para el filtro
+        const archivosRef = _collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/archivos_clientes`);
+        const qAdc = _query(archivosRef, _where("categoria", "==", "adc"));
+        const unsubAdc = _onSnapshot(qAdc, (snap) => {
+            _clientesConAdc.clear();
+            snap.forEach(doc => {
+                const data = doc.data();
+                if(data.clienteId) _clientesConAdc.add(data.clienteId);
+            });
+            renderClientesList('clientesListContainer', false);
+        }, err => console.error("Error cargando ADCs:", err));
+        _activeListeners.push(unsubAdc);
+
         const container = document.getElementById('clientesListContainer');
         const clientesRef = _collection(_db, CLIENTES_COLLECTION_PATH);
         const unsubscribe = _onSnapshot(clientesRef, (snapshot) => {
             _clientesCache = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             renderClientesList('clientesListContainer', false); 
         }, (error) => {
-            if (error.code === 'permission-denied' || error.code === 'unauthenticated') { 
-                console.log(`Clientes listener error ignored: ${error.code}`); 
-                return; 
-            }
+            if (error.code === 'permission-denied' || error.code === 'unauthenticated') return; 
             console.error("Error al cargar clientes:", error);
-            if (container) {
-                 container.innerHTML = `<p class="text-red-500 text-center">Error al cargar la lista de clientes.</p>`;
-            }
+            if (container) container.innerHTML = `<p class="text-red-500 text-center py-6 font-bold">Error al cargar la lista de clientes.</p>`;
         });
 
         _activeListeners.push(unsubscribe); 
@@ -848,18 +890,27 @@
 
     function getFiltrosHTML() {
         return `
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6 p-4 border rounded-lg">
-                <input type="text" id="search-input" placeholder="Buscar por Nombre o Código..." class="md:col-span-2 w-full px-4 py-2 border rounded-lg">
-                <div>
-                    <label for="filter-sector" class="text-sm font-medium">Sector</label>
-                    <select id="filter-sector" class="w-full px-2 py-1 border rounded-lg text-sm"><option value="">Todos</option></select>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6 p-4 border rounded-lg bg-white shadow-sm">
+                <div class="md:col-span-2">
+                    <input type="text" id="search-input" placeholder="Buscar por Nombre, RIF, Cédula o CEP..." class="w-full px-4 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 transition">
                 </div>
                 <div>
-                    <button id="clear-filters-btn" class="w-full bg-gray-300 text-sm font-semibold rounded-lg self-end py-2 px-4 mt-5 hover:bg-gray-400 transition">Limpiar Filtros</button>
+                    <label for="filter-sector" class="text-sm font-bold text-gray-600 mb-1 block uppercase tracking-wider">Sector</label>
+                    <select id="filter-sector" class="w-full px-3 py-2 border rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500"><option value="">Todos los sectores</option></select>
                 </div>
-                <div class="md:col-span-2 flex items-center">
-                    <input type="checkbox" id="filter-incompletos" class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
-                    <label for="filter-incompletos" class="ml-2 block text-sm text-gray-900">Mostrar solo clientes con datos incompletos</label>
+                <div class="flex items-end">
+                    <button id="clear-filters-btn" class="w-full bg-gray-200 text-gray-700 text-sm font-bold rounded-lg py-2 px-4 hover:bg-gray-300 transition">Limpiar Filtros</button>
+                </div>
+                
+                <div class="md:col-span-2 flex flex-col sm:flex-row items-start sm:items-center gap-4 pt-2 border-t border-gray-200 mt-2">
+                    <div class="flex items-center">
+                        <input type="checkbox" id="filter-incompletos" class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer">
+                        <label for="filter-incompletos" class="ml-2 block text-sm text-gray-700 cursor-pointer">Mostrar solo clientes incompletos</label>
+                    </div>
+                    <div class="flex items-center bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-100">
+                        <input type="checkbox" id="filter-adc" class="h-4 w-4 rounded border-blue-300 text-blue-600 focus:ring-blue-500 cursor-pointer">
+                        <label for="filter-adc" class="ml-2 block text-sm text-blue-900 font-bold cursor-pointer">❄️ Posee Equipo ADC</label>
+                    </div>
                 </div>
             </div>
         `;
@@ -872,7 +923,7 @@
              _getDocs(collectionRef).then(snapshot => {
                 const items = snapshot.docs.map(doc => doc.data().name).sort();
                 const currentValue = selectElement.value;
-                selectElement.innerHTML = `<option value="">Todos</option>`;
+                selectElement.innerHTML = `<option value="">Todos los sectores</option>`;
                 items.forEach(item => {
                     selectElement.innerHTML += `<option value="${item}">${item}</option>`;
                 });
@@ -889,17 +940,20 @@
         const sectorFilter = document.getElementById('filter-sector');
         const clearBtn = document.getElementById('clear-filters-btn');
         const incompletosFilter = document.getElementById('filter-incompletos');
+        const adcFilter = document.getElementById('filter-adc');
 
         const applyFilters = () => renderClientesList(containerId, false);
 
         searchInput?.addEventListener('input', applyFilters);
         sectorFilter?.addEventListener('change', applyFilters);
         incompletosFilter?.addEventListener('change', applyFilters);
+        adcFilter?.addEventListener('change', applyFilters);
 
         clearBtn?.addEventListener('click', () => {
             if(searchInput) searchInput.value = '';
             if(sectorFilter) sectorFilter.value = '';
             if(incompletosFilter) incompletosFilter.checked = false;
+            if(adcFilter) adcFilter.checked = false;
             applyFilters();
         });
     }
@@ -911,64 +965,72 @@
         const searchTerm = (document.getElementById('search-input')?.value.toLowerCase() || '');
         const sectorFilter = document.getElementById('filter-sector')?.value || '';
         const incompletosFilter = document.getElementById('filter-incompletos')?.checked;
+        const adcFilter = document.getElementById('filter-adc')?.checked;
 
         const filteredClients = _clientesCache.filter(cliente => {
             const nombreComercialLower = (cliente.nombreComercial || '').toLowerCase();
             const nombrePersonalLower = (cliente.nombrePersonal || '').toLowerCase();
+            const docLower = (cliente.numeroDocumento || '').toLowerCase();
             const codigoCEPLower = (cliente.codigoCEP || '').toLowerCase();
 
             const searchMatch = !searchTerm ||
                 nombreComercialLower.includes(searchTerm) ||
                 nombrePersonalLower.includes(searchTerm) ||
+                docLower.includes(searchTerm) ||
                 (cliente.codigoCEP && codigoCEPLower.includes(searchTerm));
 
             const sectorMatch = !sectorFilter || cliente.sector === sectorFilter;
 
-            const isComplete = cliente.nombreComercial && cliente.nombrePersonal && cliente.telefono && cliente.coordenadas;
+            const isComplete = cliente.nombreComercial && cliente.nombrePersonal && cliente.telefono && cliente.coordenadas && cliente.numeroDocumento;
             const incompletosMatch = !incompletosFilter || (incompletosFilter && !isComplete);
 
-            return searchMatch && sectorMatch && incompletosMatch;
+            // Filtro ADC cruzado con el Set en vivo
+            const adcMatch = !adcFilter || _clientesConAdc.has(cliente.id);
+
+            return searchMatch && sectorMatch && incompletosMatch && adcMatch;
         });
 
         if (filteredClients.length === 0) {
             if (_clientesCache.length > 0) {
-                container.innerHTML = `<p class="text-gray-500 text-center p-4">No hay clientes que coincidan con la búsqueda.</p>`;
+                container.innerHTML = `<p class="text-gray-500 text-center p-6 font-medium">No hay clientes que coincidan con la búsqueda.</p>`;
             } else {
-                container.innerHTML = `<p class="text-gray-500 text-center p-4">Cargando clientes...</p>`;
+                container.innerHTML = `<p class="text-gray-500 text-center p-6 animate-pulse">Cargando clientes...</p>`;
             }
             return;
         }
 
         let tableHTML = `
             <table class="min-w-full bg-white border border-gray-200">
-                <thead class="bg-gray-200 sticky top-0 z-10">
+                <thead class="bg-gray-200 sticky top-0 z-10 shadow-sm">
                     <tr>
-                        <th class="py-2 px-4 border-b text-left text-sm">N. Comercial</th>
-                        <th class="py-2 px-4 border-b text-left text-sm hidden sm:table-cell">N. Personal</th>
-                        ${!readOnly ? `<th class="py-2 px-4 border-b text-center text-sm w-32">Acciones</th>` : ''}
+                        <th class="py-3 px-4 border-b text-left text-sm text-gray-700 font-bold tracking-wide">Comercio</th>
+                        <th class="py-3 px-4 border-b text-left text-sm text-gray-700 font-bold tracking-wide hidden sm:table-cell">Doc. / RIF</th>
+                        <th class="py-3 px-4 border-b text-center text-sm text-gray-700 font-bold tracking-wide w-32">Acciones</th>
                     </tr>
                 </thead>
-                <tbody>
+                <tbody class="divide-y divide-gray-200">
         `;
         filteredClients.forEach(cliente => {
-            const isComplete = cliente.nombreComercial && cliente.nombrePersonal && cliente.telefono && cliente.coordenadas;
-            const rowClass = isComplete ? 'hover:bg-gray-50' : 'bg-yellow-100 hover:bg-yellow-200';
-            const completenessIcon = isComplete ? '' : '<span title="Datos incompletos" class="text-yellow-500 ml-2">⚠️</span>';
+            const isComplete = cliente.nombreComercial && cliente.nombrePersonal && cliente.telefono && cliente.coordenadas && cliente.numeroDocumento;
+            const rowClass = isComplete ? 'hover:bg-indigo-50' : 'bg-yellow-50 hover:bg-yellow-100';
+            const completenessIcon = isComplete ? '' : '<span title="Faltan datos del cliente" class="text-yellow-600 ml-1">⚠️</span>';
+            
+            const adcIcon = _clientesConAdc.has(cliente.id) ? '<span title="Posee equipo ADC" class="text-blue-500 ml-1 text-xs">❄️</span>' : '';
+            const docFormat = cliente.numeroDocumento ? `${cliente.tipoDocumento}-${cliente.numeroDocumento}` : 'S/D';
 
             tableHTML += `
                 <tr class="${rowClass} transition-colors">
-                    <td class="py-2 px-4 border-b text-sm font-semibold text-gray-800 align-middle">
-                        ${cliente.nombreComercial}${completenessIcon}
-                        <div class="sm:hidden text-xs text-gray-500 font-normal mt-0.5">${cliente.nombrePersonal}</div>
+                    <td class="py-2.5 px-4 text-sm font-bold text-gray-800 align-middle">
+                        ${cliente.nombreComercial} ${adcIcon} ${completenessIcon}
+                        <div class="sm:hidden text-xs text-gray-500 font-medium mt-0.5">${docFormat}</div>
                     </td>
-                    <td class="py-2 px-4 border-b text-sm text-gray-600 hidden sm:table-cell align-middle">${cliente.nombrePersonal}</td>
-                    ${!readOnly ? `
-                    <td class="py-2 px-2 border-b text-center align-middle">
-                        <div class="flex flex-col gap-1 items-center justify-center">
-                            <button onclick="window.clientesModule.showClienteInfo('${cliente.id}')" class="w-full max-w-[100px] px-3 py-1.5 bg-indigo-600 text-white font-bold text-xs rounded hover:bg-indigo-700 shadow-sm transition">Ver Info.</button>
-                            <button onclick="window.clientesModule.editCliente('${cliente.id}')" class="w-full max-w-[100px] px-3 py-1.5 bg-yellow-500 text-white font-bold text-xs rounded hover:bg-yellow-600 shadow-sm transition">Editar</button>
+                    <td class="py-2.5 px-4 text-sm text-gray-600 hidden sm:table-cell align-middle font-mono">${docFormat}</td>
+                    <td class="py-2.5 px-2 text-center align-middle">
+                        <div class="flex flex-col gap-1.5 items-center justify-center">
+                            <button onclick="window.clientesModule.showClienteInfo('${cliente.id}')" class="w-full max-w-[110px] px-3 py-1.5 bg-indigo-600 text-white font-bold text-xs rounded hover:bg-indigo-700 shadow-sm transition flex justify-center items-center gap-1"><span>👀</span> Info.</button>
+                            <button onclick="window.clientesModule.editCliente('${cliente.id}')" class="w-full max-w-[110px] px-3 py-1.5 bg-yellow-500 text-white font-bold text-xs rounded hover:bg-yellow-600 shadow-sm transition flex justify-center items-center gap-1"><span>✏️</span> Editar</button>
                         </div>
-                    </td>` : ''}
+                    </td>
                 </tr>
             `;
         });
@@ -976,7 +1038,7 @@
         container.innerHTML = tableHTML;
     }
 
-    // --- NUEVA VISTA: VER INFO. DEL CLIENTE ---
+    // --- NUEVA VISTA: VER INFO. DEL CLIENTE (FICHA COMPLETA) ---
     async function showClienteInfo(clienteId) {
         if (_floatingControls) _floatingControls.classList.add('hidden');
         const cliente = _clientesCache.find(c => c.id === clienteId);
@@ -986,7 +1048,7 @@
         _mainContent.innerHTML = `
             <div class="p-4 pt-8 w-full max-w-4xl mx-auto flex flex-col">
                 <div class="bg-white/95 backdrop-blur-sm p-6 rounded-lg shadow-xl text-center">
-                    <p class="animate-pulse text-indigo-600 font-bold">Cargando Ficha Completa del Cliente...</p>
+                    <p class="animate-pulse text-indigo-600 font-bold text-lg">Cargando Ficha Completa del Cliente...</p>
                 </div>
             </div>
         `;
@@ -995,7 +1057,7 @@
         let imgCount = 0;
         let adcEquipos = [];
 
-        // Consultar archivos y ADC en vivo
+        // Consultar archivos y ADC en vivo desde Storage/Archivos JS
         try {
             const archivosRef = _collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/archivos_clientes`);
             const q = _query(archivosRef, _where("clienteId", "==", clienteId));
@@ -1017,103 +1079,99 @@
         let mapBtnHTML = '';
         if (cliente.coordenadas) {
             const urlCoords = encodeURIComponent(cliente.coordenadas);
-            // El formato estándar y seguro para abrir Google Maps con coordenadas
-            mapBtnHTML = `<a href="https://www.google.com/maps/search/?api=1&query=${urlCoords}" target="_blank" rel="noopener noreferrer" class="inline-block mt-3 px-4 py-2 bg-green-500 text-white font-bold rounded shadow hover:bg-green-600 transition flex items-center justify-center gap-2 w-full sm:w-auto">🗺️ Abrir en Google Maps</a>`;
+            // El formato estándar para que abra web/app en el móvil
+            mapBtnHTML = `<a href="http://maps.google.com/?q=${urlCoords}" target="_blank" rel="noopener noreferrer" class="inline-block mt-3 px-4 py-2 bg-green-500 text-white font-bold rounded shadow hover:bg-green-600 transition flex items-center justify-center gap-2 w-full sm:w-auto">🗺️ Abrir en Google Maps</a>`;
         }
 
         // Formatear Equipos ADC
-        let adcHTML = '<p class="text-sm text-gray-500">No posee equipos ADC registrados.</p>';
+        let adcHTML = '<p class="text-sm text-gray-500 italic">No posee equipos ADC registrados en el sistema.</p>';
         if (adcEquipos.length > 0) {
             adcHTML = '<ul class="space-y-2 text-sm text-left">';
             adcEquipos.forEach(eq => {
-                adcHTML += `<li class="bg-blue-50 p-2 rounded border border-blue-100 text-blue-900 shadow-sm">
+                adcHTML += `<li class="bg-blue-50 p-2 rounded border border-blue-200 text-blue-900 shadow-sm relative overflow-hidden">
+                    <div class="absolute right-0 top-0 text-4xl opacity-10">❄️</div>
                     <strong class="block text-sm border-b border-blue-200 pb-1 mb-1">Cód: ${eq.codigo || 'S/C'}</strong>
-                    ${eq.modelo} <span class="text-gray-500">(${eq.division}, ${eq.puertas} Ptas)</span>
+                    <span class="font-bold">${eq.modelo}</span> <span class="text-gray-600">(${eq.division}, ${eq.puertas} Ptas)</span>
                 </li>`;
             });
             adcHTML += '</ul>';
         }
 
         // Formatear Saldos de Vacíos
-        let vaciosHTML = '<ul class="space-y-1 text-sm">';
+        let vaciosHTML = '<ul class="space-y-1.5 text-sm">';
         let tieneVacios = false;
         if (cliente.saldoVacios) {
             Object.entries(cliente.saldoVacios).forEach(([tipo, cant]) => {
                 if (cant !== 0) {
                     tieneVacios = true;
-                    const colorClass = cant > 0 ? 'text-red-600 font-bold' : 'text-green-600 font-bold';
-                    vaciosHTML += `<li class="flex justify-between border-b border-gray-200 pb-1"><span>${tipo}:</span> <span class="${colorClass}">${cant}</span></li>`;
+                    const colorClass = cant > 0 ? 'text-red-600 font-black' : 'text-green-600 font-black';
+                    vaciosHTML += `<li class="flex justify-between border-b border-yellow-200 pb-1 items-center"><span class="font-medium text-yellow-900">${tipo}:</span> <span class="${colorClass} bg-white px-2 py-0.5 rounded shadow-sm">${cant}</span></li>`;
                 }
             });
         }
         vaciosHTML += '</ul>';
-        if (!tieneVacios) vaciosHTML = '<p class="text-sm text-gray-500 mt-1">Solvente. Sin saldos pendientes.</p>';
+        if (!tieneVacios) vaciosHTML = '<p class="text-sm text-gray-500 mt-1 italic">Solvente. Sin saldos pendientes.</p>';
 
         const retencionBadge = cliente.aplicaRetencion ? '<span class="inline-block ml-2 px-2 py-0.5 bg-red-100 text-red-800 text-[10px] font-black rounded-full uppercase tracking-wider border border-red-300 align-middle">Aplica Retención</span>' : '';
+        const docFormat = cliente.numeroDocumento ? `${cliente.tipoDocumento}-${cliente.numeroDocumento}` : 'Sin Documento Registrado';
 
         // RENDER FINAL DE LA FICHA
         _mainContent.innerHTML = `
             <div class="p-2 sm:p-4 pt-8 w-full max-w-5xl mx-auto flex flex-col h-screen overflow-y-auto">
                 <div class="bg-white/95 backdrop-blur-sm p-4 sm:p-8 rounded-lg shadow-xl flex flex-col border-t-4 border-indigo-600">
                     
-                    <div class="flex justify-between items-center mb-6 border-b border-gray-300 pb-4">
-                        <h2 class="text-xl sm:text-2xl font-black text-gray-800 tracking-tight">Ficha del Cliente</h2>
-                        <button id="btnVolverInfo" class="px-4 py-2 bg-gray-500 text-white font-bold rounded shadow hover:bg-gray-600 transition">Volver</button>
+                    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 border-b border-gray-300 pb-4 gap-4">
+                        <h2 class="text-xl sm:text-2xl font-black text-gray-800 tracking-tight flex items-center gap-2"><span>👤</span> Ficha del Cliente</h2>
+                        <button id="btnVolverInfo" class="w-full sm:w-auto px-6 py-2.5 bg-gray-500 text-white font-bold rounded shadow hover:bg-gray-600 transition">Volver a la Lista</button>
                     </div>
 
                     <div class="mb-6">
                         <h3 class="text-2xl sm:text-3xl font-black text-indigo-900 mb-1 leading-tight">${cliente.nombreComercial} ${retencionBadge}</h3>
-                        <p class="text-gray-600 font-medium">Representante: <span class="text-gray-800">${cliente.nombrePersonal || 'N/A'}</span></p>
+                        <p class="text-gray-600 font-medium">Representante: <span class="text-gray-800 font-bold">${cliente.nombrePersonal || 'N/A'}</span></p>
                     </div>
 
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
                         <div class="bg-gray-50 p-4 sm:p-5 rounded-lg border border-gray-200 shadow-sm flex flex-col justify-between">
                             <div>
-                                <h4 class="font-bold text-gray-700 mb-3 border-b border-gray-300 pb-1">Datos Principales</h4>
+                                <h4 class="font-bold text-gray-700 mb-3 border-b border-gray-300 pb-1 uppercase tracking-wider text-xs">Datos de Contacto</h4>
+                                <p class="text-sm mb-2"><strong class="text-gray-900">Documento Legal:</strong> <span class="font-mono bg-white px-1 border rounded text-indigo-700 font-bold">${docFormat}</span></p>
                                 <p class="text-sm mb-2"><strong class="text-gray-900">Sector/Zona:</strong> ${cliente.sector || 'N/A'}</p>
                                 <p class="text-sm mb-2"><strong class="text-gray-900">Teléfono:</strong> ${cliente.telefono || 'N/A'}</p>
                                 <p class="text-sm mb-2"><strong class="text-gray-900">Código CEP:</strong> ${cliente.codigoCEP || 'N/A'}</p>
                                 
                                 <div class="mt-4 pt-3 border-t border-gray-200">
                                     <strong class="text-gray-900 text-sm block mb-1">Ubicación GPS:</strong>
-                                    ${cliente.coordenadas ? `<p class="text-xs text-gray-600 font-mono bg-gray-100 p-1 rounded inline-block break-all">${cliente.coordenadas}</p>` : '<p class="text-xs text-gray-500 italic">Sin coordenadas guardadas.</p>'}
+                                    ${cliente.coordenadas ? `<p class="text-xs text-gray-600 font-mono bg-white border border-gray-300 p-1.5 rounded inline-block break-all shadow-inner">${cliente.coordenadas}</p>` : '<p class="text-xs text-gray-500 italic">Sin coordenadas guardadas.</p>'}
                                 </div>
                             </div>
-                            <div class="mt-3">
+                            <div class="mt-4 pt-2 border-t border-gray-200">
                                 ${mapBtnHTML}
                             </div>
                         </div>
 
                         <div class="bg-yellow-50 p-4 sm:p-5 rounded-lg border border-yellow-200 shadow-sm">
-                            <h4 class="font-bold text-yellow-900 mb-3 border-b border-yellow-300 pb-1">Saldo de Envases (Vacíos)</h4>
+                            <h4 class="font-bold text-yellow-900 mb-3 border-b border-yellow-300 pb-1 uppercase tracking-wider text-xs">Saldo de Envases (Vacíos)</h4>
                             ${vaciosHTML}
                         </div>
 
                         <div class="bg-teal-50 p-4 sm:p-5 rounded-lg border border-teal-200 shadow-sm">
-                            <h4 class="font-bold text-teal-900 mb-3 border-b border-teal-300 pb-1">Archivos Digitales</h4>
-                            <ul class="space-y-2 text-sm text-teal-800">
-                                <li class="flex justify-between items-center bg-white p-2 rounded border border-teal-100">
-                                    <span>📄 Documentos PDF/Word:</span> <strong class="text-teal-900 text-lg">${docsCount}</strong>
+                            <h4 class="font-bold text-teal-900 mb-3 border-b border-teal-300 pb-1 uppercase tracking-wider text-xs">Archivos Digitales</h4>
+                            <ul class="space-y-2 text-sm text-teal-800 font-medium">
+                                <li class="flex justify-between items-center bg-white p-2 rounded border border-teal-100 shadow-sm">
+                                    <span>📄 Documentos (PDF/Word):</span> <strong class="text-teal-900 text-lg bg-teal-50 px-2 rounded">${docsCount}</strong>
                                 </li>
-                                <li class="flex justify-between items-center bg-white p-2 rounded border border-teal-100">
-                                    <span>🖼️ Imágenes Generales:</span> <strong class="text-teal-900 text-lg">${imgCount}</strong>
+                                <li class="flex justify-between items-center bg-white p-2 rounded border border-teal-100 shadow-sm">
+                                    <span>🖼️ Imágenes Generales:</span> <strong class="text-teal-900 text-lg bg-teal-50 px-2 rounded">${imgCount}</strong>
                                 </li>
                             </ul>
-                            <p class="text-xs text-gray-500 mt-3 italic">* Gestiónelos desde el menú principal > "Archivos y ADC".</p>
+                            <p class="text-[10px] text-gray-500 mt-3 font-bold uppercase">* Gestiónelos en el menú "Archivos y ADC".</p>
                         </div>
 
                         <div class="bg-blue-50 p-4 sm:p-5 rounded-lg border border-blue-200 shadow-sm h-full max-h-60 overflow-y-auto">
-                            <h4 class="font-bold text-blue-900 mb-3 border-b border-blue-300 pb-1 sticky top-0 bg-blue-50 z-10">Equipos en Comodato (ADC)</h4>
+                            <h4 class="font-bold text-blue-900 mb-3 border-b border-blue-300 pb-1 sticky top-0 bg-blue-50 z-10 uppercase tracking-wider text-xs">Equipos en Comodato (ADC)</h4>
                             ${adcHTML}
                         </div>
                     </div>
-                    
-                    <div class="mt-2 flex flex-col sm:flex-row justify-end border-t border-gray-200 pt-4">
-                        <button onclick="window.clientesModule.editCliente('${cliente.id}')" class="w-full sm:w-auto px-8 py-3 bg-yellow-500 text-white font-bold rounded-lg shadow hover:bg-yellow-600 transition text-lg flex justify-center items-center gap-2">
-                            <span>✏️</span> Editar este Cliente
-                        </button>
-                    </div>
-
                 </div>
             </div>
         `;
@@ -1126,67 +1184,90 @@
         const cliente = _clientesCache.find(c => c.id === clienteId);
         if (!cliente) return;
 
-        // Verificar estado de la casilla para pintar en HTML
         const isRetencionChecked = cliente.aplicaRetencion ? 'checked' : '';
+        
+        // Manejar compatibilidad si el cliente es viejo y no tiene tipoDocumento
+        const tipoDoc = cliente.tipoDocumento || 'V';
+        const numDoc = cliente.numeroDocumento || '';
 
         _mainContent.innerHTML = `
             <div class="p-4 pt-8">
                 <div class="container mx-auto max-w-3xl">
-                    <div class="bg-white/90 backdrop-blur-sm p-6 sm:p-8 rounded-lg shadow-xl text-center border-t-4 border-yellow-500">
-                        <h2 class="text-2xl font-bold text-gray-800 mb-6">Editar Cliente</h2>
+                    <div class="bg-white/90 backdrop-blur-sm p-6 sm:p-8 rounded-lg shadow-xl border-t-4 border-yellow-500">
+                        <h2 class="text-2xl font-black text-gray-800 mb-6 text-center">Editar Cliente</h2>
                         <form id="editClienteForm" class="space-y-4 text-left">
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div>
                                     <label for="editSector" class="block text-gray-700 font-medium mb-2">Sector / Zona:</label>
-                                    <select id="editSector" class="w-full px-4 py-2 border rounded-lg" required>
+                                    <select id="editSector" class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-yellow-500 outline-none" required>
                                     </select>
                                 </div>
+                                
+                                <div class="grid grid-cols-3 gap-2">
+                                    <div class="col-span-1">
+                                        <label for="editTipoDoc" class="block text-gray-700 font-medium mb-2">Doc:</label>
+                                        <select id="editTipoDoc" class="w-full px-2 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-yellow-500" required>
+                                            <option value="V" ${tipoDoc === 'V' ? 'selected' : ''}>V</option>
+                                            <option value="J" ${tipoDoc === 'J' ? 'selected' : ''}>J</option>
+                                            <option value="E" ${tipoDoc === 'E' ? 'selected' : ''}>E</option>
+                                            <option value="FP" ${tipoDoc === 'FP' ? 'selected' : ''}>FP</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-span-2">
+                                        <label for="editNumDoc" class="block text-gray-700 font-medium mb-2">Número:</label>
+                                        <input type="text" inputmode="numeric" id="editNumDoc" value="${numDoc}" class="w-full px-4 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-yellow-500" oninput="this.value = this.value.replace(/[^0-9]/g, '')" required>
+                                    </div>
+                                </div>
+
                                 <div>
                                     <label for="editNombreComercial" class="block text-gray-700 font-medium mb-2">Nombre Comercial:</label>
-                                    <input type="text" id="editNombreComercial" value="${cliente.nombreComercial || ''}" class="w-full px-4 py-2 border rounded-lg" required>
+                                    <input type="text" id="editNombreComercial" value="${cliente.nombreComercial || ''}" class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-yellow-500 outline-none" required>
                                 </div>
                                 <div>
-                                    <label for="editNombrePersonal" class="block text-gray-700 font-medium mb-2">Nombre Personal:</label>
-                                    <input type="text" id="editNombrePersonal" value="${cliente.nombrePersonal || ''}" class="w-full px-4 py-2 border rounded-lg" required>
+                                    <label for="editNombrePersonal" class="block text-gray-700 font-medium mb-2">Nombre Representante:</label>
+                                    <input type="text" id="editNombrePersonal" value="${cliente.nombrePersonal || ''}" class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-yellow-500 outline-none" required>
                                 </div>
                                 <div>
                                     <label for="editTelefono" class="block text-gray-700 font-medium mb-2">Teléfono:</label>
-                                    <input type="tel" id="editTelefono" value="${cliente.telefono || ''}" class="w-full px-4 py-2 border rounded-lg" required>
+                                    <input type="tel" id="editTelefono" value="${cliente.telefono || ''}" class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-yellow-500 outline-none" required>
                                 </div>
                                 <div>
                                     <label for="editCodigoCEP" class="block text-gray-700 font-medium mb-2">Código CEP:</label>
-                                    <div class="flex items-center">
-                                        <input type="text" id="editCodigoCEP" value="${cliente.codigoCEP || ''}" class="w-full px-4 py-2 border rounded-lg">
-                                        <input type="checkbox" id="editCepNA" class="ml-4 h-5 w-5 cursor-pointer">
-                                        <label for="editCepNA" class="ml-2 text-gray-700 cursor-pointer">No Aplica</label>
+                                    <div class="flex items-center bg-white border rounded-lg overflow-hidden focus-within:ring-2 focus-within:ring-yellow-500">
+                                        <input type="text" id="editCodigoCEP" value="${cliente.codigoCEP || ''}" class="w-full px-4 py-2 outline-none">
+                                        <div class="flex items-center pr-3 bg-gray-50 border-l px-2 py-2">
+                                            <input type="checkbox" id="editCepNA" class="h-4 w-4 cursor-pointer">
+                                            <label for="editCepNA" class="ml-1 text-xs text-gray-600 font-bold cursor-pointer whitespace-nowrap">N/A</label>
+                                        </div>
                                     </div>
                                 </div>
                                 <div>
                                     <label for="editCoordenadas" class="block text-gray-700 font-medium mb-2">Coordenadas:</label>
                                     <div class="flex items-center space-x-2">
-                                        <input type="text" id="editCoordenadas" value="${cliente.coordenadas || ''}" class="w-full px-4 py-2 border rounded-lg font-mono text-sm">
-                                        <button type="button" id="getEditCoordsBtn" class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition">GPS</button>
+                                        <input type="text" id="editCoordenadas" value="${cliente.coordenadas || ''}" class="w-full px-4 py-2 border rounded-lg font-mono text-sm focus:ring-2 focus:ring-yellow-500 outline-none">
+                                        <button type="button" id="getEditCoordsBtn" class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition font-bold">GPS</button>
                                     </div>
                                 </div>
                             </div>
 
                             <div class="mt-4 bg-gray-50 p-4 rounded-lg border border-gray-200">
-                                <label class="flex items-center space-x-3 cursor-pointer">
+                                <label class="flex items-center space-x-3 cursor-pointer w-fit">
                                     <input type="checkbox" id="editAplicaRetencion" class="form-checkbox h-5 w-5 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500 cursor-pointer" ${isRetencionChecked}>
                                     <span class="text-gray-800 font-bold text-sm select-none">Este cliente es agente de Retención de IVA</span>
                                 </label>
                             </div>
 
                             <div class="flex flex-col sm:flex-row gap-3 mt-6 border-t border-gray-200 pt-4">
-                                <button type="submit" class="w-full sm:w-2/3 px-6 py-3 bg-blue-600 text-white font-bold rounded-lg shadow-md hover:bg-blue-700 transition duration-150 text-lg">💾 Guardar Cambios</button>
+                                <button type="submit" class="w-full sm:w-2/3 px-6 py-3 bg-yellow-500 text-white font-bold rounded-lg shadow-md hover:bg-yellow-600 transition duration-150 text-lg">💾 Guardar Cambios</button>
                                 <button type="button" id="backToVerClientesBtn" class="w-full sm:w-1/3 px-6 py-3 bg-gray-400 text-white font-bold rounded-lg shadow-md hover:bg-gray-500 transition duration-150">Cancelar</button>
                             </div>
                         </form>
                         
                         ${_userRole === 'admin' ? `
-                            <div class="mt-8 pt-4 border-t-2 border-red-200">
-                                <p class="text-xs text-red-500 mb-2 font-bold uppercase">Zona de Peligro</p>
-                                <button type="button" onclick="window.clientesModule.deleteCliente('${cliente.id}')" class="w-full px-6 py-3 bg-red-50 text-red-600 border border-red-300 hover:bg-red-600 hover:text-white font-bold rounded-lg shadow-sm transition duration-150 flex justify-center items-center gap-2">
+                            <div class="mt-8 pt-4 border-t-2 border-red-200 bg-red-50 p-4 rounded text-left">
+                                <p class="text-xs text-red-600 mb-2 font-black uppercase tracking-wider">Zona de Peligro</p>
+                                <p class="text-xs text-red-500 mb-3 font-medium">Eliminar a este cliente borrará su información básica del sistema. Su historial de ventas pasadas se mantendrá en las estadísticas.</p>
+                                <button type="button" onclick="window.clientesModule.deleteCliente('${cliente.id}')" class="w-full px-6 py-3 bg-white text-red-600 border-2 border-red-300 hover:bg-red-600 hover:text-white font-bold rounded-lg shadow-sm transition duration-150 flex justify-center items-center gap-2">
                                     <span>🗑️</span> Eliminar Cliente Definitivamente
                                 </button>
                             </div>
@@ -1234,10 +1315,14 @@
                  return;
              }
 
+            const tipoDoc = document.getElementById('editTipoDoc').value;
+            const numDoc = document.getElementById('editNumDoc').value.trim();
             const aplicaRetencion = document.getElementById('editAplicaRetencion').checked;
 
             const updatedData = {
                 sector: sectorValue.toUpperCase(),
+                tipoDocumento: tipoDoc,
+                numeroDocumento: numDoc,
                 nombreComercial: (document.getElementById('editNombreComercial').value || '').toUpperCase(),
                 nombrePersonal: (document.getElementById('editNombrePersonal').value || '').toUpperCase(),
                 telefono: document.getElementById('editTelefono').value || '',
@@ -1665,7 +1750,6 @@
             _showModal('Error', `No se pudo actualizar el saldo: ${error.message || error}`);
         }
     }
-
 
     // Exponer funciones públicas al objeto window
     window.clientesModule = {
