@@ -47,7 +47,7 @@
         _runTransaction = dependencies.runTransaction;
         _limit = dependencies.limit; 
 
-        console.log("Módulo Clientes inicializado (Con Doc Legal y Filtro ADC)."); 
+        console.log("Módulo Clientes inicializado (UI Profesional)."); 
     };
 
     /**
@@ -201,7 +201,7 @@
                 <p class="text-sm text-gray-600 mb-4 border-b pb-2">Cliente: <span class="font-black text-teal-700">${cliente.nombreComercial}</span></p>
                 
                 <div class="bg-yellow-50 p-3 border-l-4 border-yellow-400 rounded mb-4">
-                    <p class="text-xs text-yellow-800 font-bold mb-1">⚠️ AJUSTE ABSOLUTO</p>
+                    <p class="text-xs text-yellow-800 font-bold mb-1">AJUSTE ABSOLUTO</p>
                     <p class="text-xs text-yellow-700">Cambia los números para imponer el saldo exacto actual. Escribe 0 si el cliente no debe ni tiene cajas a favor.</p>
                 </div>
                 
@@ -701,8 +701,8 @@
                         </div>
 
                         <div class="flex flex-col sm:flex-row gap-3 pt-4 border-t border-gray-200 mt-6">
-                            <button type="submit" class="w-full sm:w-2/3 px-6 py-3 bg-green-600 text-white font-bold text-lg rounded-lg shadow-md hover:bg-green-700 transition">💾 Guardar Cliente</button>
-                            <button type="button" id="backToClientesBtn" class="w-full sm:w-1/3 px-6 py-3 bg-gray-400 text-white font-bold rounded-lg shadow-md hover:bg-gray-500 transition">Cancelar</button>
+                            <button type="submit" class="w-full sm:w-2/3 px-6 py-3 bg-green-600 text-white font-bold text-lg rounded-lg shadow-md hover:bg-green-700 transition">GUARDAR CLIENTE</button>
+                            <button type="button" id="backToClientesBtn" class="w-full sm:w-1/3 px-6 py-3 bg-gray-400 text-white font-bold rounded-lg shadow-md hover:bg-gray-500 transition">CANCELAR</button>
                         </div>
                     </form>
                 </div>
@@ -842,19 +842,17 @@
     function showVerClientesView() {
          _floatingControls.classList.add('hidden');
         _mainContent.innerHTML = `
-            <div class="p-4 pt-8">
-                <div class="container mx-auto">
-                    <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl">
-                        <h2 class="text-2xl font-bold text-gray-800 mb-6 text-center">Buscar Cliente</h2>
-                        ${getFiltrosHTML()}
-                        <div class="text-sm text-gray-600 mb-2 p-2 bg-yellow-100 border border-yellow-300 rounded-lg">
-                            <span class="font-bold">Nota:</span> Las filas resaltadas en amarillo y marcadas con '⚠️' indican que faltan datos del cliente (nombre, teléfono o coordenadas).
-                        </div>
-                        <div id="clientesListContainer" class="overflow-x-auto max-h-[60vh] border border-gray-200 rounded-lg shadow-inner bg-gray-50">
-                            <p class="text-gray-500 text-center py-6 animate-pulse">Cargando clientes...</p>
-                        </div>
-                        <button id="backToClientesBtn" class="mt-6 w-full px-6 py-3 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500 transition">Volver al Menú</button>
+            <div class="p-4 pt-8 w-full max-w-6xl mx-auto flex flex-col h-screen">
+                <div class="bg-white/95 backdrop-blur-sm p-6 rounded-lg shadow-xl flex flex-col flex-grow overflow-hidden">
+                    <h2 class="text-2xl font-bold text-gray-800 mb-6 text-center border-b border-gray-200 pb-4">Buscador de Clientes</h2>
+                    
+                    ${getFiltrosHTML()}
+                    
+                    <div id="clientesListContainer" class="overflow-x-auto overflow-y-auto flex-grow border border-gray-200 rounded-lg shadow-inner bg-gray-50 mb-4">
+                        <p class="text-gray-500 text-center py-6 animate-pulse">Cargando datos del sistema...</p>
                     </div>
+                    
+                    <button id="backToClientesBtn" class="w-full px-6 py-3 bg-gray-500 text-white font-bold rounded-lg shadow-md hover:bg-gray-600 transition tracking-wide">VOLVER AL MENÚ</button>
                 </div>
             </div>
         `;
@@ -882,7 +880,7 @@
         }, (error) => {
             if (error.code === 'permission-denied' || error.code === 'unauthenticated') return; 
             console.error("Error al cargar clientes:", error);
-            if (container) container.innerHTML = `<p class="text-red-500 text-center py-6 font-bold">Error al cargar la lista de clientes.</p>`;
+            if (container) container.innerHTML = `<p class="text-red-500 text-center py-6 font-bold">Error de conexión con la base de datos.</p>`;
         });
 
         _activeListeners.push(unsubscribe); 
@@ -890,26 +888,26 @@
 
     function getFiltrosHTML() {
         return `
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6 p-4 border rounded-lg bg-white shadow-sm">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4 p-4 border border-gray-300 rounded-lg bg-white shadow-sm">
                 <div class="md:col-span-2">
-                    <input type="text" id="search-input" placeholder="Buscar por Nombre, RIF, Cédula o CEP..." class="w-full px-4 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 transition">
+                    <input type="text" id="search-input" placeholder="Buscar por Nombre, Doc/RIF o Código CEP..." class="w-full px-4 py-2 border border-gray-300 rounded bg-gray-50 outline-none focus:bg-white focus:ring-2 focus:ring-indigo-500 transition text-sm">
                 </div>
                 <div>
-                    <label for="filter-sector" class="text-sm font-bold text-gray-600 mb-1 block uppercase tracking-wider">Sector</label>
-                    <select id="filter-sector" class="w-full px-3 py-2 border rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500"><option value="">Todos los sectores</option></select>
+                    <label for="filter-sector" class="text-xs font-bold text-gray-500 mb-1 block uppercase tracking-wider">Sector</label>
+                    <select id="filter-sector" class="w-full px-3 py-1.5 border border-gray-300 rounded text-sm outline-none focus:ring-2 focus:ring-indigo-500 bg-gray-50 focus:bg-white transition"><option value="">TODOS</option></select>
                 </div>
                 <div class="flex items-end">
-                    <button id="clear-filters-btn" class="w-full bg-gray-200 text-gray-700 text-sm font-bold rounded-lg py-2 px-4 hover:bg-gray-300 transition">Limpiar Filtros</button>
+                    <button id="clear-filters-btn" class="w-full bg-gray-200 text-gray-700 text-sm font-bold rounded py-1.5 px-4 hover:bg-gray-300 transition border border-gray-300">LIMPIAR</button>
                 </div>
                 
-                <div class="md:col-span-2 flex flex-col sm:flex-row items-start sm:items-center gap-4 pt-2 border-t border-gray-200 mt-2">
+                <div class="md:col-span-2 flex flex-col sm:flex-row items-start sm:items-center gap-4 pt-3 border-t border-gray-100 mt-1">
                     <div class="flex items-center">
                         <input type="checkbox" id="filter-incompletos" class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer">
-                        <label for="filter-incompletos" class="ml-2 block text-sm text-gray-700 cursor-pointer">Mostrar solo clientes incompletos</label>
+                        <label for="filter-incompletos" class="ml-2 block text-sm text-gray-600 font-medium cursor-pointer select-none">Solo Incompletos</label>
                     </div>
-                    <div class="flex items-center bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-100">
+                    <div class="flex items-center bg-blue-50 px-3 py-1 rounded border border-blue-200">
                         <input type="checkbox" id="filter-adc" class="h-4 w-4 rounded border-blue-300 text-blue-600 focus:ring-blue-500 cursor-pointer">
-                        <label for="filter-adc" class="ml-2 block text-sm text-blue-900 font-bold cursor-pointer">❄️ Posee Equipo ADC</label>
+                        <label for="filter-adc" class="ml-2 block text-sm text-blue-800 font-bold cursor-pointer select-none">Con Equipo ADC</label>
                     </div>
                 </div>
             </div>
@@ -923,7 +921,7 @@
              _getDocs(collectionRef).then(snapshot => {
                 const items = snapshot.docs.map(doc => doc.data().name).sort();
                 const currentValue = selectElement.value;
-                selectElement.innerHTML = `<option value="">Todos los sectores</option>`;
+                selectElement.innerHTML = `<option value="">TODOS</option>`;
                 items.forEach(item => {
                     selectElement.innerHTML += `<option value="${item}">${item}</option>`;
                 });
@@ -931,7 +929,7 @@
              }).catch(error => {
                 if (error.code === 'permission-denied' || error.code === 'unauthenticated') return;
                  console.error("Error cargando sectores para filtro:", error);
-                 selectElement.innerHTML = `<option value="">Error</option>`;
+                 selectElement.innerHTML = `<option value="">ERROR</option>`;
                  selectElement.disabled = true;
              });
         }
@@ -984,7 +982,6 @@
             const isComplete = cliente.nombreComercial && cliente.nombrePersonal && cliente.telefono && cliente.coordenadas && cliente.numeroDocumento;
             const incompletosMatch = !incompletosFilter || (incompletosFilter && !isComplete);
 
-            // Filtro ADC cruzado con el Set en vivo
             const adcMatch = !adcFilter || _clientesConAdc.has(cliente.id);
 
             return searchMatch && sectorMatch && incompletosMatch && adcMatch;
@@ -992,43 +989,44 @@
 
         if (filteredClients.length === 0) {
             if (_clientesCache.length > 0) {
-                container.innerHTML = `<p class="text-gray-500 text-center p-6 font-medium">No hay clientes que coincidan con la búsqueda.</p>`;
+                container.innerHTML = `<p class="text-gray-500 text-center p-6 font-medium">No se encontraron resultados.</p>`;
             } else {
-                container.innerHTML = `<p class="text-gray-500 text-center p-6 animate-pulse">Cargando clientes...</p>`;
+                container.innerHTML = `<p class="text-gray-500 text-center p-6 animate-pulse">Cargando...</p>`;
             }
             return;
         }
 
         let tableHTML = `
-            <table class="min-w-full bg-white border border-gray-200">
-                <thead class="bg-gray-200 sticky top-0 z-10 shadow-sm">
+            <table class="min-w-full bg-white text-sm">
+                <thead class="bg-gray-800 text-white sticky top-0 z-10 shadow">
                     <tr>
-                        <th class="py-3 px-4 border-b text-left text-sm text-gray-700 font-bold tracking-wide">Comercio</th>
-                        <th class="py-3 px-4 border-b text-left text-sm text-gray-700 font-bold tracking-wide hidden sm:table-cell">Doc. / RIF</th>
-                        <th class="py-3 px-4 border-b text-center text-sm text-gray-700 font-bold tracking-wide w-32">Acciones</th>
+                        <th class="py-3 px-4 border-b border-gray-700 text-left font-semibold uppercase tracking-wider text-xs">Comercio</th>
+                        <th class="py-3 px-4 border-b border-gray-700 text-left font-semibold uppercase tracking-wider text-xs hidden sm:table-cell">Doc/RIF</th>
+                        <th class="py-3 px-4 border-b border-gray-700 text-center font-semibold uppercase tracking-wider text-xs w-32">Acción</th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-gray-200">
         `;
+        
         filteredClients.forEach(cliente => {
             const isComplete = cliente.nombreComercial && cliente.nombrePersonal && cliente.telefono && cliente.coordenadas && cliente.numeroDocumento;
-            const rowClass = isComplete ? 'hover:bg-indigo-50' : 'bg-yellow-50 hover:bg-yellow-100';
-            const completenessIcon = isComplete ? '' : '<span title="Faltan datos del cliente" class="text-yellow-600 ml-1">⚠️</span>';
+            const rowClass = isComplete ? 'hover:bg-blue-50' : 'bg-red-50 hover:bg-red-100';
+            const completenessIcon = isComplete ? '' : '<span title="Faltan datos requeridos" class="text-red-500 ml-1 text-[10px] uppercase font-bold border border-red-500 px-1 rounded">Incompleto</span>';
             
-            const adcIcon = _clientesConAdc.has(cliente.id) ? '<span title="Posee equipo ADC" class="text-blue-500 ml-1 text-xs">❄️</span>' : '';
+            const adcIcon = _clientesConAdc.has(cliente.id) ? '<span title="Posee equipo ADC" class="text-blue-700 bg-blue-100 border border-blue-300 px-1 rounded ml-1 text-[10px] font-black">ADC</span>' : '';
             const docFormat = cliente.numeroDocumento ? `${cliente.tipoDocumento}-${cliente.numeroDocumento}` : 'S/D';
 
             tableHTML += `
                 <tr class="${rowClass} transition-colors">
-                    <td class="py-2.5 px-4 text-sm font-bold text-gray-800 align-middle">
+                    <td class="py-2 px-4 text-sm font-semibold text-gray-800 align-middle">
                         ${cliente.nombreComercial} ${adcIcon} ${completenessIcon}
-                        <div class="sm:hidden text-xs text-gray-500 font-medium mt-0.5">${docFormat}</div>
+                        <div class="sm:hidden text-xs text-gray-500 font-mono mt-0.5">${docFormat}</div>
                     </td>
-                    <td class="py-2.5 px-4 text-sm text-gray-600 hidden sm:table-cell align-middle font-mono">${docFormat}</td>
-                    <td class="py-2.5 px-2 text-center align-middle">
-                        <div class="flex flex-col gap-1.5 items-center justify-center">
-                            <button onclick="window.clientesModule.showClienteInfo('${cliente.id}')" class="w-full max-w-[110px] px-3 py-1.5 bg-indigo-600 text-white font-bold text-xs rounded hover:bg-indigo-700 shadow-sm transition flex justify-center items-center gap-1"><span>👀</span> Info.</button>
-                            <button onclick="window.clientesModule.editCliente('${cliente.id}')" class="w-full max-w-[110px] px-3 py-1.5 bg-yellow-500 text-white font-bold text-xs rounded hover:bg-yellow-600 shadow-sm transition flex justify-center items-center gap-1"><span>✏️</span> Editar</button>
+                    <td class="py-2 px-4 text-sm text-gray-600 hidden sm:table-cell align-middle font-mono">${docFormat}</td>
+                    <td class="py-2 px-2 text-center align-middle">
+                        <div class="flex gap-2 items-center justify-center">
+                            <button onclick="window.clientesModule.showClienteInfo('${cliente.id}')" class="px-3 py-1.5 bg-blue-600 text-white font-bold text-xs rounded hover:bg-blue-700 shadow-sm transition">INFO</button>
+                            <button onclick="window.clientesModule.editCliente('${cliente.id}')" class="px-3 py-1.5 bg-gray-600 text-white font-bold text-xs rounded hover:bg-gray-700 shadow-sm transition">EDITAR</button>
                         </div>
                     </td>
                 </tr>
@@ -1044,11 +1042,10 @@
         const cliente = _clientesCache.find(c => c.id === clienteId);
         if (!cliente) return;
 
-        // Pantalla de Carga
         _mainContent.innerHTML = `
             <div class="p-4 pt-8 w-full max-w-4xl mx-auto flex flex-col">
                 <div class="bg-white/95 backdrop-blur-sm p-6 rounded-lg shadow-xl text-center">
-                    <p class="animate-pulse text-indigo-600 font-bold text-lg">Cargando Ficha Completa del Cliente...</p>
+                    <p class="animate-pulse text-blue-600 font-bold text-lg">Cargando Expediente...</p>
                 </div>
             </div>
         `;
@@ -1057,7 +1054,6 @@
         let imgCount = 0;
         let adcEquipos = [];
 
-        // Consultar archivos y ADC en vivo desde Storage/Archivos JS
         try {
             const archivosRef = _collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/archivos_clientes`);
             const q = _query(archivosRef, _where("clienteId", "==", clienteId));
@@ -1075,103 +1071,99 @@
             console.error("Error consultando archivos del cliente:", e);
         }
 
-        // Formatear Botón de Mapa
         let mapBtnHTML = '';
         if (cliente.coordenadas) {
             const urlCoords = encodeURIComponent(cliente.coordenadas);
-            // El formato estándar para que abra web/app en el móvil
-            mapBtnHTML = `<a href="http://maps.google.com/?q=${urlCoords}" target="_blank" rel="noopener noreferrer" class="inline-block mt-3 px-4 py-2 bg-green-500 text-white font-bold rounded shadow hover:bg-green-600 transition flex items-center justify-center gap-2 w-full sm:w-auto">🗺️ Abrir en Google Maps</a>`;
+            mapBtnHTML = `<a href="http://maps.google.com/?q=${urlCoords}" target="_blank" rel="noopener noreferrer" class="inline-block mt-3 px-4 py-2 bg-blue-100 text-blue-800 border border-blue-300 font-bold rounded shadow-sm hover:bg-blue-200 transition text-sm w-full text-center">ABRIR EN GOOGLE MAPS</a>`;
         }
 
-        // Formatear Equipos ADC
-        let adcHTML = '<p class="text-sm text-gray-500 italic">No posee equipos ADC registrados en el sistema.</p>';
+        let adcHTML = '<p class="text-sm text-gray-500 italic">No registra equipos en comodato.</p>';
         if (adcEquipos.length > 0) {
             adcHTML = '<ul class="space-y-2 text-sm text-left">';
             adcEquipos.forEach(eq => {
-                adcHTML += `<li class="bg-blue-50 p-2 rounded border border-blue-200 text-blue-900 shadow-sm relative overflow-hidden">
-                    <div class="absolute right-0 top-0 text-4xl opacity-10">❄️</div>
-                    <strong class="block text-sm border-b border-blue-200 pb-1 mb-1">Cód: ${eq.codigo || 'S/C'}</strong>
-                    <span class="font-bold">${eq.modelo}</span> <span class="text-gray-600">(${eq.division}, ${eq.puertas} Ptas)</span>
+                adcHTML += `<li class="bg-white p-2 rounded border border-gray-200 shadow-sm">
+                    <strong class="block text-sm border-b border-gray-100 pb-1 mb-1 text-gray-800">Cód: ${eq.codigo || 'S/C'}</strong>
+                    <span class="font-bold text-gray-700">${eq.modelo}</span> <span class="text-gray-500">(${eq.division}, ${eq.puertas} Ptas)</span>
                 </li>`;
             });
             adcHTML += '</ul>';
         }
 
-        // Formatear Saldos de Vacíos
-        let vaciosHTML = '<ul class="space-y-1.5 text-sm">';
+        let vaciosHTML = '<ul class="space-y-1 text-sm">';
         let tieneVacios = false;
         if (cliente.saldoVacios) {
             Object.entries(cliente.saldoVacios).forEach(([tipo, cant]) => {
                 if (cant !== 0) {
                     tieneVacios = true;
                     const colorClass = cant > 0 ? 'text-red-600 font-black' : 'text-green-600 font-black';
-                    vaciosHTML += `<li class="flex justify-between border-b border-yellow-200 pb-1 items-center"><span class="font-medium text-yellow-900">${tipo}:</span> <span class="${colorClass} bg-white px-2 py-0.5 rounded shadow-sm">${cant}</span></li>`;
+                    vaciosHTML += `<li class="flex justify-between border-b border-gray-100 pb-1 items-center"><span class="font-medium text-gray-700">${tipo}:</span> <span class="${colorClass}">${cant}</span></li>`;
                 }
             });
         }
         vaciosHTML += '</ul>';
-        if (!tieneVacios) vaciosHTML = '<p class="text-sm text-gray-500 mt-1 italic">Solvente. Sin saldos pendientes.</p>';
+        if (!tieneVacios) vaciosHTML = '<p class="text-sm text-gray-500 mt-1 italic">Solvente. Sin movimientos.</p>';
 
-        const retencionBadge = cliente.aplicaRetencion ? '<span class="inline-block ml-2 px-2 py-0.5 bg-red-100 text-red-800 text-[10px] font-black rounded-full uppercase tracking-wider border border-red-300 align-middle">Aplica Retención</span>' : '';
-        const docFormat = cliente.numeroDocumento ? `${cliente.tipoDocumento}-${cliente.numeroDocumento}` : 'Sin Documento Registrado';
+        const retencionBadge = cliente.aplicaRetencion ? '<span class="inline-block ml-2 px-2 py-0.5 bg-red-100 text-red-800 text-[10px] font-black rounded uppercase tracking-wider border border-red-300 align-middle">Aplica Retención</span>' : '';
+        const docFormat = cliente.numeroDocumento ? `${cliente.tipoDocumento}-${cliente.numeroDocumento}` : 'S/D';
 
-        // RENDER FINAL DE LA FICHA
         _mainContent.innerHTML = `
             <div class="p-2 sm:p-4 pt-8 w-full max-w-5xl mx-auto flex flex-col h-screen overflow-y-auto">
-                <div class="bg-white/95 backdrop-blur-sm p-4 sm:p-8 rounded-lg shadow-xl flex flex-col border-t-4 border-indigo-600">
+                <div class="bg-white/95 backdrop-blur-sm p-4 sm:p-8 rounded-lg shadow-xl flex flex-col border-t-4 border-blue-800">
                     
-                    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 border-b border-gray-300 pb-4 gap-4">
-                        <h2 class="text-xl sm:text-2xl font-black text-gray-800 tracking-tight flex items-center gap-2"><span>👤</span> Ficha del Cliente</h2>
-                        <button id="btnVolverInfo" class="w-full sm:w-auto px-6 py-2.5 bg-gray-500 text-white font-bold rounded shadow hover:bg-gray-600 transition">Volver a la Lista</button>
+                    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 border-b border-gray-200 pb-4 gap-4">
+                        <h2 class="text-xl sm:text-2xl font-black text-gray-800 tracking-tight uppercase">Expediente de Cliente</h2>
+                        <button id="btnVolverInfo" class="w-full sm:w-auto px-6 py-2 bg-gray-500 text-white font-bold rounded shadow hover:bg-gray-600 transition text-sm">VOLVER</button>
                     </div>
 
-                    <div class="mb-6">
-                        <h3 class="text-2xl sm:text-3xl font-black text-indigo-900 mb-1 leading-tight">${cliente.nombreComercial} ${retencionBadge}</h3>
-                        <p class="text-gray-600 font-medium">Representante: <span class="text-gray-800 font-bold">${cliente.nombrePersonal || 'N/A'}</span></p>
+                    <div class="mb-6 bg-gray-50 p-4 rounded border border-gray-200">
+                        <h3 class="text-2xl sm:text-3xl font-black text-blue-900 mb-1 leading-tight uppercase">${cliente.nombreComercial} ${retencionBadge}</h3>
+                        <p class="text-gray-600 text-sm mt-1">Representante Legal: <span class="text-gray-800 font-bold">${cliente.nombrePersonal || 'N/A'}</span></p>
                     </div>
 
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-                        <div class="bg-gray-50 p-4 sm:p-5 rounded-lg border border-gray-200 shadow-sm flex flex-col justify-between">
+                        
+                        <div class="bg-white p-4 sm:p-5 rounded-lg border border-gray-300 shadow-sm flex flex-col justify-between">
                             <div>
-                                <h4 class="font-bold text-gray-700 mb-3 border-b border-gray-300 pb-1 uppercase tracking-wider text-xs">Datos de Contacto</h4>
-                                <p class="text-sm mb-2"><strong class="text-gray-900">Documento Legal:</strong> <span class="font-mono bg-white px-1 border rounded text-indigo-700 font-bold">${docFormat}</span></p>
-                                <p class="text-sm mb-2"><strong class="text-gray-900">Sector/Zona:</strong> ${cliente.sector || 'N/A'}</p>
-                                <p class="text-sm mb-2"><strong class="text-gray-900">Teléfono:</strong> ${cliente.telefono || 'N/A'}</p>
-                                <p class="text-sm mb-2"><strong class="text-gray-900">Código CEP:</strong> ${cliente.codigoCEP || 'N/A'}</p>
-                                
-                                <div class="mt-4 pt-3 border-t border-gray-200">
-                                    <strong class="text-gray-900 text-sm block mb-1">Ubicación GPS:</strong>
-                                    ${cliente.coordenadas ? `<p class="text-xs text-gray-600 font-mono bg-white border border-gray-300 p-1.5 rounded inline-block break-all shadow-inner">${cliente.coordenadas}</p>` : '<p class="text-xs text-gray-500 italic">Sin coordenadas guardadas.</p>'}
+                                <h4 class="font-bold text-gray-800 mb-3 border-b border-gray-200 pb-1 uppercase tracking-wider text-xs">Datos Generales</h4>
+                                <div class="space-y-2 text-sm">
+                                    <p class="flex justify-between"><strong class="text-gray-600">Doc/RIF:</strong> <span class="font-mono font-bold">${docFormat}</span></p>
+                                    <p class="flex justify-between"><strong class="text-gray-600">Teléfono:</strong> <span class="font-medium">${cliente.telefono || 'N/A'}</span></p>
+                                    <p class="flex justify-between"><strong class="text-gray-600">Sector:</strong> <span class="font-medium">${cliente.sector || 'N/A'}</span></p>
+                                    <p class="flex justify-between"><strong class="text-gray-600">CEP:</strong> <span class="font-medium">${cliente.codigoCEP || 'N/A'}</span></p>
+                                </div>
+                                <div class="mt-4 pt-3 border-t border-gray-100">
+                                    <strong class="text-gray-600 text-xs block mb-1 uppercase">Coordenadas GPS:</strong>
+                                    ${cliente.coordenadas ? `<p class="text-xs text-gray-800 font-mono bg-gray-100 p-2 rounded break-all border border-gray-200">${cliente.coordenadas}</p>` : '<p class="text-xs text-red-500 font-bold uppercase">No registradas</p>'}
                                 </div>
                             </div>
-                            <div class="mt-4 pt-2 border-t border-gray-200">
+                            <div class="mt-4">
                                 ${mapBtnHTML}
                             </div>
                         </div>
 
-                        <div class="bg-yellow-50 p-4 sm:p-5 rounded-lg border border-yellow-200 shadow-sm">
-                            <h4 class="font-bold text-yellow-900 mb-3 border-b border-yellow-300 pb-1 uppercase tracking-wider text-xs">Saldo de Envases (Vacíos)</h4>
+                        <div class="bg-gray-50 p-4 sm:p-5 rounded-lg border border-gray-300 shadow-sm">
+                            <h4 class="font-bold text-gray-800 mb-3 border-b border-gray-200 pb-1 uppercase tracking-wider text-xs">Inventario de Envases</h4>
                             ${vaciosHTML}
                         </div>
 
-                        <div class="bg-teal-50 p-4 sm:p-5 rounded-lg border border-teal-200 shadow-sm">
-                            <h4 class="font-bold text-teal-900 mb-3 border-b border-teal-300 pb-1 uppercase tracking-wider text-xs">Archivos Digitales</h4>
-                            <ul class="space-y-2 text-sm text-teal-800 font-medium">
-                                <li class="flex justify-between items-center bg-white p-2 rounded border border-teal-100 shadow-sm">
-                                    <span>📄 Documentos (PDF/Word):</span> <strong class="text-teal-900 text-lg bg-teal-50 px-2 rounded">${docsCount}</strong>
-                                </li>
-                                <li class="flex justify-between items-center bg-white p-2 rounded border border-teal-100 shadow-sm">
-                                    <span>🖼️ Imágenes Generales:</span> <strong class="text-teal-900 text-lg bg-teal-50 px-2 rounded">${imgCount}</strong>
-                                </li>
-                            </ul>
-                            <p class="text-[10px] text-gray-500 mt-3 font-bold uppercase">* Gestiónelos en el menú "Archivos y ADC".</p>
+                        <div class="bg-white p-4 sm:p-5 rounded-lg border border-gray-300 shadow-sm">
+                            <h4 class="font-bold text-gray-800 mb-3 border-b border-gray-200 pb-1 uppercase tracking-wider text-xs">Respaldo Documental</h4>
+                            <div class="flex justify-between items-center mb-2">
+                                <span class="text-sm font-medium text-gray-600">Doc. Formales (PDF):</span> 
+                                <span class="text-sm font-bold bg-gray-100 border border-gray-300 px-3 py-0.5 rounded">${docsCount}</span>
+                            </div>
+                            <div class="flex justify-between items-center">
+                                <span class="text-sm font-medium text-gray-600">Imágenes Anexas:</span> 
+                                <span class="text-sm font-bold bg-gray-100 border border-gray-300 px-3 py-0.5 rounded">${imgCount}</span>
+                            </div>
                         </div>
 
                         <div class="bg-blue-50 p-4 sm:p-5 rounded-lg border border-blue-200 shadow-sm h-full max-h-60 overflow-y-auto">
-                            <h4 class="font-bold text-blue-900 mb-3 border-b border-blue-300 pb-1 sticky top-0 bg-blue-50 z-10 uppercase tracking-wider text-xs">Equipos en Comodato (ADC)</h4>
+                            <h4 class="font-bold text-blue-900 mb-3 border-b border-blue-300 pb-1 sticky top-0 bg-blue-50 z-10 uppercase tracking-wider text-xs">Activos en Comodato (ADC)</h4>
                             ${adcHTML}
                         </div>
                     </div>
+                    
                 </div>
             </div>
         `;
@@ -1186,94 +1178,95 @@
 
         const isRetencionChecked = cliente.aplicaRetencion ? 'checked' : '';
         
-        // Manejar compatibilidad si el cliente es viejo y no tiene tipoDocumento
         const tipoDoc = cliente.tipoDocumento || 'V';
         const numDoc = cliente.numeroDocumento || '';
 
         _mainContent.innerHTML = `
-            <div class="p-4 pt-8">
-                <div class="container mx-auto max-w-3xl">
-                    <div class="bg-white/90 backdrop-blur-sm p-6 sm:p-8 rounded-lg shadow-xl border-t-4 border-yellow-500">
-                        <h2 class="text-2xl font-black text-gray-800 mb-6 text-center">Editar Cliente</h2>
-                        <form id="editClienteForm" class="space-y-4 text-left">
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div>
-                                    <label for="editSector" class="block text-gray-700 font-medium mb-2">Sector / Zona:</label>
-                                    <select id="editSector" class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-yellow-500 outline-none" required>
+            <div class="p-4 pt-8 w-full max-w-4xl mx-auto flex flex-col">
+                <div class="bg-white/90 backdrop-blur-sm p-6 sm:p-8 rounded-lg shadow-xl border-t-4 border-yellow-500">
+                    <h2 class="text-2xl font-black text-gray-800 mb-6 text-center uppercase tracking-tight">Editar Registro</h2>
+                    <form id="editClienteForm" class="space-y-4 text-left">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label for="editSector" class="block text-gray-700 font-bold text-sm mb-1 uppercase">Sector / Zona</label>
+                                <select id="editSector" class="w-full px-4 py-2 border border-gray-300 rounded bg-gray-50 focus:bg-white focus:ring-2 focus:ring-yellow-500 outline-none text-sm" required>
+                                </select>
+                            </div>
+                            
+                            <div class="grid grid-cols-3 gap-2">
+                                <div class="col-span-1">
+                                    <label for="editTipoDoc" class="block text-gray-700 font-bold text-sm mb-1 uppercase">Doc.</label>
+                                    <select id="editTipoDoc" class="w-full px-2 py-2 border border-gray-300 rounded bg-gray-50 focus:bg-white outline-none focus:ring-2 focus:ring-yellow-500 text-sm font-bold" required>
+                                        <option value="V" ${tipoDoc === 'V' ? 'selected' : ''}>V</option>
+                                        <option value="J" ${tipoDoc === 'J' ? 'selected' : ''}>J</option>
+                                        <option value="E" ${tipoDoc === 'E' ? 'selected' : ''}>E</option>
+                                        <option value="FP" ${tipoDoc === 'FP' ? 'selected' : ''}>FP</option>
                                     </select>
                                 </div>
-                                
-                                <div class="grid grid-cols-3 gap-2">
-                                    <div class="col-span-1">
-                                        <label for="editTipoDoc" class="block text-gray-700 font-medium mb-2">Doc:</label>
-                                        <select id="editTipoDoc" class="w-full px-2 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-yellow-500" required>
-                                            <option value="V" ${tipoDoc === 'V' ? 'selected' : ''}>V</option>
-                                            <option value="J" ${tipoDoc === 'J' ? 'selected' : ''}>J</option>
-                                            <option value="E" ${tipoDoc === 'E' ? 'selected' : ''}>E</option>
-                                            <option value="FP" ${tipoDoc === 'FP' ? 'selected' : ''}>FP</option>
-                                        </select>
-                                    </div>
-                                    <div class="col-span-2">
-                                        <label for="editNumDoc" class="block text-gray-700 font-medium mb-2">Número:</label>
-                                        <input type="text" inputmode="numeric" id="editNumDoc" value="${numDoc}" class="w-full px-4 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-yellow-500" oninput="this.value = this.value.replace(/[^0-9]/g, '')" required>
-                                    </div>
+                                <div class="col-span-2">
+                                    <label for="editNumDoc" class="block text-gray-700 font-bold text-sm mb-1 uppercase">Número</label>
+                                    <input type="text" inputmode="numeric" id="editNumDoc" value="${numDoc}" class="w-full px-4 py-2 border border-gray-300 rounded bg-gray-50 focus:bg-white outline-none focus:ring-2 focus:ring-yellow-500 text-sm font-mono font-bold" oninput="this.value = this.value.replace(/[^0-9]/g, '')" required>
                                 </div>
+                            </div>
+                        </div>
 
-                                <div>
-                                    <label for="editNombreComercial" class="block text-gray-700 font-medium mb-2">Nombre Comercial:</label>
-                                    <input type="text" id="editNombreComercial" value="${cliente.nombreComercial || ''}" class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-yellow-500 outline-none" required>
-                                </div>
-                                <div>
-                                    <label for="editNombrePersonal" class="block text-gray-700 font-medium mb-2">Nombre Representante:</label>
-                                    <input type="text" id="editNombrePersonal" value="${cliente.nombrePersonal || ''}" class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-yellow-500 outline-none" required>
-                                </div>
-                                <div>
-                                    <label for="editTelefono" class="block text-gray-700 font-medium mb-2">Teléfono:</label>
-                                    <input type="tel" id="editTelefono" value="${cliente.telefono || ''}" class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-yellow-500 outline-none" required>
-                                </div>
-                                <div>
-                                    <label for="editCodigoCEP" class="block text-gray-700 font-medium mb-2">Código CEP:</label>
-                                    <div class="flex items-center bg-white border rounded-lg overflow-hidden focus-within:ring-2 focus-within:ring-yellow-500">
-                                        <input type="text" id="editCodigoCEP" value="${cliente.codigoCEP || ''}" class="w-full px-4 py-2 outline-none">
-                                        <div class="flex items-center pr-3 bg-gray-50 border-l px-2 py-2">
-                                            <input type="checkbox" id="editCepNA" class="h-4 w-4 cursor-pointer">
-                                            <label for="editCepNA" class="ml-1 text-xs text-gray-600 font-bold cursor-pointer whitespace-nowrap">N/A</label>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div>
-                                    <label for="editCoordenadas" class="block text-gray-700 font-medium mb-2">Coordenadas:</label>
-                                    <div class="flex items-center space-x-2">
-                                        <input type="text" id="editCoordenadas" value="${cliente.coordenadas || ''}" class="w-full px-4 py-2 border rounded-lg font-mono text-sm focus:ring-2 focus:ring-yellow-500 outline-none">
-                                        <button type="button" id="getEditCoordsBtn" class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition font-bold">GPS</button>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                            <div>
+                                <label for="editNombreComercial" class="block text-gray-700 font-bold text-sm mb-1 uppercase">Razón Social / Comercio</label>
+                                <input type="text" id="editNombreComercial" value="${cliente.nombreComercial || ''}" class="w-full px-4 py-2 border border-gray-300 rounded bg-gray-50 focus:bg-white focus:ring-2 focus:ring-yellow-500 outline-none text-sm" required>
+                            </div>
+                            <div>
+                                <label for="editNombrePersonal" class="block text-gray-700 font-bold text-sm mb-1 uppercase">Representante Legal</label>
+                                <input type="text" id="editNombrePersonal" value="${cliente.nombrePersonal || ''}" class="w-full px-4 py-2 border border-gray-300 rounded bg-gray-50 focus:bg-white focus:ring-2 focus:ring-yellow-500 outline-none text-sm" required>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+                            <div>
+                                <label for="editTelefono" class="block text-gray-700 font-bold text-sm mb-1 uppercase">Teléfono</label>
+                                <input type="tel" id="editTelefono" value="${cliente.telefono || ''}" class="w-full px-4 py-2 border border-gray-300 rounded bg-gray-50 focus:bg-white focus:ring-2 focus:ring-yellow-500 outline-none text-sm" required>
+                            </div>
+                            <div>
+                                <label for="editCodigoCEP" class="block text-gray-700 font-bold text-sm mb-1 uppercase">Código CEP</label>
+                                <div class="flex items-center bg-gray-50 border border-gray-300 rounded overflow-hidden focus-within:bg-white focus-within:ring-2 focus-within:ring-yellow-500 transition">
+                                    <input type="text" id="editCodigoCEP" value="${cliente.codigoCEP || ''}" class="w-full px-3 py-2 outline-none bg-transparent text-sm">
+                                    <div class="flex items-center pr-3 border-l border-gray-300 px-2 py-2">
+                                        <input type="checkbox" id="editCepNA" class="h-4 w-4 cursor-pointer">
+                                        <label for="editCepNA" class="ml-1 text-xs text-gray-600 font-bold cursor-pointer whitespace-nowrap">N/A</label>
                                     </div>
                                 </div>
                             </div>
-
-                            <div class="mt-4 bg-gray-50 p-4 rounded-lg border border-gray-200">
-                                <label class="flex items-center space-x-3 cursor-pointer w-fit">
-                                    <input type="checkbox" id="editAplicaRetencion" class="form-checkbox h-5 w-5 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500 cursor-pointer" ${isRetencionChecked}>
-                                    <span class="text-gray-800 font-bold text-sm select-none">Este cliente es agente de Retención de IVA</span>
-                                </label>
+                            <div>
+                                <label for="editCoordenadas" class="block text-gray-700 font-bold text-sm mb-1 uppercase">Coordenadas</label>
+                                <div class="flex items-center space-x-2">
+                                    <input type="text" id="editCoordenadas" value="${cliente.coordenadas || ''}" class="w-full px-3 py-2 border border-gray-300 rounded bg-gray-50 focus:bg-white font-mono text-xs focus:ring-2 focus:ring-yellow-500 outline-none">
+                                    <button type="button" id="getEditCoordsBtn" class="px-3 py-2 bg-gray-600 text-white font-bold rounded hover:bg-gray-700 transition text-xs">GPS</button>
+                                </div>
                             </div>
+                        </div>
 
-                            <div class="flex flex-col sm:flex-row gap-3 mt-6 border-t border-gray-200 pt-4">
-                                <button type="submit" class="w-full sm:w-2/3 px-6 py-3 bg-yellow-500 text-white font-bold rounded-lg shadow-md hover:bg-yellow-600 transition duration-150 text-lg">💾 Guardar Cambios</button>
-                                <button type="button" id="backToVerClientesBtn" class="w-full sm:w-1/3 px-6 py-3 bg-gray-400 text-white font-bold rounded-lg shadow-md hover:bg-gray-500 transition duration-150">Cancelar</button>
-                            </div>
-                        </form>
-                        
-                        ${_userRole === 'admin' ? `
-                            <div class="mt-8 pt-4 border-t-2 border-red-200 bg-red-50 p-4 rounded text-left">
-                                <p class="text-xs text-red-600 mb-2 font-black uppercase tracking-wider">Zona de Peligro</p>
-                                <p class="text-xs text-red-500 mb-3 font-medium">Eliminar a este cliente borrará su información básica del sistema. Su historial de ventas pasadas se mantendrá en las estadísticas.</p>
-                                <button type="button" onclick="window.clientesModule.deleteCliente('${cliente.id}')" class="w-full px-6 py-3 bg-white text-red-600 border-2 border-red-300 hover:bg-red-600 hover:text-white font-bold rounded-lg shadow-sm transition duration-150 flex justify-center items-center gap-2">
-                                    <span>🗑️</span> Eliminar Cliente Definitivamente
-                                </button>
-                            </div>
-                        ` : ''}
+                        <div class="mt-4 bg-gray-100 p-3 rounded border border-gray-300">
+                            <label class="flex items-center space-x-3 cursor-pointer w-fit">
+                                <input type="checkbox" id="editAplicaRetencion" class="form-checkbox h-5 w-5 text-yellow-600 rounded border-gray-400 focus:ring-yellow-500 cursor-pointer" ${isRetencionChecked}>
+                                <span class="text-gray-800 font-bold text-sm select-none uppercase tracking-wide">Agente de Retención de IVA</span>
+                            </label>
+                        </div>
 
-                    </div>
+                        <div class="flex flex-col sm:flex-row gap-3 mt-6 pt-4 border-t border-gray-200">
+                            <button type="submit" class="w-full sm:w-2/3 px-6 py-3 bg-yellow-500 text-white font-black rounded shadow-md hover:bg-yellow-600 transition text-sm tracking-widest uppercase">Actualizar Registro</button>
+                            <button type="button" id="backToVerClientesBtn" class="w-full sm:w-1/3 px-6 py-3 bg-gray-300 text-gray-800 font-bold rounded shadow-md hover:bg-gray-400 transition text-sm uppercase">Cancelar</button>
+                        </div>
+                    </form>
+                    
+                    ${_userRole === 'admin' ? `
+                        <div class="mt-8 pt-6 border-t border-red-200">
+                            <p class="text-[10px] text-red-500 mb-1 font-black uppercase tracking-wider text-center">Precaución: Acción Destructiva</p>
+                            <button type="button" onclick="window.clientesModule.deleteCliente('${cliente.id}')" class="w-full px-4 py-2 bg-white text-red-600 border border-red-400 hover:bg-red-600 hover:text-white font-bold rounded shadow-sm transition text-xs uppercase">
+                                Eliminar Cliente Permanentemente
+                            </button>
+                        </div>
+                    ` : ''}
+
                 </div>
             </div>
         `;
@@ -1750,6 +1743,7 @@
             _showModal('Error', `No se pudo actualizar el saldo: ${error.message || error}`);
         }
     }
+
 
     // Exponer funciones públicas al objeto window
     window.clientesModule = {
