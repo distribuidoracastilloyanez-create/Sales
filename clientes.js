@@ -60,7 +60,7 @@
                     <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl text-center">
                         <h1 class="text-3xl font-bold text-gray-800 mb-6">Gestión de Clientes</h1>
                         <div class="space-y-4">
-                            <button id="verClientesBtn" class="w-full px-6 py-3 bg-indigo-500 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-600 transition">Ver Clientes</button>
+                            <button id="verClientesBtn" class="w-full px-6 py-3 bg-indigo-500 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-600 transition">Buscar Cliente</button>
                             <button id="agregarClienteBtn" class="w-full px-6 py-3 bg-indigo-500 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-600 transition">Agregar Cliente</button>
                             <button id="saldosVaciosBtn" class="w-full px-6 py-3 bg-cyan-500 text-white font-semibold rounded-lg shadow-md hover:bg-cyan-600 transition">Consultar Saldos de Vacíos</button>
                             ${_userRole === 'admin' ? `
@@ -84,7 +84,7 @@
     }
 
     // ==========================================
-    // NUEVO: SECCIÓN EDITAR SALDO VACÍOS (ADMIN)
+    // SECCIÓN EDITAR SALDO VACÍOS (ADMIN)
     // ==========================================
 
     function showEditarSaldosVaciosView() {
@@ -113,7 +113,6 @@
         const searchInput = document.getElementById('edit-saldo-search-input');
         if (searchInput) searchInput.addEventListener('input', renderEditSaldosList);
 
-        // Si la caché está vacía, iniciamos listener
         if (_clientesCache.length === 0) {
             const clientesRef = _collection(_db, CLIENTES_COLLECTION_PATH);
             const unsubscribe = _onSnapshot(clientesRef, (snapshot) => {
@@ -136,7 +135,6 @@
 
         const searchTerm = searchInput.value.toLowerCase();
         
-        // Mostrar TODOS los clientes, tengan o no saldo
         let filteredClients = _clientesCache.filter(c => {
              const nameMatch = (c.nombreComercial || '').toLowerCase().includes(searchTerm) || (c.nombrePersonal || '').toLowerCase().includes(searchTerm);
              return nameMatch; 
@@ -187,7 +185,6 @@
         let inputsHTML = '';
         TIPOS_VACIO.forEach(tipo => {
             const currentVal = saldoVacios[tipo] || 0;
-            // Quitamos caracteres especiales para el id del input
             const safeId = `override_vacio_${tipo.replace(/[\s\/-]/g, '')}`;
             inputsHTML += `
                 <div class="flex justify-between items-center bg-white p-3 rounded border border-gray-200 mb-2 shadow-sm">
@@ -231,23 +228,20 @@
                 
                 setTimeout(() => {
                     _showModal('Éxito', 'Saldos actualizados correctamente.');
-                    renderEditSaldosList(); // Refrescar la tabla que está debajo
+                    renderEditSaldosList();
                 }, 300);
 
             } catch(e) {
                 console.error(e);
                 _showModal('Error', 'No se pudieron actualizar los saldos: ' + e.message);
             }
-            return false; // Evita el cierre automático si la validación asíncrona es lenta
+            return false;
             
         }, 'Guardar Cambios Absolutos', null, true);
     }
 
     // ==========================================
 
-    /**
-     * Muestra la vista de funciones avanzadas.
-     */
     function showFuncionesAvanzadasView() {
         _mainContent.innerHTML = `
             <div class="p-4 pt-8">
@@ -270,9 +264,6 @@
         document.getElementById('backToClientesMenuBtn').addEventListener('click', showClientesSubMenu);
     }
 
-    /**
-     * Muestra la vista para importar clientes desde un archivo Excel.
-     */
     function showImportarClientesView() {
         _mainContent.innerHTML = `
             <div class="p-4 pt-8">
@@ -380,7 +371,6 @@
 
             const headers = jsonData[0].map(h => (h ? h.toString().toLowerCase().trim().replace(/\s+/g, '') : ''));
             const requiredHeaders = ['sector', 'nombrecomercial', 'nombrepersonal', 'telefono', 'cep'];
-            // Se agregan los headers opcionales de retención y coordenadas
             const optionalHeaders = ['retencioniva', 'apilicaretencion', 'coordenadas', 'x', 'y', 'latitud', 'longitud', 'lat', 'lon']; 
             const headerMap = {};
             let missingHeader = false;
@@ -435,7 +425,6 @@
                     }
                 }
 
-                // Extracción de estado de Retención IVA
                 let aplicaRetencion = false;
                 if (headerMap['retencioniva'] !== undefined || headerMap['apilicaretencion'] !== undefined) {
                     const retIndex = headerMap['retencioniva'] !== undefined ? headerMap['retencioniva'] : headerMap['apilicaretencion'];
@@ -604,7 +593,6 @@
         }
     }
 
-
     function getCurrentCoordinates(inputId) {
         const coordsInput = document.getElementById(inputId);
         if (!coordsInput) return;
@@ -644,7 +632,7 @@
                         <h2 class="text-2xl font-bold text-gray-800 mb-6">Agregar Cliente</h2>
                         <form id="clienteForm" class="space-y-4 text-left">
                             <div>
-                                <label for="sector" class="block text-gray-700 font-medium mb-2">Sector:</label>
+                                <label for="sector" class="block text-gray-700 font-medium mb-2">Sector / Zona:</label>
                                 <div class="flex items-center space-x-2">
                                     <select id="sector" class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" required></select>
                                     <button type="button" id="addSectorBtn" class="px-4 py-2 bg-gray-400 text-white rounded-lg hover:bg-gray-500">Agregar</button>
@@ -655,7 +643,7 @@
                                 <input type="text" id="nombreComercial" class="w-full px-4 py-2 border rounded-lg" required>
                             </div>
                             <div>
-                                <label for="nombrePersonal" class="block text-gray-700 font-medium mb-2">Nombre Personal:</label>
+                                <label for="nombrePersonal" class="block text-gray-700 font-medium mb-2">Nombre Personal (Representante):</label>
                                 <input type="text" id="nombrePersonal" class="w-full px-4 py-2 border rounded-lg" required>
                             </div>
                             <div>
@@ -725,7 +713,6 @@
         const codigoCEP = form.codigoCEP.value.trim();
         const coordenadas = form.coordenadas.value.trim();
         
-        // Leer estado de la casilla de retención
         const aplicaRetencion = document.getElementById('aplicaRetencion').checked;
 
         if (!sector) {
@@ -824,15 +811,15 @@
             <div class="p-4 pt-8">
                 <div class="container mx-auto">
                     <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl">
-                        <h2 class="text-2xl font-bold text-gray-800 mb-6 text-center">Lista de Clientes</h2>
+                        <h2 class="text-2xl font-bold text-gray-800 mb-6 text-center">Buscar Cliente</h2>
                         ${getFiltrosHTML()}
                         <div class="text-sm text-gray-600 mb-2 p-2 bg-yellow-100 border border-yellow-300 rounded-lg">
                             <span class="font-bold">Nota:</span> Las filas resaltadas en amarillo y marcadas con '⚠️' indican que faltan datos del cliente (nombre, teléfono o coordenadas).
                         </div>
-                        <div id="clientesListContainer" class="overflow-x-auto max-h-96">
+                        <div id="clientesListContainer" class="overflow-x-auto max-h-[60vh]">
                             <p class="text-gray-500 text-center">Cargando clientes...</p>
                         </div>
-                        <button id="backToClientesBtn" class="mt-6 w-full px-6 py-3 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500">Volver</button>
+                        <button id="backToClientesBtn" class="mt-6 w-full px-6 py-3 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500 transition">Volver</button>
                     </div>
                 </div>
             </div>
@@ -847,7 +834,7 @@
             renderClientesList('clientesListContainer', false); 
         }, (error) => {
             if (error.code === 'permission-denied' || error.code === 'unauthenticated') { 
-                console.log(`Clientes listener error ignored (assumed logout): ${error.code}`); 
+                console.log(`Clientes listener error ignored: ${error.code}`); 
                 return; 
             }
             console.error("Error al cargar clientes:", error);
@@ -859,8 +846,6 @@
         _activeListeners.push(unsubscribe); 
     }
 
-
-
     function getFiltrosHTML() {
         return `
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6 p-4 border rounded-lg">
@@ -870,7 +855,7 @@
                     <select id="filter-sector" class="w-full px-2 py-1 border rounded-lg text-sm"><option value="">Todos</option></select>
                 </div>
                 <div>
-                    <button id="clear-filters-btn" class="w-full bg-gray-300 text-sm font-semibold rounded-lg self-end py-2 px-4 mt-5">Limpiar Filtros</button>
+                    <button id="clear-filters-btn" class="w-full bg-gray-300 text-sm font-semibold rounded-lg self-end py-2 px-4 mt-5 hover:bg-gray-400 transition">Limpiar Filtros</button>
                 </div>
                 <div class="md:col-span-2 flex items-center">
                     <input type="checkbox" id="filter-incompletos" class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
@@ -893,18 +878,12 @@
                 });
                 selectElement.value = currentValue;
              }).catch(error => {
-                if (error.code === 'permission-denied' || error.code === 'unauthenticated') {
-                    console.log("Error carga dropdown sectores ignorado (assumed logout).");
-                    return;
-                }
+                if (error.code === 'permission-denied' || error.code === 'unauthenticated') return;
                  console.error("Error cargando sectores para filtro:", error);
                  selectElement.innerHTML = `<option value="">Error</option>`;
                  selectElement.disabled = true;
              });
-        } else {
-             console.warn("Elemento 'filter-sector' no encontrado.");
         }
-
 
         const searchInput = document.getElementById('search-input');
         const sectorFilter = document.getElementById('filter-sector');
@@ -924,7 +903,6 @@
             applyFilters();
         });
     }
-
 
     function renderClientesList(elementId, readOnly = false) {
         const container = document.getElementById(elementId);
@@ -966,9 +944,8 @@
                 <thead class="bg-gray-200 sticky top-0 z-10">
                     <tr>
                         <th class="py-2 px-4 border-b text-left text-sm">N. Comercial</th>
-                        <th class="py-2 px-4 border-b text-left text-sm">N. Personal</th>
-                        <th class="py-2 px-4 border-b text-left text-sm">Teléfono</th>
-                        ${!readOnly ? `<th class="py-2 px-4 border-b text-center text-sm">Acciones</th>` : ''}
+                        <th class="py-2 px-4 border-b text-left text-sm hidden sm:table-cell">N. Personal</th>
+                        ${!readOnly ? `<th class="py-2 px-4 border-b text-center text-sm w-32">Acciones</th>` : ''}
                     </tr>
                 </thead>
                 <tbody>
@@ -976,26 +953,21 @@
         filteredClients.forEach(cliente => {
             const isComplete = cliente.nombreComercial && cliente.nombrePersonal && cliente.telefono && cliente.coordenadas;
             const rowClass = isComplete ? 'hover:bg-gray-50' : 'bg-yellow-100 hover:bg-yellow-200';
-            const completenessIcon = isComplete
-                ? ''
-                : '<span title="Datos incompletos" class="text-yellow-500 ml-2">⚠️</span>';
-
-            let mapButtonHTML = '';
-            if (cliente.coordenadas) {
-                 const urlCoords = encodeURIComponent(cliente.coordenadas);
-                 mapButtonHTML = `<a href="https://www.google.com/maps?q=${urlCoords}" target="_blank" class="px-3 py-1 bg-green-500 text-white text-xs rounded-lg hover:bg-green-600">Mapa</a>`;
-            }
+            const completenessIcon = isComplete ? '' : '<span title="Datos incompletos" class="text-yellow-500 ml-2">⚠️</span>';
 
             tableHTML += `
-                <tr class="${rowClass}">
-                    <td class="py-2 px-4 border-b text-sm">${cliente.nombreComercial}${completenessIcon}</td>
-                    <td class="py-2 px-4 border-b text-sm">${cliente.nombrePersonal}</td>
-                    <td class="py-2 px-4 border-b text-sm">${cliente.telefono}</td>
+                <tr class="${rowClass} transition-colors">
+                    <td class="py-2 px-4 border-b text-sm font-semibold text-gray-800 align-middle">
+                        ${cliente.nombreComercial}${completenessIcon}
+                        <div class="sm:hidden text-xs text-gray-500 font-normal mt-0.5">${cliente.nombrePersonal}</div>
+                    </td>
+                    <td class="py-2 px-4 border-b text-sm text-gray-600 hidden sm:table-cell align-middle">${cliente.nombrePersonal}</td>
                     ${!readOnly ? `
-                    <td class="py-2 px-4 border-b text-center space-x-1">
-                        ${mapButtonHTML}
-                        <button onclick="window.clientesModule.editCliente('${cliente.id}')" class="px-3 py-1 bg-yellow-500 text-white text-xs rounded-lg hover:bg-yellow-600">Editar</button>
-                        <button onclick="window.clientesModule.deleteCliente('${cliente.id}')" class="px-3 py-1 bg-red-500 text-white text-xs rounded-lg hover:bg-red-600">Eliminar</button>
+                    <td class="py-2 px-2 border-b text-center align-middle">
+                        <div class="flex flex-col gap-1 items-center justify-center">
+                            <button onclick="window.clientesModule.showClienteInfo('${cliente.id}')" class="w-full max-w-[100px] px-3 py-1.5 bg-indigo-600 text-white font-bold text-xs rounded hover:bg-indigo-700 shadow-sm transition">Ver Info.</button>
+                            <button onclick="window.clientesModule.editCliente('${cliente.id}')" class="w-full max-w-[100px] px-3 py-1.5 bg-yellow-500 text-white font-bold text-xs rounded hover:bg-yellow-600 shadow-sm transition">Editar</button>
+                        </div>
                     </td>` : ''}
                 </tr>
             `;
@@ -1004,6 +976,150 @@
         container.innerHTML = tableHTML;
     }
 
+    // --- NUEVA VISTA: VER INFO. DEL CLIENTE ---
+    async function showClienteInfo(clienteId) {
+        if (_floatingControls) _floatingControls.classList.add('hidden');
+        const cliente = _clientesCache.find(c => c.id === clienteId);
+        if (!cliente) return;
+
+        // Pantalla de Carga
+        _mainContent.innerHTML = `
+            <div class="p-4 pt-8 w-full max-w-4xl mx-auto flex flex-col">
+                <div class="bg-white/95 backdrop-blur-sm p-6 rounded-lg shadow-xl text-center">
+                    <p class="animate-pulse text-indigo-600 font-bold">Cargando Ficha Completa del Cliente...</p>
+                </div>
+            </div>
+        `;
+
+        let docsCount = 0;
+        let imgCount = 0;
+        let adcEquipos = [];
+
+        // Consultar archivos y ADC en vivo
+        try {
+            const archivosRef = _collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/archivos_clientes`);
+            const q = _query(archivosRef, _where("clienteId", "==", clienteId));
+            const snap = await _getDocs(q);
+
+            snap.forEach(doc => {
+                const data = doc.data();
+                if (data.categoria === 'documentos') docsCount++;
+                else if (data.categoria === 'imagenes') imgCount++;
+                else if (data.categoria === 'adc' && data.adcInfo) {
+                    adcEquipos.push(data.adcInfo);
+                }
+            });
+        } catch (e) {
+            console.error("Error consultando archivos del cliente:", e);
+        }
+
+        // Formatear Botón de Mapa
+        let mapBtnHTML = '';
+        if (cliente.coordenadas) {
+            const urlCoords = encodeURIComponent(cliente.coordenadas);
+            // El formato estándar y seguro para abrir Google Maps con coordenadas
+            mapBtnHTML = `<a href="https://www.google.com/maps/search/?api=1&query=${urlCoords}" target="_blank" rel="noopener noreferrer" class="inline-block mt-3 px-4 py-2 bg-green-500 text-white font-bold rounded shadow hover:bg-green-600 transition flex items-center justify-center gap-2 w-full sm:w-auto">🗺️ Abrir en Google Maps</a>`;
+        }
+
+        // Formatear Equipos ADC
+        let adcHTML = '<p class="text-sm text-gray-500">No posee equipos ADC registrados.</p>';
+        if (adcEquipos.length > 0) {
+            adcHTML = '<ul class="space-y-2 text-sm text-left">';
+            adcEquipos.forEach(eq => {
+                adcHTML += `<li class="bg-blue-50 p-2 rounded border border-blue-100 text-blue-900 shadow-sm">
+                    <strong class="block text-sm border-b border-blue-200 pb-1 mb-1">Cód: ${eq.codigo || 'S/C'}</strong>
+                    ${eq.modelo} <span class="text-gray-500">(${eq.division}, ${eq.puertas} Ptas)</span>
+                </li>`;
+            });
+            adcHTML += '</ul>';
+        }
+
+        // Formatear Saldos de Vacíos
+        let vaciosHTML = '<ul class="space-y-1 text-sm">';
+        let tieneVacios = false;
+        if (cliente.saldoVacios) {
+            Object.entries(cliente.saldoVacios).forEach(([tipo, cant]) => {
+                if (cant !== 0) {
+                    tieneVacios = true;
+                    const colorClass = cant > 0 ? 'text-red-600 font-bold' : 'text-green-600 font-bold';
+                    vaciosHTML += `<li class="flex justify-between border-b border-gray-200 pb-1"><span>${tipo}:</span> <span class="${colorClass}">${cant}</span></li>`;
+                }
+            });
+        }
+        vaciosHTML += '</ul>';
+        if (!tieneVacios) vaciosHTML = '<p class="text-sm text-gray-500 mt-1">Solvente. Sin saldos pendientes.</p>';
+
+        const retencionBadge = cliente.aplicaRetencion ? '<span class="inline-block ml-2 px-2 py-0.5 bg-red-100 text-red-800 text-[10px] font-black rounded-full uppercase tracking-wider border border-red-300 align-middle">Aplica Retención</span>' : '';
+
+        // RENDER FINAL DE LA FICHA
+        _mainContent.innerHTML = `
+            <div class="p-2 sm:p-4 pt-8 w-full max-w-5xl mx-auto flex flex-col h-screen overflow-y-auto">
+                <div class="bg-white/95 backdrop-blur-sm p-4 sm:p-8 rounded-lg shadow-xl flex flex-col border-t-4 border-indigo-600">
+                    
+                    <div class="flex justify-between items-center mb-6 border-b border-gray-300 pb-4">
+                        <h2 class="text-xl sm:text-2xl font-black text-gray-800 tracking-tight">Ficha del Cliente</h2>
+                        <button id="btnVolverInfo" class="px-4 py-2 bg-gray-500 text-white font-bold rounded shadow hover:bg-gray-600 transition">Volver</button>
+                    </div>
+
+                    <div class="mb-6">
+                        <h3 class="text-2xl sm:text-3xl font-black text-indigo-900 mb-1 leading-tight">${cliente.nombreComercial} ${retencionBadge}</h3>
+                        <p class="text-gray-600 font-medium">Representante: <span class="text-gray-800">${cliente.nombrePersonal || 'N/A'}</span></p>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                        <div class="bg-gray-50 p-4 sm:p-5 rounded-lg border border-gray-200 shadow-sm flex flex-col justify-between">
+                            <div>
+                                <h4 class="font-bold text-gray-700 mb-3 border-b border-gray-300 pb-1">Datos Principales</h4>
+                                <p class="text-sm mb-2"><strong class="text-gray-900">Sector/Zona:</strong> ${cliente.sector || 'N/A'}</p>
+                                <p class="text-sm mb-2"><strong class="text-gray-900">Teléfono:</strong> ${cliente.telefono || 'N/A'}</p>
+                                <p class="text-sm mb-2"><strong class="text-gray-900">Código CEP:</strong> ${cliente.codigoCEP || 'N/A'}</p>
+                                
+                                <div class="mt-4 pt-3 border-t border-gray-200">
+                                    <strong class="text-gray-900 text-sm block mb-1">Ubicación GPS:</strong>
+                                    ${cliente.coordenadas ? `<p class="text-xs text-gray-600 font-mono bg-gray-100 p-1 rounded inline-block break-all">${cliente.coordenadas}</p>` : '<p class="text-xs text-gray-500 italic">Sin coordenadas guardadas.</p>'}
+                                </div>
+                            </div>
+                            <div class="mt-3">
+                                ${mapBtnHTML}
+                            </div>
+                        </div>
+
+                        <div class="bg-yellow-50 p-4 sm:p-5 rounded-lg border border-yellow-200 shadow-sm">
+                            <h4 class="font-bold text-yellow-900 mb-3 border-b border-yellow-300 pb-1">Saldo de Envases (Vacíos)</h4>
+                            ${vaciosHTML}
+                        </div>
+
+                        <div class="bg-teal-50 p-4 sm:p-5 rounded-lg border border-teal-200 shadow-sm">
+                            <h4 class="font-bold text-teal-900 mb-3 border-b border-teal-300 pb-1">Archivos Digitales</h4>
+                            <ul class="space-y-2 text-sm text-teal-800">
+                                <li class="flex justify-between items-center bg-white p-2 rounded border border-teal-100">
+                                    <span>📄 Documentos PDF/Word:</span> <strong class="text-teal-900 text-lg">${docsCount}</strong>
+                                </li>
+                                <li class="flex justify-between items-center bg-white p-2 rounded border border-teal-100">
+                                    <span>🖼️ Imágenes Generales:</span> <strong class="text-teal-900 text-lg">${imgCount}</strong>
+                                </li>
+                            </ul>
+                            <p class="text-xs text-gray-500 mt-3 italic">* Gestiónelos desde el menú principal > "Archivos y ADC".</p>
+                        </div>
+
+                        <div class="bg-blue-50 p-4 sm:p-5 rounded-lg border border-blue-200 shadow-sm h-full max-h-60 overflow-y-auto">
+                            <h4 class="font-bold text-blue-900 mb-3 border-b border-blue-300 pb-1 sticky top-0 bg-blue-50 z-10">Equipos en Comodato (ADC)</h4>
+                            ${adcHTML}
+                        </div>
+                    </div>
+                    
+                    <div class="mt-2 flex flex-col sm:flex-row justify-end border-t border-gray-200 pt-4">
+                        <button onclick="window.clientesModule.editCliente('${cliente.id}')" class="w-full sm:w-auto px-8 py-3 bg-yellow-500 text-white font-bold rounded-lg shadow hover:bg-yellow-600 transition text-lg flex justify-center items-center gap-2">
+                            <span>✏️</span> Editar este Cliente
+                        </button>
+                    </div>
+
+                </div>
+            </div>
+        `;
+
+        document.getElementById('btnVolverInfo').addEventListener('click', showVerClientesView);
+    }
 
     function editCliente(clienteId) {
          _floatingControls.classList.add('hidden');
@@ -1014,54 +1130,68 @@
         const isRetencionChecked = cliente.aplicaRetencion ? 'checked' : '';
 
         _mainContent.innerHTML = `
-            <div class="p-4">
-                <div class="container mx-auto">
-                    <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl text-center">
+            <div class="p-4 pt-8">
+                <div class="container mx-auto max-w-3xl">
+                    <div class="bg-white/90 backdrop-blur-sm p-6 sm:p-8 rounded-lg shadow-xl text-center border-t-4 border-yellow-500">
                         <h2 class="text-2xl font-bold text-gray-800 mb-6">Editar Cliente</h2>
                         <form id="editClienteForm" class="space-y-4 text-left">
-                            <div>
-                                <label for="editSector" class="block text-gray-700 font-medium mb-2">Sector:</label>
-                                <select id="editSector" class="w-full px-4 py-2 border rounded-lg" required>
-                                </select>
-                            </div>
-                            <div>
-                                <label for="editNombreComercial" class="block text-gray-700 font-medium mb-2">Nombre Comercial:</label>
-                                <input type="text" id="editNombreComercial" value="${cliente.nombreComercial || ''}" class="w-full px-4 py-2 border rounded-lg" required>
-                            </div>
-                            <div>
-                                <label for="editNombrePersonal" class="block text-gray-700 font-medium mb-2">Nombre Personal:</label>
-                                <input type="text" id="editNombrePersonal" value="${cliente.nombrePersonal || ''}" class="w-full px-4 py-2 border rounded-lg" required>
-                            </div>
-                            <div>
-                                <label for="editTelefono" class="block text-gray-700 font-medium mb-2">Teléfono:</label>
-                                <input type="tel" id="editTelefono" value="${cliente.telefono || ''}" class="w-full px-4 py-2 border rounded-lg" required>
-                            </div>
-                            <div>
-                                <label for="editCodigoCEP" class="block text-gray-700 font-medium mb-2">Código CEP:</label>
-                                <div class="flex items-center">
-                                    <input type="text" id="editCodigoCEP" value="${cliente.codigoCEP || ''}" class="w-full px-4 py-2 border rounded-lg">
-                                    <input type="checkbox" id="editCepNA" class="ml-4 h-5 w-5">
-                                    <label for="editCepNA" class="ml-2 text-gray-700">No Aplica</label>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label for="editSector" class="block text-gray-700 font-medium mb-2">Sector / Zona:</label>
+                                    <select id="editSector" class="w-full px-4 py-2 border rounded-lg" required>
+                                    </select>
                                 </div>
-                            </div>
-                            <div>
-                                <label for="editCoordenadas" class="block text-gray-700 font-medium mb-2">Coordenadas:</label>
-                                <div class="flex items-center space-x-2">
-                                    <input type="text" id="editCoordenadas" value="${cliente.coordenadas || ''}" class="w-full px-4 py-2 border rounded-lg">
-                                    <button type="button" id="getEditCoordsBtn" class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600">GPS</button>
+                                <div>
+                                    <label for="editNombreComercial" class="block text-gray-700 font-medium mb-2">Nombre Comercial:</label>
+                                    <input type="text" id="editNombreComercial" value="${cliente.nombreComercial || ''}" class="w-full px-4 py-2 border rounded-lg" required>
+                                </div>
+                                <div>
+                                    <label for="editNombrePersonal" class="block text-gray-700 font-medium mb-2">Nombre Personal:</label>
+                                    <input type="text" id="editNombrePersonal" value="${cliente.nombrePersonal || ''}" class="w-full px-4 py-2 border rounded-lg" required>
+                                </div>
+                                <div>
+                                    <label for="editTelefono" class="block text-gray-700 font-medium mb-2">Teléfono:</label>
+                                    <input type="tel" id="editTelefono" value="${cliente.telefono || ''}" class="w-full px-4 py-2 border rounded-lg" required>
+                                </div>
+                                <div>
+                                    <label for="editCodigoCEP" class="block text-gray-700 font-medium mb-2">Código CEP:</label>
+                                    <div class="flex items-center">
+                                        <input type="text" id="editCodigoCEP" value="${cliente.codigoCEP || ''}" class="w-full px-4 py-2 border rounded-lg">
+                                        <input type="checkbox" id="editCepNA" class="ml-4 h-5 w-5 cursor-pointer">
+                                        <label for="editCepNA" class="ml-2 text-gray-700 cursor-pointer">No Aplica</label>
+                                    </div>
+                                </div>
+                                <div>
+                                    <label for="editCoordenadas" class="block text-gray-700 font-medium mb-2">Coordenadas:</label>
+                                    <div class="flex items-center space-x-2">
+                                        <input type="text" id="editCoordenadas" value="${cliente.coordenadas || ''}" class="w-full px-4 py-2 border rounded-lg font-mono text-sm">
+                                        <button type="button" id="getEditCoordsBtn" class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition">GPS</button>
+                                    </div>
                                 </div>
                             </div>
 
                             <div class="mt-4 bg-gray-50 p-4 rounded-lg border border-gray-200">
                                 <label class="flex items-center space-x-3 cursor-pointer">
-                                    <input type="checkbox" id="editAplicaRetencion" class="form-checkbox h-5 w-5 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500" ${isRetencionChecked}>
-                                    <span class="text-gray-800 font-bold text-sm">Este cliente es agente de Retención de IVA</span>
+                                    <input type="checkbox" id="editAplicaRetencion" class="form-checkbox h-5 w-5 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500 cursor-pointer" ${isRetencionChecked}>
+                                    <span class="text-gray-800 font-bold text-sm select-none">Este cliente es agente de Retención de IVA</span>
                                 </label>
                             </div>
 
-                            <button type="submit" class="w-full px-6 py-3 bg-blue-500 text-white font-semibold rounded-lg shadow-md hover:bg-blue-600">Guardar Cambios</button>
+                            <div class="flex flex-col sm:flex-row gap-3 mt-6 border-t border-gray-200 pt-4">
+                                <button type="submit" class="w-full sm:w-2/3 px-6 py-3 bg-blue-600 text-white font-bold rounded-lg shadow-md hover:bg-blue-700 transition duration-150 text-lg">💾 Guardar Cambios</button>
+                                <button type="button" id="backToVerClientesBtn" class="w-full sm:w-1/3 px-6 py-3 bg-gray-400 text-white font-bold rounded-lg shadow-md hover:bg-gray-500 transition duration-150">Cancelar</button>
+                            </div>
                         </form>
-                        <button id="backToVerClientesBtn" class="mt-4 w-full px-6 py-3 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500">Volver</button>
+                        
+                        ${_userRole === 'admin' ? `
+                            <div class="mt-8 pt-4 border-t-2 border-red-200">
+                                <p class="text-xs text-red-500 mb-2 font-bold uppercase">Zona de Peligro</p>
+                                <button type="button" onclick="window.clientesModule.deleteCliente('${cliente.id}')" class="w-full px-6 py-3 bg-red-50 text-red-600 border border-red-300 hover:bg-red-600 hover:text-white font-bold rounded-lg shadow-sm transition duration-150 flex justify-center items-center gap-2">
+                                    <span>🗑️</span> Eliminar Cliente Definitivamente
+                                </button>
+                            </div>
+                        ` : ''}
+
                     </div>
                 </div>
             </div>
@@ -1104,7 +1234,6 @@
                  return;
              }
 
-            // Capturar valor del checkbox
             const aplicaRetencion = document.getElementById('editAplicaRetencion').checked;
 
             const updatedData = {
@@ -1114,7 +1243,7 @@
                 telefono: document.getElementById('editTelefono').value || '',
                 codigoCEP: document.getElementById('editCodigoCEP').value || '',
                 coordenadas: (document.getElementById('editCoordenadas').value || '').trim(),
-                aplicaRetencion: aplicaRetencion, // Se guarda la actualización
+                aplicaRetencion: aplicaRetencion,
                 saldoVacios: cliente.saldoVacios || {} 
             };
 
@@ -1127,8 +1256,7 @@
 
             try {
                 await _setDoc(_doc(_db, CLIENTES_COLLECTION_PATH, clienteId), updatedData, { merge: true });
-                _showModal('Éxito', 'Cliente modificado exitosamente.');
-                showVerClientesView(); 
+                _showModal('Éxito', 'Cliente modificado exitosamente.', showVerClientesView, 'Continuar');
             } catch (error) {
                 console.error("Error al modificar el cliente:", error);
                 _showModal('Error', `Hubo un error al modificar el cliente: ${error.message}`);
@@ -1137,20 +1265,18 @@
         document.getElementById('backToVerClientesBtn').addEventListener('click', showVerClientesView);
     };
 
-
     function deleteCliente(clienteId) {
-        _showModal('Confirmar Eliminación', '¿Estás seguro de que deseas eliminar este cliente?', async () => {
+        _showModal('Confirmar Eliminación', '¿Estás seguro de que deseas eliminar este cliente? Se perderá su información básica (El historial de ventas se mantiene).', async () => {
             _showModal('Progreso', 'Eliminando cliente...'); 
             try {
                 await _deleteDoc(_doc(_db, CLIENTES_COLLECTION_PATH, clienteId));
-                _showModal('Éxito', 'Cliente eliminado correctamente.');
+                _showModal('Éxito', 'Cliente eliminado correctamente.', showVerClientesView, 'Volver a la lista');
             } catch (error) {
                 console.error("Error al eliminar el cliente:", error);
                 _showModal('Error', 'Hubo un error al eliminar el cliente.');
             }
-        }, 'Sí, Eliminar', null, true); 
+        }, 'Sí, Eliminar Definitivamente', null, true); 
     };
-
 
     function showDatosMaestrosSectoresView() {
         _mainContent.innerHTML = `
@@ -1192,7 +1318,7 @@
             `).join('');
         }, (error) => {
             if (error.code === 'permission-denied' || error.code === 'unauthenticated') { 
-                console.log(`Sectores listener error ignored (assumed logout): ${error.code}`); 
+                console.log(`Sectores listener error ignored (assumed logout).`); 
                 return;
             }
             console.error("Error en listener de gestión sectores:", error);
@@ -1202,7 +1328,6 @@
         });
         _activeListeners.push(unsubscribe);
     }
-
 
     async function editSector(sectorId, currentName) {
         const newName = prompt('Introduce el nuevo nombre para el sector:', currentName);
@@ -1244,7 +1369,6 @@
         }
     }
 
-
     async function deleteSector(sectorId, sectorName) {
          _showModal('Progreso', `Verificando uso del sector "${sectorName}"...`);
         const clientesRef = _collection(_db, CLIENTES_COLLECTION_PATH);
@@ -1273,7 +1397,6 @@
             _showModal('Error', `Ocurrió un error al intentar verificar el uso del sector: ${error.message}`);
         }
     }
-
 
     async function handleDeleteAllClientes() {
         _showModal('Confirmación Extrema', '¿Estás SEGURO de que quieres eliminar TODOS los clientes? Esta acción es irreversible.', async () => {
@@ -1319,7 +1442,6 @@
         }, 'Sí, Eliminar Todos', null, true); 
     }
 
-
     // --- Lógica de Saldos de Vacíos ---
 
     function showSaldosVaciosView() {
@@ -1350,7 +1472,7 @@
             renderSaldosList(); 
         }, (error) => {
             if (error.code === 'permission-denied' || error.code === 'unauthenticated') { 
-                console.log(`Saldos listener error ignored (assumed logout): ${error.code}`);
+                console.log(`Saldos listener error ignored (assumed logout)`);
                 return; 
             }
             console.error("Error al cargar saldos:", error);
@@ -1359,7 +1481,6 @@
         });
         _activeListeners.push(unsubscribe); 
     }
-
 
     function renderSaldosList() {
         const container = document.getElementById('saldosListContainer');
@@ -1415,7 +1536,6 @@
         }
         const cliente = _clientesCache[clienteIndex];
 
-        // Insignia visual si el cliente es agente de retención
         const retencionBadge = cliente.aplicaRetencion 
             ? '<span class="px-2 py-1 bg-red-100 text-red-800 text-xs font-bold rounded-full border border-red-300">Aplica Retención IVA</span>' 
             : '';
@@ -1501,7 +1621,6 @@
        }
     }
 
-
     async function handleAjusteManualVacios(clienteId, tipoVacio, cantidad, tipoAjuste) {
         const clienteRef = _doc(_db, CLIENTES_COLLECTION_PATH, clienteId);
         _showModal('Progreso', 'Actualizando saldo...');
@@ -1555,7 +1674,8 @@
         editSector,
         deleteSector,
         showSaldoDetalleModal,
-        showEditSaldoModal 
+        showEditSaldoModal,
+        showClienteInfo 
     };
 
 })();
