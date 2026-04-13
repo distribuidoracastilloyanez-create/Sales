@@ -12,7 +12,7 @@
 
     window.initArchivos = function(dependencies) {
         _db = dependencies.db;
-        _storage = dependencies.storage; // NUEVA DEPENDENCIA PARA STORAGE
+        _storage = dependencies.storage; 
         _userId = dependencies.userId;
         _userRole = dependencies.userRole;
         _appId = dependencies.appId;
@@ -30,7 +30,7 @@
         _deleteDoc = dependencies.deleteDoc;
         _orderBy = dependencies.orderBy;
 
-        console.log("Módulo Archivos Inicializado.");
+        console.log("Módulo Archivos Inicializado (Con gestor visual de ADC).");
     };
 
     window.showArchivosView = async function() {
@@ -63,17 +63,32 @@
                             <button class="arc-tab-btn flex-1 py-2 font-bold text-sm border-b-2 border-transparent text-gray-500 hover:text-teal-500 transition" data-cat="adc">❄️ Equipos ADC</button>
                         </div>
 
-                        <div class="bg-gray-50 p-4 rounded-lg border border-gray-200 mb-4 shadow-inner">
+                        <div class="flex justify-between items-center mb-4">
+                            <h3 class="font-bold text-gray-700 text-lg" id="arcGalleryTitle">Documentos Guardados</h3>
+                            <button id="btnShowAddForm" class="px-4 py-2 bg-teal-600 text-white text-sm font-bold rounded shadow hover:bg-teal-700 transition flex items-center gap-1">
+                                + <span id="btnShowAddFormText">Agregar Documento</span>
+                            </button>
+                        </div>
+
+                        <div id="arcFormContainer" class="hidden bg-gray-50 p-4 rounded-lg border border-teal-200 mb-4 shadow-inner">
                             <form id="arcUploadForm" class="space-y-4">
+                                <div class="flex justify-between items-center border-b border-gray-200 pb-2 mb-3">
+                                    <h4 class="font-bold text-gray-800" id="arcFormTitle">Subir Nuevo Archivo</h4>
+                                    <button type="button" id="btnCancelAdd" class="text-gray-400 hover:text-red-500 font-bold text-sm flex items-center gap-1">&times; Cancelar</button>
+                                </div>
                                 
-                                <div id="adcMetadataFields" class="hidden grid grid-cols-1 sm:grid-cols-3 gap-4 p-3 bg-blue-50 border border-blue-200 rounded">
+                                <div id="adcMetadataFields" class="hidden grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 p-3 bg-blue-50 border border-blue-200 rounded">
                                     <div>
-                                        <label class="block text-xs font-bold text-blue-800 mb-1">Compañía:</label>
-                                        <select id="adcEmpresa" class="w-full p-2 border rounded text-sm outline-none focus:ring-1 focus:ring-blue-500">
+                                        <label class="block text-xs font-bold text-blue-800 mb-1">División:</label>
+                                        <select id="adcDivision" class="w-full p-2 border rounded text-sm outline-none focus:ring-1 focus:ring-blue-500">
                                             <option value="">Seleccione...</option>
                                             <option value="PCV (Pepsi)">PCV (Pepsi)</option>
                                             <option value="CMYV (Cervecería)">CMYV (Cervecería)</option>
                                         </select>
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-bold text-blue-800 mb-1">Código del Activo:</label>
+                                        <input type="text" id="adcCodigo" class="w-full p-2 border rounded text-sm outline-none focus:ring-1 focus:ring-blue-500 uppercase" placeholder="Ej: ADC-12345">
                                     </div>
                                     <div>
                                         <label class="block text-xs font-bold text-blue-800 mb-1">Modelo:</label>
@@ -92,18 +107,17 @@
 
                                 <div class="flex flex-col sm:flex-row gap-3 items-end">
                                     <div class="flex-grow w-full">
-                                        <label class="block text-xs font-bold text-gray-700 mb-1">Seleccionar Archivo:</label>
-                                        <input type="file" id="arcFileInput" class="w-full p-2 border border-gray-300 rounded bg-white text-sm" accept=".pdf,.doc,.docx,.xls,.xlsx">
+                                        <label class="block text-xs font-bold text-gray-700 mb-1">Seleccionar Archivo <span class="text-red-500">*</span></label>
+                                        <input type="file" id="arcFileInput" class="w-full p-2 border border-gray-300 rounded bg-white text-sm" accept=".pdf,.doc,.docx,.xls,.xlsx" required>
                                     </div>
                                     <button type="submit" id="btnSubirArchivo" class="w-full sm:w-auto px-6 py-2.5 bg-teal-600 text-white font-bold rounded shadow hover:bg-teal-700 transition flex items-center justify-center gap-2">
-                                        <span>⬆️</span> Subir
+                                        <span>💾</span> Guardar
                                     </button>
                                 </div>
                             </form>
                         </div>
 
                         <div class="flex-grow overflow-y-auto bg-gray-100 p-4 rounded-lg border border-gray-200">
-                            <h3 class="font-bold text-gray-700 mb-3 border-b border-gray-300 pb-1" id="arcGalleryTitle">Documentos Guardados</h3>
                             <div id="arcGalleryGrid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
                                 <p class="text-gray-500 text-sm col-span-full text-center py-4">Seleccione una pestaña para ver los archivos.</p>
                             </div>
@@ -129,9 +143,22 @@
 
         document.getElementById('arcClientClear').addEventListener('click', clearClientSelection);
 
+        // Control de UI del Formulario
+        document.getElementById('btnShowAddForm').addEventListener('click', () => {
+            document.getElementById('arcFormContainer').classList.remove('hidden');
+        });
+        document.getElementById('btnCancelAdd').addEventListener('click', () => {
+            document.getElementById('arcFormContainer').classList.add('hidden');
+            document.getElementById('arcUploadForm').reset();
+        });
+
         // Control de Pestañas
         document.querySelectorAll('.arc-tab-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
+                // Ocultar form si cambian de pestaña
+                document.getElementById('arcFormContainer').classList.add('hidden');
+                document.getElementById('arcUploadForm').reset();
+
                 // Quitar estilo activo a todas
                 document.querySelectorAll('.arc-tab-btn').forEach(b => {
                     b.classList.remove('border-teal-600', 'text-teal-600');
@@ -200,35 +227,54 @@
         document.getElementById('arcWorkArea').classList.add('hidden');
         document.getElementById('arcWorkArea').classList.remove('flex');
         document.getElementById('arcGalleryGrid').innerHTML = '';
+        document.getElementById('arcFormContainer').classList.add('hidden');
     }
 
     function actualizarInterfazPorCategoria() {
         const fileInput = document.getElementById('arcFileInput');
         const adcFields = document.getElementById('adcMetadataFields');
         const title = document.getElementById('arcGalleryTitle');
+        const btnAddText = document.getElementById('btnShowAddFormText');
+        const formTitle = document.getElementById('arcFormTitle');
 
         if (_categoriaActual === 'documentos') {
             fileInput.accept = ".pdf,.doc,.docx,.xls,.xlsx";
             adcFields.classList.add('hidden');
+            
             title.textContent = "📄 Documentos Guardados";
+            btnAddText.textContent = "Agregar Documento";
+            formTitle.textContent = "Subir Nuevo Documento";
+            
             // Limpiar requeridos de ADC
-            document.getElementById('adcEmpresa').required = false;
+            document.getElementById('adcDivision').required = false;
+            document.getElementById('adcCodigo').required = false;
             document.getElementById('adcModelo').required = false;
             document.getElementById('adcPuertas').required = false;
         } 
         else if (_categoriaActual === 'imagenes') {
             fileInput.accept = "image/png, image/jpeg, image/jpg";
             adcFields.classList.add('hidden');
+            
             title.textContent = "🖼️ Imágenes Generales";
-            document.getElementById('adcEmpresa').required = false;
+            btnAddText.textContent = "Agregar Imagen";
+            formTitle.textContent = "Subir Nueva Imagen";
+
+            document.getElementById('adcDivision').required = false;
+            document.getElementById('adcCodigo').required = false;
             document.getElementById('adcModelo').required = false;
             document.getElementById('adcPuertas').required = false;
         } 
         else if (_categoriaActual === 'adc') {
             fileInput.accept = "image/png, image/jpeg, image/jpg";
             adcFields.classList.remove('hidden');
+            
             title.textContent = "❄️ Equipos ADC Asignados";
-            document.getElementById('adcEmpresa').required = true;
+            btnAddText.textContent = "Agregar Equipo ADC";
+            formTitle.textContent = "Registrar Nuevo Equipo ADC";
+
+            // Hacer campos ADC obligatorios
+            document.getElementById('adcDivision').required = true;
+            document.getElementById('adcCodigo').required = true;
             document.getElementById('adcModelo').required = true;
             document.getElementById('adcPuertas').required = true;
         }
@@ -252,13 +298,14 @@
         let metadataADC = null;
         if (_categoriaActual === 'adc') {
             metadataADC = {
-                empresa: document.getElementById('adcEmpresa').value,
+                division: document.getElementById('adcDivision').value,
+                codigo: document.getElementById('adcCodigo').value.trim().toUpperCase(),
                 modelo: document.getElementById('adcModelo').value,
                 puertas: parseInt(document.getElementById('adcPuertas').value, 10)
             };
         }
 
-        _showModal('Subiendo...', `Subiendo archivo: ${file.name}`, null, '', null, false);
+        _showModal('Subiendo...', `Subiendo y registrando: ${file.name}`, null, '', null, false);
 
         try {
             // 1. Crear referencia en Firebase Storage
@@ -290,8 +337,9 @@
 
             await _addDoc(_collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/archivos_clientes`), docData);
 
-            // Limpiar formulario y recargar
+            // Limpiar formulario y ocultarlo
             document.getElementById('arcUploadForm').reset();
+            document.getElementById('arcFormContainer').classList.add('hidden');
             document.getElementById('modalContainer').classList.add('hidden');
             
             cargarArchivosDeCategoria();
@@ -304,11 +352,10 @@
 
     async function cargarArchivosDeCategoria() {
         const grid = document.getElementById('arcGalleryGrid');
-        grid.innerHTML = '<p class="col-span-full text-center text-teal-600 animate-pulse py-6">Cargando archivos...</p>';
+        grid.innerHTML = '<p class="col-span-full text-center text-teal-600 animate-pulse py-6 font-bold">Cargando información...</p>';
 
         try {
             const archivosRef = _collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/archivos_clientes`);
-            // Filtrar por cliente y categoría actual
             const q = _query(
                 archivosRef, 
                 _where("clienteId", "==", _clienteSeleccionado.id),
@@ -318,7 +365,11 @@
             const snap = await _getDocs(q);
             
             if (snap.empty) {
-                grid.innerHTML = '<p class="col-span-full text-center text-gray-500 py-6">No hay archivos en esta categoría.</p>';
+                let emptyMsg = "No hay documentos guardados.";
+                if (_categoriaActual === 'imagenes') emptyMsg = "No hay imágenes guardadas.";
+                if (_categoriaActual === 'adc') emptyMsg = "El cliente no tiene equipos ADC registrados.";
+
+                grid.innerHTML = `<p class="col-span-full text-center text-gray-500 py-6">${emptyMsg}</p>`;
                 return;
             }
 
@@ -336,7 +387,8 @@
                     if (arc.adcInfo) {
                         metaHTML = `
                             <div class="text-xs text-blue-800 bg-blue-50 p-2 mt-2 rounded border border-blue-100">
-                                <p><b>Empresa:</b> ${arc.adcInfo.empresa}</p>
+                                <p><b>Cód:</b> <span class="font-black">${arc.adcInfo.codigo}</span></p>
+                                <p><b>División:</b> ${arc.adcInfo.division}</p>
                                 <p><b>Modelo:</b> ${arc.adcInfo.modelo}</p>
                                 <p><b>Puertas:</b> ${arc.adcInfo.puertas}</p>
                             </div>
@@ -344,19 +396,21 @@
                     }
                     html += `
                         <div class="bg-white p-3 rounded-lg shadow border border-gray-200 flex flex-col">
-                            <a href="${arc.url}" target="_blank" class="block h-32 w-full mb-2 overflow-hidden rounded bg-gray-100 border flex items-center justify-center">
-                                <img src="${arc.url}" alt="${arc.fileName}" class="max-h-full max-w-full object-contain hover:scale-105 transition-transform">
+                            <a href="${arc.url}" target="_blank" class="block h-32 w-full mb-2 overflow-hidden rounded bg-gray-100 border flex items-center justify-center relative group">
+                                <img src="${arc.url}" alt="${arc.fileName}" class="max-h-full max-w-full object-contain group-hover:scale-105 transition-transform duration-300">
+                                <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                    <span class="text-white text-xs font-bold border border-white px-2 py-1 rounded">Ampliar Foto</span>
+                                </div>
                             </a>
                             <div class="flex-grow">
-                                <p class="text-xs text-gray-500 mb-1">${fechaFormat}</p>
-                                <p class="text-sm font-bold text-gray-800 truncate" title="${arc.fileName}">${arc.fileName}</p>
+                                <p class="text-xs text-gray-500 mb-1">📅 ${fechaFormat}</p>
                                 ${metaHTML}
                             </div>
-                            <button onclick="window.archivosModule.eliminarArchivo('${arc.id}', '${arc.storagePath}')" class="mt-3 w-full py-1.5 bg-red-100 text-red-600 hover:bg-red-600 hover:text-white rounded text-xs font-bold transition">Eliminar</button>
+                            <button onclick="window.archivosModule.eliminarArchivo('${arc.id}', '${arc.storagePath}')" class="mt-3 w-full py-1.5 bg-red-50 text-red-600 hover:bg-red-600 hover:text-white border border-red-200 hover:border-transparent rounded text-xs font-bold transition">Eliminar Registro</button>
                         </div>
                     `;
                 } else {
-                    // Mostrar como Documento (Archivo Genérico)
+                    // Mostrar como Documento Genérico
                     html += `
                         <div class="bg-white p-4 rounded-lg shadow border border-gray-200 flex items-center justify-between gap-3 hover:bg-teal-50 transition">
                             <div class="flex items-center gap-3 overflow-hidden">
@@ -382,12 +436,12 @@
 
     async function eliminarArchivo(docId, storagePath) {
         if (_userRole !== 'admin') {
-            _showModal('Acceso Denegado', 'Solo los administradores pueden borrar archivos físicos.');
+            _showModal('Acceso Denegado', 'Solo los administradores pueden borrar archivos físicos o equipos.');
             return;
         }
 
-        _showModal('Confirmar', '¿Estás seguro de eliminar este archivo permanentemente?', async () => {
-            _showModal('Progreso', 'Eliminando archivo...', null, '', null, false);
+        _showModal('Confirmar', '¿Estás seguro de eliminar este registro permanentemente?', async () => {
+            _showModal('Progreso', 'Eliminando...', null, '', null, false);
             try {
                 // 1. Borrar de Storage
                 const storageRefObj = window.firebaseStorageFunctions.ref(_storage, storagePath);
@@ -397,16 +451,15 @@
                 await _deleteDoc(_doc(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/archivos_clientes`, docId));
 
                 document.getElementById('modalContainer').classList.add('hidden');
-                cargarArchivosDeCategoria(); // Recargar la vista
+                cargarArchivosDeCategoria(); 
 
             } catch (error) {
                 console.error("Error eliminando archivo:", error);
-                _showModal('Error', `No se pudo eliminar el archivo: ${error.message}`);
+                _showModal('Error', `No se pudo eliminar el registro: ${error.message}`);
             }
         }, 'Sí, Eliminar');
     }
 
-    // Exponer para que los botones HTML lo encuentren
     window.archivosModule = {
         eliminarArchivo
     };
