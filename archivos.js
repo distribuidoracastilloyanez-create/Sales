@@ -30,15 +30,15 @@
         _deleteDoc = dependencies.deleteDoc;
         _orderBy = dependencies.orderBy;
 
-        console.log("Módulo Archivos Inicializado (Soporte Múltiples Fotos Generales y ADC).");
+        console.log("Módulo Archivos Inicializado (Scroll Móvil Corregido).");
     };
 
     window.showArchivosView = async function() {
         if (_floatingControls) _floatingControls.classList.add('hidden');
 
         _mainContent.innerHTML = `
-            <div class="p-2 sm:p-4 pt-8 w-full max-w-6xl mx-auto flex flex-col h-screen">
-                <div class="bg-white/95 backdrop-blur-sm p-4 sm:p-6 rounded-lg shadow-xl flex flex-col flex-grow overflow-hidden border-t-4 border-teal-600">
+            <div class="p-2 sm:p-4 pt-8 w-full max-w-6xl mx-auto flex flex-col h-screen overflow-hidden">
+                <div class="bg-white/95 backdrop-blur-sm p-4 sm:p-6 rounded-lg shadow-xl flex flex-col flex-grow overflow-y-auto border-t-4 border-teal-600">
                     <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-3">
                         <h2 class="text-xl sm:text-2xl font-black text-gray-800 tracking-tight">📁 Archivos y Equipos (ADC)</h2>
                         <button id="btnVolverArchivos" class="w-full sm:w-auto px-4 py-2 bg-gray-500 text-white font-bold rounded shadow hover:bg-gray-600 transition">Volver al Menú</button>
@@ -55,7 +55,7 @@
                         </div>
                     </div>
 
-                    <div id="arcWorkArea" class="hidden flex-col flex-grow overflow-hidden">
+                    <div id="arcWorkArea" class="hidden flex-col flex-grow">
                         
                         <div class="flex border-b border-gray-200 mb-4">
                             <button class="arc-tab-btn flex-1 py-2 font-bold text-sm border-b-2 border-teal-600 text-teal-600" data-cat="documentos">📄 Documentos</button>
@@ -109,7 +109,7 @@
                                     <div class="flex-grow w-full">
                                         <label class="block text-xs font-bold text-gray-700 mb-1">Seleccionar Archivo(s) <span class="text-red-500">*</span></label>
                                         <input type="file" id="arcFileInput" class="w-full p-2 border border-gray-300 rounded bg-white text-sm" accept=".pdf,.doc,.docx,.xls,.xlsx" required>
-                                        <p id="multiFileHint" class="text-[10px] text-gray-500 mt-1 hidden">Puede seleccionar varios archivos a la vez.</p>
+                                        <p id="multiFileHint" class="text-[10px] text-gray-500 mt-1 hidden">Puede seleccionar varias fotos a la vez.</p>
                                     </div>
                                     <button type="submit" id="btnSubirArchivo" class="w-full sm:w-auto px-6 py-2.5 bg-teal-600 text-white font-bold rounded shadow hover:bg-teal-700 transition flex items-center justify-center gap-2">
                                         <span>💾</span> Guardar
@@ -118,7 +118,7 @@
                             </form>
                         </div>
 
-                        <div class="flex-grow overflow-y-auto bg-gray-100 p-4 rounded-lg border border-gray-200">
+                        <div class="flex-grow bg-gray-100 p-4 rounded-lg border border-gray-200 min-h-[300px]">
                             <div id="arcGalleryGrid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
                                 <p class="text-gray-500 text-sm col-span-full text-center py-4">Seleccione una pestaña para ver los archivos.</p>
                             </div>
