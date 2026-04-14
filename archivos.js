@@ -30,7 +30,7 @@
         _deleteDoc = dependencies.deleteDoc;
         _orderBy = dependencies.orderBy;
 
-        console.log("Módulo Archivos Inicializado (Con gestor visual de ADC).");
+        console.log("Módulo Archivos Inicializado (Soporte Múltiples Fotos Generales y ADC).");
     };
 
     window.showArchivosView = async function() {
@@ -107,8 +107,9 @@
 
                                 <div class="flex flex-col sm:flex-row gap-3 items-end">
                                     <div class="flex-grow w-full">
-                                        <label class="block text-xs font-bold text-gray-700 mb-1">Seleccionar Archivo <span class="text-red-500">*</span></label>
+                                        <label class="block text-xs font-bold text-gray-700 mb-1">Seleccionar Archivo(s) <span class="text-red-500">*</span></label>
                                         <input type="file" id="arcFileInput" class="w-full p-2 border border-gray-300 rounded bg-white text-sm" accept=".pdf,.doc,.docx,.xls,.xlsx" required>
+                                        <p id="multiFileHint" class="text-[10px] text-gray-500 mt-1 hidden">Puede seleccionar varios archivos a la vez.</p>
                                     </div>
                                     <button type="submit" id="btnSubirArchivo" class="w-full sm:w-auto px-6 py-2.5 bg-teal-600 text-white font-bold rounded shadow hover:bg-teal-700 transition flex items-center justify-center gap-2">
                                         <span>💾</span> Guardar
@@ -155,16 +156,14 @@
         // Control de Pestañas
         document.querySelectorAll('.arc-tab-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
-                // Ocultar form si cambian de pestaña
                 document.getElementById('arcFormContainer').classList.add('hidden');
                 document.getElementById('arcUploadForm').reset();
 
-                // Quitar estilo activo a todas
                 document.querySelectorAll('.arc-tab-btn').forEach(b => {
                     b.classList.remove('border-teal-600', 'text-teal-600');
                     b.classList.add('border-transparent', 'text-gray-500');
                 });
-                // Dar estilo a la clickeada
+                
                 e.target.classList.remove('border-transparent', 'text-gray-500');
                 e.target.classList.add('border-teal-600', 'text-teal-600');
                 
@@ -236,16 +235,18 @@
         const title = document.getElementById('arcGalleryTitle');
         const btnAddText = document.getElementById('btnShowAddFormText');
         const formTitle = document.getElementById('arcFormTitle');
+        const multiHint = document.getElementById('multiFileHint');
 
         if (_categoriaActual === 'documentos') {
             fileInput.accept = ".pdf,.doc,.docx,.xls,.xlsx";
+            fileInput.removeAttribute('multiple');
+            multiHint.classList.add('hidden');
             adcFields.classList.add('hidden');
             
             title.textContent = "📄 Documentos Guardados";
             btnAddText.textContent = "Agregar Documento";
             formTitle.textContent = "Subir Nuevo Documento";
             
-            // Limpiar requeridos de ADC
             document.getElementById('adcDivision').required = false;
             document.getElementById('adcCodigo').required = false;
             document.getElementById('adcModelo').required = false;
@@ -253,11 +254,13 @@
         } 
         else if (_categoriaActual === 'imagenes') {
             fileInput.accept = "image/png, image/jpeg, image/jpg";
+            fileInput.setAttribute('multiple', 'true'); // AHORA PERMITE MÚLTIPLES FOTOS
+            multiHint.classList.remove('hidden');
             adcFields.classList.add('hidden');
             
             title.textContent = "🖼️ Imágenes Generales";
-            btnAddText.textContent = "Agregar Imagen";
-            formTitle.textContent = "Subir Nueva Imagen";
+            btnAddText.textContent = "Agregar Imágenes";
+            formTitle.textContent = "Subir Nuevas Imágenes";
 
             document.getElementById('adcDivision').required = false;
             document.getElementById('adcCodigo').required = false;
@@ -266,13 +269,14 @@
         } 
         else if (_categoriaActual === 'adc') {
             fileInput.accept = "image/png, image/jpeg, image/jpg";
+            fileInput.setAttribute('multiple', 'true'); // PERMITE MÚLTIPLES FOTOS
+            multiHint.classList.remove('hidden');
             adcFields.classList.remove('hidden');
             
             title.textContent = "❄️ Equipos ADC Asignados";
             btnAddText.textContent = "Agregar Equipo ADC";
             formTitle.textContent = "Registrar Nuevo Equipo ADC";
 
-            // Hacer campos ADC obligatorios
             document.getElementById('adcDivision').required = true;
             document.getElementById('adcCodigo').required = true;
             document.getElementById('adcModelo').required = true;
@@ -288,10 +292,10 @@
         }
 
         const fileInput = document.getElementById('arcFileInput');
-        const file = fileInput.files[0];
+        const files = fileInput.files;
 
-        if (!file) {
-            _showModal('Aviso', 'Seleccione un archivo primero.');
+        if (files.length === 0) {
+            _showModal('Aviso', 'Seleccione al menos un archivo primero.');
             return;
         }
 
@@ -305,39 +309,49 @@
             };
         }
 
-        _showModal('Subiendo...', `Subiendo y registrando: ${file.name}`, null, '', null, false);
+        _showModal('Subiendo...', `Subiendo ${files.length} archivo(s)...`, null, '', null, false);
 
         try {
-            // 1. Crear referencia en Firebase Storage
-            // Ruta: clientes/{clienteId}/{categoria}/{timestamp}_{nombredelarchivo}
-            const uniqueName = `${new Date().getTime()}_${file.name}`;
-            const storagePath = `clientes/${_clienteSeleccionado.id}/${_categoriaActual}/${uniqueName}`;
-            const storageRefObj = window.firebaseStorageFunctions.ref(_storage, storagePath);
+            // FIX: Capturamos el instante de tiempo exacto antes de empezar el bucle
+            // Así todos los archivos de esta subida tendrán exactamente el mismo Timestamp
+            const exactMoment = new Date();
+            const exactMomentMs = exactMoment.getTime();
+            const exactMomentISO = exactMoment.toISOString();
 
-            // 2. Subir el archivo
-            await window.firebaseStorageFunctions.uploadBytes(storageRefObj, file);
+            const uploadPromises = Array.from(files).map(async (file, index) => {
+                // Usamos el mismo milisegundo base, pero le añadimos el index para que no se sobreescriban en Storage
+                const uniqueName = `${exactMomentMs}_${index}_${file.name}`;
+                const storagePath = `clientes/${_clienteSeleccionado.id}/${_categoriaActual}/${uniqueName}`;
+                const storageRefObj = window.firebaseStorageFunctions.ref(_storage, storagePath);
 
-            // 3. Obtener la URL de descarga
-            const downloadURL = await window.firebaseStorageFunctions.getDownloadURL(storageRefObj);
+                // 2. Subir el archivo
+                await window.firebaseStorageFunctions.uploadBytes(storageRefObj, file);
 
-            // 4. Guardar referencia y metadata en Firestore
-            const docData = {
-                clienteId: _clienteSeleccionado.id,
-                categoria: _categoriaActual,
-                fileName: file.name,
-                storagePath: storagePath,
-                url: downloadURL,
-                fechaCreacion: new Date().toISOString(),
-                subidoPor: _userId
-            };
+                // 3. Obtener la URL
+                const downloadURL = await window.firebaseStorageFunctions.getDownloadURL(storageRefObj);
 
-            if (metadataADC) {
-                docData.adcInfo = metadataADC;
-            }
+                // 4. Preparar documento para Firestore usando la fecha compartida
+                const docData = {
+                    clienteId: _clienteSeleccionado.id,
+                    categoria: _categoriaActual,
+                    fileName: file.name,
+                    storagePath: storagePath,
+                    url: downloadURL,
+                    fechaCreacion: exactMomentISO, // TODOS TIENEN LA MISMA FECHA/HORA EXACTA
+                    subidoPor: _userId
+                };
 
-            await _addDoc(_collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/archivos_clientes`), docData);
+                if (metadataADC) {
+                    docData.adcInfo = metadataADC;
+                }
 
-            // Limpiar formulario y ocultarlo
+                // 5. Guardar en Firestore
+                return _addDoc(_collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/archivos_clientes`), docData);
+            });
+
+            // Esperar a que terminen todas las subidas
+            await Promise.all(uploadPromises);
+
             document.getElementById('arcUploadForm').reset();
             document.getElementById('arcFormContainer').classList.add('hidden');
             document.getElementById('modalContainer').classList.add('hidden');
@@ -345,7 +359,7 @@
             cargarArchivosDeCategoria();
 
         } catch (error) {
-            console.error("Error subiendo archivo:", error);
+            console.error("Error subiendo archivo(s):", error);
             _showModal('Error', `Falló la subida: ${error.message}`);
         }
     }
@@ -379,10 +393,11 @@
             archivos.sort((a,b) => new Date(b.fechaCreacion) - new Date(a.fechaCreacion));
 
             archivos.forEach(arc => {
-                const fechaFormat = new Date(arc.fechaCreacion).toLocaleDateString('es-ES');
+                // Ahora mostramos también la hora para que se note que se subieron al mismo tiempo
+                const d = new Date(arc.fechaCreacion);
+                const fechaFormat = d.toLocaleDateString('es-ES') + ' ' + d.toLocaleTimeString('es-ES', {hour: '2-digit', minute:'2-digit'});
                 
                 if (_categoriaActual === 'adc' || _categoriaActual === 'imagenes') {
-                    // Mostrar como Tarjeta de Imagen
                     let metaHTML = '';
                     if (arc.adcInfo) {
                         metaHTML = `
@@ -403,7 +418,7 @@
                                 </div>
                             </a>
                             <div class="flex-grow">
-                                <p class="text-xs text-gray-500 mb-1">📅 ${fechaFormat}</p>
+                                <p class="text-[11px] text-gray-500 mb-1 font-mono">📅 ${fechaFormat}</p>
                                 ${metaHTML}
                             </div>
                             <button onclick="window.archivosModule.eliminarArchivo('${arc.id}', '${arc.storagePath}')" class="mt-3 w-full py-1.5 bg-red-50 text-red-600 hover:bg-red-600 hover:text-white border border-red-200 hover:border-transparent rounded text-xs font-bold transition">Eliminar Registro</button>
@@ -416,7 +431,7 @@
                             <div class="flex items-center gap-3 overflow-hidden">
                                 <div class="text-3xl">📄</div>
                                 <div class="overflow-hidden">
-                                    <p class="text-xs text-gray-500">${fechaFormat}</p>
+                                    <p class="text-[11px] text-gray-500 font-mono">${fechaFormat}</p>
                                     <a href="${arc.url}" target="_blank" class="text-sm font-bold text-teal-700 hover:underline truncate block" title="${arc.fileName}">${arc.fileName}</a>
                                 </div>
                             </div>
