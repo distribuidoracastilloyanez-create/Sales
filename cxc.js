@@ -283,6 +283,9 @@
 
     function renderCXCList(searchTerm = '') {
         const container = document.getElementById('cxcListContainer');
+        // FIX: Evita error si el usuario cambió de menú antes de que termine la carga
+        if (!container) return; 
+
         if (!_cxcDataCache || _cxcDataCache.length === 0) {
             container.innerHTML = `<p class="text-center text-gray-500 py-10">Lista vacía o cargando...</p>`;
             return;
@@ -598,7 +601,8 @@
                     tempDiv.innerHTML = ticketHTML;
                     document.body.appendChild(tempDiv);
 
-                    const ticketElement = document.getElementById('temp-ticket-for-image');
+                    // FIX: Asegurarnos de tomar el elemento correcto dentro de este tempDiv
+                    const ticketElement = tempDiv.querySelector('#temp-ticket-for-image') || tempDiv.firstElementChild;
                     
                     if (ticketElement) {
                         setTimeout(async () => {
@@ -623,6 +627,10 @@
                                 if(shareBtn) {
                                     shareBtn.onclick = async () => {
                                         canvas.toBlob(async (blob) => {
+                                            if (!blob) {
+                                                _showModal('Error', 'No se pudo generar el archivo de imagen.');
+                                                return;
+                                            }
                                             if (navigator.share && blob) {
                                                 try {
                                                     await navigator.share({ 
@@ -746,7 +754,8 @@
 
         try {
             await new Promise(r => setTimeout(r, 200));
-            const canvas = await html2canvas(document.getElementById('history-ticket'), { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
+            // FIX: Apuntar directamente al primer hijo del tempDiv
+            const canvas = await html2canvas(tempDiv.firstElementChild, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
             const blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
             
             if (navigator.share && blob) {
