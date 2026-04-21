@@ -1,3 +1,5 @@
+// --- Módulo de Inventario ---
+
 (function() {
     let _db, _userId, _userRole, _appId, _mainContent, _floatingControls, _activeListeners;
     let _showMainMenu, _showModal, _showAddItemModal, _populateDropdown;
@@ -7,7 +9,7 @@
     // --- SISTEMA DE CACHÉ DOBLE ---
     let _masterCatalogCache = {}; 
     let _userStockCache = {};     
-    let _inventarioCache = [];    
+    let _inventarioCache = [];   
     
     let _listenersUnsubscribes = []; 
     let _lastFilters = { searchTerm: '', rubro: '', segmento: '', marca: '' };
@@ -40,7 +42,7 @@
         _getDoc = dependencies.getDoc;
         _increment = dependencies.increment; 
         
-        console.log("Módulo Inventario Inicializado. Public ID:", PUBLIC_DATA_ID);
+        console.log("Módulo Inventario Inicializado (Bloqueo Scroll en Inputs). Public ID:", PUBLIC_DATA_ID);
     };
 
     function startMainInventarioListener(callback) {
@@ -1375,7 +1377,6 @@
                 unitLabel = 'Cj';
             }
 
-            // Aquí formatStockDisplay mostrará en rojo si está negativo
             const currentDisplayStockHtml = formatStockDisplay(p);
 
             let inputValue = '';
@@ -1409,11 +1410,21 @@
         tableHTML += `</tbody></table>`; 
         container.innerHTML = tableHTML;
 
+        // --- SOLUCIÓN AL BUG DEL SCROLL DEL MOUSE EN LOS INPUTS ---
         container.querySelectorAll('.recarga-qty-input').forEach(input => {
+            
+            // 1. Guardar valor al teclear
             input.addEventListener('input', (e) => {
                 const val = e.target.value;
                 _recargaTempState[e.target.dataset.docId] = val;
             });
+
+            // 2. Interceptar el scroll de la rueda del ratón y anularlo
+            input.addEventListener('wheel', (e) => {
+                e.preventDefault(); // Evita que el número cambie
+                input.blur();       // Quita el foco del input para permitir el scroll de la página
+            }, { passive: false }); // 'passive: false' es necesario para que preventDefault funcione en wheel
+            
         });
     }
 
@@ -1449,12 +1460,10 @@
             else if (vPor.cj) factor = p.unidadesPorCaja || 1;
 
             const currentBaseRaw = p.cantidadUnidades || 0;
-            // AUTO-CURACIÓN: Si el stock actual es negativo, lo ignoramos y lo tratamos como 0
             const currentBaseSano = currentBaseRaw < 0 ? 0 : currentBaseRaw;
             const unitsToAdd = inputVal * factor;
             const newBaseTotal = currentBaseSano + unitsToAdd;
 
-            // Siempre guardamos el registro en el historial para auditoría (Snapshot completo)
             recargaDetalles.push({
                 productoId: p.id,
                 presentacion: p.presentacion,
@@ -1467,10 +1476,8 @@
                 factorUtilizado: factor
             });
 
-            // Solo tocamos Firebase si el admin metió una recarga o si tenemos que curar un número negativo
             if (unitsToAdd > 0 || currentBaseRaw < 0) {
                 const docRef = _doc(_db, `artifacts/${_appId}/users/${_userId}/inventario`, p.id);
-                // Usamos SET en lugar de increment para garantizar que el valor se fije sano
                 batch.set(docRef, { cantidadUnidades: newBaseTotal }, { merge: true });
                 changesCount++;
             }
