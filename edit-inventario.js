@@ -50,7 +50,7 @@
         _setDoc = dependencies.setDoc;         
 
         if (!_runTransaction) console.error("Error Crítico: 'runTransaction' no disponible en initEditInventario.");
-        console.log("Módulo Edit Inventario Inicializado. Public ID:", PUBLIC_DATA_ID);
+        console.log("Módulo Edit Inventario Inicializado (Bloqueo de scroll en inputs). Public ID:", PUBLIC_DATA_ID);
     };
 
     // --- HELPER: CARGAR CATÁLOGO MAESTRO ---
@@ -470,6 +470,12 @@
                 const val = parseInt(e.target.value);
                 _correccionActualState[pid].ajuste = isNaN(val) ? 0 : val;
             });
+
+            // NUEVO: Bloqueo de la rueda del mouse para no modificar el número accidentalmente
+            input.addEventListener('wheel', (e) => {
+                e.preventDefault();
+                input.blur();
+            }, { passive: false });
         });
 
         tbody.querySelectorAll('.observation-input').forEach(input => {
