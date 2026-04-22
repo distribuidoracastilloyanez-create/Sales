@@ -5,7 +5,13 @@
     let _consolidatedClientsCache = [];
     let _filteredClientsCache = [];
     let _usersMapCache = new Map();
-    let _adcEquiposMap = new Map(); // NUEVO: Caché para saber quién tiene equipos ADC
+    
+    // --- CACHÉS DE CRUCE DE DATOS ---
+    let _adcEquiposMap = new Map(); 
+    let _hasImagenesMap = new Set();
+    let _hasDocumentosMap = new Set();
+    let _cxcMap = new Map(); // Maps clientName (normalized) -> amount
+    let _lastSaleMap = new Map(); // Maps clientName (normalized) -> Date object
 
     let mapInstance = null;
     let mapMarkers = new Map(); 
@@ -46,6 +52,12 @@
         }
     };
 
+    // Helper estricto para cruzar nombres (CXC, Ventas, Clientes)
+    function normalizeStr(str) {
+        if (!str) return '';
+        return str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9 ]/g, '');
+    }
+
     function getDisplayQty(qU, p) {
         if (!qU || qU === 0) return { value: '', unit: '' };
         if (!p) return { value: qU, unit: 'Und' };
@@ -54,12 +66,8 @@
         const uCj = p.unidadesPorCaja || 1;
         const uPaq = p.unidadesPorPaquete || 1;
         
-        // REGLA: Si se vende por unidades (solo o mixto), SIEMPRE mostrar en Unidades
-        if (vP.und) {
-            return { value: qU, unit: 'Und' };
-        } 
+        if (vP.und) return { value: qU, unit: 'Und' };
         
-        // REGLA: Si NO se vende por unidades, evaluar si es exclusivo de caja (ej. Obsequios)
         if (vP.cj && !vP.paq) {
             const cajas = Math.floor(qU / uCj);
             const resto = qU % uCj;
@@ -74,7 +82,6 @@
             return { value: paq, unit: 'Pq' };
         }
         
-        // Fallback genérico a unidades si la configuración es extraña
         return { value: qU, unit: 'Und' };
     }
 
@@ -132,7 +139,7 @@
         _getDoc = dependencies.getDoc;
         _doc = dependencies.doc;
         _setDoc = dependencies.setDoc; 
-        console.log("Módulo Data inicializado correctamente. Public ID:", PUBLIC_DATA_ID);
+        console.log("Módulo Data inicializado correctamente (Con Consolidado Moderno). Public ID:", PUBLIC_DATA_ID);
     };
 
     window.showDataView = function() {
@@ -144,7 +151,7 @@
                 <div class="space-y-4">
                     <button id="closingDataBtn" class="w-full px-6 py-3 bg-indigo-600 text-white rounded-lg shadow-md hover:bg-indigo-700 transition">Cierres de Ventas</button>
                     <button id="designReportBtn" class="w-full px-6 py-3 bg-purple-600 text-white rounded-lg shadow-md hover:bg-purple-700 transition">Diseño de Reporte</button>
-                    <button id="consolidatedClientsBtn" class="w-full px-6 py-3 bg-green-600 text-white rounded-lg shadow-md hover:bg-green-700 transition">Clientes Consolidados</button>
+                    <button id="consolidatedClientsBtn" class="w-full px-6 py-3 bg-green-600 text-white font-bold rounded-lg shadow-md hover:bg-green-700 transition">🌍 Reporte Consolidado de Clientes</button>
                     <button id="clientMapBtn" class="w-full px-6 py-3 bg-cyan-600 text-white rounded-lg shadow-md hover:bg-cyan-700 transition">Mapa de Clientes / Asistencia</button>
                     <button id="backToMenuBtn" class="w-full px-6 py-3 bg-gray-400 text-white rounded-lg shadow-md hover:bg-gray-500 transition">Volver Menú</button>
                 </div>
@@ -156,6 +163,9 @@
         document.getElementById('clientMapBtn').addEventListener('click', showClientMapView);
         document.getElementById('backToMenuBtn').addEventListener('click', _showMainMenu);
     };
+
+    // ... (El código de Cierres de Ventas, Mapa e Inasistencias se mantiene intacto abajo, 
+    // solo modificaré la parte de showConsolidatedClientsView)
 
     async function showClosingDataView() {
         _mainContent.innerHTML = `
@@ -344,7 +354,6 @@
         const userDoc = await _getDoc(_doc(_db, "users", targetUserId));
         const userInfo = userDoc.exists() ? userDoc.data() : { email: 'Usuario Desconocido' };
 
-        // 1. INYECCIÓN TOTAL: Forzar que TODOS los productos del catálogo estén presentes
         const allKnownIds = new Set([...inventarioMap.keys(), ...masterMap.keys()]);
         for (const pId of allKnownIds) {
             const prodPrivado = inventarioMap.get(pId) || {};
@@ -375,7 +384,6 @@
             const baseClientName = item.data.clienteNombre || 'Cliente Desconocido';
             const isObsequio = item.tipo === 'obsequio';
             
-            // Creamos una clave única para diferenciar la fila 
             const rowClientName = isObsequio ? `${baseClientName} (OBSEQUIO)` : baseClientName;
 
             if (!vaciosMovementsPorTipo[baseClientName]) { 
@@ -383,8 +391,6 @@
                 TIPOS_VACIO_GLOBAL.forEach(t => vaciosMovementsPorTipo[baseClientName][t] = { entregados: 0, devueltos: 0 }); 
             }
 
-            // Inicializamos la data del cliente tanto en la fila específica (para Excel) 
-            // como en el cliente base (para Modal)
             if (!clientData[rowClientName]) clientData[rowClientName] = { products: {}, totalValue: 0, isObsequioRow: isObsequio };
             if (!clientData[baseClientName]) clientData[baseClientName] = { products: {}, totalValue: 0, isObsequioRow: false };
             
@@ -393,7 +399,6 @@
                 const ventaTotalCliente = venta.total || 0;
                 clientData[rowClientName].totalValue += ventaTotalCliente;
                 
-                // FIX: Agrupar por la fila específica para que salga separado en la hoja Totales
                 clientTotals[rowClientName] = (clientTotals[rowClientName] || 0) + ventaTotalCliente;
                 grandTotalValue += ventaTotalCliente;
 
@@ -417,7 +422,6 @@
                     }
 
                     if (p.id && !clientData[rowClientName].products[p.id]) clientData[rowClientName].products[p.id] = 0;
-                    // También lo asignamos al base
                     if (p.id && !clientData[baseClientName].products[p.id]) clientData[baseClientName].products[p.id] = 0;
                     
                     let cantidadUnidades = 0;
@@ -486,21 +490,17 @@
                 if(pComp.id) {
                     dataByRubro[rubro].clients[rowClientName].products[pComp.id] = (dataByRubro[rubro].clients[rowClientName].products[pComp.id] || 0) + cantidadUnidades;
                     
-                    // FIX CRÍTICO: Añadimos el obsequio al BASE CLIENT NAME para que salga en el Modal General
                     if (!clientData[baseClientName].products[pComp.id]) clientData[baseClientName].products[pComp.id] = 0;
                     clientData[baseClientName].products[pComp.id] += cantidadUnidades;
                     
-                    // Activamos un flag especial temporal para que la tabla lo reconozca
                     clientData[baseClientName].isObsequioPartial = true; 
                 }
                 
                 dataByRubro[rubro].clients[rowClientName].totalValue += subtotalObsequio;
                 dataByRubro[rubro].totalValue += subtotalObsequio;
                 
-                // Sumamos al base también para el Modal General
                 clientData[baseClientName].totalValue += subtotalObsequio;
                 
-                // FIX: Agrupar por la fila específica (OBSEQUIO) para la Hoja Totales en Excel
                 clientTotals[rowClientName] = (clientTotals[rowClientName] || 0) + subtotalObsequio;
                 grandTotalValue += subtotalObsequio;
 
@@ -514,8 +514,6 @@
             }
         }
         
-        // --- PARA LA VISTA DEL MODAL USAMOS LOS NOMBRES BASE (SIN LA PALABRA OBSEQUIO) ---
-        // Filtramos para obtener solo los nombres reales de los clientes
         const sortedClients = Object.keys(clientData).filter(k => !k.includes('(OBSEQUIO)')).sort();
         
         const sortFunction = await getGlobalProductSortFunction();
@@ -707,7 +705,6 @@
         _showModal('Progreso', 'Generando Excel con su diseño...'); 
 
         try {
-            // Compatibilidad con cierres antiguos para el Excel
             const cargaInicialHistorica = closingData.cargaInicialInventario || closingData.inventario || closingData.productos || [];
 
             const { finalData, userInfo } = await _processSalesDataForModal(
@@ -765,7 +762,6 @@
                 const sheetName = rubroName.replace(/[\/\\?*\[\]]/g, '').substring(0, 31);
                 const worksheet = workbook.addWorksheet(sheetName);
 
-                // CONGELAR COLUMNA A Y FILAS SUPERIORES EN EL EXCEL
                 worksheet.views = [
                     { state: 'frozen', xSplit: 1, ySplit: 6 }
                 ];
@@ -1042,7 +1038,6 @@
                 const totalesDataStyle = buildExcelJSStyle(s.totalesData, s.totalesData.border ? thinBorderStyle : null, null, 'left');
                 const totalesDataPriceStyle = buildExcelJSStyle(s.totalesData, s.totalesData.border ? thinBorderStyle : null, "$#,##0.00", 'right');
                 
-                // NUEVOS ESTILOS PARA RESALTAR EL OBSEQUIO EN LA HOJA DE TOTALES
                 const totalesDataObsequioStyle = buildExcelJSStyle(s.rowDataClientsObsequio, s.rowDataClientsObsequio.border ? thinBorderStyle : null, null, 'left');
                 const totalesDataObsequioPriceStyle = buildExcelJSStyle(s.rowDataClientsObsequio, s.rowDataClientsObsequio.border ? thinBorderStyle : null, "$#,##0.00", 'right');
 
@@ -1059,7 +1054,6 @@
                     const row = wsClientes.addRow([clientName, Number(totalValue.toFixed(2))]);
                     const isObs = clientName.includes('(OBSEQUIO)');
                     
-                    // Aplicar el estilo especial si es un obsequio
                     row.getCell(1).style = isObs ? totalesDataObsequioStyle : totalesDataStyle;
                     row.getCell(2).style = isObs ? totalesDataObsequioPriceStyle : totalesDataPriceStyle;
                 });
@@ -1114,7 +1108,6 @@
         }
     }
 
-    // --- NUEVO: OBTENER CLIENTES ATENDIDOS POR RANGO DE FECHA ---
     async function getAttendedClientsByDateRange(startDate, endDate) {
         const attendedClients = new Set();
         try {
@@ -1182,7 +1175,6 @@
                 { header: 'Teléfono', key: 'Telefono', width: 15 },
                 { header: 'CEP', key: 'CEP', width: 12 },
                 { header: 'Coordenadas (Lat, Lng)', key: 'Coordenadas', width: 25 },
-                // AÑADIDO: Datos adicionales en reporte inasistencia para completitud
                 { header: 'Datos Adicionales', key: 'Datos Adicionales', width: 35 }
             ];
 
@@ -1219,14 +1211,28 @@
         }
     }
 
+    // =========================================================================
+    // NUEVO REPORTE CONSOLIDADO CON FILTROS Y CRUCE TOTAL
+    // =========================================================================
+    
     async function showConsolidatedClientsView() {
         _mainContent.innerHTML = `
-            <div class="p-4 pt-8"> <div class="container mx-auto"> <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl text-center">
-                <h1 class="text-3xl font-bold text-gray-800 mb-6 text-center">Clientes Consolidados</h1>
-                <div id="consolidated-clients-filters"></div>
-                <div id="consolidated-clients-container" class="overflow-x-auto max-h-96"> <p class="text-center text-gray-500">Cargando...</p> </div>
-                <div class="mt-6 flex flex-col sm:flex-row gap-4"> <button id="backToDataMenuBtn" class="w-full px-6 py-3 bg-gray-400 text-white rounded-lg shadow-md hover:bg-gray-500">Volver</button> <button id="downloadClientsBtn" class="w-full px-6 py-3 bg-green-600 text-white rounded-lg shadow-md hover:bg-green-700 hidden">Descargar Lista</button> </div>
-            </div> </div> </div>
+            <div class="p-4 pt-8 w-full max-w-7xl mx-auto flex flex-col h-screen">
+                <div class="bg-white/95 backdrop-blur-sm p-6 rounded-lg shadow-xl flex flex-col flex-grow overflow-hidden border-t-4 border-green-600">
+                    <h2 class="text-2xl font-bold text-gray-800 mb-6 text-center border-b border-gray-200 pb-4">🌍 Reporte Consolidado Maestro</h2>
+                    
+                    <div id="consolidated-clients-filters"></div>
+                    
+                    <div id="consolidated-clients-container" class="overflow-x-auto overflow-y-auto flex-grow border border-gray-200 rounded-lg shadow-inner bg-gray-50 mb-4">
+                        <p class="text-gray-500 text-center py-6 animate-pulse font-medium">Analizando bases de datos cruzadas... Esto puede tardar unos segundos.</p>
+                    </div>
+                    
+                    <div class="mt-4 flex flex-col sm:flex-row gap-4 border-t border-gray-200 pt-4">
+                        <button id="downloadClientsBtn" class="w-full sm:w-2/3 px-6 py-3 bg-green-600 text-white font-bold rounded-lg shadow hover:bg-green-700 transition tracking-wide hidden">📥 DESCARGAR REPORTE EXCEL (COMPLETO)</button>
+                        <button id="backToDataMenuBtn" class="w-full sm:w-1/3 px-6 py-3 bg-gray-500 text-white font-bold rounded-lg shadow hover:bg-gray-600 transition tracking-wide">VOLVER</button>
+                    </div>
+                </div>
+            </div>
         `;
         document.getElementById('backToDataMenuBtn').addEventListener('click', window.showDataView); 
         document.getElementById('downloadClientsBtn').addEventListener('click', handleDownloadFilteredClients);
@@ -1236,37 +1242,127 @@
     async function loadAndRenderConsolidatedClients() {
         const cont = document.getElementById('consolidated-clients-container'), filtCont = document.getElementById('consolidated-clients-filters'); if(!cont || !filtCont) return;
         try {
-            // 1. Cargar Clientes
+            // 1. Cargar Clientes Base
             const cliRef = _collection(_db, CLIENTES_COLLECTION_PATH); 
             const cliSnaps = await _getDocs(cliRef);
             _consolidatedClientsCache = cliSnaps.docs.map(d => ({id: d.id, ...d.data()}));
             
-            // 2. Cargar ADC del Storage/Archivos (Para la columna ¿Posee ADC?)
+            // 2. Cargar Todos los Archivos (ADC, Docs, Imágenes) en una sola llamada
             const archivosRef = _collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/archivos_clientes`);
-            const adcSnaps = await _getDocs(_query(archivosRef, _where("categoria", "==", "adc")));
+            const archivosSnaps = await _getDocs(archivosRef);
             
             _adcEquiposMap.clear();
-            adcSnaps.forEach(doc => {
+            _hasImagenesMap.clear();
+            _hasDocumentosMap.clear();
+
+            archivosSnaps.forEach(doc => {
                 const data = doc.data();
-                if(data.clienteId && data.adcInfo) {
-                    if(!_adcEquiposMap.has(data.clienteId)) {
-                        _adcEquiposMap.set(data.clienteId, []);
-                    }
+                if(!data.clienteId) return;
+
+                if (data.categoria === 'adc' && data.adcInfo) {
+                    if(!_adcEquiposMap.has(data.clienteId)) _adcEquiposMap.set(data.clienteId, []);
                     _adcEquiposMap.get(data.clienteId).push(data.adcInfo.division || data.adcInfo.empresa || 'Equipo ADC');
+                } else if (data.categoria === 'imagenes') {
+                    _hasImagenesMap.add(data.clienteId);
+                } else if (data.categoria === 'documentos') {
+                    _hasDocumentosMap.add(data.clienteId);
                 }
             });
 
-            filtCont.innerHTML = `<div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 p-4 border rounded-lg bg-gray-50"> <input type="text" id="client-search-input" placeholder="Buscar..." class="md:col-span-2 w-full px-4 py-2 border rounded-lg text-sm"> <div> <label for="client-filter-sector" class="block text-xs mb-1">Sector</label> <select id="client-filter-sector" class="w-full px-2 py-1 border rounded-lg text-sm"><option value="">Todos</option></select> </div> <button id="clear-client-filters-btn" class="bg-gray-300 text-xs font-semibold text-gray-700 rounded-lg self-end py-1.5 px-3 hover:bg-gray-400 transition duration-150">Limpiar</button> </div>`;
-            const uSectors = [...new Set(_consolidatedClientsCache.map(c => c.sector).filter(Boolean))].sort(); const sFilt = document.getElementById('client-filter-sector'); uSectors.forEach(s => { const o=document.createElement('option'); o.value=s; o.textContent=s; sFilt.appendChild(o); });
-            document.getElementById('client-search-input').addEventListener('input', renderConsolidatedClientsList); sFilt.addEventListener('change', renderConsolidatedClientsList); document.getElementById('clear-client-filters-btn').addEventListener('click', () => { document.getElementById('client-search-input').value = ''; sFilt.value = ''; renderConsolidatedClientsList(); });
+            // 3. Cargar CXC para obtener las Deudas Activas
+            _cxcMap.clear();
+            const cxcListRef = _doc(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/cxc`, 'list');
+            const cxcSnap = await _getDoc(cxcListRef);
+            if(cxcSnap.exists()) {
+                const cxcData = cxcSnap.data().clients || [];
+                cxcData.forEach(c => _cxcMap.set(normalizeStr(c.name), c.amount));
+            }
+
+            // 4. Barrido General para obtener la "Última Fecha de Venta"
+            _lastSaleMap.clear();
+            const usersRef = _collection(_db, "users");
+            const usersSnap = await _getDocs(usersRef);
+            const userIds = usersSnap.docs.map(d => d.id);
+
+            const promises = userIds.map(async (uid) => {
+                const cierresRef = _collection(_db, `artifacts/${_appId}/users/${uid}/cierres`);
+                const snap = await _getDocs(cierresRef);
+                return snap.docs.map(d => d.data());
+            });
+
+            const results = await Promise.all(promises);
+            const allCierres = results.flat();
+
+            allCierres.forEach(cierre => {
+                if(!cierre.fecha) return;
+                const cDate = cierre.fecha.toDate ? cierre.fecha.toDate() : new Date(cierre.fecha);
+                
+                (cierre.ventas || []).forEach(v => {
+                    if(v.clienteNombre) {
+                        const normName = normalizeStr(v.clienteNombre);
+                        const currentLast = _lastSaleMap.get(normName);
+                        if(!currentLast || cDate > currentLast) {
+                            _lastSaleMap.set(normName, cDate);
+                        }
+                    }
+                });
+            });
+
+            // Renderizado de UI Filtros
+            filtCont.innerHTML = `
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4 p-4 border border-gray-300 rounded-lg bg-white shadow-sm">
+                    <div class="md:col-span-4">
+                        <input type="text" id="client-search-input" placeholder="Buscar por Comercio, Representante, Doc o CEP..." class="w-full px-4 py-2 border border-gray-300 rounded bg-gray-50 focus:bg-white focus:ring-2 focus:ring-green-500 outline-none text-sm transition">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wider">Sector</label>
+                        <select id="client-filter-sector" class="w-full px-3 py-1.5 border border-gray-300 rounded text-sm bg-gray-50 focus:bg-white focus:ring-2 focus:ring-green-500 outline-none transition"><option value="">TODOS</option></select>
+                    </div>
+                    <div class="flex items-center space-x-2 pt-5">
+                        <input type="checkbox" id="client-filter-adc" class="h-4 w-4 rounded border-gray-300 text-green-600 focus:ring-green-500 cursor-pointer">
+                        <label for="client-filter-adc" class="text-sm font-bold text-gray-700 cursor-pointer select-none">Solo con ADC</label>
+                    </div>
+                    <div class="flex items-center space-x-2 pt-5">
+                        <input type="checkbox" id="client-filter-deuda" class="h-4 w-4 rounded border-gray-300 text-green-600 focus:ring-green-500 cursor-pointer">
+                        <label for="client-filter-deuda" class="text-sm font-bold text-gray-700 cursor-pointer select-none">Con Deuda Activa</label>
+                    </div>
+                    <div class="flex items-end">
+                        <button id="clear-client-filters-btn" class="w-full bg-gray-200 text-gray-700 text-sm font-bold rounded py-1.5 px-4 hover:bg-gray-300 transition border border-gray-300">LIMPIAR</button>
+                    </div>
+                </div>
+            `;
+            
+            const uSectors = [...new Set(_consolidatedClientsCache.map(c => c.sector).filter(Boolean))].sort(); 
+            const sFilt = document.getElementById('client-filter-sector'); 
+            uSectors.forEach(s => { const o=document.createElement('option'); o.value=s; o.textContent=s; sFilt.appendChild(o); });
+            
+            document.getElementById('client-search-input').addEventListener('input', renderConsolidatedClientsList); 
+            sFilt.addEventListener('change', renderConsolidatedClientsList); 
+            document.getElementById('client-filter-adc').addEventListener('change', renderConsolidatedClientsList); 
+            document.getElementById('client-filter-deuda').addEventListener('change', renderConsolidatedClientsList); 
+            
+            document.getElementById('clear-client-filters-btn').addEventListener('click', () => { 
+                document.getElementById('client-search-input').value = ''; 
+                sFilt.value = ''; 
+                document.getElementById('client-filter-adc').checked = false;
+                document.getElementById('client-filter-deuda').checked = false;
+                renderConsolidatedClientsList(); 
+            });
             
             renderConsolidatedClientsList(); 
             document.getElementById('downloadClientsBtn').classList.remove('hidden');
-        } catch (error) { console.error("Error clientes consolidados:", error); cont.innerHTML = `<p class="text-red-500">Error al cargar.</p>`; }
+        } catch (error) { 
+            console.error("Error cargando clientes consolidados:", error); 
+            cont.innerHTML = `<p class="text-red-500 font-bold text-center py-6">Error cruzando bases de datos.</p>`; 
+        }
     }
 
     function renderConsolidatedClientsList() {
-        const cont=document.getElementById('consolidated-clients-container'), sInp=document.getElementById('client-search-input'), sFilt=document.getElementById('client-filter-sector'); if(!cont||!sInp||!sFilt) return;
+        const cont=document.getElementById('consolidated-clients-container'), sInp=document.getElementById('client-search-input'), sFilt=document.getElementById('client-filter-sector'); 
+        const filterADC = document.getElementById('client-filter-adc')?.checked;
+        const filterDeuda = document.getElementById('client-filter-deuda')?.checked;
+
+        if(!cont||!sInp||!sFilt) return;
         const sTerm = sInp.value.toLowerCase(), selSec = sFilt.value;
         
         _filteredClientsCache = _consolidatedClientsCache.filter(cli => { 
@@ -1277,76 +1373,126 @@
             
             const searchM=!sTerm||nComL.includes(sTerm)||nPerL.includes(sTerm)||docL.includes(sTerm)||(cli.codigoCEP&&cepL.includes(sTerm)); 
             const secM=!selSec||cli.sector===selSec; 
-            return searchM&&secM; 
+
+            const adcMatch = !filterADC || _adcEquiposMap.has(cli.id);
+
+            let hasDeuda = false;
+            const deudaVal = _cxcMap.get(normalizeStr(cli.nombreComercial));
+            if (deudaVal && deudaVal > 0) hasDeuda = true;
+            const deudaMatch = !filterDeuda || hasDeuda;
+
+            return searchM && secM && adcMatch && deudaMatch; 
         });
 
-        if (_filteredClientsCache.length === 0) { cont.innerHTML = `<p class="text-center text-gray-500 p-4">No se encontraron clientes.</p>`; return; }
+        if (_filteredClientsCache.length === 0) { cont.innerHTML = `<p class="text-center text-gray-500 p-8 font-medium">No se encontraron resultados.</p>`; return; }
         
-        let tHTML = `<table class="min-w-full bg-white text-sm"> <thead class="bg-gray-200 sticky top-0 z-10"> <tr> <th class="py-2 px-3 border-b text-left">Sector</th> <th class="py-2 px-3 border-b text-left">N. Comercial</th> <th class="py-2 px-3 border-b text-left">Documento</th> <th class="py-2 px-3 border-b text-left">Teléfono</th> <th class="py-2 px-3 border-b text-left">CEP</th> <th class="py-2 px-3 border-b text-center">ADC</th> </tr> </thead> <tbody>`;
+        let tHTML = `<table class="min-w-full bg-white text-sm"> <thead class="bg-gray-800 text-white sticky top-0 z-10 shadow"> <tr> <th class="py-2 px-3 border-b text-left text-xs uppercase tracking-wide">Sector</th> <th class="py-2 px-3 border-b text-left text-xs uppercase tracking-wide">Comercio</th> <th class="py-2 px-3 border-b text-left text-xs uppercase tracking-wide hidden sm:table-cell">Doc/RIF</th> <th class="py-2 px-3 border-b text-center text-xs uppercase tracking-wide">ADC</th> <th class="py-2 px-3 border-b text-center text-xs uppercase tracking-wide">Deuda</th><th class="py-2 px-3 border-b text-center text-xs uppercase tracking-wide">GPS</th><th class="py-2 px-3 border-b text-center text-xs uppercase tracking-wide">Últ. Venta</th> </tr> </thead> <tbody class="divide-y divide-gray-200">`;
         
         _filteredClientsCache.sort((a,b)=>(a.nombreComercial||'').localeCompare(b.nombreComercial||'')).forEach(c=>{
             const docFormat = c.numeroDocumento ? `${c.tipoDocumento}-${c.numeroDocumento}` : 'S/D';
+            
             const tieneADC = _adcEquiposMap.has(c.id);
-            const adcLabel = tieneADC ? 'Sí' : 'No';
-            const adcClass = tieneADC ? 'text-blue-600 font-bold' : 'text-gray-400';
+            const adcIcon = tieneADC ? '❄️ Sí' : '<span class="text-gray-400">No</span>';
+            
+            const deudaMonto = _cxcMap.get(normalizeStr(c.nombreComercial)) || 0;
+            const deudaLabel = deudaMonto > 0 ? `<span class="text-red-600 font-bold">$${deudaMonto.toFixed(2)}</span>` : '<span class="text-gray-400">0</span>';
 
-            tHTML+=`<tr class="hover:bg-gray-50 border-b"><td class="py-2 px-3">${c.sector||'N/A'}</td><td class="py-2 px-3 font-semibold">${c.nombreComercial||'N/A'}</td><td class="py-2 px-3 font-mono">${docFormat}</td><td class="py-2 px-3">${c.telefono||'N/A'}</td><td class="py-2 px-3">${c.codigoCEP||'N/A'}</td><td class="py-2 px-3 text-center ${adcClass}">${adcLabel}</td></tr>`;
+            const gpsIcon = c.coordenadas ? '📍 Sí' : '<span class="text-red-400">No</span>';
+
+            const lastSaleObj = _lastSaleMap.get(normalizeStr(c.nombreComercial));
+            const lastSaleStr = lastSaleObj ? `<span class="text-blue-700 font-medium">${lastSaleObj.toLocaleDateString('es-ES')}</span>` : '<span class="text-gray-400 text-xs italic">Sin reg.</span>';
+
+            tHTML+=`<tr class="hover:bg-blue-50 border-b transition-colors"><td class="py-2.5 px-3 align-middle text-gray-700">${c.sector||'N/A'}</td><td class="py-2.5 px-3 font-bold text-gray-900 align-middle">${c.nombreComercial||'N/A'}</td><td class="py-2.5 px-3 font-mono text-gray-600 hidden sm:table-cell align-middle">${docFormat}</td><td class="py-2.5 px-3 text-center align-middle">${adcIcon}</td><td class="py-2.5 px-3 text-center align-middle">${deudaLabel}</td><td class="py-2.5 px-3 text-center align-middle">${gpsIcon}</td><td class="py-2.5 px-3 text-center align-middle">${lastSaleStr}</td></tr>`;
         });
         
         tHTML += '</tbody></table>'; cont.innerHTML = tHTML;
     }
     
     async function handleDownloadFilteredClients() {
-         if (typeof ExcelJS === 'undefined' || _filteredClientsCache.length === 0) { _showModal('Aviso', typeof ExcelJS === 'undefined'?'Librería ExcelJS no cargada.':'No hay clientes.'); return; }
+         if (typeof ExcelJS === 'undefined' || _filteredClientsCache.length === 0) { _showModal('Aviso', typeof ExcelJS === 'undefined'?'Librería ExcelJS no cargada.':'No hay clientes que exportar.'); return; }
         
+        _showModal('Progreso', 'Generando Excel Maestro...', null, '', null, false);
+
         const dExport = _filteredClientsCache.map(c => {
             const tieneADC = _adcEquiposMap.has(c.id);
-            let tiposAdc = '';
-            if (tieneADC) {
-                // Obtener arreglo de divisiones (limpiando duplicados y vacíos)
-                const divisiones = [...new Set(_adcEquiposMap.get(c.id))];
-                tiposAdc = divisiones.join(', ');
+            const tiposAdc = tieneADC ? [...new Set(_adcEquiposMap.get(c.id))].join(', ') : 'N/A';
+            const tieneImg = _hasImagenesMap.has(c.id) ? 'SÍ' : 'NO';
+            const tieneDoc = _hasDocumentosMap.has(c.id) ? 'SÍ' : 'NO';
+            const tieneGPS = c.coordenadas ? 'SÍ' : 'NO';
+            const normName = normalizeStr(c.nombreComercial);
+            
+            const deudaMonto = _cxcMap.get(normName) || 0;
+            const tieneDeuda = deudaMonto > 0 ? 'SÍ' : 'NO';
+            
+            const ultimaVentaObj = _lastSaleMap.get(normName);
+            const ultimaVentaStr = ultimaVentaObj ? ultimaVentaObj.toLocaleDateString('es-ES') : 'Sin registros';
+
+            let saldoVaciosStr = '';
+            if(c.saldoVacios) {
+                saldoVaciosStr = Object.entries(c.saldoVacios)
+                    .filter(([k,v]) => v !== 0)
+                    .map(([k,v]) => `${k}: ${v}`)
+                    .join(' | ');
             }
+            if(!saldoVaciosStr) saldoVaciosStr = 'Solvente';
 
             return {
-                'Sector': c.sector||'',
-                'Nombre Comercial': c.nombreComercial||'',
-                'Nombre Personal': c.nombrePersonal||'',
+                'Sector': c.sector || 'S/S',
+                'Razón Social': c.nombreComercial || '',
+                'Representante': c.nombrePersonal || '',
                 'Tipo Doc': c.tipoDocumento || 'V',
                 'Nº Documento': c.numeroDocumento || '',
-                'Telefono': c.telefono||'',
-                'CEP': c.codigoCEP||'',
-                'Coordenadas': c.coordenadas||'',
-                '¿Posee ADC?': tieneADC ? 'SI' : 'NO',
-                'Tipos ADC': tiposAdc,
-                // NUEVA COLUMNA PARA DATOS ADICIONALES
+                'Teléfono': c.telefono || '',
+                'CEP': c.codigoCEP || 'N/A',
+                'Coordenadas GPS': c.coordenadas || 'N/A',
+                'Tiene GPS': tieneGPS,
+                'Equipos ADC': tieneADC ? 'SÍ' : 'NO',
+                'Detalle ADC': tiposAdc,
+                'Imágenes Guardadas': tieneImg,
+                'Doc. Formales': tieneDoc,
+                'Fecha Última Venta': ultimaVentaStr,
+                'Deuda Registrada': tieneDeuda,
+                'Monto Deuda ($)': deudaMonto > 0 ? deudaMonto : 0,
+                'Saldo Envases Vacíos': saldoVaciosStr,
+                'Agente Retención IVA': c.aplicaRetencion ? 'SÍ' : 'NO',
                 'Datos Adicionales': c.datosAdicionales || ''
             };
         });
         
         const workbook = new ExcelJS.Workbook();
-        const worksheet = workbook.addWorksheet('Clientes Consolidados');
+        const worksheet = workbook.addWorksheet('Base de Clientes Consolidados');
 
         worksheet.columns = [
             { header: 'Sector', key: 'Sector', width: 20 },
-            { header: 'Nombre Comercial', key: 'Nombre Comercial', width: 30 },
-            { header: 'Nombre Personal', key: 'Nombre Personal', width: 30 },
-            { header: 'Tipo Doc', key: 'Tipo Doc', width: 10 },
-            { header: 'Nº Documento', key: 'Nº Documento', width: 15 },
-            { header: 'Telefono', key: 'Telefono', width: 15 },
-            { header: 'CEP', key: 'CEP', width: 15 },
-            { header: 'Coordenadas', key: 'Coordenadas', width: 20 },
-            { header: '¿Posee ADC?', key: '¿Posee ADC?', width: 12 },
-            { header: 'Tipos ADC', key: 'Tipos ADC', width: 25 },
-            // AGREGADO EL HEADER DE DATOS ADICIONALES
-            { header: 'Datos Adicionales', key: 'Datos Adicionales', width: 35 }
+            { header: 'Razón Social', key: 'Razón Social', width: 35 },
+            { header: 'Representante', key: 'Representante', width: 30 },
+            { header: 'Tipo Doc', key: 'Tipo Doc', width: 12 },
+            { header: 'Nº Documento', key: 'Nº Documento', width: 18 },
+            { header: 'Teléfono', key: 'Teléfono', width: 15 },
+            { header: 'CEP', key: 'CEP', width: 12 },
+            { header: 'Coordenadas GPS', key: 'Coordenadas GPS', width: 25 },
+            { header: 'Tiene GPS', key: 'Tiene GPS', width: 12 },
+            { header: 'Equipos ADC', key: 'Equipos ADC', width: 15 },
+            { header: 'Detalle ADC', key: 'Detalle ADC', width: 30 },
+            { header: 'Imágenes Guardadas', key: 'Imágenes Guardadas', width: 22 },
+            { header: 'Doc. Formales', key: 'Doc. Formales', width: 20 },
+            { header: 'Fecha Última Venta', key: 'Fecha Última Venta', width: 20 },
+            { header: 'Deuda Registrada', key: 'Deuda Registrada', width: 20 },
+            { header: 'Monto Deuda ($)', key: 'Monto Deuda ($)', width: 20, style: { numFmt: '$#,##0.00' } },
+            { header: 'Saldo Envases Vacíos', key: 'Saldo Envases Vacíos', width: 40 },
+            { header: 'Agente Retención IVA', key: 'Agente Retención IVA', width: 25 },
+            { header: 'Datos Adicionales', key: 'Datos Adicionales', width: 40 }
         ];
-        worksheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
-        worksheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0ea5e9' } }; 
+
+        const headerRow = worksheet.getRow(1);
+        headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+        headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0ea5e9' } }; 
+        worksheet.views = [{ state: 'frozen', ySplit: 1 }];
+
         worksheet.addRows(dExport);
 
         const today = new Date().toISOString().slice(0, 10);
-        const fileName = `Clientes_Consolidados_${today}.xlsx`;
+        const fileName = `Master_Clientes_Consolidado_${today}.xlsx`;
 
         try {
             const buffer = await workbook.xlsx.writeBuffer();
@@ -1358,6 +1504,8 @@
             link.click();
             document.body.removeChild(link);
             URL.revokeObjectURL(link.href);
+            
+            document.getElementById('modalContainer').classList.add('hidden');
         } catch (error) {
             console.error("Error al descargar clientes con ExcelJS:", error);
             _showModal('Error', 'No se pudo generar el archivo de clientes.');
@@ -1876,12 +2024,10 @@
 
     async function getGlobalProductSortFunction() {
         return (a, b) => {
-            // 1. Nivel Rubro: Siempre alfabético
             const rStrA = (a.rubro || 'SIN RUBRO').toUpperCase();
             const rStrB = (b.rubro || 'SIN RUBRO').toUpperCase();
             if (rStrA !== rStrB) return rStrA.localeCompare(rStrB);
 
-            // 2. Nivel Segmento: Por Coordenada visual
             const sOrdA = a.ordenSegmento ?? 9999;
             const sOrdB = b.ordenSegmento ?? 9999;
             if (sOrdA !== sOrdB) return sOrdA - sOrdB;
@@ -1889,7 +2035,6 @@
             const sStrB = (b.segmento || 'SIN SEGMENTO').toUpperCase();
             if (sStrA !== sStrB) return sStrA.localeCompare(sStrB);
 
-            // 3. Nivel Marca: Por Coordenada visual
             const mOrdA = a.ordenMarca ?? 9999;
             const mOrdB = b.ordenMarca ?? 9999;
             if (mOrdA !== mOrdB) return mOrdA - mOrdB;
@@ -1897,7 +2042,6 @@
             const mStrB = (b.marca || 'S/M').toUpperCase();
             if (mStrA !== mStrB) return mStrA.localeCompare(mStrB);
 
-            // 4. Nivel Producto: Por Coordenada visual
             const pOrdA = a.ordenProducto ?? 9999;
             const pOrdB = b.ordenProducto ?? 9999;
             if (pOrdA !== pOrdB) return pOrdA - pOrdB;
@@ -1907,7 +2051,6 @@
         };
     }
 
-    // Exponer explícitamente estas funciones para evitar ReferenceErrors en menús
     window.showReportDesignView = showReportDesignView;
     window.showConsolidatedClientsView = showConsolidatedClientsView;
     window.showClientMapView = showClientMapView;
