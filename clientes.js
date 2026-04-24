@@ -47,7 +47,7 @@
         _runTransaction = dependencies.runTransaction;
         _limit = dependencies.limit; 
 
-        console.log("Módulo Clientes inicializado (Con Datos Adicionales)."); 
+        console.log("Módulo Clientes inicializado (Ficha Inteligente)."); 
     };
 
     /**
@@ -746,7 +746,7 @@
         const telefono = form.telefono.value.trim();
         const codigoCEP = form.codigoCEP.value.trim();
         const coordenadas = form.coordenadas.value.trim();
-        const datosAdicionales = form.datosAdicionales.value.trim(); // NUEVO VALOR
+        const datosAdicionales = form.datosAdicionales.value.trim(); 
         
         const aplicaRetencion = document.getElementById('aplicaRetencion').checked;
 
@@ -810,7 +810,7 @@
                 telefono: telefono,
                 codigoCEP: codigoCEP,
                 coordenadas: coordenadas,
-                datosAdicionales: datosAdicionales, // AGREGADO A LA BD
+                datosAdicionales: datosAdicionales, 
                 aplicaRetencion: aplicaRetencion,
                 saldoVacios: saldoVaciosInicial 
             };
@@ -914,7 +914,7 @@
                     </div>
                     <div class="flex items-center bg-blue-50 px-3 py-1 rounded border border-blue-200">
                         <input type="checkbox" id="filter-adc" class="h-4 w-4 rounded border-blue-300 text-blue-600 focus:ring-blue-500 cursor-pointer">
-                        <label for="filter-adc" class="ml-2 block text-sm text-blue-900 font-bold cursor-pointer select-none">❄️ Posee Equipo ADC</label>
+                        <label for="filter-adc" class="ml-2 block text-sm text-blue-800 font-bold cursor-pointer select-none">Con Equipo ADC</label>
                     </div>
                 </div>
             </div>
@@ -1032,7 +1032,7 @@
                     <td class="py-2 px-4 text-sm text-gray-600 hidden sm:table-cell align-middle font-mono">${docFormat}</td>
                     <td class="py-2 px-2 text-center align-middle">
                         <div class="flex gap-2 items-center justify-center">
-                            <button onclick="window.clientesModule.showClienteInfo('${cliente.id}')" class="w-full max-w-[110px] px-3 py-1.5 bg-indigo-600 text-white font-bold text-xs rounded hover:bg-indigo-700 shadow-sm transition">INFO</button>
+                            <button onclick="window.clientesModule.showClienteInfo('${cliente.id}')" class="w-full max-w-[110px] px-3 py-1.5 bg-blue-600 text-white font-bold text-xs rounded hover:bg-blue-700 shadow-sm transition">INFO</button>
                             <button onclick="window.clientesModule.editCliente('${cliente.id}')" class="w-full max-w-[110px] px-3 py-1.5 bg-gray-600 text-white font-bold text-xs rounded hover:bg-gray-700 shadow-sm transition">EDITAR</button>
                         </div>
                     </td>
@@ -1043,7 +1043,7 @@
         container.innerHTML = tableHTML;
     }
 
-    // --- NUEVA VISTA: VER INFO. DEL CLIENTE (FICHA COMPLETA) ---
+    // --- NUEVA VISTA: VER INFO. DEL CLIENTE (FICHA COMPLETA INTELIGENTE) ---
     async function showClienteInfo(clienteId) {
         if (_floatingControls) _floatingControls.classList.add('hidden');
         const cliente = _clientesCache.find(c => c.id === clienteId);
@@ -1052,13 +1052,13 @@
         _mainContent.innerHTML = `
             <div class="p-4 pt-8 w-full max-w-4xl mx-auto flex flex-col">
                 <div class="bg-white/95 backdrop-blur-sm p-6 rounded-lg shadow-xl text-center">
-                    <p class="animate-pulse text-blue-600 font-bold text-lg">Cargando Expediente...</p>
+                    <p class="animate-pulse text-blue-600 font-bold text-lg">Analizando Expediente...</p>
                 </div>
             </div>
         `;
 
-        let docsCount = 0;
-        let imgCount = 0;
+        let docsList = [];
+        let imgList = [];
         let adcEquipos = [];
 
         try {
@@ -1068,8 +1068,8 @@
 
             snap.forEach(doc => {
                 const data = doc.data();
-                if (data.categoria === 'documentos') docsCount++;
-                else if (data.categoria === 'imagenes') imgCount++;
+                if (data.categoria === 'documentos') docsList.push(data);
+                else if (data.categoria === 'imagenes') imgList.push(data);
                 else if (data.categoria === 'adc' && data.adcInfo) {
                     adcEquipos.push(data.adcInfo);
                 }
@@ -1084,34 +1084,70 @@
             mapBtnHTML = `<a href="http://maps.google.com/?q=${urlCoords}" target="_blank" rel="noopener noreferrer" class="inline-block mt-3 px-4 py-2 bg-blue-100 text-blue-800 border border-blue-300 font-bold rounded shadow-sm hover:bg-blue-200 transition text-sm w-full text-center">ABRIR EN GOOGLE MAPS</a>`;
         }
 
-        let adcHTML = '<p class="text-sm text-gray-500 italic">No registra equipos en comodato.</p>';
+        // Lógica Inteligente para Documentos
+        let docLinksHTML = `<span class="text-sm font-bold bg-gray-100 border border-gray-300 text-gray-400 px-3 py-0.5 rounded">0</span>`;
+        if (docsList.length > 0) {
+            let links = docsList.map(d => `<a href="${d.url}" target="_blank" class="text-blue-600 hover:underline hover:text-blue-800" title="${d.fileName}">📄</a>`).join(' ');
+            docLinksHTML = `<div class="flex items-center gap-2"><span class="text-sm font-bold bg-blue-100 border border-blue-300 text-blue-800 px-3 py-0.5 rounded">${docsList.length}</span> <div class="text-lg">${links}</div></div>`;
+        }
+
+        // Lógica Inteligente para Imágenes
+        let imgLinksHTML = `<span class="text-sm font-bold bg-gray-100 border border-gray-300 text-gray-400 px-3 py-0.5 rounded">0</span>`;
+        if (imgList.length > 0) {
+            let links = imgList.map(img => `<a href="${img.url}" target="_blank" class="text-green-600 hover:scale-110 transition-transform inline-block" title="${img.fileName}">🖼️</a>`).join(' ');
+            imgLinksHTML = `<div class="flex items-center gap-2"><span class="text-sm font-bold bg-green-100 border border-green-300 text-green-800 px-3 py-0.5 rounded">${imgList.length}</span> <div class="text-lg flex flex-wrap gap-1">${links}</div></div>`;
+        }
+
+        // Lógica Inteligente para ADC (Si está vacío, no se genera la caja)
+        let adcBoxHTML = '';
         if (adcEquipos.length > 0) {
-            adcHTML = '<ul class="space-y-2 text-sm text-left">';
+            let adcListHTML = '<ul class="space-y-2 text-sm text-left">';
             adcEquipos.forEach(eq => {
-                adcHTML += `<li class="bg-white p-2 rounded border border-gray-200 shadow-sm">
+                adcListHTML += `<li class="bg-white p-2 rounded border border-blue-100 shadow-sm relative overflow-hidden">
+                    <div class="absolute right-0 top-0 text-4xl opacity-5">❄️</div>
                     <strong class="block text-sm border-b border-gray-100 pb-1 mb-1 text-gray-800">Cód: ${eq.codigo || 'S/C'}</strong>
                     <span class="font-bold text-gray-700">${eq.modelo}</span> <span class="text-gray-500">(${eq.division}, ${eq.puertas} Ptas)</span>
                 </li>`;
             });
-            adcHTML += '</ul>';
+            adcListHTML += '</ul>';
+
+            adcBoxHTML = `
+                <div class="bg-blue-50 p-4 sm:p-5 rounded-lg border border-blue-200 shadow-sm h-full max-h-60 overflow-y-auto">
+                    <h4 class="font-bold text-blue-900 mb-3 border-b border-blue-300 pb-1 sticky top-0 bg-blue-50 z-10 uppercase tracking-wider text-xs">Activos en Comodato (ADC)</h4>
+                    ${adcListHTML}
+                </div>
+            `;
         }
 
-        let vaciosHTML = '<ul class="space-y-1 text-sm">';
+        // Lógica Inteligente para Vacíos (Si está vacío, no se genera la caja)
+        let vaciosBoxHTML = '';
         let tieneVacios = false;
+        let vaciosHTML = '<ul class="space-y-1 text-sm">';
         if (cliente.saldoVacios) {
             Object.entries(cliente.saldoVacios).forEach(([tipo, cant]) => {
                 if (cant !== 0) {
                     tieneVacios = true;
                     const colorClass = cant > 0 ? 'text-red-600 font-black' : 'text-green-600 font-black';
-                    vaciosHTML += `<li class="flex justify-between border-b border-gray-100 pb-1 items-center"><span class="font-medium text-gray-700">${tipo}:</span> <span class="${colorClass}">${cant}</span></li>`;
+                    vaciosHTML += `<li class="flex justify-between border-b border-yellow-200 pb-1 items-center"><span class="font-medium text-yellow-900">${tipo}:</span> <span class="${colorClass} bg-white px-2 py-0.5 rounded shadow-sm">${cant}</span></li>`;
                 }
             });
         }
         vaciosHTML += '</ul>';
-        if (!tieneVacios) vaciosHTML = '<p class="text-sm text-gray-500 mt-1 italic">Solvente. Sin movimientos.</p>';
+        
+        if (tieneVacios) {
+            vaciosBoxHTML = `
+                <div class="bg-yellow-50 p-4 sm:p-5 rounded-lg border border-yellow-300 shadow-sm">
+                    <h4 class="font-bold text-yellow-900 mb-3 border-b border-yellow-400 pb-1 uppercase tracking-wider text-xs">Saldo de Envases (Vacíos)</h4>
+                    ${vaciosHTML}
+                </div>
+            `;
+        }
+
+        // Ajuste de Layout: Si falta ADC y Vacíos, los demás se expanden
+        const gridColClass = (!tieneVacios && adcEquipos.length === 0) ? 'grid-cols-1' : 'grid-cols-1 md:grid-cols-2';
 
         const retencionBadge = cliente.aplicaRetencion ? '<span class="inline-block ml-2 px-2 py-0.5 bg-red-100 text-red-800 text-[10px] font-black rounded uppercase tracking-wider border border-red-300 align-middle">Aplica Retención</span>' : '';
-        const docFormat = cliente.numeroDocumento ? `${cliente.tipoDocumento}-${cliente.numeroDocumento}` : 'S/D';
+        const docFormat = cliente.numeroDocumento ? `${cliente.tipoDocumento}-${cliente.numeroDocumento}` : 'Sin Documento Registrado';
 
         _mainContent.innerHTML = `
             <div class="p-2 sm:p-4 pt-8 w-full max-w-5xl mx-auto flex flex-col h-screen overflow-y-auto">
@@ -1127,22 +1163,22 @@
                         <p class="text-gray-600 text-sm mt-1">Representante Legal: <span class="text-gray-800 font-bold">${cliente.nombrePersonal || 'N/A'}</span></p>
                     </div>
 
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                    <div class="grid ${gridColClass} gap-6 mb-6">
                         
                         <div class="bg-white p-4 sm:p-5 rounded-lg border border-gray-300 shadow-sm flex flex-col justify-between">
                             <div>
                                 <h4 class="font-bold text-gray-800 mb-3 border-b border-gray-200 pb-1 uppercase tracking-wider text-xs">Datos Generales</h4>
                                 <div class="space-y-2 text-sm">
-                                    <p class="flex justify-between"><strong class="text-gray-600">Doc/RIF:</strong> <span class="font-mono font-bold">${docFormat}</span></p>
-                                    <p class="flex justify-between"><strong class="text-gray-600">Teléfono:</strong> <span class="font-medium">${cliente.telefono || 'N/A'}</span></p>
-                                    <p class="flex justify-between"><strong class="text-gray-600">Sector:</strong> <span class="font-medium">${cliente.sector || 'N/A'}</span></p>
-                                    <p class="flex justify-between"><strong class="text-gray-600">CEP:</strong> <span class="font-medium">${cliente.codigoCEP || 'N/A'}</span></p>
+                                    <p class="flex justify-between border-b border-gray-50 pb-1"><strong class="text-gray-600">Doc/RIF:</strong> <span class="font-mono font-bold text-indigo-700 bg-indigo-50 px-1 rounded">${docFormat}</span></p>
+                                    <p class="flex justify-between border-b border-gray-50 pb-1"><strong class="text-gray-600">Teléfono:</strong> <span class="font-medium">${cliente.telefono || 'N/A'}</span></p>
+                                    <p class="flex justify-between border-b border-gray-50 pb-1"><strong class="text-gray-600">Sector:</strong> <span class="font-medium">${cliente.sector || 'N/A'}</span></p>
+                                    <p class="flex justify-between border-b border-gray-50 pb-1"><strong class="text-gray-600">CEP:</strong> <span class="font-medium">${cliente.codigoCEP || 'N/A'}</span></p>
                                 </div>
-                                <div class="mt-4 pt-3 border-t border-gray-100">
+                                <div class="mt-3 pt-2">
                                     <strong class="text-gray-600 text-xs block mb-1 uppercase">Datos Adicionales:</strong>
                                     <p class="text-sm text-gray-800 font-medium">${cliente.datosAdicionales || '<span class="text-gray-400 italic">Ninguno</span>'}</p>
                                 </div>
-                                <div class="mt-4 pt-3 border-t border-gray-100">
+                                <div class="mt-3 pt-2">
                                     <strong class="text-gray-600 text-xs block mb-1 uppercase">Coordenadas GPS:</strong>
                                     ${cliente.coordenadas ? `<p class="text-xs text-gray-800 font-mono bg-gray-100 p-2 rounded break-all border border-gray-200">${cliente.coordenadas}</p>` : '<p class="text-xs text-red-500 font-bold uppercase">No registradas</p>'}
                                 </div>
@@ -1152,29 +1188,22 @@
                             </div>
                         </div>
 
-                        <div class="bg-gray-50 p-4 sm:p-5 rounded-lg border border-gray-300 shadow-sm">
-                            <h4 class="font-bold text-gray-800 mb-3 border-b border-gray-200 pb-1 uppercase tracking-wider text-xs">Inventario de Envases</h4>
-                            ${vaciosHTML}
-                        </div>
-
-                        <div class="bg-white p-4 sm:p-5 rounded-lg border border-gray-300 shadow-sm">
+                        <div class="bg-gray-50 p-4 sm:p-5 rounded-lg border border-gray-300 shadow-sm flex flex-col justify-start">
                             <h4 class="font-bold text-gray-800 mb-3 border-b border-gray-200 pb-1 uppercase tracking-wider text-xs">Respaldo Documental</h4>
-                            <div class="flex justify-between items-center mb-2">
-                                <span class="text-sm font-medium text-gray-600">Doc. Formales (PDF):</span> 
-                                <span class="text-sm font-bold bg-gray-100 border border-gray-300 px-3 py-0.5 rounded">${docsCount}</span>
+                            <div class="flex justify-between items-center mb-3 bg-white p-2 rounded border border-gray-200 shadow-sm">
+                                <span class="text-sm font-medium text-gray-600">Doc. Formales (PDF/Word):</span> 
+                                ${docLinksHTML}
                             </div>
-                            <div class="flex justify-between items-center">
+                            <div class="flex justify-between items-center bg-white p-2 rounded border border-gray-200 shadow-sm">
                                 <span class="text-sm font-medium text-gray-600">Imágenes Anexas:</span> 
-                                <span class="text-sm font-bold bg-gray-100 border border-gray-300 px-3 py-0.5 rounded">${imgCount}</span>
+                                ${imgLinksHTML}
                             </div>
                         </div>
 
-                        <div class="bg-blue-50 p-4 sm:p-5 rounded-lg border border-blue-200 shadow-sm h-full max-h-60 overflow-y-auto">
-                            <h4 class="font-bold text-blue-900 mb-3 border-b border-blue-300 pb-1 sticky top-0 bg-blue-50 z-10 uppercase tracking-wider text-xs">Activos en Comodato (ADC)</h4>
-                            ${adcHTML}
-                        </div>
+                        ${vaciosBoxHTML}
+                        ${adcBoxHTML}
+
                     </div>
-                    
                 </div>
             </div>
         `;
@@ -1276,8 +1305,7 @@
                     
                     ${_userRole === 'admin' ? `
                         <div class="mt-8 pt-6 border-t border-red-200 bg-red-50 p-4 rounded text-left">
-                            <p class="text-xs text-red-600 mb-2 font-black uppercase tracking-wider">Zona de Peligro</p>
-                            <p class="text-xs text-red-500 mb-3 font-medium">Eliminar a este cliente borrará su información básica del sistema. Su historial de ventas pasadas se mantendrá en las estadísticas.</p>
+                            <p class="text-[10px] text-red-500 mb-1 font-black uppercase tracking-wider text-center">Precaución: Acción Destructiva</p>
                             <button type="button" onclick="window.clientesModule.deleteCliente('${cliente.id}')" class="w-full px-4 py-2 bg-white text-red-600 border border-red-400 hover:bg-red-600 hover:text-white font-bold rounded shadow-sm transition text-xs uppercase">
                                 Eliminar Cliente Permanentemente
                             </button>
@@ -1327,7 +1355,7 @@
 
             const tipoDoc = document.getElementById('editTipoDoc').value;
             const numDoc = document.getElementById('editNumDoc').value.trim();
-            const datosAdicionales = document.getElementById('editDatosAdicionales').value.trim(); // NUEVO VALOR EDITADO
+            const datosAdicionales = document.getElementById('editDatosAdicionales').value.trim(); 
             const aplicaRetencion = document.getElementById('editAplicaRetencion').checked;
 
             const updatedData = {
@@ -1339,7 +1367,7 @@
                 telefono: document.getElementById('editTelefono').value || '',
                 codigoCEP: document.getElementById('editCodigoCEP').value || '',
                 coordenadas: (document.getElementById('editCoordenadas').value || '').trim(),
-                datosAdicionales: datosAdicionales, // SE GUARDA EN BD
+                datosAdicionales: datosAdicionales, 
                 aplicaRetencion: aplicaRetencion,
                 saldoVacios: cliente.saldoVacios || {} 
             };
