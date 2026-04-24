@@ -7,6 +7,7 @@
     const PUBLIC_DATA_ID = window.AppConfig.PUBLIC_DATA_ID;
     
     let _clientesCache = [];
+    let _archivosCache = []; // NUEVO: Caché para facilitar la eliminación de múltiples archivos
     let _clienteSeleccionado = null;
     let _categoriaActual = 'documentos'; // 'documentos', 'imagenes', 'adc'
 
@@ -30,7 +31,7 @@
         _deleteDoc = dependencies.deleteDoc;
         _orderBy = dependencies.orderBy;
 
-        console.log("Módulo Archivos Inicializado (Scroll Móvil Corregido).");
+        console.log("Módulo Archivos Inicializado (Agrupación de Imágenes Múltiples).");
     };
 
     window.showArchivosView = async function() {
@@ -109,7 +110,7 @@
                                     <div class="flex-grow w-full">
                                         <label class="block text-xs font-bold text-gray-700 mb-1">Seleccionar Archivo(s) <span class="text-red-500">*</span></label>
                                         <input type="file" id="arcFileInput" class="w-full p-2 border border-gray-300 rounded bg-white text-sm" accept=".pdf,.doc,.docx,.xls,.xlsx" required>
-                                        <p id="multiFileHint" class="text-[10px] text-gray-500 mt-1 hidden">Puede seleccionar varias fotos a la vez.</p>
+                                        <p id="multiFileHint" class="text-[10px] text-gray-500 mt-1 hidden">Puede seleccionar varias fotos a la vez para este registro.</p>
                                     </div>
                                     <button type="submit" id="btnSubirArchivo" class="w-full sm:w-auto px-6 py-2.5 bg-teal-600 text-white font-bold rounded shadow hover:bg-teal-700 transition flex items-center justify-center gap-2">
                                         <span>💾</span> Guardar
@@ -254,13 +255,13 @@
         } 
         else if (_categoriaActual === 'imagenes') {
             fileInput.accept = "image/png, image/jpeg, image/jpg";
-            fileInput.setAttribute('multiple', 'true'); // AHORA PERMITE MÚLTIPLES FOTOS
+            fileInput.setAttribute('multiple', 'true'); 
             multiHint.classList.remove('hidden');
             adcFields.classList.add('hidden');
             
-            title.textContent = "🖼️ Imágenes Generales";
-            btnAddText.textContent = "Agregar Imágenes";
-            formTitle.textContent = "Subir Nuevas Imágenes";
+            title.textContent = "🖼️ Registros Fotográficos Generales";
+            btnAddText.textContent = "Agregar Registro de Imágenes";
+            formTitle.textContent = "Subir Nuevo Lote de Imágenes";
 
             document.getElementById('adcDivision').required = false;
             document.getElementById('adcCodigo').required = false;
@@ -269,13 +270,13 @@
         } 
         else if (_categoriaActual === 'adc') {
             fileInput.accept = "image/png, image/jpeg, image/jpg";
-            fileInput.setAttribute('multiple', 'true'); // PERMITE MÚLTIPLES FOTOS
+            fileInput.setAttribute('multiple', 'true'); 
             multiHint.classList.remove('hidden');
             adcFields.classList.remove('hidden');
             
             title.textContent = "❄️ Equipos ADC Asignados";
-            btnAddText.textContent = "Agregar Equipo ADC";
-            formTitle.textContent = "Registrar Nuevo Equipo ADC";
+            btnAddText.textContent = "Registrar Equipo ADC";
+            formTitle.textContent = "Registrar Nuevo Equipo y sus Fotos";
 
             document.getElementById('adcDivision').required = true;
             document.getElementById('adcCodigo').required = true;
@@ -312,32 +313,34 @@
         _showModal('Subiendo...', `Subiendo ${files.length} archivo(s)...`, null, '', null, false);
 
         try {
-            // FIX: Capturamos el instante de tiempo exacto antes de empezar el bucle
-            // Así todos los archivos de esta subida tendrán exactamente el mismo Timestamp
             const exactMoment = new Date();
             const exactMomentMs = exactMoment.getTime();
             const exactMomentISO = exactMoment.toISOString();
 
-            const uploadPromises = Array.from(files).map(async (file, index) => {
-                // Usamos el mismo milisegundo base, pero le añadimos el index para que no se sobreescriban en Storage
-                const uniqueName = `${exactMomentMs}_${index}_${file.name}`;
-                const storagePath = `clientes/${_clienteSeleccionado.id}/${_categoriaActual}/${uniqueName}`;
-                const storageRefObj = window.firebaseStorageFunctions.ref(_storage, storagePath);
+            if (_categoriaActual === 'adc' || _categoriaActual === 'imagenes') {
+                // SUBIDA MÚLTIPLE AGRUPADA: Un solo documento Firestore con array de fotos
+                const uploadPromises = Array.from(files).map(async (file, index) => {
+                    const uniqueName = `${exactMomentMs}_${index}_${file.name}`;
+                    const storagePath = `clientes/${_clienteSeleccionado.id}/${_categoriaActual}/${uniqueName}`;
+                    const storageRefObj = window.firebaseStorageFunctions.ref(_storage, storagePath);
 
-                // 2. Subir el archivo
-                await window.firebaseStorageFunctions.uploadBytes(storageRefObj, file);
+                    await window.firebaseStorageFunctions.uploadBytes(storageRefObj, file);
+                    const downloadURL = await window.firebaseStorageFunctions.getDownloadURL(storageRefObj);
+                    
+                    return { 
+                        url: downloadURL, 
+                        storagePath: storagePath, 
+                        fileName: file.name 
+                    };
+                });
 
-                // 3. Obtener la URL
-                const downloadURL = await window.firebaseStorageFunctions.getDownloadURL(storageRefObj);
+                const archivosSubidos = await Promise.all(uploadPromises);
 
-                // 4. Preparar documento para Firestore usando la fecha compartida
                 const docData = {
                     clienteId: _clienteSeleccionado.id,
                     categoria: _categoriaActual,
-                    fileName: file.name,
-                    storagePath: storagePath,
-                    url: downloadURL,
-                    fechaCreacion: exactMomentISO, // TODOS TIENEN LA MISMA FECHA/HORA EXACTA
+                    archivos: archivosSubidos, // Arreglo con la metadata de TODAS las imágenes
+                    fechaCreacion: exactMomentISO,
                     subidoPor: _userId
                 };
 
@@ -345,12 +348,30 @@
                     docData.adcInfo = metadataADC;
                 }
 
-                // 5. Guardar en Firestore
-                return _addDoc(_collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/archivos_clientes`), docData);
-            });
+                await _addDoc(_collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/archivos_clientes`), docData);
 
-            // Esperar a que terminen todas las subidas
-            await Promise.all(uploadPromises);
+            } else {
+                // DOCUMENTOS (1 por 1)
+                const file = files[0];
+                const uniqueName = `${exactMomentMs}_${file.name}`;
+                const storagePath = `clientes/${_clienteSeleccionado.id}/${_categoriaActual}/${uniqueName}`;
+                const storageRefObj = window.firebaseStorageFunctions.ref(_storage, storagePath);
+                
+                await window.firebaseStorageFunctions.uploadBytes(storageRefObj, file);
+                const downloadURL = await window.firebaseStorageFunctions.getDownloadURL(storageRefObj);
+
+                const docData = {
+                    clienteId: _clienteSeleccionado.id,
+                    categoria: _categoriaActual,
+                    fileName: file.name,
+                    storagePath: storagePath,
+                    url: downloadURL,
+                    fechaCreacion: exactMomentISO,
+                    subidoPor: _userId
+                };
+
+                await _addDoc(_collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/archivos_clientes`), docData);
+            }
 
             document.getElementById('arcUploadForm').reset();
             document.getElementById('arcFormContainer').classList.add('hidden');
@@ -380,24 +401,29 @@
             
             if (snap.empty) {
                 let emptyMsg = "No hay documentos guardados.";
-                if (_categoriaActual === 'imagenes') emptyMsg = "No hay imágenes guardadas.";
+                if (_categoriaActual === 'imagenes') emptyMsg = "No hay registros fotográficos.";
                 if (_categoriaActual === 'adc') emptyMsg = "El cliente no tiene equipos ADC registrados.";
 
                 grid.innerHTML = `<p class="col-span-full text-center text-gray-500 py-6">${emptyMsg}</p>`;
+                _archivosCache = [];
                 return;
             }
 
             let html = '';
-            const archivos = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+            // Guardar en caché global del módulo para poder usarlos al momento de eliminar
+            _archivosCache = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+            
             // Ordenar por fecha descendente
-            archivos.sort((a,b) => new Date(b.fechaCreacion) - new Date(a.fechaCreacion));
+            _archivosCache.sort((a,b) => new Date(b.fechaCreacion) - new Date(a.fechaCreacion));
 
-            archivos.forEach(arc => {
-                // Ahora mostramos también la hora para que se note que se subieron al mismo tiempo
+            _archivosCache.forEach(arc => {
                 const d = new Date(arc.fechaCreacion);
                 const fechaFormat = d.toLocaleDateString('es-ES') + ' ' + d.toLocaleTimeString('es-ES', {hour: '2-digit', minute:'2-digit'});
                 
                 if (_categoriaActual === 'adc' || _categoriaActual === 'imagenes') {
+                    // Soporte híbrido: Documentos viejos (1 imagen) vs Nuevos (Array de imágenes)
+                    const arrayFotos = arc.archivos || [{url: arc.url, fileName: arc.fileName, storagePath: arc.storagePath}];
+                    
                     let metaHTML = '';
                     if (arc.adcInfo) {
                         metaHTML = `
@@ -409,19 +435,31 @@
                             </div>
                         `;
                     }
-                    html += `
-                        <div class="bg-white p-3 rounded-lg shadow border border-gray-200 flex flex-col">
-                            <a href="${arc.url}" target="_blank" class="block h-32 w-full mb-2 overflow-hidden rounded bg-gray-100 border flex items-center justify-center relative group">
-                                <img src="${arc.url}" alt="${arc.fileName}" class="max-h-full max-w-full object-contain group-hover:scale-105 transition-transform duration-300">
+
+                    // Construir el mini-grid de imágenes dentro de la tarjeta
+                    const gridColsClass = arrayFotos.length > 1 ? 'grid-cols-2' : 'grid-cols-1';
+                    let imagesGridHTML = `<div class="grid ${gridColsClass} gap-2 mb-2">`;
+                    
+                    arrayFotos.forEach(foto => {
+                        imagesGridHTML += `
+                            <a href="${foto.url}" target="_blank" class="block h-28 w-full overflow-hidden rounded bg-gray-100 border relative group">
+                                <img src="${foto.url}" alt="${foto.fileName}" class="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300">
                                 <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                                    <span class="text-white text-xs font-bold border border-white px-2 py-1 rounded">Ampliar Foto</span>
+                                    <span class="text-white text-[10px] font-bold border border-white px-2 py-0.5 rounded">Ver</span>
                                 </div>
                             </a>
+                        `;
+                    });
+                    imagesGridHTML += `</div>`;
+
+                    html += `
+                        <div class="bg-white p-3 rounded-lg shadow border border-gray-200 flex flex-col">
+                            ${imagesGridHTML}
                             <div class="flex-grow">
-                                <p class="text-[11px] text-gray-500 mb-1 font-mono">📅 ${fechaFormat}</p>
+                                <p class="text-[11px] text-gray-500 font-mono">📅 Registro: ${fechaFormat}</p>
                                 ${metaHTML}
                             </div>
-                            <button onclick="window.archivosModule.eliminarArchivo('${arc.id}', '${arc.storagePath}')" class="mt-3 w-full py-1.5 bg-red-50 text-red-600 hover:bg-red-600 hover:text-white border border-red-200 hover:border-transparent rounded text-xs font-bold transition">Eliminar Registro</button>
+                            <button onclick="window.archivosModule.eliminarArchivo('${arc.id}')" class="mt-3 w-full py-1.5 bg-red-50 text-red-600 hover:bg-red-600 hover:text-white border border-red-200 hover:border-transparent rounded text-xs font-bold transition uppercase tracking-wide">Eliminar Registro Completo</button>
                         </div>
                     `;
                 } else {
@@ -435,7 +473,7 @@
                                     <a href="${arc.url}" target="_blank" class="text-sm font-bold text-teal-700 hover:underline truncate block" title="${arc.fileName}">${arc.fileName}</a>
                                 </div>
                             </div>
-                            <button onclick="window.archivosModule.eliminarArchivo('${arc.id}', '${arc.storagePath}')" class="p-2 text-gray-400 hover:text-red-600 transition" title="Eliminar Archivo">🗑️</button>
+                            <button onclick="window.archivosModule.eliminarArchivo('${arc.id}')" class="p-2 text-gray-400 hover:text-red-600 transition" title="Eliminar Archivo">🗑️</button>
                         </div>
                     `;
                 }
@@ -449,20 +487,36 @@
         }
     }
 
-    async function eliminarArchivo(docId, storagePath) {
+    async function eliminarArchivo(docId) {
         if (_userRole !== 'admin') {
             _showModal('Acceso Denegado', 'Solo los administradores pueden borrar archivos físicos o equipos.');
             return;
         }
 
-        _showModal('Confirmar', '¿Estás seguro de eliminar este registro permanentemente?', async () => {
-            _showModal('Progreso', 'Eliminando...', null, '', null, false);
-            try {
-                // 1. Borrar de Storage
-                const storageRefObj = window.firebaseStorageFunctions.ref(_storage, storagePath);
-                await window.firebaseStorageFunctions.deleteObject(storageRefObj);
+        // Buscar el documento en la caché local
+        const archivoRecord = _archivosCache.find(a => a.id === docId);
+        if (!archivoRecord) {
+            _showModal('Error', 'Registro no encontrado en memoria. Recargue la página.');
+            return;
+        }
 
-                // 2. Borrar referencia de Firestore
+        _showModal('Confirmar', '¿Estás seguro de eliminar este registro permanentemente? (Se borrarán todas las imágenes asociadas).', async () => {
+            _showModal('Progreso', 'Eliminando archivos de la nube...', null, '', null, false);
+            try {
+                // 1. Recolectar todos los storage paths a eliminar
+                const pathsToDelete = archivoRecord.archivos 
+                    ? archivoRecord.archivos.map(a => a.storagePath) 
+                    : [archivoRecord.storagePath];
+
+                // 2. Borrar de Storage en paralelo
+                const deletePromises = pathsToDelete.map(path => {
+                    const storageRefObj = window.firebaseStorageFunctions.ref(_storage, path);
+                    // Capturamos el error por si un archivo ya no existe, para que no frene la eliminación del doc
+                    return window.firebaseStorageFunctions.deleteObject(storageRefObj).catch(e => console.warn("Archivo físico no encontrado", e));
+                });
+                await Promise.all(deletePromises);
+
+                // 3. Borrar referencia de Firestore
                 await _deleteDoc(_doc(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/archivos_clientes`, docId));
 
                 document.getElementById('modalContainer').classList.add('hidden');
