@@ -47,7 +47,7 @@
         _runTransaction = dependencies.runTransaction;
         _limit = dependencies.limit; 
 
-        console.log("Módulo Clientes inicializado (Ficha UI Profesional)."); 
+        console.log("Módulo Clientes inicializado (Formularios Flexibles)."); 
     };
 
     /**
@@ -633,7 +633,7 @@
                     <form id="clienteForm" class="space-y-4 text-left">
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
-                                <label for="sector" class="block text-gray-700 font-medium mb-2">Sector / Zona:</label>
+                                <label for="sector" class="block text-gray-700 font-medium mb-2">Sector / Zona <span class="text-red-500">*</span></label>
                                 <div class="flex items-center space-x-2">
                                     <select id="sector" class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" required></select>
                                     <button type="button" id="addSectorBtn" class="px-4 py-2 bg-gray-400 text-white font-bold rounded-lg hover:bg-gray-500 transition">+</button>
@@ -643,7 +643,7 @@
                             <div class="grid grid-cols-3 gap-2">
                                 <div class="col-span-1">
                                     <label for="tipoDoc" class="block text-gray-700 font-medium mb-2">Doc:</label>
-                                    <select id="tipoDoc" class="w-full px-2 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-indigo-500" required>
+                                    <select id="tipoDoc" class="w-full px-2 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-indigo-500">
                                         <option value="V">V (Cédula)</option>
                                         <option value="J">J (Jurídico)</option>
                                         <option value="E">E (Emprend.)</option>
@@ -652,26 +652,26 @@
                                 </div>
                                 <div class="col-span-2">
                                     <label for="numDoc" class="block text-gray-700 font-medium mb-2">Número:</label>
-                                    <input type="text" inputmode="numeric" id="numDoc" class="w-full px-4 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Ej: 12345678" oninput="this.value = this.value.replace(/[^0-9]/g, '')" required>
+                                    <input type="text" inputmode="numeric" id="numDoc" class="w-full px-4 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Ej: 12345678" oninput="this.value = this.value.replace(/[^0-9]/g, '')">
                                 </div>
                             </div>
                         </div>
 
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
                             <div>
-                                <label for="nombreComercial" class="block text-gray-700 font-medium mb-2">Nombre Comercial:</label>
+                                <label for="nombreComercial" class="block text-gray-700 font-medium mb-2">Razón Social / Comercio <span class="text-red-500">*</span></label>
                                 <input type="text" id="nombreComercial" class="w-full px-4 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-indigo-500" required>
                             </div>
                             <div>
                                 <label for="nombrePersonal" class="block text-gray-700 font-medium mb-2">Nombre Representante:</label>
-                                <input type="text" id="nombrePersonal" class="w-full px-4 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-indigo-500" required>
+                                <input type="text" id="nombrePersonal" class="w-full px-4 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-indigo-500">
                             </div>
                         </div>
 
                         <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
                             <div>
                                 <label for="telefono" class="block text-gray-700 font-medium mb-2">Teléfono:</label>
-                                <input type="tel" id="telefono" class="w-full px-4 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-indigo-500" required>
+                                <input type="tel" id="telefono" class="w-full px-4 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-indigo-500">
                             </div>
                             <div>
                                 <label for="codigoCEP" class="block text-gray-700 font-medium mb-2">Código CEP:</label>
@@ -755,6 +755,12 @@
             form.sector.focus();
             return;
         }
+        
+        if (!nombreComercial) {
+            _showModal('Error', 'El Nombre Comercial (Razón Social) es obligatorio.');
+            form.nombreComercial.focus();
+            return;
+        }
 
         const normComercial = nombreComercial.toLowerCase();
         const normPersonal = nombrePersonal.toLowerCase();
@@ -763,9 +769,9 @@
          let motivo = "";
          for (const c of _clientesCache) {
              if (c.nombreComercial.toLowerCase() === normComercial) { duplicado = c; motivo = "nombre comercial"; break; }
-             if (c.nombrePersonal.toLowerCase() === normPersonal) { duplicado = c; motivo = "nombre personal"; break; }
-             if (c.telefono === telefono) { duplicado = c; motivo = "teléfono"; break; }
-             if (c.numeroDocumento === numDoc) { duplicado = c; motivo = "número de documento"; break; }
+             if (nombrePersonal && c.nombrePersonal && c.nombrePersonal.toLowerCase() === normPersonal) { duplicado = c; motivo = "nombre personal"; break; }
+             if (telefono && c.telefono === telefono) { duplicado = c; motivo = "teléfono"; break; }
+             if (numDoc && c.numeroDocumento === numDoc) { duplicado = c; motivo = "número de documento"; break; }
              if (codigoCEP && codigoCEP.toLowerCase() !== 'n/a' && c.codigoCEP === codigoCEP) { duplicado = c; motivo = "código CEP"; break; }
          }
 
@@ -773,23 +779,23 @@
              try {
                 const clientesRef = _collection(_db, CLIENTES_COLLECTION_PATH);
                 const qComercial = _query(clientesRef, _where("nombreComercial", "==", nombreComercial));
-                const qPersonal = _query(clientesRef, _where("nombrePersonal", "==", nombrePersonal));
-                const qTel = _query(clientesRef, _where("telefono", "==", telefono));
-                const qDoc = _query(clientesRef, _where("numeroDocumento", "==", numDoc));
+                const qPersonal = nombrePersonal ? _query(clientesRef, _where("nombrePersonal", "==", nombrePersonal)) : null;
+                const qTel = telefono ? _query(clientesRef, _where("telefono", "==", telefono)) : null;
+                const qDoc = numDoc ? _query(clientesRef, _where("numeroDocumento", "==", numDoc)) : null;
                 const qCEP = codigoCEP && codigoCEP.toLowerCase() !== 'n/a' ? _query(clientesRef, _where("codigoCEP", "==", codigoCEP)) : null;
 
                 const [snapComercial, snapPersonal, snapTel, snapDoc, snapCEP] = await Promise.all([
                      _getDocs(qComercial), 
-                     _getDocs(qPersonal),
-                     _getDocs(qTel),
-                     _getDocs(qDoc),
+                     qPersonal ? _getDocs(qPersonal) : { empty: true },
+                     qTel ? _getDocs(qTel) : { empty: true },
+                     qDoc ? _getDocs(qDoc) : { empty: true },
                      qCEP ? _getDocs(qCEP) : { empty: true }
                 ]);
 
                 if (!snapComercial.empty) { duplicado = { id: snapComercial.docs[0].id, ...snapComercial.docs[0].data() }; motivo = "nombre comercial"; }
-                else if (!snapPersonal.empty) { duplicado = { id: snapPersonal.docs[0].id, ...snapPersonal.docs[0].data() }; motivo = "nombre personal"; }
-                else if (!snapTel.empty) { duplicado = { id: snapTel.docs[0].id, ...snapTel.docs[0].data() }; motivo = "teléfono"; }
-                else if (!snapDoc.empty) { duplicado = { id: snapDoc.docs[0].id, ...snapDoc.docs[0].data() }; motivo = "número de documento"; }
+                else if (qPersonal && !snapPersonal.empty) { duplicado = { id: snapPersonal.docs[0].id, ...snapPersonal.docs[0].data() }; motivo = "nombre personal"; }
+                else if (qTel && !snapTel.empty) { duplicado = { id: snapTel.docs[0].id, ...snapTel.docs[0].data() }; motivo = "teléfono"; }
+                else if (qDoc && !snapDoc.empty) { duplicado = { id: snapDoc.docs[0].id, ...snapDoc.docs[0].data() }; motivo = "número de documento"; }
                 else if (qCEP && !snapCEP.empty) { duplicado = { id: snapCEP.docs[0].id, ...snapCEP.docs[0].data() }; motivo = "código CEP"; }
 
              } catch (queryError) {
@@ -1178,7 +1184,7 @@
         const gridColClass = (!tieneVacios && adcEquipos.length === 0) ? 'grid-cols-1' : 'grid-cols-1 md:grid-cols-2';
 
         const retencionBadge = cliente.aplicaRetencion ? '<span class="inline-block ml-3 px-2.5 py-0.5 bg-gray-800 text-white text-[10px] font-black rounded uppercase tracking-wider align-middle">Agente Retención</span>' : '';
-        const docFormat = cliente.numeroDocumento ? `${cliente.tipoDocumento}-${cliente.numeroDocumento}` : 'Sin Documento';
+        const docFormat = cliente.numeroDocumento ? `${cliente.tipoDocumento}-${cliente.numeroDocumento}` : 'Sin Documento Registrado';
 
         _mainContent.innerHTML = `
             <div class="p-2 sm:p-4 pt-8 w-full max-w-5xl mx-auto flex flex-col h-screen overflow-y-auto">
@@ -1273,7 +1279,7 @@
                             <div class="grid grid-cols-3 gap-2">
                                 <div class="col-span-1">
                                     <label for="editTipoDoc" class="block text-gray-700 font-bold text-sm mb-1 uppercase">Doc.</label>
-                                    <select id="editTipoDoc" class="w-full px-2 py-2 border border-gray-300 rounded bg-gray-50 focus:bg-white outline-none focus:ring-2 focus:ring-yellow-500 text-sm font-bold" required>
+                                    <select id="editTipoDoc" class="w-full px-2 py-2 border border-gray-300 rounded bg-gray-50 focus:bg-white outline-none focus:ring-2 focus:ring-yellow-500 text-sm font-bold">
                                         <option value="V" ${tipoDoc === 'V' ? 'selected' : ''}>V</option>
                                         <option value="J" ${tipoDoc === 'J' ? 'selected' : ''}>J</option>
                                         <option value="E" ${tipoDoc === 'E' ? 'selected' : ''}>E</option>
@@ -1282,26 +1288,26 @@
                                 </div>
                                 <div class="col-span-2">
                                     <label for="editNumDoc" class="block text-gray-700 font-bold text-sm mb-1 uppercase">Número</label>
-                                    <input type="text" inputmode="numeric" id="editNumDoc" value="${numDoc}" class="w-full px-4 py-2 border border-gray-300 rounded bg-gray-50 focus:bg-white outline-none focus:ring-2 focus:ring-yellow-500 text-sm font-mono font-bold" oninput="this.value = this.value.replace(/[^0-9]/g, '')" required>
+                                    <input type="text" inputmode="numeric" id="editNumDoc" value="${numDoc}" class="w-full px-4 py-2 border border-gray-300 rounded bg-gray-50 focus:bg-white outline-none focus:ring-2 focus:ring-yellow-500 text-sm font-mono font-bold" oninput="this.value = this.value.replace(/[^0-9]/g, '')">
                                 </div>
                             </div>
                         </div>
 
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
                             <div>
-                                <label for="editNombreComercial" class="block text-gray-700 font-bold text-sm mb-1 uppercase">Razón Social / Comercio</label>
+                                <label for="editNombreComercial" class="block text-gray-700 font-bold text-sm mb-1 uppercase">Razón Social / Comercio <span class="text-red-500">*</span></label>
                                 <input type="text" id="editNombreComercial" value="${cliente.nombreComercial || ''}" class="w-full px-4 py-2 border border-gray-300 rounded bg-gray-50 focus:bg-white focus:ring-2 focus:ring-yellow-500 outline-none text-sm" required>
                             </div>
                             <div>
                                 <label for="editNombrePersonal" class="block text-gray-700 font-bold text-sm mb-1 uppercase">Representante Legal</label>
-                                <input type="text" id="editNombrePersonal" value="${cliente.nombrePersonal || ''}" class="w-full px-4 py-2 border border-gray-300 rounded bg-gray-50 focus:bg-white focus:ring-2 focus:ring-yellow-500 outline-none text-sm" required>
+                                <input type="text" id="editNombrePersonal" value="${cliente.nombrePersonal || ''}" class="w-full px-4 py-2 border border-gray-300 rounded bg-gray-50 focus:bg-white focus:ring-2 focus:ring-yellow-500 outline-none text-sm">
                             </div>
                         </div>
 
                         <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
                             <div>
                                 <label for="editTelefono" class="block text-gray-700 font-bold text-sm mb-1 uppercase">Teléfono</label>
-                                <input type="tel" id="editTelefono" value="${cliente.telefono || ''}" class="w-full px-4 py-2 border border-gray-300 rounded bg-gray-50 focus:bg-white focus:ring-2 focus:ring-yellow-500 outline-none text-sm" required>
+                                <input type="tel" id="editTelefono" value="${cliente.telefono || ''}" class="w-full px-4 py-2 border border-gray-300 rounded bg-gray-50 focus:bg-white focus:ring-2 focus:ring-yellow-500 outline-none text-sm">
                             </div>
                             <div>
                                 <label for="editCodigoCEP" class="block text-gray-700 font-bold text-sm mb-1 uppercase">Código CEP</label>
@@ -1409,8 +1415,8 @@
                 saldoVacios: cliente.saldoVacios || {} 
             };
 
-            if (!updatedData.nombreComercial || !updatedData.nombrePersonal || !updatedData.telefono) {
-                 _showModal('Error', 'Nombre Comercial, Nombre Personal y Teléfono son requeridos.');
+            if (!updatedData.nombreComercial) {
+                 _showModal('Error', 'El Nombre Comercial (Razón Social) es requerido para identificar al cliente.');
                  return;
             }
 
