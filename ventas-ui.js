@@ -182,7 +182,11 @@
             productosVendidos.forEach(p => {
                 const precios = p.precios || { und: p.precioPorUnidad || 0 };
                 const cant = p.cantidadVendida || { cj: p.cantCj || 0, paq: p.cantPaq || 0, und: p.cantUnd || 0 };
-                let desc = `${p.segmento || ''} ${p.marca || ''} ${p.presentacion}`;
+                
+                // VALIDACIÓN DE EXENTO DE IVA
+                let exentoLabel = (p.iva === 0 || p.iva === "0") ? " (E)" : "";
+                
+                let desc = `${p.segmento || ''} ${p.marca || ''} ${p.presentacion}${exentoLabel}`;
                 let qtyText = '', priceText = '', subtotal = 0;
 
                 if (p.manejaVacios && p.tipoVacio && cant.cj > 0) {
@@ -309,7 +313,11 @@
                 productosVendidos.forEach(p => {
                     const precios = p.precios || { und: p.precioPorUnidad || 0 };
                     const cant = p.cantidadVendida || { cj: p.cantCj || 0, paq: p.cantPaq || 0, und: p.cantUnd || 0 };
-                    let desc = _toTitleCase(`${p.segmento || ''} ${p.marca || ''} ${p.presentacion}`);
+                    
+                    // VALIDACIÓN DE EXENTO DE IVA
+                    let exentoLabel = (p.iva === 0 || p.iva === "0") ? " (E)" : "";
+
+                    let desc = _toTitleCase(`${p.segmento || ''} ${p.marca || ''} ${p.presentacion}${exentoLabel}`);
                     let qtyText = '', priceText = '', subtotal = 0;
 
                     if (p.manejaVacios && p.tipoVacio && cant.cj > 0) {
