@@ -51,7 +51,7 @@
         if (!_runTransaction) console.error("Error Crítico: 'runTransaction' no disponible en initVentas.");
         if (!_increment) console.warn("Advertencia: 'increment' no disponible. Ventas offline limitadas.");
         
-        console.log("Módulo Ventas inicializado (Consignaciones Sincronizadas). Public ID:", PUBLIC_DATA_ID);
+        console.log("Módulo Ventas inicializado (Subtotales en UI Restaurados). Public ID:", PUBLIC_DATA_ID);
     };
 
     window.showVentasView = function() {
@@ -271,7 +271,6 @@
         tempDiv.innerHTML = htmlContent; 
         document.body.appendChild(tempDiv);
         
-        // Buscamos el ticket DENTRO del div que acabamos de crear
         const ticketElement = tempDiv.querySelector('#temp-ticket-for-image') || tempDiv.firstElementChild;
         
         if (!ticketElement) { _showModal('Error', 'No se pudo encontrar elemento ticket.'); document.body.removeChild(tempDiv); if(callbackDespuesDeCompartir) callbackDespuesDeCompartir(false); return; }
@@ -335,7 +334,6 @@
     }
 
     async function _processAndSaveVenta() {
-        // LEER EL SELECTOR DE TIPO DE OPERACIÓN (Para Nueva Venta)
         const tipoOperacionSelect = document.getElementById('tipoOperacionSelect');
         const tipoOperacion = tipoOperacionSelect ? tipoOperacionSelect.value : 'venta';
 
@@ -420,7 +418,7 @@
                 productos: itemsVenta,
                 vaciosDevueltosPorTipo: _ventaActual.vaciosDevueltosPorTipo,
                 origen: "offline",
-                tipoOperacion: tipoOperacion // GUARDANDO EL TIPO DE OPERACIÓN
+                tipoOperacion: tipoOperacion
             };
             batch.set(ventaRef, ventaDataToSave);
 
@@ -506,7 +504,7 @@
                         productos: itemsVenta,
                         vaciosDevueltosPorTipo: _ventaActual.vaciosDevueltosPorTipo,
                         origen: "offline",
-                        tipoOperacion: tipoOperacion // GUARDANDO EL TIPO DE OPERACIÓN
+                        tipoOperacion: tipoOperacion
                     };
                     
                     transaction.set(ventaRef, ventaDataToSave);
@@ -543,7 +541,7 @@
                         savedData.vaciosDevueltosPorTipo, 
                         'Nota de Entrega',
                         () => { _showModal('Éxito', 'Operación registrada y ticket generado/compartido.', showNuevaVentaView); },
-                        savedData.venta.tipoOperacion // Pasando el tipo para el ticket
+                        savedData.venta.tipoOperacion
                     );
                 }, 300);
 
@@ -617,7 +615,6 @@
         const correcciones = cSnapFull.docs.map(d => d.data()).filter(c => (c.fecha?.toDate ? c.fecha.toDate() : new Date(c.fecha)) >= fechaCargaInicial);
         const cierresPasados = cierresSnapFull.docs.map(d => d.data()).filter(c => (c.fecha?.toDate ? c.fecha.toDate() : new Date(c.fecha)) >= fechaCargaInicial);
 
-        // FILTRO DE DOBLE RESTA (Ignoramos las ventas viejas que ya están descontadas del snapshot)
         const ventasPostSnapshot = ventasActivas.filter(v => {
             const dObj = v.fecha?.toDate ? v.fecha.toDate() : new Date(v.fecha);
             return dObj >= fechaCargaInicial;
@@ -665,7 +662,6 @@
 
         const cargaParaExcel = [];
         cargaInicialExcelMap.forEach((qty, pId) => {
-            // Evaluamos contra ventasPostSnapshot para que salga en el Excel solo si fue relevante desde el punto de partida
             if (qty > 0 || ventasPostSnapshot.some(v => v.productos.some(vp => vp.id === pId)) || obsequiosPostSnapshot.some(o => o.productoId === pId)) {
                 const pMaster = _masterCatalogCache[pId] || {};
                 cargaParaExcel.push({
@@ -730,7 +726,6 @@
             _ventasGlobal = snap.docs.map(d => ({ id: d.id, ...d.data() })); 
             _ventasGlobal.sort((a,b) => (b.fecha?.toDate()??0) - (a.fecha?.toDate()??0));
             
-            // Usamos la plantilla UI que ya actualizamos para que detecte consignaciones
             cont.innerHTML = window.ventasUI.getSalesListTemplate(_ventasGlobal);
             
         }, (err) => { 
@@ -764,7 +759,6 @@
             
             if (!window.dataModule?._processSalesDataForModal) throw new Error("Módulo de datos no disponible.");
 
-            // Usamos ventasPostSnapshot en lugar de todas las ventas para no duplicar en el modal de cierre
             const { clientData, clientTotals, grandTotalValue, sortedClients, finalProductOrder } = 
                 await window.dataModule._processSalesDataForModal(ventasPostSnapshot, obsequiosPostSnapshot, cargaParaExcel, _userId);
 
@@ -780,8 +774,6 @@
             let bHTML=''; 
             sortedClients.forEach(cli=>{
                 const cCli = clientData[cli]; 
-                // Evitamos imprimir las filas que son solo sumatorias base si están vacías, pero aquí `sortedClients` tiene todo
-                // Las filas base siempre se imprimen si tienen data
                 const esSoloObsequio = cCli.isObsequioRow;
                 const esSoloConsignacion = cCli.isConsignacionRow; 
                 
@@ -796,7 +788,6 @@
                     
                     let suffix = '';
                     if (esSoloObsequio) suffix = ` <span class="text-[10px] text-blue-600 font-black ml-1">(Regalo)</span>`;
-                    else if (esSoloConsignacion) suffix = ` <span class="text-[10px] text-orange-600 font-black ml-1">(Consig.)</span>`;
 
                     let dQ = qU > 0 ? (typeof qtyDisplay.value === 'number' ? `${qtyDisplay.value} ${qtyDisplay.unit}` : qtyDisplay.value) + suffix : '';
                     
@@ -810,7 +801,7 @@
             });
 
             let fHTML='<tr class="bg-gray-200 font-bold"><td class="p-1 border sticky left-0 z-10">TOTALES</td>'; 
-            finalProductOrder.forEach(p=>{
+            enrichedProductOrder.forEach(p=>{
                 let tQ=0; sortedClients.forEach(cli=>tQ+=clientData[cli].products[p.id]||0); 
                 const qtyDisplay = window.dataModule.getDisplayQty(tQ, p);
                 let dT = tQ > 0 ? (typeof qtyDisplay.value === 'number' ? `${qtyDisplay.value} ${qtyDisplay.unit}` : qtyDisplay.value) : '';
@@ -921,7 +912,6 @@
                 const batchLimp = _writeBatch(_db);
                 batchLimp.set(_doc(_collection(_db, `artifacts/${_appId}/users/${_userId}/cierres`)), cierreData);
                 
-                // Limpiamos SOLO las ventas y obsequios que se acaban de facturar en este cierre
                 ventasPostSnapshot.forEach(v => { batchLimp.delete(_doc(ventasRef, v.id)); });
                 obsequiosPostSnapshot.forEach(o => { batchLimp.delete(_doc(obsequiosRef, o.id)); });
 
@@ -964,7 +954,7 @@
             precios: p.precios || { und: 0, paq: 0, cj: 0 }
         }));
 
-        // PASO CLAVE: Si la venta tiene la propiedad tipoOperacion, se la pasamos de forma obligatoria a la UI.
+        // PASO CLAVE: Leer de la db el tipo, si no existe asumir 'venta' a menos que el origen diga Consignacion
         const tipoOp = venta.tipoOperacion || (venta.origen === 'Consignación' ? 'consignacion' : 'venta');
 
         showSharingOptions(venta, productosFormateados, venta.vaciosDevueltosPorTipo || {}, tipo, showVentasActualesView, tipoOp);
@@ -1128,6 +1118,7 @@
 
         // LEER EL SELECTOR EN LA VISTA DE EDICIÓN (LECTURA SEGURA SÍNCRONA)
         const editTipoOperacionSelect = document.getElementById('editTipoOperacion');
+        // Si el usuario no tocó el selector o no existe, mantenemos el que trajo de la db
         const nuevoTipoOperacion = editTipoOperacionSelect ? editTipoOperacionSelect.value : (_originalVentaForEdit.tipoOperacion || 'venta');
 
         _showModal('Confirmar Cambios', '¿Guardar cambios? Stock y saldos se ajustarán.', async () => {
@@ -1213,7 +1204,7 @@
                           };
                       });
                       
-                      // Actualizar también el tipoOperacion
+                      // Actualizamos el registro completo con el nuevo tipoOperacion
                       transaction.update(ventaRef, { 
                           productos: nItems, 
                           total: nTotal, 
@@ -1222,7 +1213,15 @@
                           tipoOperacion: nuevoTipoOperacion 
                       });
                 });
-                _originalVentaForEdit=null; _showModal('Éxito','Venta actualizada.', showVentasActualesView);
+                
+                // Actualizamos _ventasGlobal localmente para no esperar a Firebase y que la UI reaccione instantáneo
+                const index = _ventasGlobal.findIndex(v => v.id === _originalVentaForEdit.id);
+                if(index !== -1) {
+                    _ventasGlobal[index].tipoOperacion = nuevoTipoOperacion;
+                }
+
+                _originalVentaForEdit=null; 
+                _showModal('Éxito','Venta actualizada.', showVentasActualesView);
             } catch (error) { console.error("Error edit:", error); _showModal('Error', `Error: ${error.message}`); }
         }, 'Sí, Guardar', null, true);
     }
