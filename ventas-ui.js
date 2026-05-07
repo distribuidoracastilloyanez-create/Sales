@@ -409,7 +409,7 @@
             // AVISO LEGAL EN TEXTO PLANO
             if (tipoOperacion === 'consignacion' || venta.tipoOperacion === 'consignacion') {
                 ticket += '-'.repeat(LINE_WIDTH) + '\n';
-                wordWrap("La mercancia detallada en este recibo se entrega a modo de consignacion y sigue siendo propiedad exclusiva de Distribuidora Castillo Yanez.", LINE_WIDTH).forEach(line => { ticket += center(line) + '\n'; });
+                wordWrap("La mercancia detallada en este recibo se entrega a modo de consignacion y sera facturada por la Distribuidora en el momento posterior a su venta.", LINE_WIDTH).forEach(line => { ticket += center(line) + '\n'; });
                 ticket += '-'.repeat(LINE_WIDTH) + '\n\n\n';
             } else {
                 ticket += '\n\n';
