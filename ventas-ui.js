@@ -26,7 +26,7 @@
                     <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl text-center">
                         <h1 class="text-3xl font-bold text-gray-800 mb-6">Gestión de Ventas</h1>
                         <div class="space-y-4">
-                            <button id="nuevaVentaBtn" class="w-full px-6 py-3 bg-green-500 text-white rounded-lg shadow-md hover:bg-green-600">Nueva Venta</button>
+                            <button id="nuevaVentaBtn" class="w-full px-6 py-3 bg-green-500 text-white rounded-lg shadow-md hover:bg-green-600">Nueva Venta / Consignación</button>
                             <button id="ventasTotalesBtn" class="w-full px-6 py-3 bg-blue-500 text-white rounded-lg shadow-md hover:bg-blue-600">Ventas Totales</button>
                             <button id="backToMenuBtn" class="w-full px-6 py-3 bg-gray-400 text-white rounded-lg shadow-md hover:bg-gray-500">Volver</button>
                         </div>
@@ -44,7 +44,7 @@
                 <div class="bg-white/90 backdrop-blur-sm p-3 sm:p-4 rounded-lg shadow-xl flex flex-col h-full" style="min-height: calc(100vh - 1rem);">
                     <div id="venta-header-section" class="mb-2">
                         <div class="flex justify-between items-center mb-2"> 
-                            <h2 class="text-lg font-bold">Nueva Venta</h2> 
+                            <h2 class="text-lg font-bold">Nueva Operación</h2> 
                             <button id="backToVentasBtn" class="px-3 py-1.5 bg-gray-400 text-white text-xs rounded-lg shadow-md hover:bg-gray-500">Volver</button> 
                         </div>
                         <div id="client-search-container"> 
@@ -59,13 +59,23 @@
                                 <span class="font-medium">Cliente:</span> 
                                 <span id="selected-client-name" class="font-bold"></span>
                             </p> 
-                            <div id="tasasContainer" class="flex flex-row items-center gap-2"> 
+                            
+                            <!-- NUEVO: Selector de Tipo de Operación -->
+                            <div class="w-full sm:w-auto mt-2 sm:mt-0">
+                                <label for="tipoOperacionSelect" class="text-xs font-bold text-gray-600 block mb-1">Tipo de Documento:</label>
+                                <select id="tipoOperacionSelect" class="w-full sm:w-auto px-3 py-1.5 border border-gray-300 rounded-lg text-sm bg-gray-50 focus:ring-2 focus:ring-blue-500 outline-none font-semibold text-gray-800">
+                                    <option value="venta">🛒 Venta Regular (Factura/Nota)</option>
+                                    <option value="consignacion">📦 Dejada a Consignación</option>
+                                </select>
+                            </div>
+
+                            <div id="tasasContainer" class="flex flex-row items-center gap-2 mt-2 w-full sm:w-auto sm:mt-0"> 
                                 <div class="flex items-center space-x-1"> 
-                                    <label for="tasaCopInput" class="text-xs">COP:</label> 
+                                    <label for="tasaCopInput" class="text-xs font-bold text-gray-600">COP:</label> 
                                     <input type="number" id="tasaCopInput" placeholder="4000" class="w-16 px-1 py-1 text-sm border rounded-lg"> 
                                 </div> 
                                 <div class="flex items-center space-x-1"> 
-                                    <label for="tasaBsInput" class="text-xs">Bs.:</label> 
+                                    <label for="tasaBsInput" class="text-xs font-bold text-gray-600">Bs.:</label> 
                                     <input type="number" id="tasaBsInput" placeholder="36.5" class="w-16 px-1 py-1 text-sm border rounded-lg"> 
                                 </div> 
                             </div> 
@@ -103,7 +113,7 @@
                     </div>
                     <div id="venta-footer-section" class="mt-2 flex items-center justify-between hidden"> 
                         <span id="ventaTotal" class="text-base font-bold">$0.00</span> 
-                        <button id="generarTicketBtn" class="px-5 py-2 bg-green-500 text-white rounded-lg shadow-md hover:bg-green-600">Generar Ticket</button> 
+                        <button id="generarTicketBtn" class="px-5 py-2 bg-green-500 text-white rounded-lg shadow-md hover:bg-green-600 font-bold transition">Continuar...</button> 
                     </div>
                 </div> 
             </div>
@@ -134,18 +144,18 @@
                     <tr class="border-b hover:bg-gray-50">
                         <td class="py-2 px-2 text-center align-middle"> 
                             <input type="number" min="0" max="${maxQty}" value="${currentQty}" 
-                                   class="w-16 p-1 text-center border rounded-md" 
+                                   class="w-16 p-1 text-center border rounded-md font-bold text-gray-800 focus:ring-2 focus:ring-blue-500" 
                                    data-product-id="${prod.id}" 
                                    data-tipo-venta="${type}" 
                                    oninput="window.ventasModule.handleQuantityChange(event)"> 
                         </td> 
-                        <td class="py-2 px-2 text-left align-middle"> 
+                        <td class="py-2 px-2 text-left align-middle font-medium text-gray-700"> 
                             ${descText} <span class="text-xs text-gray-500">${prod.marca || 'S/M'}</span> 
                         </td> 
-                        <td class="py-2 px-2 text-left align-middle font-semibold price-toggle" onclick="window.ventasModule.toggleMoneda()">
+                        <td class="py-2 px-2 text-left align-middle font-bold text-gray-900 price-toggle" onclick="window.ventasModule.toggleMoneda()">
                             ${_formatCurrency(price, currentCurrency, tasaCOP, tasaBs)}
                         </td> 
-                        <td class="py-2 px-1 text-center align-middle text-xs">${stockText}</td>
+                        <td class="py-2 px-1 text-center align-middle text-xs font-semibold text-gray-500">${stockText}</td>
                     </tr>`;
 
                 if (vPor.cj) { 
@@ -167,12 +177,18 @@
 
         /**
          * Genera HTML del Ticket (Factura/Nota de Entrega)
+         * @param {string} tipoOperacion - 'venta' o 'consignacion'
          */
-        getTicketHTML: (venta, productosVendidos, vaciosDevueltos, tipo = 'ticket') => {
+        getTicketHTML: (venta, productosVendidos, vaciosDevueltos, tipo = 'ticket', tipoOperacion = 'venta') => {
             const fecha = venta.fecha ? (venta.fecha.toDate ? venta.fecha.toDate().toLocaleDateString('es-ES') : new Date(venta.fecha).toLocaleDateString('es-ES')) : new Date().toLocaleDateString('es-ES');
             const clienteNombre = venta.cliente ? venta.cliente.nombreComercial : venta.clienteNombre;
             const clienteNombrePersonal = (venta.cliente ? venta.cliente.nombrePersonal : venta.clienteNombrePersonal) || '';
-            const titulo = tipo === 'factura' ? 'FACTURA FISCAL' : 'TICKET DE VENTA';
+            
+            // LÓGICA DE TÍTULO PARA CONSIGNACIÓN
+            let titulo = tipo === 'factura' ? 'FACTURA FISCAL' : 'NOTA DE ENTREGA';
+            if (tipoOperacion === 'consignacion' || venta.tipoOperacion === 'consignacion') {
+                titulo = 'NOTA DE CONSIGNACIÓN';
+            }
             
             let total = 0;
             let productosHTML = '';
@@ -183,9 +199,7 @@
                 const precios = p.precios || { und: p.precioPorUnidad || 0 };
                 const cant = p.cantidadVendida || { cj: p.cantCj || 0, paq: p.cantPaq || 0, und: p.cantUnd || 0 };
                 
-                // VALIDACIÓN DE EXENTO DE IVA
                 let exentoLabel = (p.iva === 0 || p.iva === "0") ? " (E)" : "";
-                
                 let desc = `${p.segmento || ''} ${p.marca || ''} ${p.presentacion}${exentoLabel}`;
                 let qtyText = '', priceText = '', subtotal = 0;
 
@@ -241,6 +255,17 @@
                 prestadosHTML += `</tbody></table></div>`;
             }
 
+            // AVISO LEGAL PARA CONSIGNACIÓN
+            let notaConsignacionHTML = '';
+            if (tipoOperacion === 'consignacion' || venta.tipoOperacion === 'consignacion') {
+                notaConsignacionHTML = `
+                    <div class="mt-6 border-2 border-black p-4 text-center">
+                        <p class="text-xl font-bold uppercase mb-2">Aviso de Consignación</p>
+                        <p class="text-lg leading-tight">La mercancía detallada en este recibo se entrega a modo de consignación y sigue siendo propiedad exclusiva de Distribuidora Castillo Yañez hasta su liquidación total.</p>
+                    </div>
+                `;
+            }
+
             return `
                 <div id="temp-ticket-for-image" class="bg-white text-black p-4 font-bold" style="width: 768px; font-family: 'Courier New', Courier, monospace;">
                     <div class="text-center">
@@ -254,10 +279,10 @@
                     <table class="w-full text-3xl mt-6">
                         <thead>
                             <tr>
-                                <th class="pb-2 text-left">DESCRIPCION</th>
-                                <th class="pb-2 text-center">CANT</th>
-                                <th class="pb-2 text-right">PRECIO</th>
-                                <th class="pb-2 text-right">SUBTOTAL</th>
+                                <th class="pb-2 text-left border-b border-black">DESCRIPCION</th>
+                                <th class="pb-2 text-center border-b border-black">CANT</th>
+                                <th class="pb-2 text-right border-b border-black">PRECIO</th>
+                                <th class="pb-2 text-right border-b border-black">SUBTOTAL</th>
                             </tr>
                         </thead>
                         <tbody>${productosHTML}</tbody>
@@ -267,6 +292,9 @@
                     </div>
                     ${vaciosHTML}
                     ${prestadosHTML}
+                    
+                    ${notaConsignacionHTML}
+
                     <div class="text-center mt-16">
                         <p class="border-t border-black w-96 mx-auto"></p>
                         <p class="mt-4 text-3xl">${clienteNombrePersonal}</p>
@@ -277,14 +305,21 @@
 
         /**
          * Genera String de Texto Plano del Ticket (para clipboard/WhatsApp)
+         * @param {string} tipoOperacion - 'venta' o 'consignacion'
          */
-        getTicketRawText: (venta, productosVendidos, vaciosDevueltos) => {
+        getTicketRawText: (venta, productosVendidos, vaciosDevueltos, tipoOperacion = 'venta') => {
             const fecha = venta.fecha ? (venta.fecha.toDate ? venta.fecha.toDate().toLocaleDateString('es-ES') : new Date(venta.fecha).toLocaleDateString('es-ES')) : new Date().toLocaleDateString('es-ES');
             const clienteNombre = _toTitleCase(venta.cliente ? venta.cliente.nombreComercial : venta.clienteNombre);
             const clienteNombrePersonal = _toTitleCase((venta.cliente ? venta.cliente.nombrePersonal : venta.clienteNombrePersonal) || '');
             const LINE_WIDTH = 48; 
             let total = 0; 
             let ticket = '';
+            
+            // LÓGICA DE TÍTULO PARA CONSIGNACIÓN EN TEXTO PLANO
+            let titulo = 'Nota de Entrega';
+            if (tipoOperacion === 'consignacion' || venta.tipoOperacion === 'consignacion') {
+                titulo = 'NOTA DE CONSIGNACION';
+            }
             
             const center = (text) => text.padStart(Math.floor((LINE_WIDTH - text.length) / 2) + text.length, ' ').padEnd(LINE_WIDTH, ' ');
             const wordWrap = (text, maxWidth) => { 
@@ -299,8 +334,8 @@
                 return lines; 
             };
 
-            ticket += center('Distribuidora Castillo Yañez') + '\n';
-            ticket += center('Nota de Entrega') + '\n';
+            ticket += center('Distribuidora Castillo Yanez') + '\n';
+            ticket += center(`*** ${titulo} ***`) + '\n';
             ticket += center('(no valido como factura fiscal)') + '\n\n';
 
             wordWrap(`Cliente: ${clienteNombre}`, LINE_WIDTH).forEach(line => { ticket += line + '\n'; });
@@ -310,11 +345,11 @@
 
             if (productosVendidos.length > 0) {
                 ticket += 'Producto'.padEnd(26) + 'Cant'.padStart(6) + 'Precio'.padStart(8) + 'Subt'.padStart(8) + '\n';
+                ticket += '-'.repeat(LINE_WIDTH) + '\n';
                 productosVendidos.forEach(p => {
                     const precios = p.precios || { und: p.precioPorUnidad || 0 };
                     const cant = p.cantidadVendida || { cj: p.cantCj || 0, paq: p.cantPaq || 0, und: p.cantUnd || 0 };
                     
-                    // VALIDACIÓN DE EXENTO DE IVA
                     let exentoLabel = (p.iva === 0 || p.iva === "0") ? " (E)" : "";
 
                     let desc = _toTitleCase(`${p.segmento || ''} ${p.marca || ''} ${p.presentacion}${exentoLabel}`);
@@ -345,7 +380,7 @@
 
             const tiposConDev = Object.entries(vaciosDevueltos || {}).filter(([t, c]) => c > 0);
             if (tiposConDev.length > 0) {
-                ticket += '-'.repeat(LINE_WIDTH) + '\n' + center('VACÍOS DEVUELTOS') + '\n';
+                ticket += '-'.repeat(LINE_WIDTH) + '\n' + center('VACIOS DEVUELTOS') + '\n';
                 tiposConDev.forEach(([t, c]) => {
                     ticket += t.padEnd(LINE_WIDTH - `${c} CJ`.length) + `${c} CJ` + '\n';
                 });
@@ -362,16 +397,26 @@
             });
 
             if (prestados.length > 0) {
-                ticket += '-'.repeat(LINE_WIDTH) + '\n' + center('VACÍOS PRESTADOS') + '\n';
+                ticket += '-'.repeat(LINE_WIDTH) + '\n' + center('VACIOS PRESTADOS') + '\n';
                 prestados.forEach(p => {
                     ticket += p.tipo.padEnd(LINE_WIDTH - `${p.cant} CJ`.length) + `${p.cant} CJ` + '\n';
                 });
             }
 
             ticket += '-'.repeat(LINE_WIDTH) + '\n';
-            ticket += `TOTAL: $${total.toFixed(2)}`.padStart(LINE_WIDTH, ' ') + '\n\n\n\n\n';
+            ticket += `TOTAL: $${total.toFixed(2)}`.padStart(LINE_WIDTH, ' ') + '\n\n';
+            
+            // AVISO LEGAL EN TEXTO PLANO
+            if (tipoOperacion === 'consignacion' || venta.tipoOperacion === 'consignacion') {
+                ticket += '-'.repeat(LINE_WIDTH) + '\n';
+                wordWrap("La mercancia detallada en este recibo se entrega a modo de consignacion y sigue siendo propiedad exclusiva de Distribuidora Castillo Yanez.", LINE_WIDTH).forEach(line => { ticket += center(line) + '\n'; });
+                ticket += '-'.repeat(LINE_WIDTH) + '\n\n\n';
+            } else {
+                ticket += '\n\n';
+            }
+
             ticket += center('________________________') + '\n';
-            ticket += center(clienteNombrePersonal) + '\n\n';
+            ticket += center(clienteNombrePersonal) + '\n';
             ticket += '-'.repeat(LINE_WIDTH) + '\n';
             return ticket;
         },
@@ -385,10 +430,10 @@
                     <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl text-center">
                         <h2 class="text-2xl font-bold text-gray-800 mb-6">Ventas Totales</h2>
                         <div class="space-y-4">
-                            <button id="ventasActualesBtn" class="w-full px-6 py-3 bg-teal-500 text-white rounded-lg shadow-md hover:bg-teal-600">Ventas Actuales</button>
-                            <button id="cierreVentasBtn" class="w-full px-6 py-3 bg-red-500 text-white rounded-lg shadow-md hover:bg-red-600">Cierre de Ventas</button>
+                            <button id="ventasActualesBtn" class="w-full px-6 py-3 bg-teal-500 text-white font-bold rounded-lg shadow-md hover:bg-teal-600 transition">Listado de Ventas y Consignaciones</button>
+                            <button id="cierreVentasBtn" class="w-full px-6 py-3 bg-red-600 text-white font-bold rounded-lg shadow-md hover:bg-red-700 transition">Generar Cierre de Jornada</button>
                         </div>
-                        <button id="backToVentasBtn" class="mt-6 w-full px-6 py-3 bg-gray-400 text-white rounded-lg shadow-md hover:bg-gray-500">Volver</button>
+                        <button id="backToVentasBtn" class="mt-6 w-full px-6 py-3 bg-gray-400 text-white font-bold rounded-lg shadow-md hover:bg-gray-500 transition">Volver</button>
                     </div> 
                 </div> 
             </div>
@@ -401,12 +446,13 @@
             <div class="p-4 pt-8"> 
                 <div class="container mx-auto"> 
                     <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl text-center">
-                        <h2 class="text-2xl font-bold text-gray-800 mb-6">Cierre de Ventas</h2>
+                        <h2 class="text-2xl font-bold text-gray-800 mb-6">Cierre de Jornada</h2>
+                        <p class="text-gray-600 mb-6 text-sm">Este proceso agrupará todas las ventas y consignaciones activas en un solo reporte de cierre.</p>
                         <div class="space-y-4">
-                            <button id="verCierreBtn" class="w-full px-6 py-3 bg-cyan-500 text-white rounded-lg shadow-md hover:bg-cyan-600">Ver Cierre</button>
-                            <button id="ejecutarCierreBtn" class="w-full px-6 py-3 bg-red-600 text-white rounded-lg shadow-md hover:bg-red-700">Ejecutar Cierre</button>
+                            <button id="verCierreBtn" class="w-full px-6 py-3 bg-cyan-500 text-white font-bold rounded-lg shadow-md hover:bg-cyan-600 transition">Ver Vista Previa del Cierre</button>
+                            <button id="ejecutarCierreBtn" class="w-full px-6 py-3 bg-red-600 text-white font-bold rounded-lg shadow-md hover:bg-red-700 transition">Ejecutar Cierre Definitivo</button>
                         </div>
-                        <button id="backToVentasTotalesBtn" class="mt-6 w-full px-6 py-3 bg-gray-400 text-white rounded-lg shadow-md hover:bg-gray-500">Volver</button>
+                        <button id="backToVentasTotalesBtn" class="mt-6 w-full px-6 py-3 bg-gray-400 text-white font-bold rounded-lg shadow-md hover:bg-gray-500 transition">Volver</button>
                     </div> 
                 </div> 
             </div>
@@ -415,84 +461,121 @@
         /**
          * Vista: Edición de Venta
          */
-        getEditSaleTemplate: (venta, tiposVacio) => `
+        getEditSaleTemplate: (venta, tiposVacio) => {
+            const isConsignacion = venta.tipoOperacion === 'consignacion';
+            
+            return `
             <div class="p-2 sm:p-4 w-full"> 
-                <div class="bg-white/90 backdrop-blur-sm p-4 sm:p-6 rounded-lg shadow-xl flex flex-col h-full" style="min-height: calc(100vh - 2rem);">
+                <div class="bg-white/90 backdrop-blur-sm p-4 sm:p-6 rounded-lg shadow-xl flex flex-col h-full border-t-4 border-yellow-500" style="min-height: calc(100vh - 2rem);">
                     <div id="venta-header-section" class="mb-4">
                         <div class="flex justify-between items-center mb-4"> 
-                            <h2 class="text-xl font-bold">Editando Venta</h2> 
-                            <button id="backToVentasBtn" class="px-4 py-2 bg-gray-400 text-white text-sm rounded-lg shadow-md hover:bg-gray-500">Volver</button> 
+                            <h2 class="text-xl font-bold">Editando Registro</h2> 
+                            <button id="backToVentasBtn" class="px-4 py-2 bg-gray-400 text-white text-sm rounded-lg shadow-md hover:bg-gray-500 transition">Volver</button> 
                         </div>
-                        <div class="p-4 bg-gray-100 rounded-lg"> 
-                            <p><span class="font-medium">Cliente:</span> <span class="font-bold">${venta.clienteNombre || 'N/A'}</span></p> 
-                            <p class="text-sm"><span class="font-medium">Fecha Orig:</span> ${venta.fecha?.toDate ? venta.fecha.toDate().toLocaleString('es-ES') : 'N/A'}</p> 
+                        <div class="p-4 bg-gray-100 rounded-lg border border-gray-200 shadow-sm"> 
+                            <p><span class="font-medium">Cliente:</span> <span class="font-bold text-gray-800">${venta.clienteNombre || 'N/A'}</span></p> 
+                            <p class="text-sm"><span class="font-medium">Fecha:</span> ${venta.fecha?.toDate ? venta.fecha.toDate().toLocaleString('es-ES') : 'N/A'}</p> 
+                            
+                            <div class="mt-3">
+                                <label for="editTipoOperacion" class="text-xs font-bold text-gray-600 block mb-1">Tipo de Operación Registrada:</label>
+                                <select id="editTipoOperacion" class="w-full sm:w-auto px-3 py-1.5 border border-gray-300 rounded text-sm bg-white focus:ring-2 focus:ring-yellow-500 outline-none font-bold text-gray-800">
+                                    <option value="venta" ${!isConsignacion ? 'selected' : ''}>🛒 Venta Regular</option>
+                                    <option value="consignacion" ${isConsignacion ? 'selected' : ''}>📦 Consignación</option>
+                                </select>
+                            </div>
                         </div>
                     </div>
                     <div id="vacios-devueltos-section" class="mb-4"> 
-                        <h3 class="text-sm font-semibold text-cyan-700 mb-1">Vacíos Devueltos:</h3> 
+                        <h3 class="text-sm font-semibold text-cyan-700 mb-1 border-b border-cyan-100 pb-1">Vacíos Devueltos en esta operación:</h3> 
                         <div class="grid grid-cols-3 gap-2"> 
                             ${tiposVacio.map(t => `
                                 <div>
-                                    <label for="vacios-${t.replace(/\s+/g,'-')}" class="text-xs mb-1 block">${t}</label>
-                                    <input type="number" min="0" value="${venta.vaciosDevueltosPorTipo ? (venta.vaciosDevueltosPorTipo[t] || 0) : 0}" id="vacios-${t.replace(/\s+/g,'-')}" class="w-16 p-1 text-center border rounded-md" data-tipo-vacio="${t}" oninput="window.ventasModule.handleTipoVacioChange(event)">
+                                    <label for="vacios-${t.replace(/\s+/g,'-')}" class="text-xs mb-1 block font-medium">${t}</label>
+                                    <input type="number" min="0" value="${venta.vaciosDevueltosPorTipo ? (venta.vaciosDevueltosPorTipo[t] || 0) : 0}" id="vacios-${t.replace(/\s+/g,'-')}" class="w-16 p-1.5 text-center border border-gray-300 rounded-md focus:ring-2 focus:ring-cyan-500 font-bold text-gray-800" data-tipo-vacio="${t}" oninput="window.ventasModule.handleTipoVacioChange(event)">
                                 </div>
                             `).join('')} 
                         </div> 
                     </div>
-                    <div id="inventarioTableContainer" class="animate-fade-in flex-grow flex flex-col overflow-hidden">
+                    <div id="inventarioTableContainer" class="flex-grow flex flex-col overflow-hidden">
                         <div class="mb-2"> 
-                            <label for="rubroFilter" class="text-xs">Filtrar Rubro:</label> 
-                            <select id="rubroFilter" class="w-full px-2 py-1 border rounded-lg text-sm"><option value="">Todos</option></select> 
+                            <label for="rubroFilter" class="text-xs font-bold text-gray-600">Filtrar Rubro:</label> 
+                            <select id="rubroFilter" class="w-full px-2 py-1 border border-gray-300 rounded text-sm bg-white focus:ring-2 focus:ring-yellow-500 outline-none"><option value="">Todos</option></select> 
                         </div>
-                        <div class="overflow-auto flex-grow rounded-lg shadow"> 
-                            <table class="min-w-full bg-white text-xs">
-                                <thead class="bg-gray-200 sticky top-0 z-10">
-                                    <tr class="uppercase"> 
-                                        <th class="py-2 px-1 text-center">Cant.</th> 
-                                        <th class="py-2 px-2 text-left">Producto</th> 
-                                        <th class="py-2 px-2 text-left price-toggle" onclick="window.ventasModule.toggleMoneda()">Precio</th> 
-                                        <th class="py-2 px-1 text-center">Stock Disp.</th> 
+                        <div class="overflow-auto flex-grow rounded-lg shadow border border-gray-200"> 
+                            <table class="min-w-full bg-white text-xs relative">
+                                <thead class="bg-gray-800 text-white sticky top-0 z-10 shadow-sm">
+                                    <tr class="uppercase tracking-wider"> 
+                                        <th class="py-2.5 px-1 text-center font-semibold">Cant.</th> 
+                                        <th class="py-2.5 px-2 text-left font-semibold">Producto a editar</th> 
+                                        <th class="py-2.5 px-2 text-left font-semibold price-toggle" onclick="window.ventasModule.toggleMoneda()">Precio Unit.</th> 
+                                        <th class="py-2.5 px-1 text-center font-semibold">Stock</th> 
                                     </tr>
                                 </thead>
-                                <tbody id="inventarioTableBody" class="text-gray-600"></tbody>
+                                <tbody id="inventarioTableBody" class="text-gray-600 divide-y divide-gray-100"></tbody>
                             </table> 
                         </div>
                     </div>
-                    <div id="venta-footer-section" class="mt-4 flex items-center justify-between"> 
-                        <span id="ventaTotal" class="text-lg font-bold">$0.00</span> 
-                        <button id="saveChangesBtn" class="px-6 py-3 bg-blue-500 text-white rounded-lg shadow-md hover:bg-blue-600">Guardar Cambios</button> 
+                    <div id="venta-footer-section" class="mt-4 flex flex-col sm:flex-row items-center justify-between gap-4 border-t border-gray-200 pt-4"> 
+                        <div class="w-full sm:w-auto text-center sm:text-left bg-gray-50 px-4 py-2 rounded border border-gray-200">
+                            <span class="text-xs font-bold text-gray-500 uppercase block mb-1">Total de la Operación</span>
+                            <span id="ventaTotal" class="text-xl font-black text-gray-900">$0.00</span> 
+                        </div>
+                        <button id="saveChangesBtn" class="w-full sm:w-auto px-8 py-3 bg-yellow-500 text-white font-bold rounded-lg shadow-md hover:bg-yellow-600 transition uppercase tracking-wide">Guardar Cambios</button> 
                     </div>
                 </div> 
             </div>
-        `,
+            `;
+        },
         
         /**
          * Renderiza la lista simple de ventas (Historial)
          */
         getSalesListTemplate: (ventasList) => {
-            if (ventasList.length === 0) return `<p class="text-center text-gray-500">No hay ventas registradas.</p>`;
+            if (ventasList.length === 0) return `<p class="text-center text-gray-500 p-8 font-medium bg-gray-50 rounded-lg border border-dashed">No hay registros de ventas ni consignaciones.</p>`;
             
-            let html = `<table class="min-w-full bg-white text-sm"><thead class="bg-gray-200 sticky top-0 z-10"><tr> <th class="py-2 px-3 border-b text-left">Cliente</th> <th class="py-2 px-3 border-b text-left">Fecha</th> <th class="py-2 px-3 border-b text-right">Total</th> <th class="py-2 px-3 border-b text-center">Acciones</th> </tr></thead><tbody>`;
+            let html = `
+            <div class="overflow-x-auto shadow-sm rounded-lg border border-gray-200">
+            <table class="min-w-full bg-white text-sm">
+                <thead class="bg-gray-800 text-white sticky top-0 z-10 shadow">
+                    <tr> 
+                        <th class="py-3 px-3 text-left font-semibold uppercase tracking-wider text-xs">Cliente / Tipo</th> 
+                        <th class="py-3 px-3 text-left font-semibold uppercase tracking-wider text-xs">Fecha</th> 
+                        <th class="py-3 px-3 text-right font-semibold uppercase tracking-wider text-xs">Total</th> 
+                        <th class="py-3 px-3 text-center font-semibold uppercase tracking-wider text-xs">Acciones</th> 
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100">`;
             
             ventasList.forEach(v => {
                 const fV = v.fecha?.toDate ? v.fecha.toDate() : new Date(0);
                 const fF = fV.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' });
                 
+                // DETECCIÓN DE CONSIGNACIÓN PARA LA ETIQUETA VISUAL
+                const isConsignacion = v.tipoOperacion === 'consignacion' || v.origen === 'Consignación';
+                const rowBadge = isConsignacion 
+                    ? `<span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-black bg-orange-100 text-orange-800 border border-orange-200 uppercase tracking-wider mt-1">📦 Consignación</span>` 
+                    : `<span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-green-50 text-green-700 border border-green-200 uppercase tracking-wider mt-1">🛒 Venta Regular</span>`;
+                
+                const rowBg = isConsignacion ? 'hover:bg-orange-50/50' : 'hover:bg-blue-50/50';
+
                 html += `
-                <tr class="hover:bg-gray-50">
-                    <td class="py-2 px-3 border-b align-middle">${v.clienteNombre || 'N/A'}</td>
-                    <td class="py-2 px-3 border-b align-middle">${fF}</td>
-                    <td class="py-2 px-3 border-b text-right font-semibold align-middle">$${(v.total || 0).toFixed(2)}</td>
-                    <td class="py-2 px-3 border-b">
-                        <div class="flex flex-col items-center space-y-1">
-                            <button onclick="window.ventasModule.showPastSaleOptions('${v.id}','ticket')" class="w-full px-3 py-1.5 bg-blue-500 text-white text-xs rounded-lg hover:bg-blue-600">Compartir</button>
-                            <button onclick="window.ventasModule.editVenta('${v.id}')" class="w-full px-3 py-1.5 bg-yellow-500 text-white text-xs rounded-lg hover:bg-yellow-600">Editar</button>
-                            <button onclick="window.ventasModule.deleteVenta('${v.id}')" class="w-full px-3 py-1.5 bg-red-500 text-white text-xs rounded-lg hover:bg-red-600">Eliminar</button>
+                <tr class="${rowBg} transition-colors">
+                    <td class="py-3 px-3 align-middle">
+                        <div class="font-bold text-gray-900">${v.clienteNombre || 'N/A'}</div>
+                        ${rowBadge}
+                    </td>
+                    <td class="py-3 px-3 align-middle text-gray-600 font-medium">${fF}</td>
+                    <td class="py-3 px-3 text-right font-black text-gray-800 align-middle text-base">$${(v.total || 0).toFixed(2)}</td>
+                    <td class="py-2 px-3 align-middle">
+                        <div class="flex flex-col sm:flex-row items-center justify-center gap-1.5 w-full">
+                            <button onclick="window.ventasModule.showPastSaleOptions('${v.id}','ticket')" class="w-full sm:w-auto px-3 py-1.5 bg-blue-600 text-white text-xs font-bold rounded shadow-sm hover:bg-blue-700 transition">Ver</button>
+                            <button onclick="window.ventasModule.editVenta('${v.id}')" class="w-full sm:w-auto px-3 py-1.5 bg-yellow-500 text-white text-xs font-bold rounded shadow-sm hover:bg-yellow-600 transition text-gray-900">Edit</button>
+                            <button onclick="window.ventasModule.deleteVenta('${v.id}')" class="w-full sm:w-auto px-3 py-1.5 bg-red-600 text-white text-xs font-bold rounded shadow-sm hover:bg-red-700 transition">Del</button>
                         </div>
                     </td>
                 </tr>`;
             });
-            html += `</tbody></table>`;
+            html += `</tbody></table></div>`;
             return html;
         }
     };
