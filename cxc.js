@@ -82,7 +82,7 @@
         _orderBy = dependencies.orderBy;
         _deleteDoc = dependencies.deleteDoc;
         
-        console.log("Módulo CXC inicializado. Public ID:", PUBLIC_DATA_ID);
+        console.log("Módulo CXC inicializado (Soporte Consignaciones). Public ID:", PUBLIC_DATA_ID);
     };
 
     window.showCXCView = async function() {
@@ -385,6 +385,16 @@
                 else if (t.type === 'E') typeLabel = '💵 Efectivo';
                 else if (t.type === 'R') typeLabel = '🧾 Retenc';
                 else if (t.type === '%') typeLabel = '📉 Dscto';
+                else if (t.type === 'C') { // NUEVO: Detección de Consignación
+                    typeLabel = '📦 Consignación';
+                    // Reutilizamos el botón de búsqueda para que el vendedor pueda ver el recibo digital si lo desea
+                    actionButton = `
+                        <button onclick="window.cxcModule.searchSaleDetails('${safeClientName}', '${t.date}', ${t.amount})" 
+                            class="p-1 bg-orange-100 text-orange-700 rounded-full border border-orange-200 hover:bg-orange-200 flex-shrink-0 transition-colors ml-1" title="Ver Detalle">
+                            🔍
+                        </button>
+                    `;
+                }
 
                 if (t.type === 'T' || t.type === 'E') {
                     const parts = t.date.split('/');
@@ -408,10 +418,10 @@
                 rowsHTML += `
                     <tr class="border-b hover:bg-gray-50 text-sm">
                         <td class="py-2 px-2 text-gray-600 whitespace-nowrap align-top text-xs">${t.date}</td>
-                        <td class="py-2 px-2 font-medium align-top text-xs">${typeLabel}</td>
+                        <td class="py-2 px-2 font-medium align-top text-xs ${t.type === 'C' ? 'text-orange-700' : ''}">${typeLabel}</td>
                         <td class="py-2 px-2 align-top text-right">
                             <div class="flex justify-end items-center">
-                                <span class="${amountClass} font-bold text-sm">${sign}$${t.amount.toFixed(2)}</span>
+                                <span class="${t.type === 'C' ? 'text-orange-600' : amountClass} font-bold text-sm">${sign}$${t.amount.toFixed(2)}</span>
                                 ${actionButton}
                             </div>
                             ${bsAmountHtml}
@@ -463,7 +473,7 @@
     }
 
     async function searchSaleDetails(clientName, dateStr, amount) {
-        _showModal('Buscando', `Buscando el recibo original de la venta...`, null, '', null, false);
+        _showModal('Buscando', `Buscando el recibo original...`, null, '', null, false);
         try {
             // 1. OBTENER USUARIOS
             let userIds = [_userId]; 
@@ -590,7 +600,8 @@
                         ventaFicticia, 
                         productosFormateados, 
                         foundVenta.vaciosDevueltosPorTipo || {}, 
-                        'Recuperación de Venta'
+                        'Recuperación de Venta',
+                        foundVenta.tipoOperacion // PASAMOS EL TIPO DE OPERACIÓN (venta o consignacion)
                     );
 
                     // Render oculto
@@ -635,7 +646,7 @@
                                                 try {
                                                     await navigator.share({ 
                                                         files: [new File([blob], `Ticket_${ventaFicticia.cliente.nombreComercial.replace(/[\s/]/g,'_')}.png`, {type:"image/png"})],
-                                                        title: 'Ticket de Venta'
+                                                        title: 'Ticket'
                                                     });
                                                 } catch(e) { console.warn("Share cancelado", e); }
                                             } else {
@@ -691,6 +702,7 @@
             else if (type === 'E') { typeLabel = '💵 Efectivo'; rowColor = 'text-green-600'; }
             else if (type === 'R') { typeLabel = '🧾 Retenc'; rowColor = 'text-green-600'; }
             else if (type === '%') { typeLabel = '📉 Dscto'; rowColor = 'text-blue-600'; }
+            else if (type === 'C') { typeLabel = '📦 Consignación'; rowColor = 'text-orange-600'; } // NUEVO
 
             if (type === 'T' || type === 'E') {
                 const parts = t.date.split('/');
@@ -714,7 +726,7 @@
             rows += `
                 <tr class="border-b border-gray-200">
                     <td class="py-2 px-2 text-sm text-gray-700">${t.date}</td>
-                    <td class="py-2 px-2 text-sm font-semibold text-gray-800">${typeLabel}</td>
+                    <td class="py-2 px-2 text-sm font-semibold text-gray-800 ${type === 'C' ? 'text-orange-700' : ''}">${typeLabel}</td>
                     <td class="py-2 px-2 text-right">
                         <div class="text-sm font-bold ${rowColor}">$${t.amount.toFixed(2)}</div>
                         ${bsAmount}
@@ -863,8 +875,12 @@
                         let type = (row[1] || '').toString().trim().toUpperCase(); 
                         let amountRaw = 0;
                         
-                        // Si no hay "Tipo" en la columna 2, asumimos que es Venta (F) por defecto
-                        if (!type) type = 'F';
+                        // NUEVO: INTERPRETACIÓN DE CONSIGNACIÓN
+                        if (type.startsWith('C') || type.includes('CONSIG')) {
+                            type = 'C';
+                        } else if (!type) {
+                            type = 'F'; // Asumimos Factura si está vacío
+                        }
 
                         if (type === 'R') amountRaw = row[6]; else amountRaw = row[2];
 
