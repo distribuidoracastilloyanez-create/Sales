@@ -261,7 +261,7 @@
                 notaConsignacionHTML = `
                     <div class="mt-6 border-2 border-black p-4 text-center">
                         <p class="text-xl font-bold uppercase mb-2">Aviso de Consignación</p>
-                        <p class="text-lg leading-tight">La mercancía detallada en este recibo se entrega a modo de consignación y sigue siendo propiedad exclusiva de Distribuidora Castillo Yañez hasta su liquidación total.</p>
+                        <p class="text-lg leading-tight">La mercancía detallada en este recibo se entrega a modo de consignación y solo sera facturada por parte de la Distribuidora de manera posterior a su venta.</p>
                     </div>
                 `;
             }
