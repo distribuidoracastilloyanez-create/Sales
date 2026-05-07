@@ -82,7 +82,7 @@
         _orderBy = dependencies.orderBy;
         _deleteDoc = dependencies.deleteDoc;
         
-        console.log("Módulo CXC inicializado (Soporte Consignaciones). Public ID:", PUBLIC_DATA_ID);
+        console.log("Módulo CXC inicializado (Desglose Estricto según Excel). Public ID:", PUBLIC_DATA_ID);
     };
 
     window.showCXCView = async function() {
@@ -220,7 +220,6 @@
     async function syncAndLoadData() {
         const statusLabel = document.getElementById('dataStatusLabel');
         
-        // 1. Intentar cargar datos locales primero (Estrategia "Cache-First" para velocidad y offline)
         const localData = await loadFromLocalDB();
         const localDateStr = localStorage.getItem(LS_KEY_DATE);
         
@@ -230,7 +229,6 @@
             if (statusLabel) statusLabel.textContent = "⚡ Datos locales (Verificando...)";
         }
 
-        // 2. Verificar actualización en el servidor
         try {
             const metaRef = _doc(_db, CXC_COLLECTION_PATH, 'metadata');
             const metaSnap = await _getDoc(metaRef);
@@ -249,7 +247,6 @@
                         const data = listSnap.data();
                         _cxcDataCache = data.clients || [];
                         
-                        // Guardar en IndexedDB
                         await saveToLocalDB(_cxcDataCache);
                         localStorage.setItem(LS_KEY_DATE, serverDate.toISOString());
                         
@@ -283,7 +280,6 @@
 
     function renderCXCList(searchTerm = '') {
         const container = document.getElementById('cxcListContainer');
-        // FIX: Evita error si el usuario cambió de menú antes de que termine la carga
         if (!container) return; 
 
         if (!_cxcDataCache || _cxcDataCache.length === 0) {
@@ -303,7 +299,6 @@
             return;
         }
 
-        // Obtener la tasa más reciente disponible para calcular los totales en Bs
         const availableDates = Object.keys(_tasasCache).sort();
         const latestDate = availableDates.length > 0 ? availableDates[availableDates.length - 1] : null;
         const currentRate = latestDate ? _tasasCache[latestDate] : 0;
@@ -316,7 +311,6 @@
             const bgClass = amount > 0 ? 'bg-white' : 'bg-green-50';
             const safeName = client.name.replace(/'/g, "\\'").replace(/"/g, '&quot;');
             
-            // HTML para mostrar el total en bolívares en la lista principal
             let bsTotalHtml = '';
             if (currentRate > 0 && amount !== 0) {
                 const bsTotal = amount * currentRate;
@@ -358,12 +352,25 @@
         const client = _cxcDataCache.find(c => c.name === clientName);
         if (!client) return;
 
-        let rowsHTML = '';
         const safeClientName = client.name.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+        let rowsHTML = '';
+        
+        // 1. EXTRAER TRANSACCIONES
+        const allTxs = client.transactions || [];
+        
+        // 2. MATEMÁTICA EXACTA BASADA EN EXCEL
+        const deudaTotal = client.amount || 0;
+        
+        // Extraemos las consignaciones para sumarlas. IMPORTANTE: Las dejamos también en el array 
+        // original (allTxs) para que el historial muestre EXACTAMENTE lo que dice el Excel en orden cronológico.
+        const consigTxs = allTxs.filter(t => t.type === 'C');
+        const totalConsignado = consigTxs.reduce((sum, t) => sum + t.amount, 0);
+        
+        const totalFacturado = deudaTotal - totalConsignado;
 
-        if (client.transactions && client.transactions.length > 0) {
+        if (allTxs.length > 0) {
             // INVERTIMOS EL ARREGLO PARA MOSTRAR LAS MÁS NUEVAS PRIMERO
-            const reversedTransactions = [...client.transactions].reverse();
+            const reversedTransactions = [...allTxs].reverse();
             
             reversedTransactions.forEach(t => {
                 const amountClass = t.amount > 0 ? 'text-red-600' : 'text-green-600';
@@ -385,15 +392,11 @@
                 else if (t.type === 'E') typeLabel = '💵 Efectivo';
                 else if (t.type === 'R') typeLabel = '🧾 Retenc';
                 else if (t.type === '%') typeLabel = '📉 Dscto';
-                else if (t.type === 'C') { // NUEVO: Detección de Consignación
+                else if (t.type === 'C') { 
                     typeLabel = '📦 Consignación';
-                    // Reutilizamos el botón de búsqueda para que el vendedor pueda ver el recibo digital si lo desea
-                    actionButton = `
-                        <button onclick="window.cxcModule.searchSaleDetails('${safeClientName}', '${t.date}', ${t.amount})" 
-                            class="p-1 bg-orange-100 text-orange-700 rounded-full border border-orange-200 hover:bg-orange-200 flex-shrink-0 transition-colors ml-1" title="Ver Detalle">
-                            🔍
-                        </button>
-                    `;
+                    // Nota: Aquí quitamos la lupa individual para las consignaciones.
+                    // Ahora la lupa de consignación estará UNIFICADA arriba.
+                    actionButton = ``;
                 }
 
                 if (t.type === 'T' || t.type === 'E') {
@@ -430,26 +433,44 @@
                 `;
             });
         } else {
-            rowsHTML = '<tr><td colspan="3" class="p-4 text-center text-gray-500 text-sm">Sin movimientos detallados.</td></tr>';
+            rowsHTML = '<tr><td colspan="3" class="p-4 text-center text-gray-500 text-sm">Sin movimientos recientes.</td></tr>';
         }
 
         const modalHTML = `
             <div class="text-left">
-                <div class="bg-gray-100 p-3 rounded-lg mb-3 shadow-inner">
-                    <p class="text-[10px] text-gray-500 uppercase tracking-wider font-bold mb-0.5">Cliente</p>
-                    <h2 class="text-lg font-bold text-gray-800 leading-tight">${client.name}</h2>
-                    <div class="flex flex-col mt-2 border-t border-gray-300 pt-2">
-                        <div class="flex justify-between items-end w-full">
-                            <span class="font-bold text-gray-600 text-sm">Saldo Total:</span>
-                            <span class="font-bold text-xl leading-none ${client.amount > 0 ? 'text-red-600' : 'text-green-600'}">
-                                $${client.amount.toLocaleString('en-US', {minimumFractionDigits: 2})}
+                <div class="bg-white border border-gray-200 p-4 rounded-lg mb-4 shadow-sm">
+                    <p class="text-[10px] text-gray-500 uppercase tracking-wider font-bold mb-1">Resumen de Cuenta</p>
+                    <h2 class="text-xl font-black text-gray-800 leading-tight mb-4">${client.name}</h2>
+                    
+                    <div class="space-y-3">
+                        <div class="flex justify-between items-center bg-gray-50 p-2 rounded border border-gray-200">
+                            <span class="font-bold text-gray-700 text-sm">DEUDA TOTAL:</span>
+                            <span class="font-black text-xl ${deudaTotal > 0 ? 'text-red-600' : 'text-green-600'}">
+                                $${deudaTotal.toLocaleString('en-US', {minimumFractionDigits: 2})}
                             </span>
                         </div>
+                        
+                        ${totalConsignado > 0 ? `
+                        <div class="flex justify-between items-center px-2">
+                            <span class="font-bold text-gray-600 text-sm">Venta Facturada:</span>
+                            <span class="font-bold text-lg text-slate-700">$${totalFacturado.toLocaleString('en-US', {minimumFractionDigits: 2})}</span>
+                        </div>
+                        
+                        <div class="flex justify-between items-center bg-orange-50 p-2 rounded border border-orange-200">
+                            <span class="font-bold text-orange-800 text-sm">Consignación:</span>
+                            <div class="flex items-center gap-2">
+                                <span class="font-black text-lg text-orange-600">$${totalConsignado.toLocaleString('en-US', {minimumFractionDigits: 2})}</span>
+                                <button onclick="window.cxcModule.searchConsolidatedConsignments('${safeClientName}')" class="bg-orange-200 hover:bg-orange-300 text-orange-800 rounded-full p-1.5 shadow-sm transition" title="Ver detalle de consignaciones">
+                                    🔍
+                                </button>
+                            </div>
+                        </div>
+                        ` : ''}
                     </div>
                 </div>
                 
-                <h3 class="font-bold text-gray-700 mb-1 px-1 text-xs uppercase tracking-wider">Historial de Movimientos (Nuevos Primero)</h3>
-                <div class="overflow-y-auto max-h-[55vh] border rounded bg-white shadow-sm">
+                <h3 class="font-bold text-gray-700 mb-1 px-1 text-xs uppercase tracking-wider">Historial del Excel</h3>
+                <div class="overflow-y-auto max-h-[45vh] border rounded bg-white shadow-sm">
                     <table class="w-full text-left border-collapse">
                         <thead class="bg-gray-200/80 backdrop-blur-sm sticky top-0 z-10">
                             <tr>
@@ -472,6 +493,163 @@
         return str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9 ]/g, '');
     }
 
+    async function searchConsolidatedConsignments(clientName) {
+        _showModal('Buscando', 'Consolidando inventario en consignación...', null, '', null, false);
+        try {
+            const client = _cxcDataCache.find(c => c.name === clientName);
+            if(!client || !client.transactions) return;
+            const cTxs = client.transactions.filter(t => t.type === 'C');
+            if(cTxs.length === 0) {
+                _showModal('Aviso', 'No hay consignaciones registradas para este cliente.');
+                return;
+            }
+
+            let userIds = [_userId]; 
+            try {
+                const usersSnap = await _getDocs(_collection(_db, "users"));
+                if (!usersSnap.empty) userIds = usersSnap.docs.map(d => d.id);
+            } catch(e) {}
+
+            const normSearchName = normalizeStr(clientName);
+            const primaryToken = normalizeStr(clientName.split(' ')[0]);
+
+            let allProducts = {};
+            let aggregatedTotal = 0;
+
+            for(const tx of cTxs) {
+                const parts = tx.date.trim().split(/[\/\-]/);
+                let year=2000, month=0, day=1;
+                if(parts.length===3){
+                    day = parseInt(parts[0], 10);
+                    month = parseInt(parts[1], 10) - 1;
+                    year = parseInt(parts[2], 10);
+                    if (parts[0].length === 4) { year = parseInt(parts[0], 10); month = parseInt(parts[1], 10) - 1; day = parseInt(parts[2], 10); } 
+                    else if (year < 100) { year += 2000; }
+                }
+                const searchDate = new Date(year, month, day);
+                const startRange = new Date(searchDate); startRange.setDate(startRange.getDate() - 2); startRange.setHours(0,0,0,0);
+                const endRange = new Date(searchDate); endRange.setDate(endRange.getDate() + 2); endRange.setHours(23,59,59,999);
+
+                let foundVenta = null;
+
+                for (const uid of userIds) {
+                    if (foundVenta) break;
+                    try {
+                        const cierresRef = _collection(_db, `artifacts/${_appId}/users/${uid}/cierres`);
+                        const q = _query(cierresRef, _where("fecha", ">=", startRange), _where("fecha", "<=", endRange));
+                        const cierresSnap = await _getDocs(q);
+                        for (const doc of cierresSnap.docs) {
+                            const cierre = doc.data();
+                            const match = (cierre.ventas || []).find(v => {
+                                const isAmountMatch = Math.abs(Math.abs(v.total || 0) - Math.abs(tx.amount)) <= 1.0;
+                                const isNameMatch = normalizeStr(v.clienteNombre).includes(primaryToken) || normSearchName.includes(normalizeStr(v.clienteNombre));
+                                return isAmountMatch && isNameMatch;
+                            });
+                            if (match) { foundVenta = match; break; }
+                        }
+                    } catch(e){}
+                }
+
+                if(!foundVenta) {
+                    for (const uid of userIds) {
+                        if (foundVenta) break;
+                        try {
+                            const ventasActivasSnap = await _getDocs(_collection(_db, `artifacts/${_appId}/users/${uid}/ventas`));
+                            for (const doc of ventasActivasSnap.docs) {
+                                const vData = doc.data();
+                                const isAmountMatch = Math.abs(Math.abs(vData.total || 0) - Math.abs(tx.amount)) <= 1.0;
+                                const isNameMatch = normalizeStr(vData.clienteNombre).includes(primaryToken) || normSearchName.includes(normalizeStr(vData.clienteNombre));
+                                if (isAmountMatch && isNameMatch) { foundVenta = vData; break; }
+                            }
+                        } catch(e){}
+                    }
+                }
+
+                if(foundVenta && foundVenta.productos) {
+                    aggregatedTotal += foundVenta.total;
+                    foundVenta.productos.forEach(p => {
+                        if(!allProducts[p.id]) {
+                            allProducts[p.id] = { ...p, cantidadVendida: {cj:0,paq:0,und:0}, totalUnidadesVendidas:0 };
+                        }
+                        allProducts[p.id].cantidadVendida.cj += (p.cantidadVendida?.cj || 0);
+                        allProducts[p.id].cantidadVendida.paq += (p.cantidadVendida?.paq || 0);
+                        allProducts[p.id].cantidadVendida.und += (p.cantidadVendida?.und || 0);
+                        allProducts[p.id].totalUnidadesVendidas += (p.totalUnidadesVendidas || 0);
+                    });
+                }
+            }
+
+            const finalProductsArray = Object.values(allProducts);
+
+            if(finalProductsArray.length === 0) {
+                 _showModal('Aviso', `No se pudieron cargar los detalles de los productos consignados para este cliente. Los tickets originales pueden no coincidir en fecha o haber sido eliminados del sistema.`);
+                 return;
+            }
+
+            const ventaFicticia = {
+                cliente: { nombreComercial: clientName, nombrePersonal: '' },
+                fecha: new Date(),
+                total: aggregatedTotal
+            };
+
+            const ticketHTML = window.ventasUI.getTicketHTML(
+                ventaFicticia, 
+                finalProductsArray, 
+                {}, 
+                'Resumen de Consignaciones Activas',
+                'consignacion'
+            );
+
+            const tempDiv = document.createElement('div');
+            tempDiv.style.position = 'absolute';
+            tempDiv.style.left = '-9999px';
+            tempDiv.style.top = '0';
+            tempDiv.innerHTML = ticketHTML;
+            document.body.appendChild(tempDiv);
+
+            const ticketElement = tempDiv.querySelector('#temp-ticket-for-image') || tempDiv.firstElementChild;
+            if(ticketElement) {
+                setTimeout(async () => {
+                    try {
+                        const canvas = await html2canvas(ticketElement, { scale: 2 }); 
+                        const dataUrl = canvas.toDataURL('image/png');
+                        
+                        const modalWrapper = `
+                            <div class="flex justify-center items-center w-full bg-gray-100 rounded p-1 mb-4 border border-gray-300">
+                                <img src="${dataUrl}" class="w-full max-h-[60vh] object-contain shadow-sm rounded" alt="Recibo Consignaciones" />
+                            </div>
+                            <button id="btnCompartirReciboConsignacion" class="w-full py-3 bg-orange-600 hover:bg-orange-700 text-white font-bold rounded-lg shadow-lg transition-colors flex justify-center items-center gap-2">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" /></svg>
+                                Compartir Resumen
+                            </button>
+                        `;
+                        _showModal('Inventario a Consignación', modalWrapper, null, 'Cerrar');
+
+                        const shareBtn = document.getElementById('btnCompartirReciboConsignacion');
+                        if(shareBtn) {
+                            shareBtn.onclick = async () => {
+                                canvas.toBlob(async (blob) => {
+                                    if (!blob) return;
+                                    if (navigator.share) {
+                                        try { await navigator.share({ files: [new File([blob], `Consignacion_${clientName.replace(/[\s/]/g,'_')}.png`, {type:"image/png"})], title: 'Consignación' }); } catch(e) {}
+                                    } else {
+                                        const url = URL.createObjectURL(blob);
+                                        const a = document.createElement('a'); a.href = url; a.download = "Consignacion.png"; a.click();
+                                    }
+                                });
+                            };
+                        }
+                    } catch(e) {
+                         console.error(e);
+                         _showModal('Error', 'No se pudo generar la imagen del resumen.');
+                    } finally { document.body.removeChild(tempDiv); }
+                }, 250);
+            }
+        } catch(err) {
+            _showModal('Error', 'Error al consultar las consignaciones en la base de datos.');
+        }
+    }
+
     async function searchSaleDetails(clientName, dateStr, amount) {
         _showModal('Buscando', `Buscando el recibo original...`, null, '', null, false);
         try {
@@ -489,20 +667,19 @@
             // 2. PARSEO DE FECHAS ESTRICTO (LATAM: DD/MM/YYYY)
             let searchDate;
             const dateStrClean = dateStr.trim();
-            const parts = dateStrClean.split(/[\/\-]/); // Separa por "/" o "-"
+            const parts = dateStrClean.split(/[\/\-]/); 
             
             if (parts.length === 3) {
                 let day = parseInt(parts[0], 10);
-                let month = parseInt(parts[1], 10) - 1; // En JS los meses van de 0 a 11
+                let month = parseInt(parts[1], 10) - 1; 
                 let year = parseInt(parts[2], 10);
                 
-                // Si el año viene de primero (formato YYYY-MM-DD)
                 if (parts[0].length === 4) {
                     year = parseInt(parts[0], 10);
                     month = parseInt(parts[1], 10) - 1;
                     day = parseInt(parts[2], 10);
                 } else if (year < 100) {
-                    year += 2000; // Convierte "26" en "2026"
+                    year += 2000;
                 }
                 searchDate = new Date(year, month, day);
             } else {
@@ -514,17 +691,14 @@
                 return;
             }
 
-            // Rango de búsqueda: ±2 días
             const startRange = new Date(searchDate); startRange.setDate(startRange.getDate() - 2); startRange.setHours(0,0,0,0);
             const endRange = new Date(searchDate); endRange.setDate(endRange.getDate() + 2); endRange.setHours(23,59,59,999);
 
-            // 3. TOKENIZACIÓN DEL CLIENTE ORIGINAL
             const normSearchName = normalizeStr(clientName);
-            const primaryToken = normalizeStr(clientName.split(' ')[0]); // Lógica original de la primera palabra
+            const primaryToken = normalizeStr(clientName.split(' ')[0]);
 
             let foundVenta = null;
 
-            // BÚSQUEDA A: En Cierres Históricos (Rango de Fechas)
             for (const uid of userIds) {
                 if (foundVenta) break;
                 try {
@@ -537,9 +711,7 @@
                         const ventas = cierre.ventas || [];
                         
                         const match = ventas.find(v => {
-                            // Validar Monto (tolerancia de $1 por si hay redondeos de decimales)
                             const isAmountMatch = Math.abs(Math.abs(v.total || 0) - Math.abs(amount)) <= 1.0;
-                            // Validar Nombre como estaba antes (primera palabra)
                             const vNameNorm = normalizeStr(v.clienteNombre);
                             const isNameMatch = vNameNorm.includes(primaryToken) || normSearchName.includes(vNameNorm);
                             
@@ -551,10 +723,9 @@
                             break; 
                         }
                     }
-                } catch (err) { /* Ignorar si no tiene permisos para esa carpeta */ }
+                } catch (err) { }
             }
 
-            // BÚSQUEDA B: En Ventas Activas del día (Si no han hecho cierre)
             if (!foundVenta) {
                 for (const uid of userIds) {
                     if (foundVenta) break;
@@ -577,7 +748,6 @@
                 }
             }
 
-            // RENDERIZADO DEL TICKET CON BOTÓN DE COMPARTIR
             if (foundVenta) {
                 if (window.ventasUI && typeof window.ventasUI.getTicketHTML === 'function') {
                     
@@ -596,15 +766,16 @@
                         total: foundVenta.total
                     };
 
+                    const tipoOperacionValue = foundVenta.tipoOperacion || (foundVenta.origen === 'Consignación' ? 'consignacion' : 'venta');
+
                     const ticketHTML = window.ventasUI.getTicketHTML(
                         ventaFicticia, 
                         productosFormateados, 
                         foundVenta.vaciosDevueltosPorTipo || {}, 
                         'Recuperación de Venta',
-                        foundVenta.tipoOperacion // PASAMOS EL TIPO DE OPERACIÓN (venta o consignacion)
+                        tipoOperacionValue 
                     );
 
-                    // Render oculto
                     const tempDiv = document.createElement('div');
                     tempDiv.style.position = 'absolute';
                     tempDiv.style.left = '-9999px';
@@ -612,7 +783,6 @@
                     tempDiv.innerHTML = ticketHTML;
                     document.body.appendChild(tempDiv);
 
-                    // FIX: Asegurarnos de tomar el elemento correcto dentro de este tempDiv
                     const ticketElement = tempDiv.querySelector('#temp-ticket-for-image') || tempDiv.firstElementChild;
                     
                     if (ticketElement) {
@@ -633,22 +803,18 @@
                                 
                                 _showModal('Recibo Encontrado', modalWrapper, null, 'Cerrar');
                                 
-                                // Lógica del botón Compartir
                                 const shareBtn = document.getElementById('btnCompartirReciboEncontrado');
                                 if(shareBtn) {
                                     shareBtn.onclick = async () => {
                                         canvas.toBlob(async (blob) => {
-                                            if (!blob) {
-                                                _showModal('Error', 'No se pudo generar el archivo de imagen.');
-                                                return;
-                                            }
+                                            if (!blob) return;
                                             if (navigator.share && blob) {
                                                 try {
                                                     await navigator.share({ 
                                                         files: [new File([blob], `Ticket_${ventaFicticia.cliente.nombreComercial.replace(/[\s/]/g,'_')}.png`, {type:"image/png"})],
                                                         title: 'Ticket'
                                                     });
-                                                } catch(e) { console.warn("Share cancelado", e); }
+                                                } catch(e) {}
                                             } else {
                                                 const url = URL.createObjectURL(blob);
                                                 const link = document.createElement('a'); link.href=url; link.download="Ticket.png"; link.click();
@@ -656,7 +822,6 @@
                                         });
                                     };
                                 }
-
                             } catch (e) {
                                 console.error("Error generando imagen:", e);
                                 _showModal('Error', 'No se pudo generar la imagen del recibo.');
@@ -686,9 +851,15 @@
 
         _showModal('Generando', 'Creando imagen del historial...');
 
-        let txs = client.transactions || [];
-        // Tomar las últimas 12 (asumiendo que están al final, las invertimos)
-        let last12 = [...txs].reverse().slice(0, 12); 
+        const allTxs = client.transactions || [];
+        const consigTxs = allTxs.filter(t => t.type === 'C');
+        const normalTxs = allTxs.filter(t => t.type !== 'C');
+        
+        const totalConsignado = consigTxs.reduce((sum, t) => sum + t.amount, 0);
+        const deudaTotal = client.amount || 0;
+        const totalFacturado = deudaTotal - totalConsignado;
+
+        let last12 = [...allTxs].reverse().slice(0, 12); 
 
         let rows = '';
         last12.forEach(t => {
@@ -702,7 +873,7 @@
             else if (type === 'E') { typeLabel = '💵 Efectivo'; rowColor = 'text-green-600'; }
             else if (type === 'R') { typeLabel = '🧾 Retenc'; rowColor = 'text-green-600'; }
             else if (type === '%') { typeLabel = '📉 Dscto'; rowColor = 'text-blue-600'; }
-            else if (type === 'C') { typeLabel = '📦 Consignación'; rowColor = 'text-orange-600'; } // NUEVO
+            else if (type === 'C') { typeLabel = '📦 Consignación'; rowColor = 'text-orange-600'; } 
 
             if (type === 'T' || type === 'E') {
                 const parts = t.date.split('/');
@@ -735,6 +906,22 @@
             `;
         });
 
+        let breakdownHTML = '';
+        if (totalConsignado > 0) {
+            breakdownHTML = `
+                <div class="flex justify-between items-center mt-3 pt-3 border-t border-gray-300">
+                    <div class="text-left">
+                        <span class="text-[9px] text-gray-500 font-bold uppercase tracking-wider block">Venta Facturada</span>
+                        <span class="text-lg font-black text-gray-800">$${totalFacturado.toLocaleString('en-US', {minimumFractionDigits: 2})}</span>
+                    </div>
+                    <div class="text-right">
+                        <span class="text-[9px] text-orange-500 font-bold uppercase tracking-wider block">Consignación</span>
+                        <span class="text-lg font-black text-orange-600">$${totalConsignado.toLocaleString('en-US', {minimumFractionDigits: 2})}</span>
+                    </div>
+                </div>
+            `;
+        }
+
         const htmlContent = `
             <div id="history-ticket" class="bg-white p-6" style="width: 450px; font-family: 'Inter', sans-serif;">
                 <div class="text-center border-b-2 border-gray-800 pb-4 mb-4">
@@ -744,13 +931,16 @@
                 <div class="mb-6">
                     <p class="text-xs text-gray-500 uppercase font-bold">CLIENTE</p>
                     <h1 class="text-xl font-bold text-gray-800">${client.name}</h1>
-                    <div class="flex justify-between items-center mt-2 bg-gray-100 p-2 rounded">
-                        <span class="font-bold text-gray-600">DEUDA TOTAL:</span>
-                        <span class="text-xl font-bold ${client.amount > 0 ? 'text-red-600' : 'text-green-600'}">$${client.amount.toLocaleString('en-US', {minimumFractionDigits: 2})}</span>
+                    <div class="flex flex-col mt-3 bg-gray-100 p-3 rounded border border-gray-200 shadow-sm">
+                        <div class="flex justify-between items-end">
+                            <span class="font-bold text-gray-800 text-sm">DEUDA TOTAL:</span>
+                            <span class="text-2xl font-black ${deudaTotal > 0 ? 'text-red-600' : 'text-green-600'} leading-none">$${deudaTotal.toLocaleString('en-US', {minimumFractionDigits: 2})}</span>
+                        </div>
+                        ${breakdownHTML}
                     </div>
                 </div>
                 <div class="mb-2">
-                    <p class="text-xs text-gray-500 font-bold uppercase mb-2 border-b">Últimos Movimientos</p>
+                    <p class="text-xs text-gray-500 font-bold uppercase mb-2 border-b">Últimos Movimientos del Excel</p>
                     <table class="w-full">${rows}</table>
                 </div>
                 <div class="mt-6 text-center text-xs text-gray-400">Generado el ${new Date().toLocaleDateString()}</div>
@@ -766,7 +956,6 @@
 
         try {
             await new Promise(r => setTimeout(r, 200));
-            // FIX: Apuntar directamente al primer hijo del tempDiv
             const canvas = await html2canvas(tempDiv.firstElementChild, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
             const blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
             
@@ -807,10 +996,8 @@
 
                     let clientName = "";
                     let totalAmount = 0;
-                    let transactions = [];
                     let isClientSheet = false;
 
-                    // 1. Intentamos buscar la cabecera explícita en esta hoja
                     const headerRowIndex = rows.findIndex(r => r[0] && r[0].toString().toUpperCase().includes('CLIENTE'));
                     if (headerRowIndex !== -1 && rows[headerRowIndex][1]) {
                         clientName = rows[headerRowIndex][1].toString().trim();
@@ -824,9 +1011,7 @@
                          }
                     }
 
-                    // --- LA MAGIA: Si no encontramos cabecera, pero la hoja empieza con fechas, usamos la memoria del cliente anterior ---
                     if (!isClientSheet && !clientName) {
-                        // Validamos si la primera o segunda celda de la fila 0 o 1 parece una fecha válida (yyyy-mm-dd o dd/mm/yyyy)
                         const looksLikeDataSheet = rows.slice(0, 3).some(r => {
                             if (!r || !r[0]) return false;
                             const val = r[0].toString().trim();
@@ -837,16 +1022,13 @@
                             clientName = currentClientData.name;
                             isClientSheet = true;
                         } else {
-                            // No es una hoja de cliente, ignoramos
                             return; 
                         }
                     } else if (isClientSheet && clientName) {
-                        // Si SÍ encontramos cabecera en esta hoja, creamos un nuevo cliente en nuestra memoria
                         currentClientData = { name: clientName, amount: 0, sheetName: sheetName, transactions: [] };
                         allClients.push(currentClientData);
                     }
 
-                    // 2. Extraer el TOTAL (Si la hoja lo tiene)
                     const totalRow = rows.find(r => r[0] && r[0].toString().toUpperCase() === 'TOTALES');
                     if (totalRow) {
                         for (let i = 1; i < totalRow.length; i++) {
@@ -859,8 +1041,6 @@
                         }
                     }
 
-                    // 3. Extraer TRANSSACIONES
-                    // Si tiene cabecera "FECHA", empezamos desde ahí. Si no tiene (es una hoja de continuación), empezamos desde la fila 0.
                     let startRowIndex = 0;
                     const tableHeaderIndex = rows.findIndex(r => r[0] && r[0].toString().toUpperCase().includes('FECHA'));
                     if (tableHeaderIndex !== -1) {
@@ -875,11 +1055,10 @@
                         let type = (row[1] || '').toString().trim().toUpperCase(); 
                         let amountRaw = 0;
                         
-                        // NUEVO: INTERPRETACIÓN DE CONSIGNACIÓN
                         if (type.startsWith('C') || type.includes('CONSIG')) {
                             type = 'C';
                         } else if (!type) {
-                            type = 'F'; // Asumimos Factura si está vacío
+                            type = 'F'; 
                         }
 
                         if (type === 'R') amountRaw = row[6]; else amountRaw = row[2];
@@ -890,11 +1069,9 @@
                             else amountVal = parseFloat(amountRaw.toString().replace(/[^0-9.-]/g, ''));
 
                             if (!isNaN(amountVal)) {
-                                // Excepciones matemáticas
                                 if (type === '%') { if (amountVal > 0) amountVal = -amountVal; } 
                                 else if (type === 'R') { if (amountVal > 0) amountVal = -amountVal; }
                                 
-                                // Insertar la transacción directamente en la memoria del cliente actual
                                 if (currentClientData) {
                                     currentClientData.transactions.push({ 
                                         date: dateRaw.toString(), 
@@ -945,6 +1122,7 @@
         showClientDetailsByName,
         searchSaleDetails,
         handleShareClientHistory,
-        deleteTasa: handleDeleteTasa
+        deleteTasa: handleDeleteTasa,
+        searchConsolidatedConsignments
     };
 })();
