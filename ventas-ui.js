@@ -60,7 +60,6 @@
                                 <span id="selected-client-name" class="font-bold"></span>
                             </p> 
                             
-                            <!-- NUEVO: Selector de Tipo de Operación -->
                             <div class="w-full sm:w-auto mt-2 sm:mt-0">
                                 <label for="tipoOperacionSelect" class="text-xs font-bold text-gray-600 block mb-1">Tipo de Documento:</label>
                                 <select id="tipoOperacionSelect" class="w-full sm:w-auto px-3 py-1.5 border border-gray-300 rounded-lg text-sm bg-gray-50 focus:ring-2 focus:ring-blue-500 outline-none font-semibold text-gray-800">
@@ -261,7 +260,7 @@
                 notaConsignacionHTML = `
                     <div class="mt-6 border-2 border-black p-4 text-center">
                         <p class="text-xl font-bold uppercase mb-2">Aviso de Consignación</p>
-                        <p class="text-lg leading-tight">La mercancía detallada en este recibo se entrega a modo de consignación y solo sera facturada por parte de la Distribuidora de manera posterior a su venta.</p>
+                        <p class="text-lg leading-tight">La mercancía detallada en este recibo se entrega a modo de consignación y sigue siendo propiedad exclusiva de Distribuidora Castillo Yañez hasta su liquidación total.</p>
                     </div>
                 `;
             }
@@ -409,7 +408,7 @@
             // AVISO LEGAL EN TEXTO PLANO
             if (tipoOperacion === 'consignacion' || venta.tipoOperacion === 'consignacion') {
                 ticket += '-'.repeat(LINE_WIDTH) + '\n';
-                wordWrap("La mercancia detallada en este recibo se entrega a modo de consignacion y sera facturada por la Distribuidora en el momento posterior a su venta.", LINE_WIDTH).forEach(line => { ticket += center(line) + '\n'; });
+                wordWrap("La mercancia detallada en este recibo se entrega a modo de consignacion y sigue siendo propiedad exclusiva de Distribuidora Castillo Yanez.", LINE_WIDTH).forEach(line => { ticket += center(line) + '\n'; });
                 ticket += '-'.repeat(LINE_WIDTH) + '\n\n\n';
             } else {
                 ticket += '\n\n';
@@ -548,7 +547,7 @@
             
             ventasList.forEach(v => {
                 const fV = v.fecha?.toDate ? v.fecha.toDate() : new Date(0);
-                const fF = fV.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' });
+                const fF = fV.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute:'2-digit' });
                 
                 // DETECCIÓN DE CONSIGNACIÓN PARA LA ETIQUETA VISUAL
                 const isConsignacion = v.tipoOperacion === 'consignacion' || v.origen === 'Consignación';
@@ -558,14 +557,61 @@
                 
                 const rowBg = isConsignacion ? 'hover:bg-orange-50/50' : 'hover:bg-blue-50/50';
 
+                // --- RESTAURANDO LÓGICA DE SUBTOTALES POR RUBRO ---
+                let subtotales = {};
+                (v.productos || []).forEach(p => {
+                    const r = (p.rubro || 'OTROS').toUpperCase();
+                    let shortR = r;
+                    // Simplificar nombres de rubros para que quepan en la vista
+                    if (r.includes('CERVE') || r.includes('VINO')) shortR = 'CERV';
+                    else if (r.includes('MALT') || r.includes('PEPSI')) shortR = 'PEPSI';
+                    else if (r.includes('ALIM')) shortR = 'ALIM';
+                    else if (r.includes('P&G') || r.includes('PROCTER')) shortR = 'P&G';
+                    else shortR = r.substring(0, 6); 
+
+                    const cC = p.cantidadVendida?.cj || 0;
+                    const cP = p.cantidadVendida?.paq || 0;
+                    const cU = p.cantidadVendida?.und || 0;
+                    const pC = p.precios?.cj || 0;
+                    const pP = p.precios?.paq || 0;
+                    const pU = p.precios?.und || 0;
+                    const sub = (cC * pC) + (cP * pP) + (cU * pU);
+
+                    if (!subtotales[shortR]) subtotales[shortR] = 0;
+                    subtotales[shortR] += sub;
+                });
+
+                let totalHtml = '';
+                const rubrosKeys = Object.keys(subtotales);
+                const gTotal = v.total || 0;
+
+                if (rubrosKeys.length > 1) {
+                    totalHtml += `<div class="text-[11px] text-gray-500 mb-1 space-y-0.5">`;
+                    rubrosKeys.forEach(rk => {
+                        if (subtotales[rk] > 0) {
+                            totalHtml += `<div class="text-right whitespace-nowrap"><span class="font-medium">${rk}:</span> <span class="text-gray-700">$${subtotales[rk].toFixed(2)}</span></div>`;
+                        }
+                    });
+                    totalHtml += `</div><div class="font-black text-gray-900 border-t border-gray-200 pt-1 text-right text-base whitespace-nowrap">Total: $${gTotal.toFixed(2)}</div>`;
+                } else if (rubrosKeys.length === 1 && subtotales[rubrosKeys[0]] > 0) {
+                    totalHtml = `<div class="text-[10px] text-gray-400 text-right mb-0.5 uppercase tracking-wide font-bold whitespace-nowrap">${rubrosKeys[0]}</div>
+                                 <div class="font-black text-gray-900 text-right text-base whitespace-nowrap">Total: $${gTotal.toFixed(2)}</div>`;
+                } else {
+                    totalHtml = `<div class="font-black text-gray-900 text-right text-base whitespace-nowrap">Total: $${gTotal.toFixed(2)}</div>`;
+                }
+                // --- FIN LÓGICA SUBTOTALES ---
+
                 html += `
                 <tr class="${rowBg} transition-colors">
                     <td class="py-3 px-3 align-middle">
                         <div class="font-bold text-gray-900">${v.clienteNombre || 'N/A'}</div>
+                        <div class="text-[11px] text-gray-500 font-medium">${fF}</div>
                         ${rowBadge}
                     </td>
-                    <td class="py-3 px-3 align-middle text-gray-600 font-medium">${fF}</td>
-                    <td class="py-3 px-3 text-right font-black text-gray-800 align-middle text-base">$${(v.total || 0).toFixed(2)}</td>
+                    <td class="py-3 px-3 align-middle text-gray-600 font-medium hidden sm:table-cell">${fF}</td>
+                    <td class="py-3 px-3 text-right align-middle">
+                        ${totalHtml}
+                    </td>
                     <td class="py-2 px-3 align-middle">
                         <div class="flex flex-col sm:flex-row items-center justify-center gap-1.5 w-full">
                             <button onclick="window.ventasModule.showPastSaleOptions('${v.id}','ticket')" class="w-full sm:w-auto px-3 py-1.5 bg-blue-600 text-white text-xs font-bold rounded shadow-sm hover:bg-blue-700 transition">Ver</button>
