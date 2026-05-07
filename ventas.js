@@ -51,7 +51,7 @@
         if (!_runTransaction) console.error("Error Crítico: 'runTransaction' no disponible en initVentas.");
         if (!_increment) console.warn("Advertencia: 'increment' no disponible. Ventas offline limitadas.");
         
-        console.log("Módulo Ventas inicializado (Soporte para Consignaciones). Public ID:", PUBLIC_DATA_ID);
+        console.log("Módulo Ventas inicializado (Consignaciones Sincronizadas). Public ID:", PUBLIC_DATA_ID);
     };
 
     window.showVentasView = function() {
@@ -271,7 +271,7 @@
         tempDiv.innerHTML = htmlContent; 
         document.body.appendChild(tempDiv);
         
-        // EL FIX ESTÁ AQUÍ: Buscamos el ticket DENTRO del div que acabamos de crear, no globalmente
+        // Buscamos el ticket DENTRO del div que acabamos de crear
         const ticketElement = tempDiv.querySelector('#temp-ticket-for-image') || tempDiv.firstElementChild;
         
         if (!ticketElement) { _showModal('Error', 'No se pudo encontrar elemento ticket.'); document.body.removeChild(tempDiv); if(callbackDespuesDeCompartir) callbackDespuesDeCompartir(false); return; }
@@ -335,7 +335,7 @@
     }
 
     async function _processAndSaveVenta() {
-        // LEER EL SELECTOR DE TIPO DE OPERACIÓN
+        // LEER EL SELECTOR DE TIPO DE OPERACIÓN (Para Nueva Venta)
         const tipoOperacionSelect = document.getElementById('tipoOperacionSelect');
         const tipoOperacion = tipoOperacionSelect ? tipoOperacionSelect.value : 'venta';
 
@@ -780,8 +780,10 @@
             let bHTML=''; 
             sortedClients.forEach(cli=>{
                 const cCli = clientData[cli]; 
+                // Evitamos imprimir las filas que son solo sumatorias base si están vacías, pero aquí `sortedClients` tiene todo
+                // Las filas base siempre se imprimen si tienen data
                 const esSoloObsequio = cCli.isObsequioRow;
-                const esSoloConsignacion = cCli.isConsignacionRow; // Variable creada en data.js
+                const esSoloConsignacion = cCli.isConsignacionRow; 
                 
                 let rowClass = 'hover:bg-blue-50';
                 if (esSoloObsequio) rowClass = 'bg-blue-100 hover:bg-blue-200 text-blue-900';
@@ -808,7 +810,7 @@
             });
 
             let fHTML='<tr class="bg-gray-200 font-bold"><td class="p-1 border sticky left-0 z-10">TOTALES</td>'; 
-            enrichedProductOrder.forEach(p=>{
+            finalProductOrder.forEach(p=>{
                 let tQ=0; sortedClients.forEach(cli=>tQ+=clientData[cli].products[p.id]||0); 
                 const qtyDisplay = window.dataModule.getDisplayQty(tQ, p);
                 let dT = tQ > 0 ? (typeof qtyDisplay.value === 'number' ? `${qtyDisplay.value} ${qtyDisplay.unit}` : qtyDisplay.value) : '';
@@ -817,59 +819,65 @@
             fHTML+=`<td class="p-1 border text-right sticky right-0 z-10">$${grandTotalValue.toFixed(2)}</td></tr>`;
             
             const TIPOS_VACIO_GLOBAL = window.TIPOS_VACIO_GLOBAL || ["1/4 - 1/3", "ret 350 ml", "ret 1.25 Lts"];
-            const localVacios = {};
-            
-            // Procesar Ventas Normales (Solo las recientes)
-            ventasPostSnapshot.forEach(v => {
-                const cName = v.clienteNombre || 'Desconocido';
-                if (!localVacios[cName]) localVacios[cName] = {};
-                (v.productos || []).forEach(p => {
-                    if (p.manejaVacios && p.tipoVacio && (p.cantidadVendida?.cj||0) > 0) {
-                        if (!localVacios[cName][p.tipoVacio]) localVacios[cName][p.tipoVacio] = { entregados: 0, devueltos: 0 };
-                        localVacios[cName][p.tipoVacio].entregados += p.cantidadVendida.cj;
-                    }
-                });
-                Object.entries(v.vaciosDevueltosPorTipo || {}).forEach(([tipo, cant]) => {
-                    if (parseInt(cant, 10) > 0) {
-                        if (!localVacios[cName][tipo]) localVacios[cName][tipo] = { entregados: 0, devueltos: 0 };
-                        localVacios[cName][tipo].devueltos += parseInt(cant, 10);
-                    }
-                });
-            });
-
-            // Procesar Obsequios (Solo los recientes)
-            obsequiosPostSnapshot.forEach(o => {
-                const cName = o.clienteNombre || 'Desconocido';
-                if (!localVacios[cName]) localVacios[cName] = {};
-                if (o.tipoVacio) {
-                    if (!localVacios[cName][o.tipoVacio]) localVacios[cName][o.tipoVacio] = { entregados: 0, devueltos: 0 };
-                    if (o.cantidadCajas > 0) localVacios[cName][o.tipoVacio].entregados += o.cantidadCajas;
-                    if (o.vaciosRecibidos > 0) localVacios[cName][o.tipoVacio].devueltos += parseInt(o.vaciosRecibidos, 10);
-                }
-            });
-
             let vHTML=''; 
-            const cliVacios = Object.keys(localVacios).filter(cli => TIPOS_VACIO_GLOBAL.some(t => (localVacios[cli][t]?.entregados || 0) > 0 || (localVacios[cli][t]?.devueltos || 0) > 0)).sort(); 
+            const cliVacios = Object.keys(vaciosMovementsPorTipo).filter(cli => 
+                TIPOS_VACIO_GLOBAL.some(t => (vaciosMovementsPorTipo[cli][t]?.entregados || 0) > 0 || (vaciosMovementsPorTipo[cli][t]?.devueltos || 0) > 0)
+            ).sort(); 
             
             if (cliVacios.length > 0) { 
-                vHTML = `<h3 class="text-lg font-bold text-gray-800 mt-6 mb-2 border-t pt-4">Resumen de Envases (Vacíos)</h3><div class="overflow-hidden border border-gray-300 rounded-lg shadow-sm"><table class="min-w-full bg-white text-sm"><thead class="bg-gray-800 text-white"><tr><th class="py-2 px-3 text-left font-semibold">Cliente</th><th class="py-2 px-3 text-center font-semibold">Tipo</th><th class="py-2 px-3 text-center font-semibold">Entregados</th><th class="py-2 px-3 text-center font-semibold">Devueltos</th><th class="py-2 px-3 text-center font-semibold">Pendiente</th></tr></thead><tbody class="divide-y divide-gray-200">`; 
+                vHTML = `
+                    <h3 class="text-lg font-bold text-gray-800 mt-6 mb-2 border-t pt-4">Resumen de Envases (Vacíos)</h3>
+                    <div class="overflow-hidden border border-gray-300 rounded-lg shadow-sm">
+                        <table class="min-w-full bg-white text-sm">
+                            <thead class="bg-gray-800 text-white">
+                                <tr>
+                                    <th class="py-2 px-3 text-left font-semibold">Cliente</th>
+                                    <th class="py-2 px-3 text-center font-semibold">Tipo</th>
+                                    <th class="py-2 px-3 text-center font-semibold">Entregados</th>
+                                    <th class="py-2 px-3 text-center font-semibold">Devueltos</th>
+                                    <th class="py-2 px-3 text-center font-semibold">Pendiente</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-gray-200">
+                `; 
+                
                 cliVacios.forEach(cli => {
+                    const movs = vaciosMovementsPorTipo[cli]; 
                     TIPOS_VACIO_GLOBAL.forEach(t => {
-                        const mov = localVacios[cli][t]; 
+                        const mov = movs[t]; 
                         if (mov && (mov.entregados > 0 || mov.devueltos > 0)) {
                             const neto = mov.entregados - mov.devueltos; 
                             const nClass = neto > 0 ? 'text-red-600 font-bold bg-red-50' : (neto < 0 ? 'text-green-600 font-bold bg-green-50' : 'text-gray-500'); 
-                            let netoText = neto > 0 ? `+${neto} (Debe)` : (neto < 0 ? `${neto} (A favor)` : `0 (Solvente)`);
-                            vHTML += `<tr class="hover:bg-gray-50"><td class="py-2 px-3 text-gray-800 font-medium">${cli}</td><td class="py-2 px-3 text-center text-gray-600">${t}</td><td class="py-2 px-3 text-center font-semibold text-gray-700">${mov.entregados}</td><td class="py-2 px-3 text-center font-semibold text-gray-700">${mov.devueltos}</td><td class="py-2 px-3 text-center ${nClass}">${netoText}</td></tr>`;
+                            
+                            let netoText = neto;
+                            if (neto > 0) netoText = `+${neto} (Debe)`;
+                            else if (neto < 0) netoText = `${neto} (A favor)`;
+                            else netoText = `0 (Solvente)`;
+
+                            vHTML += `
+                                <tr class="hover:bg-gray-50">
+                                    <td class="py-2 px-3 text-gray-800 font-medium">${cli}</td>
+                                    <td class="py-2 px-3 text-center text-gray-600">${t}</td>
+                                    <td class="py-2 px-3 text-center font-semibold text-gray-700">${mov.entregados}</td>
+                                    <td class="py-2 px-3 text-center font-semibold text-gray-700">${mov.devueltos}</td>
+                                    <td class="py-2 px-3 text-center ${nClass}">${netoText}</td>
+                                </tr>
+                            `;
                         }
                     });
                 }); 
                 vHTML += '</tbody></table></div>';
             }
-            
-            const reportHTML = `<div class="text-left max-h-[80vh] overflow-auto"> <h3 class="text-xl font-bold mb-4">Reporte Cierre</h3> <div class="overflow-auto border"> <table class="min-w-full bg-white text-xs"> <thead class="bg-gray-200">${hHTML}</thead> <tbody>${bHTML}</tbody> <tfoot>${fHTML}</tfoot> </table> </div> ${vHTML} </div>`;
-            _showModal('Reporte de Cierre', reportHTML, null, 'Cerrar');
-        } catch (error) { console.error("Error reporte:", error); _showModal('Error', `No se pudo generar: ${error.message}`); }
+
+            const vendedor = closingData.vendedorInfo || {};
+            let vNameModal = vendedor.nombre || 'Desconocido';
+            if(!vendedor.nombre && vendedor.userId && _usersMapCache.has(vendedor.userId)){
+                 vNameModal = _usersMapCache.get(vendedor.userId).nombre;
+            }
+
+            const reportHTML = `<div class="text-left max-h-[80vh] overflow-auto"> <div class="mb-4"> <p><strong>Vendedor:</strong> ${vNameModal} ${vendedor.apellido||''}</p> <p><strong>Camión:</strong> ${vendedor.camion||'N/A'}</p> <p><strong>Fecha:</strong> ${closingData.fecha.toDate().toLocaleString('es-ES')}</p> </div> <h3 class="text-xl mb-4">Reporte Cierre</h3> <div class="overflow-auto border" style="max-height: 40vh;"> <table class="min-w-full bg-white text-xs"> <thead class="bg-gray-200">${hHTML}</thead> <tbody>${bHTML}</tbody> <tfoot>${fHTML}</tfoot> </table> </div> ${vHTML} </div>`;
+            _showModal(`Detalle Cierre`, reportHTML, null, 'Cerrar');
+        } catch (error) { console.error("Error generando detalle:", error); _showModal('Error', `No se pudo generar: ${error.message}`); }
     }
 
     async function ejecutarCierre() {
@@ -955,8 +963,11 @@
             totalUnidadesVendidas: p.totalUnidadesVendidas || 0,
             precios: p.precios || { und: 0, paq: 0, cj: 0 }
         }));
-        // Pasamos el tipoOperacion al menú de opciones
-        showSharingOptions(venta, productosFormateados, venta.vaciosDevueltosPorTipo || {}, tipo, showVentasActualesView, venta.tipoOperacion);
+
+        // PASO CLAVE: Si la venta tiene la propiedad tipoOperacion, se la pasamos de forma obligatoria a la UI.
+        const tipoOp = venta.tipoOperacion || (venta.origen === 'Consignación' ? 'consignacion' : 'venta');
+
+        showSharingOptions(venta, productosFormateados, venta.vaciosDevueltosPorTipo || {}, tipo, showVentasActualesView, tipoOp);
     };
 
     function editVenta(ventaId) {
@@ -1115,9 +1126,9 @@
         const hayVac = Object.values(_ventaActual.vaciosDevueltosPorTipo || {}).some(c => c > 0);
         if (prods.length === 0 && !hayVac && Object.values(_originalVentaForEdit.vaciosDevueltosPorTipo || {}).every(c => c === 0)) { _showModal('Error', 'La venta no puede quedar vacía.'); return; }
 
-        // LEER EL SELECTOR EN LA VISTA DE EDICIÓN
+        // LEER EL SELECTOR EN LA VISTA DE EDICIÓN (LECTURA SEGURA SÍNCRONA)
         const editTipoOperacionSelect = document.getElementById('editTipoOperacion');
-        const nuevoTipoOperacion = editTipoOperacionSelect ? editTipoOperacionSelect.value : _originalVentaForEdit.tipoOperacion;
+        const nuevoTipoOperacion = editTipoOperacionSelect ? editTipoOperacionSelect.value : (_originalVentaForEdit.tipoOperacion || 'venta');
 
         _showModal('Confirmar Cambios', '¿Guardar cambios? Stock y saldos se ajustarán.', async () => {
             _showModal('Progreso', 'Guardando y ajustando...');
