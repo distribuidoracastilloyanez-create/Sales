@@ -32,7 +32,7 @@
             rowDataClients: { bold: false, fillColor: "#FFFFFF", fontColor: "#333333", border: true, fontSize: 10 },
             rowDataClientsSale: { bold: false, fillColor: "#F3FDE8", fontColor: "#000000", border: true, fontSize: 10 },
             rowDataClientsObsequio: { bold: false, fillColor: "#E0F2FE", fontColor: "#000000", border: true, fontSize: 10 },
-            rowDataClientsConsignacion: { bold: false, fillColor: "#FFEDD5", fontColor: "#000000", border: true, fontSize: 10 }, // NUEVO: Estilo Consignación (Naranja Claro)
+            rowDataClientsConsignacion: { bold: false, fillColor: "#FFEDD5", fontColor: "#000000", border: true, fontSize: 10 }, // Configurable ahora
             rowCargaRestante: { bold: true, fillColor: "#FFFFFF", fontColor: "#000000", border: true, fontSize: 10 },
             rowTotals: { bold: true, fillColor: "#EFEFEF", fontColor: "#000000", border: true, fontSize: 10 },
             vaciosHeader: { bold: true, fillColor: "#EFEFEF", fontColor: "#000000", border: true, fontSize: 10 },
@@ -140,7 +140,7 @@
         _getDoc = dependencies.getDoc;
         _doc = dependencies.doc;
         _setDoc = dependencies.setDoc; 
-        console.log("Módulo Data inicializado (Soporte Consignaciones). Public ID:", PUBLIC_DATA_ID);
+        console.log("Módulo Data inicializado (Soporte Consignaciones & UI). Public ID:", PUBLIC_DATA_ID);
     };
 
     window.showDataView = function() {
@@ -385,7 +385,7 @@
             
             let rowClientName = baseClientName;
             if (isObsequio) rowClientName = `${baseClientName} (OBSEQUIO)`;
-            else if (isConsignacion) rowClientName = `${baseClientName} (CONSIGNACIÓN)`; // NUEVO: Separar Consignación
+            else if (isConsignacion) rowClientName = `${baseClientName} (CONSIGNACIÓN)`; 
 
             if (!vaciosMovementsPorTipo[baseClientName]) { 
                 vaciosMovementsPorTipo[baseClientName] = {}; 
@@ -435,7 +435,7 @@
                     }
                     if(p.id) {
                         clientData[rowClientName].products[p.id] += cantidadUnidades;
-                        if (!isObsequio && !isConsignacion) clientData[baseClientName].products[p.id] += cantidadUnidades; // Solo suma al base si no es derivado
+                        if (!isObsequio && !isConsignacion) clientData[baseClientName].products[p.id] += cantidadUnidades; 
                     }
 
                     if (prodComp.manejaVacios && prodComp.tipoVacio) {
@@ -515,8 +515,6 @@
             }
         }
         
-        // Excluimos las filas derivadas para quedarnos solo con los nombres base, o las incluimos todas
-        // Para este reporte, querremos iterar sobre TODAS las rows generadas
         const sortedClients = Object.keys(clientData).sort();
         
         const sortFunction = await getGlobalProductSortFunction();
@@ -589,8 +587,6 @@
             let bHTML=''; 
             sortedClients.forEach(cli=>{
                 const cCli = clientData[cli]; 
-                // Evitamos imprimir las filas que son solo sumatorias base si están vacías, pero aquí `sortedClients` tiene todo
-                // Las filas base siempre se imprimen si tienen data
                 const esSoloObsequio = cCli.isObsequioRow;
                 const esSoloConsignacion = cCli.isConsignacionRow; 
                 
@@ -605,7 +601,6 @@
                     
                     let suffix = '';
                     if (esSoloObsequio) suffix = ` <span class="text-[10px] text-blue-600 font-black ml-1">(Regalo)</span>`;
-                    else if (esSoloConsignacion) suffix = ` <span class="text-[10px] text-orange-600 font-black ml-1">(Consig.)</span>`;
 
                     let dQ = qU > 0 ? (typeof qtyDisplay.value === 'number' ? `${qtyDisplay.value} ${qtyDisplay.unit}` : qtyDisplay.value) + suffix : '';
                     
@@ -747,7 +742,6 @@
             const clientDataStyle = buildExcelJSStyle(s.rowDataClients, s.rowDataClients.border ? thinBorderStyle : null, null, 'left');
             const clientSaleStyle = buildExcelJSStyle(s.rowDataClientsSale, s.rowDataClientsSale.border ? thinBorderStyle : null, null, 'center');
             const clientObsequioStyle = buildExcelJSStyle(s.rowDataClientsObsequio, s.rowDataClientsObsequio.border ? thinBorderStyle : null, null, 'center');
-            // NUEVO: Estilo para consignaciones
             const clientConsignacionStyle = buildExcelJSStyle(s.rowDataClientsConsignacion, s.rowDataClientsConsignacion.border ? thinBorderStyle : null, null, 'center');
             const clientConsignacionRowStyle = buildExcelJSStyle(s.rowDataClientsConsignacion, s.rowDataClientsConsignacion.border ? thinBorderStyle : null, null, 'left');
             
@@ -886,11 +880,11 @@
                     
                     const clientSales = clientData[clientName];
                     const esSoloObsequio = clientSales.isObsequioRow;
-                    const esSoloConsignacion = clientSales.isConsignacionRow; // NUEVO
+                    const esSoloConsignacion = clientSales.isConsignacionRow; 
 
                     let rowBaseStyleSettings = s.rowDataClients;
                     if (esSoloObsequio) rowBaseStyleSettings = s.rowDataClientsObsequio;
-                    else if (esSoloConsignacion) rowBaseStyleSettings = s.rowDataClientsConsignacion; // NUEVO
+                    else if (esSoloConsignacion) rowBaseStyleSettings = s.rowDataClientsConsignacion; 
 
                     const clientNameStyle = buildExcelJSStyle(
                         rowBaseStyleSettings,
@@ -907,7 +901,7 @@
                         
                         let cellStyleSettings = s.rowDataClients;
                         if (esSoloObsequio) cellStyleSettings = s.rowDataClientsObsequio;
-                        else if (esSoloConsignacion && qU > 0) cellStyleSettings = s.rowDataClientsConsignacion; // NUEVO
+                        else if (esSoloConsignacion && qU > 0) cellStyleSettings = s.rowDataClientsConsignacion; 
                         else if (qU > 0) cellStyleSettings = s.rowDataClientsSale;
 
                         const finalCellStyle = buildExcelJSStyle(
@@ -921,7 +915,6 @@
                             const qtyDisplay = getDisplayQty(qU, p);
                             let suffix = '';
                             if (esSoloObsequio) suffix = ' (Obs)';
-                            else if (esSoloConsignacion) suffix = ' (Consig)'; // NUEVO
 
                             if (typeof qtyDisplay.value === 'number') {
                                 cell.value = qtyDisplay.value;
@@ -1059,7 +1052,6 @@
                 const totalesDataObsequioStyle = buildExcelJSStyle(s.rowDataClientsObsequio, s.rowDataClientsObsequio.border ? thinBorderStyle : null, null, 'left');
                 const totalesDataObsequioPriceStyle = buildExcelJSStyle(s.rowDataClientsObsequio, s.rowDataClientsObsequio.border ? thinBorderStyle : null, "$#,##0.00", 'right');
 
-                // NUEVO: Estilo para consignaciones en la hoja de totales
                 const totalesDataConsigStyle = buildExcelJSStyle(s.rowDataClientsConsignacion, s.rowDataClientsConsignacion.border ? thinBorderStyle : null, null, 'left');
                 const totalesDataConsigPriceStyle = buildExcelJSStyle(s.rowDataClientsConsignacion, s.rowDataClientsConsignacion.border ? thinBorderStyle : null, "$#,##0.00", 'right');
 
@@ -1075,7 +1067,7 @@
                 sortedClientTotals.forEach(([clientName, totalValue]) => {
                     const row = wsClientes.addRow([clientName, Number(totalValue.toFixed(2))]);
                     const isObs = clientName.includes('(OBSEQUIO)');
-                    const isConsig = clientName.includes('(CONSIGNACIÓN)'); // NUEVO
+                    const isConsig = clientName.includes('(CONSIGNACIÓN)'); 
                     
                     if (isObs) {
                         row.getCell(1).style = totalesDataObsequioStyle;
@@ -1915,6 +1907,7 @@
                 ${createZoneEditor('rowDataClients', 'Filas Clientes (Celdas Vacías)', s.rowDataClients)}
                 ${createZoneEditor('rowDataClientsSale', 'Filas Clientes (Venta > 0)', s.rowDataClientsSale)} 
                 ${createZoneEditor('rowDataClientsObsequio', 'Filas Clientes (Obsequio)', s.rowDataClientsObsequio)}
+                ${createZoneEditor('rowDataClientsConsignacion', 'Filas Clientes (Consignación)', s.rowDataClientsConsignacion)}
                 ${createZoneEditor('rowCargaRestante', 'Fila "CARGA RESTANTE"', s.rowCargaRestante)}
                 ${createZoneEditor('rowTotals', 'Fila "TOTALES"', s.rowTotals)}
             `;
@@ -1989,7 +1982,8 @@
         const defaults = DEFAULT_REPORTE_SETTINGS.styles[idPrefix] || 
                          (idPrefix === 'rowDataClientsSale' ? DEFAULT_REPORTE_SETTINGS.styles.rowDataClients : 
                          (idPrefix === 'rowDataClientsObsequio' ? DEFAULT_REPORTE_SETTINGS.styles.rowDataClients :
-                         (DEFAULT_REPORTE_SETTINGS.styles[idPrefix] || {})));
+                         (idPrefix === 'rowDataClientsConsignacion' ? { bold: false, fillColor: "#FFEDD5", fontColor: "#000000", border: true, fontSize: 10 } :
+                         (DEFAULT_REPORTE_SETTINGS.styles[idPrefix] || {}))));
 
         return {
             bold: boldEl ? boldEl.checked : (defaults.bold || false),
@@ -2031,6 +2025,7 @@
                 rowDataClients: readZoneEditor('rowDataClients'),
                 rowDataClientsSale: readZoneEditor('rowDataClientsSale'), 
                 rowDataClientsObsequio: readZoneEditor('rowDataClientsObsequio'),
+                rowDataClientsConsignacion: readZoneEditor('rowDataClientsConsignacion'),
                 rowCargaRestante: readZoneEditor('rowCargaRestante'),
                 rowTotals: readZoneEditor('rowTotals'),
                 vaciosHeader: readZoneEditor('vaciosHeader'),
