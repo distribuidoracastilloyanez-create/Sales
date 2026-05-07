@@ -51,7 +51,7 @@
         if (!_runTransaction) console.error("Error Crítico: 'runTransaction' no disponible en initVentas.");
         if (!_increment) console.warn("Advertencia: 'increment' no disponible. Ventas offline limitadas.");
         
-        console.log("Módulo Ventas inicializado (Con Auto-Healing Silencioso). Public ID:", PUBLIC_DATA_ID);
+        console.log("Módulo Ventas inicializado (Soporte para Consignaciones). Public ID:", PUBLIC_DATA_ID);
     };
 
     window.showVentasView = function() {
@@ -311,7 +311,7 @@
         finally { document.body.removeChild(textArea); if(callbackDespuesDeCopia) callbackDespuesDeCopia(success); }
     }
     
-    function showSharingOptions(venta, productos, vaciosDevueltosPorTipo, tipo, callbackFinal) {
+    function showSharingOptions(venta, productos, vaciosDevueltosPorTipo, tipo, callbackFinal, tipoOperacion) {
         const modalContent = `<div class="text-center"><h3 class="text-xl font-bold mb-4">Generar ${tipo}</h3><p class="mb-6">Elige formato.</p><div class="space-y-4"><button id="printTextBtn" class="w-full px-6 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600">Imprimir (Texto)</button><button id="shareImageBtn" class="w-full px-6 py-3 bg-green-500 text-white rounded-lg hover:bg-green-600">Compartir (Imagen)</button></div></div>`;
         _showModal('Elige opción', modalContent, null, ''); 
         
@@ -321,13 +321,13 @@
             
             if (printBtn) {
                 printBtn.addEventListener('click', () => { 
-                    const rawText = window.ventasUI.getTicketRawText(venta, productos, vaciosDevueltosPorTipo); 
+                    const rawText = window.ventasUI.getTicketRawText(venta, productos, vaciosDevueltosPorTipo, tipoOperacion); 
                     handleShareRawText(rawText, callbackFinal); 
                 });
             }
             if (shareBtn) {
                 shareBtn.addEventListener('click', () => { 
-                    const html = window.ventasUI.getTicketHTML(venta, productos, vaciosDevueltosPorTipo, tipo); 
+                    const html = window.ventasUI.getTicketHTML(venta, productos, vaciosDevueltosPorTipo, tipo, tipoOperacion); 
                     handleShareTicket(html, callbackFinal); 
                 });
             }
@@ -335,6 +335,10 @@
     }
 
     async function _processAndSaveVenta() {
+        // LEER EL SELECTOR DE TIPO DE OPERACIÓN
+        const tipoOperacionSelect = document.getElementById('tipoOperacionSelect');
+        const tipoOperacion = tipoOperacionSelect ? tipoOperacionSelect.value : 'venta';
+
         const SNAPSHOT_DOC_PATH = `artifacts/${_appId}/users/${_userId}/config/auditoriaBaseSnapshot`;
         const snapshotRef = _doc(_db, SNAPSHOT_DOC_PATH);
         try {
@@ -415,7 +419,8 @@
                 total: totalVenta,
                 productos: itemsVenta,
                 vaciosDevueltosPorTipo: _ventaActual.vaciosDevueltosPorTipo,
-                origen: "offline"
+                origen: "offline",
+                tipoOperacion: tipoOperacion // GUARDANDO EL TIPO DE OPERACIÓN
             };
             batch.set(ventaRef, ventaDataToSave);
 
@@ -500,7 +505,8 @@
                         total: totalVenta,
                         productos: itemsVenta,
                         vaciosDevueltosPorTipo: _ventaActual.vaciosDevueltosPorTipo,
-                        origen: "offline"
+                        origen: "offline",
+                        tipoOperacion: tipoOperacion // GUARDANDO EL TIPO DE OPERACIÓN
                     };
                     
                     transaction.set(ventaRef, ventaDataToSave);
@@ -522,7 +528,7 @@
         const hayVac = Object.values(_ventaActual.vaciosDevueltosPorTipo).some(c => c > 0);
         if (prods.length === 0 && !hayVac) { _showModal('Error', 'Agrega productos o registra vacíos devueltos.'); return; }
 
-        _showModal('Confirmar Venta', '¿Guardar esta transacción?', async () => {
+        _showModal('Confirmar Operación', '¿Guardar esta transacción?', async () => {
             _showModal('Progreso', 'Guardando transacción...', null, '', null, false); 
             try {
                 const savedData = await _processAndSaveVenta();
@@ -536,7 +542,8 @@
                         savedData.productos, 
                         savedData.vaciosDevueltosPorTipo, 
                         'Nota de Entrega',
-                        () => { _showModal('Éxito', 'Venta registrada y ticket generado/compartido.', showNuevaVentaView); }
+                        () => { _showModal('Éxito', 'Operación registrada y ticket generado/compartido.', showNuevaVentaView); },
+                        savedData.venta.tipoOperacion // Pasando el tipo para el ticket
                     );
                 }, 300);
 
@@ -568,7 +575,7 @@
         _mainContent.innerHTML = `
             <div class="p-2 sm:p-4 w-full"> <div class="bg-white/90 backdrop-blur-sm p-4 sm:p-6 rounded-lg shadow-xl">
                 <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4"> 
-                    <h2 class="text-2xl font-bold text-gray-800">Ventas Actuales</h2> 
+                    <h2 class="text-2xl font-bold text-gray-800">Ventas y Consignaciones Actuales</h2> 
                     <div class="flex gap-2 w-full md:w-auto">
                         <button id="descargarCierrePrevioBtn" class="flex-1 md:flex-none px-4 py-2 bg-green-600 text-white rounded-lg shadow-md hover:bg-green-700 transition font-bold flex items-center justify-center gap-1">
                             <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
@@ -723,90 +730,8 @@
             _ventasGlobal = snap.docs.map(d => ({ id: d.id, ...d.data() })); 
             _ventasGlobal.sort((a,b) => (b.fecha?.toDate()??0) - (a.fecha?.toDate()??0));
             
-            if (_ventasGlobal.length === 0) {
-                cont.innerHTML = `<p class="text-center text-gray-500 py-4 font-medium">No hay ventas registradas.</p>`;
-                return;
-            }
-
-            let tHTML = `
-                <table class="min-w-full bg-white text-sm rounded-lg overflow-hidden border border-gray-200">
-                    <thead class="bg-gray-800 text-white">
-                        <tr>
-                            <th class="py-2.5 px-2 text-left font-semibold">Fecha/Cliente</th>
-                            <th class="py-2.5 px-2 text-right font-semibold">Totales</th>
-                            <th class="py-2.5 px-1 text-center font-semibold w-20">ACC</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-gray-200">
-            `;
-
-            _ventasGlobal.forEach(v => {
-                const fechaObj = v.fecha?.toDate ? v.fecha.toDate() : new Date(v.fecha);
-                const fechaStr = isNaN(fechaObj) ? 'Fecha inválida' : fechaObj.toLocaleString('es-ES', {day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit'});
-                
-                let subtotales = {};
-                (v.productos || []).forEach(p => {
-                    const r = (p.rubro || 'OTROS').toUpperCase();
-                    let shortR = r;
-                    if (r.includes('CERVE') || r.includes('VINO')) shortR = 'CERV';
-                    else if (r.includes('MALT') || r.includes('PEPSI')) shortR = 'PEPSI';
-                    else if (r.includes('ALIM')) shortR = 'ALIM';
-                    else if (r.includes('P&G') || r.includes('PROCTER')) shortR = 'P&G';
-                    else shortR = r.substring(0, 6); 
-
-                    const cC = p.cantidadVendida?.cj || 0;
-                    const cP = p.cantidadVendida?.paq || 0;
-                    const cU = p.cantidadVendida?.und || 0;
-                    const pC = p.precios?.cj || 0;
-                    const pP = p.precios?.paq || 0;
-                    const pU = p.precios?.und || 0;
-                    const sub = (cC * pC) + (cP * pP) + (cU * pU);
-
-                    if (!subtotales[shortR]) subtotales[shortR] = 0;
-                    subtotales[shortR] += sub;
-                });
-
-                let totalHtml = '';
-                const rubrosKeys = Object.keys(subtotales);
-                const gTotal = v.total || 0;
-
-                if (rubrosKeys.length > 1) {
-                    totalHtml += `<div class="text-[11px] text-gray-500 mb-1 space-y-0.5">`;
-                    rubrosKeys.forEach(rk => {
-                        if (subtotales[rk] > 0) {
-                            totalHtml += `<div class="text-right whitespace-nowrap"><span class="font-medium">${rk}:</span> <span class="text-gray-700">$${subtotales[rk].toFixed(2)}</span></div>`;
-                        }
-                    });
-                    totalHtml += `</div><div class="font-black text-gray-900 border-t border-gray-200 pt-1 text-right text-base whitespace-nowrap">Total: $${gTotal.toFixed(2)}</div>`;
-                } else if (rubrosKeys.length === 1 && subtotales[rubrosKeys[0]] > 0) {
-                    totalHtml = `<div class="text-[10px] text-gray-400 text-right mb-0.5 uppercase tracking-wide font-bold whitespace-nowrap">${rubrosKeys[0]}</div>
-                                 <div class="font-black text-gray-900 text-right text-base whitespace-nowrap">Total: $${gTotal.toFixed(2)}</div>`;
-                } else {
-                    totalHtml = `<div class="font-black text-gray-900 text-right text-base whitespace-nowrap">Total: $${gTotal.toFixed(2)}</div>`;
-                }
-
-                tHTML += `
-                    <tr class="hover:bg-blue-50 transition-colors">
-                        <td class="py-2 px-2 align-middle">
-                            <div class="font-bold text-gray-800 text-sm mb-0.5 leading-tight">${v.clienteNombre || 'Sin Nombre'}</div>
-                            <div class="text-[11px] text-gray-500 font-medium">${fechaStr}</div>
-                        </td>
-                        <td class="py-2 px-2 align-middle">
-                            ${totalHtml}
-                        </td>
-                        <td class="py-1.5 px-2 align-middle text-center w-20">
-                            <div class="flex flex-col gap-1 items-center w-full">
-                                <button onclick="window.ventasModule.showPastSaleOptions('${v.id}')" class="w-full py-1.5 px-1 bg-blue-600 text-white font-medium text-xs rounded hover:bg-blue-700 shadow-sm transition">Ticket</button>
-                                <button onclick="window.ventasModule.editVenta('${v.id}')" class="w-full py-1.5 px-1 bg-yellow-500 text-white font-medium text-xs rounded hover:bg-yellow-600 shadow-sm transition">Editar</button>
-                                <button onclick="window.ventasModule.deleteVenta('${v.id}')" class="w-full py-1.5 px-1 bg-red-600 text-white font-medium text-xs rounded hover:bg-red-700 shadow-sm transition">Borrar</button>
-                            </div>
-                        </td>
-                    </tr>
-                `;
-            });
-
-            tHTML += `</tbody></table>`;
-            cont.innerHTML = tHTML;
+            // Usamos la plantilla UI que ya actualizamos para que detecte consignaciones
+            cont.innerHTML = window.ventasUI.getSalesListTemplate(_ventasGlobal);
             
         }, (err) => { 
             if (err.code === 'permission-denied' || err.code === 'unauthenticated') return;
@@ -856,14 +781,27 @@
             sortedClients.forEach(cli=>{
                 const cCli = clientData[cli]; 
                 const esSoloObsequio = cCli.isObsequioRow;
-                const rowClass = esSoloObsequio ? 'bg-blue-100 hover:bg-blue-200 text-blue-900' : 'hover:bg-blue-50';
+                const esSoloConsignacion = cCli.isConsignacionRow; // Variable creada en data.js
+                
+                let rowClass = 'hover:bg-blue-50';
+                if (esSoloObsequio) rowClass = 'bg-blue-100 hover:bg-blue-200 text-blue-900';
+                if (esSoloConsignacion) rowClass = 'bg-orange-50 hover:bg-orange-100 text-orange-900';
                 
                 bHTML+=`<tr class="${rowClass}"><td class="p-1 border font-medium bg-white sticky left-0 z-10">${cli}</td>`; 
                 enrichedProductOrder.forEach(p=>{
                     const qU=cCli.products[p.id]||0; 
                     const qtyDisplay = window.dataModule.getDisplayQty(qU, p);
-                    let dQ = qU > 0 ? (typeof qtyDisplay.value === 'number' ? `${qtyDisplay.value} ${qtyDisplay.unit}` : qtyDisplay.value) + (esSoloObsequio ? ` <span class="text-[10px] text-blue-600 font-black ml-1">(Regalo)</span>` : '') : '';
-                    let cellClass = esSoloObsequio && qU > 0 ? 'font-bold bg-blue-50 text-blue-800' : (qU > 0 ? 'font-bold' : '');
+                    
+                    let suffix = '';
+                    if (esSoloObsequio) suffix = ` <span class="text-[10px] text-blue-600 font-black ml-1">(Regalo)</span>`;
+                    else if (esSoloConsignacion) suffix = ` <span class="text-[10px] text-orange-600 font-black ml-1">(Consig.)</span>`;
+
+                    let dQ = qU > 0 ? (typeof qtyDisplay.value === 'number' ? `${qtyDisplay.value} ${qtyDisplay.unit}` : qtyDisplay.value) + suffix : '';
+                    
+                    let cellClass = qU > 0 ? 'font-bold' : '';
+                    if (esSoloObsequio && qU > 0) cellClass += ' bg-blue-50 text-blue-800';
+                    if (esSoloConsignacion && qU > 0) cellClass += ' bg-orange-50 text-orange-800';
+
                     bHTML+=`<td class="p-1 border text-center ${cellClass}">${dQ}</td>`;
                 }); 
                 bHTML+=`<td class="p-1 border text-right font-semibold bg-white sticky right-0 z-10">$${cCli.totalValue.toFixed(2)}</td></tr>`;
@@ -1017,7 +955,8 @@
             totalUnidadesVendidas: p.totalUnidadesVendidas || 0,
             precios: p.precios || { und: 0, paq: 0, cj: 0 }
         }));
-        showSharingOptions(venta, productosFormateados, venta.vaciosDevueltosPorTipo || {}, tipo, showVentasActualesView);
+        // Pasamos el tipoOperacion al menú de opciones
+        showSharingOptions(venta, productosFormateados, venta.vaciosDevueltosPorTipo || {}, tipo, showVentasActualesView, venta.tipoOperacion);
     };
 
     function editVenta(ventaId) {
@@ -1176,6 +1115,10 @@
         const hayVac = Object.values(_ventaActual.vaciosDevueltosPorTipo || {}).some(c => c > 0);
         if (prods.length === 0 && !hayVac && Object.values(_originalVentaForEdit.vaciosDevueltosPorTipo || {}).every(c => c === 0)) { _showModal('Error', 'La venta no puede quedar vacía.'); return; }
 
+        // LEER EL SELECTOR EN LA VISTA DE EDICIÓN
+        const editTipoOperacionSelect = document.getElementById('editTipoOperacion');
+        const nuevoTipoOperacion = editTipoOperacionSelect ? editTipoOperacionSelect.value : _originalVentaForEdit.tipoOperacion;
+
         _showModal('Confirmar Cambios', '¿Guardar cambios? Stock y saldos se ajustarán.', async () => {
             _showModal('Progreso', 'Guardando y ajustando...');
             try {
@@ -1259,7 +1202,14 @@
                           };
                       });
                       
-                      transaction.update(ventaRef, { productos: nItems, total: nTotal, vaciosDevueltosPorTipo: _ventaActual.vaciosDevueltosPorTipo, fechaModificacion: new Date() });
+                      // Actualizar también el tipoOperacion
+                      transaction.update(ventaRef, { 
+                          productos: nItems, 
+                          total: nTotal, 
+                          vaciosDevueltosPorTipo: _ventaActual.vaciosDevueltosPorTipo, 
+                          fechaModificacion: new Date(),
+                          tipoOperacion: nuevoTipoOperacion 
+                      });
                 });
                 _originalVentaForEdit=null; _showModal('Éxito','Venta actualizada.', showVentasActualesView);
             } catch (error) { console.error("Error edit:", error); _showModal('Error', `Error: ${error.message}`); }
