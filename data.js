@@ -32,6 +32,7 @@
             rowDataClients: { bold: false, fillColor: "#FFFFFF", fontColor: "#333333", border: true, fontSize: 10 },
             rowDataClientsSale: { bold: false, fillColor: "#F3FDE8", fontColor: "#000000", border: true, fontSize: 10 },
             rowDataClientsObsequio: { bold: false, fillColor: "#E0F2FE", fontColor: "#000000", border: true, fontSize: 10 },
+            rowDataClientsConsignacion: { bold: false, fillColor: "#FFEDD5", fontColor: "#000000", border: true, fontSize: 10 }, // NUEVO: Estilo Consignación (Naranja Claro)
             rowCargaRestante: { bold: true, fillColor: "#FFFFFF", fontColor: "#000000", border: true, fontSize: 10 },
             rowTotals: { bold: true, fillColor: "#EFEFEF", fontColor: "#000000", border: true, fontSize: 10 },
             vaciosHeader: { bold: true, fillColor: "#EFEFEF", fontColor: "#000000", border: true, fontSize: 10 },
@@ -139,7 +140,7 @@
         _getDoc = dependencies.getDoc;
         _doc = dependencies.doc;
         _setDoc = dependencies.setDoc; 
-        console.log("Módulo Data inicializado correctamente (Con Consolidado Moderno). Public ID:", PUBLIC_DATA_ID);
+        console.log("Módulo Data inicializado (Soporte Consignaciones). Public ID:", PUBLIC_DATA_ID);
     };
 
     window.showDataView = function() {
@@ -163,9 +164,6 @@
         document.getElementById('clientMapBtn').addEventListener('click', showClientMapView);
         document.getElementById('backToMenuBtn').addEventListener('click', _showMainMenu);
     };
-
-    // ... (El código de Cierres de Ventas, Mapa e Inasistencias se mantiene intacto abajo, 
-    // solo modificaré la parte de showConsolidatedClientsView)
 
     async function showClosingDataView() {
         _mainContent.innerHTML = `
@@ -383,16 +381,19 @@
         for (const item of allData) {
             const baseClientName = item.data.clienteNombre || 'Cliente Desconocido';
             const isObsequio = item.tipo === 'obsequio';
+            const isConsignacion = item.tipo === 'venta' && (item.data.tipoOperacion === 'consignacion' || item.data.origen === 'Consignación');
             
-            const rowClientName = isObsequio ? `${baseClientName} (OBSEQUIO)` : baseClientName;
+            let rowClientName = baseClientName;
+            if (isObsequio) rowClientName = `${baseClientName} (OBSEQUIO)`;
+            else if (isConsignacion) rowClientName = `${baseClientName} (CONSIGNACIÓN)`; // NUEVO: Separar Consignación
 
             if (!vaciosMovementsPorTipo[baseClientName]) { 
                 vaciosMovementsPorTipo[baseClientName] = {}; 
                 TIPOS_VACIO_GLOBAL.forEach(t => vaciosMovementsPorTipo[baseClientName][t] = { entregados: 0, devueltos: 0 }); 
             }
 
-            if (!clientData[rowClientName]) clientData[rowClientName] = { products: {}, totalValue: 0, isObsequioRow: isObsequio };
-            if (!clientData[baseClientName]) clientData[baseClientName] = { products: {}, totalValue: 0, isObsequioRow: false };
+            if (!clientData[rowClientName]) clientData[rowClientName] = { products: {}, totalValue: 0, isObsequioRow: isObsequio, isConsignacionRow: isConsignacion };
+            if (!clientData[baseClientName]) clientData[baseClientName] = { products: {}, totalValue: 0, isObsequioRow: false, isConsignacionRow: false };
             
             if (item.tipo === 'venta') {
                 const venta = item.data;
@@ -434,7 +435,7 @@
                     }
                     if(p.id) {
                         clientData[rowClientName].products[p.id] += cantidadUnidades;
-                        if (!isObsequio) clientData[baseClientName].products[p.id] += cantidadUnidades;
+                        if (!isObsequio && !isConsignacion) clientData[baseClientName].products[p.id] += cantidadUnidades; // Solo suma al base si no es derivado
                     }
 
                     if (prodComp.manejaVacios && prodComp.tipoVacio) {
@@ -442,7 +443,7 @@
                     }
 
                     if (!dataByRubro[rubro].clients[rowClientName]) {
-                        dataByRubro[rubro].clients[rowClientName] = { products: {}, totalValue: 0, isObsequioRow: false };
+                        dataByRubro[rubro].clients[rowClientName] = { products: {}, totalValue: 0, isObsequioRow: isObsequio, isConsignacionRow: isConsignacion };
                     }
                     const subtotalProducto = (p.precios?.cj || 0) * (p.cantidadVendida?.cj || 0) + (p.precios?.paq || 0) * (p.cantidadVendida?.paq || 0) + (p.precios?.und || 0) * (p.cantidadVendida?.und || 0);
                     
@@ -483,7 +484,7 @@
                     dataByRubro[rubro].productsMap.set(pComp.id, pComp); 
                 }
                 if (!dataByRubro[rubro].clients[rowClientName]) {
-                    dataByRubro[rubro].clients[rowClientName] = { products: {}, totalValue: 0, isObsequioRow: true };
+                    dataByRubro[rubro].clients[rowClientName] = { products: {}, totalValue: 0, isObsequioRow: true, isConsignacionRow: false };
                 }
                 dataByRubro[rubro].obsequiosMap.add(pComp.id);
 
@@ -514,7 +515,9 @@
             }
         }
         
-        const sortedClients = Object.keys(clientData).filter(k => !k.includes('(OBSEQUIO)')).sort();
+        // Excluimos las filas derivadas para quedarnos solo con los nombres base, o las incluimos todas
+        // Para este reporte, querremos iterar sobre TODAS las rows generadas
+        const sortedClients = Object.keys(clientData).sort();
         
         const sortFunction = await getGlobalProductSortFunction();
         const finalProductOrder = Array.from(allProductsMap.values()).sort(sortFunction);
@@ -586,23 +589,30 @@
             let bHTML=''; 
             sortedClients.forEach(cli=>{
                 const cCli = clientData[cli]; 
+                // Evitamos imprimir las filas que son solo sumatorias base si están vacías, pero aquí `sortedClients` tiene todo
+                // Las filas base siempre se imprimen si tienen data
                 const esSoloObsequio = cCli.isObsequioRow;
+                const esSoloConsignacion = cCli.isConsignacionRow; 
                 
-                const rowClass = esSoloObsequio ? 'bg-blue-100 hover:bg-blue-200 text-blue-900' : 'hover:bg-blue-50';
+                let rowClass = 'hover:bg-blue-50';
+                if (esSoloObsequio) rowClass = 'bg-blue-100 hover:bg-blue-200 text-blue-900';
+                if (esSoloConsignacion) rowClass = 'bg-orange-50 hover:bg-orange-100 text-orange-900';
                 
                 bHTML+=`<tr class="${rowClass}"><td class="p-1 border font-medium bg-white sticky left-0 z-10">${cli}</td>`; 
                 finalProductOrder.forEach(p=>{
                     const qU=cCli.products[p.id]||0; 
                     const qtyDisplay = getDisplayQty(qU, p);
                     
-                    let dQ = '';
-                    if (qU > 0) {
-                        dQ = typeof qtyDisplay.value === 'number' ? `${qtyDisplay.value} ${qtyDisplay.unit}` : qtyDisplay.value;
-                        if (esSoloObsequio) dQ += ` <span class="text-[10px] text-blue-600 font-black ml-1">(Regalo)</span>`;
-                    }
+                    let suffix = '';
+                    if (esSoloObsequio) suffix = ` <span class="text-[10px] text-blue-600 font-black ml-1">(Regalo)</span>`;
+                    else if (esSoloConsignacion) suffix = ` <span class="text-[10px] text-orange-600 font-black ml-1">(Consig.)</span>`;
+
+                    let dQ = qU > 0 ? (typeof qtyDisplay.value === 'number' ? `${qtyDisplay.value} ${qtyDisplay.unit}` : qtyDisplay.value) + suffix : '';
                     
-                    let cellClass = esSoloObsequio && qU > 0 ? 'font-bold bg-blue-50 text-blue-800' : (qU > 0 ? 'font-bold' : '');
-                    
+                    let cellClass = qU > 0 ? 'font-bold' : '';
+                    if (esSoloObsequio && qU > 0) cellClass += ' bg-blue-50 text-blue-800';
+                    if (esSoloConsignacion && qU > 0) cellClass += ' bg-orange-50 text-orange-800';
+
                     bHTML+=`<td class="p-1 border text-center ${cellClass}">${dQ}</td>`;
                 }); 
                 bHTML+=`<td class="p-1 border text-right font-semibold bg-white sticky right-0 z-10">$${cCli.totalValue.toFixed(2)}</td></tr>`;
@@ -610,12 +620,9 @@
 
             let fHTML='<tr class="bg-gray-200 font-bold"><td class="p-1 border sticky left-0 z-10">TOTALES</td>'; 
             finalProductOrder.forEach(p=>{
-                let tQ=0; 
-                sortedClients.forEach(cli=>tQ+=clientData[cli].products[p.id]||0); 
-                
+                let tQ=0; sortedClients.forEach(cli=>tQ+=clientData[cli].products[p.id]||0); 
                 const qtyDisplay = getDisplayQty(tQ, p);
-                let dT = (tQ > 0) ? (typeof qtyDisplay.value === 'number' ? `${qtyDisplay.value} ${qtyDisplay.unit}` : qtyDisplay.value) : '';
-                
+                let dT = tQ > 0 ? (typeof qtyDisplay.value === 'number' ? `${qtyDisplay.value} ${qtyDisplay.unit}` : qtyDisplay.value) : '';
                 fHTML+=`<td class="p-1 border text-center whitespace-nowrap">${dT}</td>`;
             }); 
             fHTML+=`<td class="p-1 border text-right sticky right-0 z-10">$${grandTotalValue.toFixed(2)}</td></tr>`;
@@ -740,6 +747,9 @@
             const clientDataStyle = buildExcelJSStyle(s.rowDataClients, s.rowDataClients.border ? thinBorderStyle : null, null, 'left');
             const clientSaleStyle = buildExcelJSStyle(s.rowDataClientsSale, s.rowDataClientsSale.border ? thinBorderStyle : null, null, 'center');
             const clientObsequioStyle = buildExcelJSStyle(s.rowDataClientsObsequio, s.rowDataClientsObsequio.border ? thinBorderStyle : null, null, 'center');
+            // NUEVO: Estilo para consignaciones
+            const clientConsignacionStyle = buildExcelJSStyle(s.rowDataClientsConsignacion, s.rowDataClientsConsignacion.border ? thinBorderStyle : null, null, 'center');
+            const clientConsignacionRowStyle = buildExcelJSStyle(s.rowDataClientsConsignacion, s.rowDataClientsConsignacion.border ? thinBorderStyle : null, null, 'left');
             
             const cargaRestanteStyle = buildExcelJSStyle(s.rowCargaRestante, s.rowCargaRestante.border ? thinBorderStyle : null, null, 'left');
             const cargaRestanteQtyStyle = buildExcelJSStyle(s.rowCargaRestante, s.rowCargaRestante.border ? thinBorderStyle : null, null, 'center');
@@ -876,8 +886,11 @@
                     
                     const clientSales = clientData[clientName];
                     const esSoloObsequio = clientSales.isObsequioRow;
+                    const esSoloConsignacion = clientSales.isConsignacionRow; // NUEVO
 
-                    const rowBaseStyleSettings = esSoloObsequio ? s.rowDataClientsObsequio : s.rowDataClients;
+                    let rowBaseStyleSettings = s.rowDataClients;
+                    if (esSoloObsequio) rowBaseStyleSettings = s.rowDataClientsObsequio;
+                    else if (esSoloConsignacion) rowBaseStyleSettings = s.rowDataClientsConsignacion; // NUEVO
 
                     const clientNameStyle = buildExcelJSStyle(
                         rowBaseStyleSettings,
@@ -892,8 +905,11 @@
                         const qU = clientSales.products[p.id] || 0;
                         const cell = clientRow.getCell(START_COL + index);
                         
-                        let cellStyleSettings = esSoloObsequio ? s.rowDataClientsObsequio : (qU > 0 ? s.rowDataClientsSale : s.rowDataClients);
-                        
+                        let cellStyleSettings = s.rowDataClients;
+                        if (esSoloObsequio) cellStyleSettings = s.rowDataClientsObsequio;
+                        else if (esSoloConsignacion && qU > 0) cellStyleSettings = s.rowDataClientsConsignacion; // NUEVO
+                        else if (qU > 0) cellStyleSettings = s.rowDataClientsSale;
+
                         const finalCellStyle = buildExcelJSStyle(
                             cellStyleSettings,
                             cellStyleSettings.border ? thinBorderStyle : null,
@@ -903,8 +919,10 @@
                         
                         if (qU > 0) {
                             const qtyDisplay = getDisplayQty(qU, p);
-                            const suffix = esSoloObsequio ? ' (Obs)' : '';
-                            
+                            let suffix = '';
+                            if (esSoloObsequio) suffix = ' (Obs)';
+                            else if (esSoloConsignacion) suffix = ' (Consig)'; // NUEVO
+
                             if (typeof qtyDisplay.value === 'number') {
                                 cell.value = qtyDisplay.value;
                                 cell.style = { ...finalCellStyle, numFmt: `0 " ${qtyDisplay.unit}${suffix}"` };
@@ -1041,6 +1059,10 @@
                 const totalesDataObsequioStyle = buildExcelJSStyle(s.rowDataClientsObsequio, s.rowDataClientsObsequio.border ? thinBorderStyle : null, null, 'left');
                 const totalesDataObsequioPriceStyle = buildExcelJSStyle(s.rowDataClientsObsequio, s.rowDataClientsObsequio.border ? thinBorderStyle : null, "$#,##0.00", 'right');
 
+                // NUEVO: Estilo para consignaciones en la hoja de totales
+                const totalesDataConsigStyle = buildExcelJSStyle(s.rowDataClientsConsignacion, s.rowDataClientsConsignacion.border ? thinBorderStyle : null, null, 'left');
+                const totalesDataConsigPriceStyle = buildExcelJSStyle(s.rowDataClientsConsignacion, s.rowDataClientsConsignacion.border ? thinBorderStyle : null, "$#,##0.00", 'right');
+
                 const totalesTotalRowStyle = buildExcelJSStyle(s.totalesTotalRow, s.totalesTotalRow.border ? thinBorderStyle : null, null, 'left');
                 const totalesTotalRowPriceStyle = buildExcelJSStyle(s.totalesTotalRow, s.totalesTotalRow.border ? thinBorderStyle : null, "$#,##0.00", 'right');
                 
@@ -1053,9 +1075,18 @@
                 sortedClientTotals.forEach(([clientName, totalValue]) => {
                     const row = wsClientes.addRow([clientName, Number(totalValue.toFixed(2))]);
                     const isObs = clientName.includes('(OBSEQUIO)');
+                    const isConsig = clientName.includes('(CONSIGNACIÓN)'); // NUEVO
                     
-                    row.getCell(1).style = isObs ? totalesDataObsequioStyle : totalesDataStyle;
-                    row.getCell(2).style = isObs ? totalesDataObsequioPriceStyle : totalesDataPriceStyle;
+                    if (isObs) {
+                        row.getCell(1).style = totalesDataObsequioStyle;
+                        row.getCell(2).style = totalesDataObsequioPriceStyle;
+                    } else if (isConsig) {
+                        row.getCell(1).style = totalesDataConsigStyle;
+                        row.getCell(2).style = totalesDataConsigPriceStyle;
+                    } else {
+                        row.getCell(1).style = totalesDataStyle;
+                        row.getCell(2).style = totalesDataPriceStyle;
+                    }
                 });
                 
                 const totalRow = wsClientes.addRow(['GRAN TOTAL', Number(grandTotalValue.toFixed(2))]);
