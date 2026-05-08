@@ -863,7 +863,7 @@
                             <table class="min-w-full bg-white text-xs sm:text-sm">
                                 <thead class="bg-gray-800 text-white sticky top-0 z-10 shadow-sm">
                                     <tr>
-                                        <th class="py-2.5 px-2 sm:px-4 text-left font-semibold uppercase min-w-[85px] max-w-[85px] sm:min-w-[150px] sm:max-w-none truncate">Cliente</th>
+                                        <th class="py-2.5 px-2 sm:px-4 text-left font-semibold uppercase min-w-[120px] max-w-[120px] sm:min-w-[150px] sm:max-w-none truncate">Cliente</th>
                                         <th class="py-2.5 px-2 sm:px-4 text-center font-semibold uppercase">Tipo</th>
                                         <th class="py-2.5 px-2 sm:px-4 text-center font-semibold uppercase">Entreg.</th>
                                         <th class="py-2.5 px-2 sm:px-4 text-center font-semibold uppercase">Devuel.</th>
@@ -886,7 +886,7 @@
 
                                     html += `
                                     <tr class="hover:bg-gray-50 transition-colors">
-                                        <td class="py-2 sm:py-3 px-2 sm:px-4 text-gray-800 font-medium min-w-[85px] max-w-[85px] sm:min-w-[150px] sm:max-w-none truncate" title="${cli}">${cli}</td>
+                                        <td class="py-2 sm:py-3 px-2 sm:px-4 text-gray-800 font-medium min-w-[120px] max-w-[120px] sm:min-w-[150px] sm:max-w-none truncate" title="${cli}">${cli}</td>
                                         <td class="py-2 sm:py-3 px-2 sm:px-4 text-center text-gray-600 whitespace-nowrap">${t}</td>
                                         <td class="py-2 sm:py-3 px-2 sm:px-4 text-center font-semibold text-gray-700">${mov.entregados}</td>
                                         <td class="py-2 sm:py-3 px-2 sm:px-4 text-center font-semibold text-gray-700">${mov.devueltos}</td>
@@ -901,15 +901,21 @@
                     }
                 } else {
                     // --- VISTA DE PRODUCTOS (Consolidado o Rubro) ---
-                    // Reducido tamaño de letra base en movil: text-[11px]
                     html += `<div class="flex-1 overflow-auto hide-scrollbar" style="-webkit-overflow-scrolling: touch;">
                         <table class="min-w-full text-[11px] sm:text-sm border-collapse">
                             <thead class="bg-gray-200 sticky top-0 z-30 shadow-sm">
                                 <tr>
-                                    <th class="p-1.5 sm:p-3 border-b border-gray-300 sticky left-0 z-40 bg-gray-200 min-w-[85px] max-w-[85px] sm:min-w-[150px] sm:max-w-none w-[85px] sm:w-auto truncate text-left uppercase tracking-wider text-gray-700 shadow-[1px_0_0_0_#d1d5db]">Cliente</th>`;
+                                    <th class="p-1.5 sm:p-3 border-b border-gray-300 sticky left-0 z-40 bg-gray-200 min-w-[120px] max-w-[120px] sm:min-w-[150px] sm:max-w-none w-[120px] sm:w-auto truncate text-left uppercase tracking-wider text-gray-700 shadow-[1px_0_0_0_#d1d5db]">Cliente</th>`;
 
+                    // INYECCIÓN DE SEGMENTO Y MARCA EN CABECERA DE PRODUCTOS
                     sheet.prods.forEach(p => {
-                        html += `<th class="p-1.5 sm:p-3 border-b border-gray-300 whitespace-nowrap uppercase tracking-wider text-gray-700" title="${p.marca||''} - ${p.segmento||''}">${p.presentacion}</th>`;
+                        html += `<th class="p-1.5 sm:p-3 border-b border-gray-300 whitespace-nowrap uppercase tracking-wider text-gray-700 align-bottom" title="${p.marca||''} - ${p.segmento||''}">
+                            <div class="flex flex-col items-center justify-end h-full">
+                                <span class="text-[8px] sm:text-[10px] text-gray-400 font-semibold leading-none mb-0.5">${p.segmento || 'S/S'}</span>
+                                <span class="text-[9px] sm:text-[11px] text-gray-500 font-bold leading-none mb-1">${p.marca || 'S/M'}</span>
+                                <span>${p.presentacion}</span>
+                            </div>
+                        </th>`;
                     });
 
                     html += `<th class="p-1.5 sm:p-3 border-b border-gray-300 sticky right-0 z-40 bg-gray-200 text-right uppercase tracking-wider text-gray-700 shadow-[-1px_0_0_0_#d1d5db]">Total</th>
@@ -922,7 +928,6 @@
                         const esSoloObsequio = cCli.isObsequioRow;
                         const esSoloConsignacion = cCli.isConsignacionRow;
 
-                        // Ocultar si el cliente no tiene productos de esta hoja (y no estamos en consolidado)
                         const hasProductsInSheet = sheet.prods.some(p => (cCli.products[p.id] || 0) > 0);
                         if (!hasProductsInSheet && sheet.id !== 'tab-consolidado') return;
 
@@ -931,7 +936,7 @@
                         if (esSoloConsignacion) rowClass = 'bg-orange-50 hover:bg-orange-100 text-orange-900';
 
                         html += `<tr class="${rowClass} transition-colors">
-                            <td class="p-1.5 sm:p-3 border-b border-gray-200 font-bold bg-white sticky left-0 z-20 min-w-[85px] max-w-[85px] sm:min-w-[150px] sm:max-w-none w-[85px] sm:w-auto truncate shadow-[1px_0_0_0_#e5e7eb]" title="${cli}">${cli}</td>`;
+                            <td class="p-1.5 sm:p-3 border-b border-gray-200 font-bold bg-white sticky left-0 z-20 min-w-[120px] max-w-[120px] sm:min-w-[150px] sm:max-w-none w-[120px] sm:w-auto truncate shadow-[1px_0_0_0_#e5e7eb]" title="${cli}">${cli}</td>`;
 
                         sheet.prods.forEach(p => {
                             const qU = cCli.products[p.id] || 0;
@@ -955,7 +960,7 @@
                     html += `</tbody>
                             <tfoot class="bg-gray-200 sticky bottom-0 z-30 font-black shadow-[0_-1px_0_0_#d1d5db]">
                                 <tr>
-                                    <td class="p-1.5 sm:p-3 border-t border-gray-300 sticky left-0 z-40 bg-gray-200 uppercase shadow-[1px_0_0_0_#d1d5db] min-w-[85px] max-w-[85px] sm:min-w-[150px] sm:max-w-none w-[85px] sm:w-auto truncate" title="Totales">Totales</td>`;
+                                    <td class="p-1.5 sm:p-3 border-t border-gray-300 sticky left-0 z-40 bg-gray-200 uppercase shadow-[1px_0_0_0_#d1d5db] min-w-[120px] max-w-[120px] sm:min-w-[150px] sm:max-w-none w-[120px] sm:w-auto truncate" title="Totales">Totales</td>`;
 
                     sheet.prods.forEach(p => {
                         let tQ = 0;
