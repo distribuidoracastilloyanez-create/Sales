@@ -761,9 +761,9 @@
         _showModal('Progreso', 'Generando vista previa interactiva...');
         try {
             const ventasSnap = await _getDocs(_collection(_db, `artifacts/${_appId}/users/${_userId}/ventas`));
-            const ventas = ventasSnap.docs.map(doc => doc.data());
+            const ventas = ventasSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             const obsequiosSnap = await _getDocs(_collection(_db, `artifacts/${_appId}/users/${_userId}/obsequios_entregados`));
-            const obsequios = obsequiosSnap.docs.map(doc => doc.data());
+            const obsequios = obsequiosSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
             if (ventas.length === 0 && obsequios.length === 0) { 
                 _showModal('Aviso', 'No hay ventas ni obsequios registrados.'); 
@@ -774,7 +774,8 @@
 
             if (!window.dataModule?._processSalesDataForModal) throw new Error("Módulo de datos no disponible.");
 
-            const { clientData, clientTotals, grandTotalValue, sortedClients, finalProductOrder, vaciosMovementsPorTipo } = 
+            // Extraemos finalData para obtener los subtotales por rubro
+            const { clientData, grandTotalValue, sortedClients, finalProductOrder, vaciosMovementsPorTipo, finalData } = 
                 await window.dataModule._processSalesDataForModal(ventasPostSnapshot, obsequiosPostSnapshot, cargaParaExcel, _userId);
 
             const enrichedProductOrder = finalProductOrder.map(p => {
@@ -782,7 +783,7 @@
                 return liveProd ? { ...p, ventaPor: liveProd.ventaPor, unidadesPorCaja: liveProd.unidadesPorCaja, unidadesPorPaquete: liveProd.unidadesPorPaquete } : p;
             });
 
-            // Agrupar por Rubro para crear las Pestañas (Hojas simuladas)
+            // Agrupar por Rubro para las pestañas
             const rubrosMap = {};
             enrichedProductOrder.forEach(p => {
                 const r = p.rubro || 'SIN RUBRO';
@@ -791,7 +792,7 @@
             });
             const rubrosKeys = Object.keys(rubrosMap).sort();
 
-            // Setup Data Vendedor
+            // Info Vendedor
             let vendedorInfo = {};
             if (window.userRole === 'user') {
                  const uDoc = await _getDoc(_doc(_db, "users", _userId));
@@ -804,17 +805,15 @@
             }
             const fechaCierreStr = new Date().toLocaleString('es-ES');
 
-            // --- CONSTRUCCIÓN DEL OVERLAY FULL SCREEN ---
             const overlayId = 'fullScreenPreviewOverlay';
             const existing = document.getElementById(overlayId);
             if(existing) existing.remove();
 
             const overlay = document.createElement('div');
             overlay.id = overlayId;
-            overlay.className = 'fixed inset-0 z-[9999] bg-gray-100 flex flex-col overflow-hidden animate-fade-in';
+            overlay.className = 'fixed inset-0 z-[9999] bg-gray-100 flex flex-col overflow-hidden animate-fade-in font-sans';
             overlay.innerHTML = `<style>.hide-scrollbar::-webkit-scrollbar { display: none; } .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }</style>`;
 
-            // Header Principal
             let html = `
                 <div class="bg-gray-800 text-white p-3 sm:p-4 flex justify-between items-center shadow-md shrink-0">
                     <div>
@@ -825,12 +824,10 @@
                 </div>
             `;
 
-            // Configurar Pestañas (Hojas)
-            const sheets = [{ id: 'tab-consolidado', name: 'Consolidado', prods: enrichedProductOrder }];
-            rubrosKeys.forEach((r, i) => sheets.push({ id: `tab-rubro-${i}`, name: r, prods: rubrosMap[r] }));
-            sheets.push({ id: 'tab-vacios', name: 'Vacíos', prods: null });
+            const sheets = [{ id: 'tab-consolidado', name: 'Consolidado', type: 'summary' }];
+            rubrosKeys.forEach((r, i) => sheets.push({ id: `tab-rubro-${i}`, name: r, type: 'rubro', rubroKey: r, prods: rubrosMap[r] }));
+            sheets.push({ id: 'tab-vacios', name: 'Vacíos', type: 'vacios' });
 
-            // Cabecera de Pestañas
             html += `<div class="bg-white border-b border-gray-300 flex overflow-x-auto shrink-0 hide-scrollbar shadow-sm">`;
             sheets.forEach((s, i) => {
                 const activeCls = i === 0 ? 'border-b-4 border-blue-600 text-blue-800 font-bold bg-blue-50' : 'text-gray-600 hover:bg-gray-50 font-medium';
@@ -838,18 +835,15 @@
             });
             html += `</div>`;
 
-            // Contenedor General de Vistas
             html += `<div class="flex-1 overflow-auto bg-gray-50 p-1 sm:p-4 hide-scrollbar" style="-webkit-overflow-scrolling: touch;">`;
 
-            const TIPOS_VACIO_GLOBAL = window.TIPOS_VACIO_GLOBAL || ["1/4 - 1/3", "ret 350 ml", "ret 1.25 Lts"];
-
-            // Generar las Vistas por Pestaña
             sheets.forEach((sheet, index) => {
                 const isHidden = index === 0 ? '' : 'hidden';
                 html += `<div id="${sheet.id}" class="preview-sheet ${isHidden} bg-white rounded shadow-md border border-gray-200 h-full flex flex-col overflow-hidden">`;
 
-                if (sheet.id === 'tab-vacios') {
-                    // --- VISTA DE VACÍOS ---
+                if (sheet.type === 'vacios') {
+                    // --- VISTA DE VACÍOS (Mantiene lógica anterior) ---
+                    const TIPOS_VACIO_GLOBAL = window.TIPOS_VACIO_GLOBAL || ["1/4 - 1/3", "ret 350 ml", "ret 1.25 Lts"];
                     const cliVacios = Object.keys(vaciosMovementsPorTipo || {}).filter(cli =>
                         TIPOS_VACIO_GLOBAL.some(t => ((vaciosMovementsPorTipo[cli][t]?.entregados || 0) > 0 || (vaciosMovementsPorTipo[cli][t]?.devueltos || 0) > 0))
                     ).sort();
@@ -863,15 +857,14 @@
                             <table class="min-w-full bg-white text-xs sm:text-sm">
                                 <thead class="bg-gray-800 text-white sticky top-0 z-10 shadow-sm">
                                     <tr>
-                                        <th class="py-2.5 px-2 sm:px-4 text-left font-semibold uppercase min-w-[120px] max-w-[120px] sm:min-w-[150px] sm:max-w-none truncate">Cliente</th>
-                                        <th class="py-2.5 px-2 sm:px-4 text-center font-semibold uppercase">Tipo</th>
-                                        <th class="py-2.5 px-2 sm:px-4 text-center font-semibold uppercase">Entreg.</th>
-                                        <th class="py-2.5 px-2 sm:px-4 text-center font-semibold uppercase">Devuel.</th>
-                                        <th class="py-2.5 px-2 sm:px-4 text-center font-semibold uppercase">Pendiente</th>
+                                        <th class="py-2.5 px-2 sm:px-4 text-left font-semibold uppercase min-w-[120px] max-w-[120px] sm:min-w-[150px] sm:max-w-none truncate text-white">Cliente</th>
+                                        <th class="py-2.5 px-2 sm:px-4 text-center font-semibold uppercase text-white">Tipo</th>
+                                        <th class="py-2.5 px-2 sm:px-4 text-center font-semibold uppercase text-white">Entreg.</th>
+                                        <th class="py-2.5 px-2 sm:px-4 text-center font-semibold uppercase text-white">Devuel.</th>
+                                        <th class="py-2.5 px-2 sm:px-4 text-center font-semibold uppercase text-white">Pendiente</th>
                                     </tr>
                                 </thead>
                                 <tbody class="divide-y divide-gray-200">`;
-
                         cliVacios.forEach(cli => {
                             const movs = vaciosMovementsPorTipo[cli];
                             TIPOS_VACIO_GLOBAL.forEach(t => {
@@ -879,18 +872,13 @@
                                 if (mov && (mov.entregados > 0 || mov.devueltos > 0)) {
                                     const neto = mov.entregados - mov.devueltos;
                                     const nClass = neto > 0 ? 'text-red-600 font-bold bg-red-50' : (neto < 0 ? 'text-green-600 font-bold bg-green-50' : 'text-gray-500');
-                                    let netoText = neto;
-                                    if (neto > 0) netoText = `+${neto} (Debe)`;
-                                    else if (neto < 0) netoText = `${neto} (A favor)`;
-                                    else netoText = `0 (Solvente)`;
-
                                     html += `
                                     <tr class="hover:bg-gray-50 transition-colors">
                                         <td class="py-2 sm:py-3 px-2 sm:px-4 text-gray-800 font-medium min-w-[120px] max-w-[120px] sm:min-w-[150px] sm:max-w-none truncate" title="${cli}">${cli}</td>
                                         <td class="py-2 sm:py-3 px-2 sm:px-4 text-center text-gray-600 whitespace-nowrap">${t}</td>
                                         <td class="py-2 sm:py-3 px-2 sm:px-4 text-center font-semibold text-gray-700">${mov.entregados}</td>
                                         <td class="py-2 sm:py-3 px-2 sm:px-4 text-center font-semibold text-gray-700">${mov.devueltos}</td>
-                                        <td class="py-2 sm:py-3 px-2 sm:px-4 text-center whitespace-nowrap ${nClass}">${netoText}</td>
+                                        <td class="py-2 sm:py-3 px-2 sm:px-4 text-center whitespace-nowrap ${nClass}">${neto > 0 ? '+'+neto : neto}</td>
                                     </tr>`;
                                 }
                             });
@@ -899,15 +887,51 @@
                     } else {
                         html += `<div class="p-8 text-center text-gray-500 font-medium">No hay movimientos de vacíos registrados.</div>`;
                     }
+
+                } else if (sheet.type === 'summary') {
+                    // --- VISTA CONSOLIDADA (SIN PRODUCTOS) ---
+                    html += `
+                        <div class="flex-1 overflow-auto hide-scrollbar">
+                            <table class="min-w-full text-sm sm:text-base border-collapse">
+                                <thead class="bg-gray-200 sticky top-0 z-30 shadow-sm">
+                                    <tr>
+                                        <th class="p-4 border-b border-gray-300 text-left uppercase tracking-wider text-gray-700 font-bold">Cliente</th>
+                                        <th class="p-4 border-b border-gray-300 text-right uppercase tracking-wider text-gray-700 font-bold w-40">Total Venta ($)</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-gray-200">`;
+
+                    sortedClients.forEach(cli => {
+                        const cCli = clientData[cli];
+                        let rowClass = 'hover:bg-blue-50';
+                        if (cCli.isObsequioRow) rowClass = 'bg-blue-100 hover:bg-blue-200 text-blue-900';
+                        if (cCli.isConsignacionRow) rowClass = 'bg-orange-50 hover:bg-orange-100 text-orange-900';
+
+                        html += `<tr class="${rowClass} transition-colors">
+                            <td class="p-4 border-b border-gray-100 font-bold text-gray-800">${cli}</td>
+                            <td class="p-4 border-b border-gray-100 text-right font-black text-blue-700">$${cCli.totalValue.toFixed(2)}</td>
+                        </tr>`;
+                    });
+
+                    html += `</tbody>
+                            <tfoot class="bg-gray-200 sticky bottom-0 z-30 font-black shadow-[0_-1px_0_0_#d1d5db]">
+                                <tr>
+                                    <td class="p-4 border-t border-gray-300 uppercase">Totales Jornada</td>
+                                    <td class="p-4 border-t border-gray-300 text-right text-lg">$${grandTotalValue.toFixed(2)}</td>
+                                </tr>
+                            </tfoot>
+                        </table></div>`;
+
                 } else {
-                    // --- VISTA DE PRODUCTOS (Consolidado o Rubro) ---
+                    // --- VISTA DE RUBRO ESPECÍFICO ---
+                    const rubroData = finalData.rubros[sheet.rubroKey];
+                    
                     html += `<div class="flex-1 overflow-auto hide-scrollbar" style="-webkit-overflow-scrolling: touch;">
                         <table class="min-w-full text-[11px] sm:text-sm border-collapse">
                             <thead class="bg-gray-200 sticky top-0 z-30 shadow-sm">
                                 <tr>
                                     <th class="p-1.5 sm:p-3 border-b border-gray-300 sticky left-0 z-40 bg-gray-200 min-w-[120px] max-w-[120px] sm:min-w-[150px] sm:max-w-none w-[120px] sm:w-auto truncate text-left uppercase tracking-wider text-gray-700 shadow-[1px_0_0_0_#d1d5db]">Cliente</th>`;
 
-                    // INYECCIÓN DE SEGMENTO Y MARCA EN CABECERA DE PRODUCTOS
                     sheet.prods.forEach(p => {
                         html += `<th class="p-1.5 sm:p-3 border-b border-gray-300 whitespace-nowrap uppercase tracking-wider text-gray-700 align-bottom" title="${p.marca||''} - ${p.segmento||''}">
                             <div class="flex flex-col items-center justify-end h-full">
@@ -918,59 +942,49 @@
                         </th>`;
                     });
 
-                    html += `<th class="p-1.5 sm:p-3 border-b border-gray-300 sticky right-0 z-40 bg-gray-200 text-right uppercase tracking-wider text-gray-700 shadow-[-1px_0_0_0_#d1d5db]">Total</th>
+                    html += `<th class="p-1.5 sm:p-3 border-b border-gray-300 sticky right-0 z-40 bg-gray-200 text-right uppercase tracking-wider text-gray-700 shadow-[-1px_0_0_0_#d1d5db]">Sub-Total</th>
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-gray-200">`;
 
                     sortedClients.forEach(cli => {
-                        const cCli = clientData[cli];
-                        const esSoloObsequio = cCli.isObsequioRow;
-                        const esSoloConsignacion = cCli.isConsignacionRow;
-
-                        const hasProductsInSheet = sheet.prods.some(p => (cCli.products[p.id] || 0) > 0);
-                        if (!hasProductsInSheet && sheet.id !== 'tab-consolidado') return;
+                        const cCliInRubro = rubroData.clients[cli];
+                        if (!cCliInRubro) return; // Si el cliente no tiene nada en este rubro, saltar
 
                         let rowClass = 'hover:bg-blue-50';
-                        if (esSoloObsequio) rowClass = 'bg-blue-100 hover:bg-blue-200 text-blue-900';
-                        if (esSoloConsignacion) rowClass = 'bg-orange-50 hover:bg-orange-100 text-orange-900';
+                        if (cCliInRubro.isObsequioRow) rowClass = 'bg-blue-100 hover:bg-blue-200 text-blue-900';
+                        if (cCliInRubro.isConsignacionRow) rowClass = 'bg-orange-50 hover:bg-orange-100 text-orange-900';
 
                         html += `<tr class="${rowClass} transition-colors">
                             <td class="p-1.5 sm:p-3 border-b border-gray-200 font-bold bg-white sticky left-0 z-20 min-w-[120px] max-w-[120px] sm:min-w-[150px] sm:max-w-none w-[120px] sm:w-auto truncate shadow-[1px_0_0_0_#e5e7eb]" title="${cli}">${cli}</td>`;
 
                         sheet.prods.forEach(p => {
-                            const qU = cCli.products[p.id] || 0;
+                            const qU = cCliInRubro.products[p.id] || 0;
                             const qtyDisplay = window.dataModule.getDisplayQty(qU, p);
-                            let suffix = '';
-                            if (esSoloObsequio) suffix = ` <span class="text-[9px] text-blue-600 font-black ml-0.5">(R)</span>`;
+                            let suffix = cCliInRubro.isObsequioRow && qU > 0 ? ` <span class="text-[9px] text-blue-600 font-black ml-0.5">(R)</span>` : '';
                             let dQ = qU > 0 ? (typeof qtyDisplay.value === 'number' ? `${qtyDisplay.value} ${qtyDisplay.unit}` : qtyDisplay.value) + suffix : '';
-
                             let cellClass = qU > 0 ? 'font-bold text-gray-900' : 'text-gray-400';
-                            if (esSoloObsequio && qU > 0) cellClass += ' bg-blue-50 text-blue-800';
-                            if (esSoloConsignacion && qU > 0) cellClass += ' bg-orange-50 text-orange-800';
-
                             html += `<td class="p-1.5 sm:p-3 border-b border-gray-200 text-center whitespace-nowrap ${cellClass}">${dQ}</td>`;
                         });
 
-                        html += `<td class="p-1.5 sm:p-3 border-b border-gray-200 text-right font-black bg-white sticky right-0 z-20 shadow-[-1px_0_0_0_#e5e7eb]">$${cCli.totalValue.toFixed(2)}</td>
+                        // Aquí mostramos el SUBTOTAL del rubro para este cliente
+                        html += `<td class="p-1.5 sm:p-3 border-b border-gray-200 text-right font-black bg-white sticky right-0 z-20 shadow-[-1px_0_0_0_#e5e7eb]">$${cCliInRubro.totalValue.toFixed(2)}</td>
                         </tr>`;
                     });
 
-                    // Footer
                     html += `</tbody>
                             <tfoot class="bg-gray-200 sticky bottom-0 z-30 font-black shadow-[0_-1px_0_0_#d1d5db]">
                                 <tr>
-                                    <td class="p-1.5 sm:p-3 border-t border-gray-300 sticky left-0 z-40 bg-gray-200 uppercase shadow-[1px_0_0_0_#d1d5db] min-w-[120px] max-w-[120px] sm:min-w-[150px] sm:max-w-none w-[120px] sm:w-auto truncate" title="Totales">Totales</td>`;
+                                    <td class="p-1.5 sm:p-3 border-t border-gray-300 sticky left-0 z-40 bg-gray-200 uppercase shadow-[1px_0_0_0_#d1d5db] min-w-[120px] max-w-[120px] sm:min-w-[150px] sm:max-w-none w-[120px] sm:w-auto truncate" title="Totales">Totales Rubro</td>`;
 
                     sheet.prods.forEach(p => {
-                        let tQ = 0;
-                        sortedClients.forEach(cli => tQ += clientData[cli].products[p.id] || 0);
+                        const tQ = rubroData.productTotals[p.id]?.totalSold || 0;
                         const qtyDisplay = window.dataModule.getDisplayQty(tQ, p);
                         let dT = tQ > 0 ? (typeof qtyDisplay.value === 'number' ? `${qtyDisplay.value} ${qtyDisplay.unit}` : qtyDisplay.value) : '';
                         html += `<td class="p-1.5 sm:p-3 border-t border-gray-300 text-center whitespace-nowrap text-blue-800">${dT}</td>`;
                     });
 
-                    html += `<td class="p-1.5 sm:p-3 border-t border-gray-300 text-right sticky right-0 z-40 bg-gray-200 shadow-[-1px_0_0_0_#d1d5db]">$${grandTotalValue.toFixed(2)}</td>
+                    html += `<td class="p-1.5 sm:p-3 border-t border-gray-300 text-right sticky right-0 z-40 bg-gray-200 shadow-[-1px_0_0_0_#d1d5db]">$${rubroData.totalValue.toFixed(2)}</td>
                                 </tr>
                             </tfoot>
                         </table></div>`;
@@ -978,17 +992,14 @@
                 html += `</div>`;
             });
 
-            html += `</div>`; // Cerrar contenedor general
+            html += `</div>`;
             overlay.insertAdjacentHTML('beforeend', html);
             document.body.appendChild(overlay);
 
             const m = document.getElementById('modalContainer');
             if (m) m.classList.add('hidden');
 
-            // --- LISTENERS DE INTERACCIÓN ---
-            overlay.querySelector('#closePreviewOverlayBtn').addEventListener('click', () => {
-                overlay.remove();
-            });
+            overlay.querySelector('#closePreviewOverlayBtn').addEventListener('click', () => overlay.remove());
 
             overlay.querySelectorAll('.preview-tab-btn').forEach(btn => {
                 btn.addEventListener('click', (e) => {
@@ -997,12 +1008,9 @@
                         b.classList.add('text-gray-600', 'font-medium');
                     });
                     overlay.querySelectorAll('.preview-sheet').forEach(s => s.classList.add('hidden'));
-
                     e.target.classList.add('border-b-4', 'border-blue-600', 'text-blue-800', 'font-bold', 'bg-blue-50');
                     e.target.classList.remove('text-gray-600', 'font-medium');
-                    
-                    const targetId = e.target.getAttribute('data-target');
-                    overlay.querySelector(`#${targetId}`).classList.remove('hidden');
+                    overlay.querySelector(`#${e.target.getAttribute('data-target')}`).classList.remove('hidden');
                 });
             });
 
