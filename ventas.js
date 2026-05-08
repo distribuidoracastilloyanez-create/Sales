@@ -73,18 +73,26 @@
         _originalVentaForEdit = null;
         if (_floatingControls) _floatingControls.classList.add('hidden');
         _monedaActual = 'USD';
-        _ventaActual = { cliente: null, productos: {}, vaciosDevueltosPorTipo: {} };
-        TIPOS_VACIO.forEach(tipo => _ventaActual.vaciosDevueltosPorTipo[tipo] = 0);
-        
-        _mainContent.innerHTML = window.ventasUI.getNewSaleTemplate(TIPOS_VACIO);
 
-        const clienteSearchInput = document.getElementById('clienteSearch');
-        clienteSearchInput.addEventListener('input', () => { const term = clienteSearchInput.value.toLowerCase(); const filtered = _clientesCache.filter(c=>(c.nombreComercial||'').toLowerCase().includes(term)||(c.nombrePersonal||'').toLowerCase().includes(term)); renderClienteDropdown(filtered); document.getElementById('clienteDropdown').classList.remove('hidden'); });
-        const savedTasa = localStorage.getItem('tasaCOP'); if (savedTasa) { _tasaCOP = parseFloat(savedTasa); document.getElementById('tasaCopInput').value = _tasaCOP; }
-        const savedTasaBs = localStorage.getItem('tasaBs'); if (savedTasaBs) { _tasaBs = parseFloat(savedTasaBs); document.getElementById('tasaBsInput').value = _tasaBs; }
-        document.getElementById('tasaCopInput').addEventListener('input', (e) => { _tasaCOP = parseFloat(e.target.value) || 0; localStorage.setItem('tasaCOP', _tasaCOP); if (_monedaActual === 'COP') { renderVentasInventario(); updateVentaTotal(); } });
-        document.getElementById('tasaBsInput').addEventListener('input', (e) => { _tasaBs = parseFloat(e.target.value) || 0; localStorage.setItem('tasaBs', _tasaBs); if (_monedaActual === 'Bs') { renderVentasInventario(); updateVentaTotal(); } });
-        document.getElementById('rubroFilter').addEventListener('change', renderVentasInventario);
+      _ventaActual = { cliente: null, productos: {}, vaciosDevueltosPorTipo: {} };
+
+      TIPOS_VACIO.forEach(tipo => _ventaActual.vaciosDevueltosPorTipo[tipo] = 0);
+
+      _mainContent.innerHTML = window.ventasUI.getNewSaleTemplate(TIPOS_VACIO);
+
+      const clienteSearchInput = document.getElementById('clienteSearch');
+
+      clienteSearchInput.addEventListener('input', () => { const term = clienteSearchInput.value.toLowerCase(); const filtered = _clientesCache.filter(c=>(c.nombreComercial||'').toLowerCase().includes(term)||(c.nombrePersonal||'').toLowerCase().includes(term)); renderClienteDropdown(filtered); document.getElementById('clienteDropdown').classList.remove('hidden'); });
+
+      const savedTasa = localStorage.getItem('tasaCOP'); if (savedTasa) { _tasaCOP = parseFloat(savedTasa); document.getElementById('tasaCopInput').value = _tasaCOP; }
+
+      const savedTasaBs = localStorage.getItem('tasaBs'); if (savedTasaBs) { _tasaBs = parseFloat(savedTasaBs); document.getElementById('tasaBsInput').value = _tasaBs; }
+
+      document.getElementById('tasaCopInput').addEventListener('input', (e) => { _tasaCOP = parseFloat(e.target.value) || 0; localStorage.setItem('tasaCOP', _tasaCOP); if (_monedaActual === 'COP') { renderVentasInventario(); updateVentaTotal(); } });
+
+      document.getElementById('tasaBsInput').addEventListener('input', (e) => { _tasaBs = parseFloat(e.target.value) || 0; localStorage.setItem('tasaBs', _tasaBs); if (_monedaActual === 'Bs') { renderVentasInventario(); updateVentaTotal(); } });
+
+      document.getElementById('rubroFilter').addEventListener('change', renderVentasInventario);
         document.getElementById('generarTicketBtn').addEventListener('click', generarTicket); 
         document.getElementById('backToVentasBtn').addEventListener('click', showVentasView);
         loadDataForNewSale();
@@ -97,31 +105,32 @@
         }, err => { 
             if (err.code === 'permission-denied' || err.code === 'unauthenticated') return;
             console.error("Error clientes:", err); 
-        });
+      });
 
         const masterRef = _collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/productos`);
         const unsubMaster = _onSnapshot(masterRef, snap => {
             _masterCatalogCache = {};
             snap.forEach(d => { _masterCatalogCache[d.id] = { id: d.id, ...d.data() }; });
             mergeInventarioCache(); 
-        }, err => console.error("Error Maestro:", err));
+      }, err => console.error("Error Maestro:", err));
 
-        const inventarioRef = _collection(_db, `artifacts/${_appId}/users/${_userId}/inventario`);
+
+      const inventarioRef = _collection(_db, `artifacts/${_appId}/users/${_userId}/inventario`);
         const unsubStock = _onSnapshot(inventarioRef, snap => { 
             _userStockCache = {};
             snap.forEach(d => {
                 const data = d.data();
                 _userStockCache[d.id] = {
-                    cantidadUnidades: data.cantidadUnidades || 0,
-                    _legacyData: data 
+                  cantidadUnidades: data.cantidadUnidades || 0,
+                  _legacyData: data 
                 };
             });
             mergeInventarioCache(); 
         }, err => { 
             if (err.code === 'permission-denied' || err.code === 'unauthenticated') return;
             console.error("Error inventario stock:", err); 
-            const b = document.getElementById('inventarioTableBody'); if(b) b.innerHTML = '<tr><td colspan="4" class="text-red-500">Error inventario</td></tr>'; 
-        });
+          const b = document.getElementById('inventarioTableBody'); if(b) b.innerHTML = '<tr><td colspan="4" class="text-red-500">Error inventario</td></tr>'; 
+      });
 
         _activeListeners.push(unsubClientes, unsubMaster, unsubStock);
     }
@@ -136,9 +145,9 @@
 
             if (master) {
                 _inventarioCache.push({
-                    ...master,
-                    cantidadUnidades: stock ? stock.cantidadUnidades : 0,
-                    id: id
+                  ...master,
+                  cantidadUnidades: stock ? stock.cantidadUnidades : 0,
+                  id: id
                 });
             } else if (stock && stock._legacyData) {
                 _inventarioCache.push({ ...stock._legacyData, id: id });
@@ -160,10 +169,10 @@
         filteredClients.forEach(cli => { const i = document.createElement('div'); i.className = 'autocomplete-item'; i.textContent = `${cli.nombreComercial} (${cli.nombrePersonal})`; i.addEventListener('click', () => selectCliente(cli)); cD.appendChild(i); });
     }
 
-    function selectCliente(cliente) {
-        _ventaActual.cliente = cliente; 
-        
-        const searchInput = document.getElementById('clienteSearch');
+  function selectCliente(cliente) {
+      _ventaActual.cliente = cliente; 
+      
+      const searchInput = document.getElementById('clienteSearch');
         if (searchInput) searchInput.blur();
 
         document.getElementById('client-search-container').classList.add('hidden'); 
@@ -175,8 +184,8 @@
             const invContainer = document.getElementById('inventarioTableContainer');
             const footerSection = document.getElementById('venta-footer-section');
             const vaciosSection = document.getElementById('vacios-devueltos-section');
-            
-            if(invContainer) invContainer.classList.remove('hidden'); 
+
+          if(invContainer) invContainer.classList.remove('hidden'); 
             if(footerSection) footerSection.classList.remove('hidden'); 
             if(vaciosSection) vaciosSection.classList.remove('hidden');
             
@@ -188,7 +197,7 @@
         const cycle = ['USD', 'COP', 'Bs'], rates = { 'USD': 1, 'COP': _tasaCOP, 'Bs': _tasaBs }; let cI = cycle.indexOf(_monedaActual), nI = (cI + 1) % cycle.length;
         while (nI !== cI) { if (rates[cycle[nI]] > 0) { _monedaActual = cycle[nI]; renderVentasInventario(); updateVentaTotal(); return; } nI = (nI + 1) % cycle.length; }
         _showModal('Aviso', (_tasaCOP <= 0 && _tasaBs <= 0) ? 'Ingresa tasas para alternar.' : 'Ingresa tasa válida (> 0).');
-    }
+  }
 
     async function renderVentasInventario() {
         const body = document.getElementById('inventarioTableBody'), rF = document.getElementById('rubroFilter'); if (!body || !rF) return; body.innerHTML = `<tr><td colspan="4" class="text-center text-gray-500">Cargando...</td></tr>`;
@@ -220,31 +229,31 @@
              const copy = { ...p };
              const orig = _originalVentaForEdit.productos.find(op => op.id === p.id);
              if (orig) {
-                 copy.cantidadUnidades = (copy.cantidadUnidades || 0) + (orig.totalUnidadesVendidas || 0);
-             }
-             return copy;
-        });
+               copy.cantidadUnidades = (copy.cantidadUnidades || 0) + (orig.totalUnidadesVendidas || 0);
+           }
+           return copy;
+      });
 
-        body.innerHTML = window.ventasUI.getInventoryTableRows(mappedInv, _ventaActual.productos, _monedaActual, _tasaCOP, _tasaBs, 'segmento');
+      body.innerHTML = window.ventasUI.getInventoryTableRows(mappedInv, _ventaActual.productos, _monedaActual, _tasaCOP, _tasaBs, 'segmento');
 
-        updateVentaTotal();
-    }
+      updateVentaTotal();
+  }
 
-    function handleQuantityChange(event) {
-        const inp=event.target, pId=inp.dataset.productId, tV=inp.dataset.tipoVenta, prod=_inventarioCache.find(p=>p.id===pId); if(!prod) return; if(!_ventaActual.productos[pId]) _ventaActual.productos[pId]={...prod, cantCj:0,cantPaq:0,cantUnd:0,totalUnidadesVendidas:0};
-        const qty=parseInt(inp.value,10)||0; _ventaActual.productos[pId][`cant${tV[0].toUpperCase()+tV.slice(1)}`]=qty; const pV=_ventaActual.productos[pId], uCj=pV.unidadesPorCaja||1, uPaq=pV.unidadesPorPaquete||1;
-        
-        let stockU = prod.cantidadUnidades || 0;
-        if (_originalVentaForEdit) {
-             const origP = _originalVentaForEdit.productos.find(op => op.id === pId);
-             if (origP) stockU += (origP.totalUnidadesVendidas || 0);
-        }
+  function handleQuantityChange(event) {
+      const inp=event.target, pId=inp.dataset.productId, tV=inp.dataset.tipoVenta, prod=_inventarioCache.find(p=>p.id===pId); if(!prod) return; if(!_ventaActual.productos[pId]) _ventaActual.productos[pId]={...prod, cantCj:0,cantPaq:0,cantUnd:0,totalUnidadesVendidas:0};
+      const qty=parseInt(inp.value,10)||0; _ventaActual.productos[pId][`cant${tV[0].toUpperCase()+tV.slice(1)}`]=qty; const pV=_ventaActual.productos[pId], uCj=pV.unidadesPorCaja||1, uPaq=pV.unidadesPorPaquete||1;
+      
+      let stockU = prod.cantidadUnidades || 0;
+      if (_originalVentaForEdit) {
+           const origP = _originalVentaForEdit.productos.find(op => op.id === pId);
+           if (origP) stockU += (origP.totalUnidadesVendidas || 0);
+      }
 
-        const totU=(pV.cantCj*uCj)+(pV.cantPaq*uPaq)+(pV.cantUnd||0); 
-        
-        if(totU > stockU){ 
-            _showModal('Stock Insuficiente',`Ajustado al máximo disponible.`); 
-            let ex=totU-stockU; 
+      const totU=(pV.cantCj*uCj)+(pV.cantPaq*uPaq)+(pV.cantUnd||0); 
+      
+      if(totU > stockU){ 
+          _showModal('Stock Insuficiente',`Ajustado al máximo disponible.`); 
+          let ex=totU-stockU; 
             if(tV==='cj')inp.value=Math.max(0,qty-Math.ceil(ex/uCj)); 
             else if(tV==='paq')inp.value=Math.max(0,qty-Math.ceil(ex/uPaq)); 
             else inp.value=Math.max(0,qty-ex); 
@@ -282,19 +291,19 @@
             if (navigator.share && blob) { 
                 await navigator.share({ files: [new File([blob], "venta.png", { type: "image/png" })], title: "Ticket de Venta" }); 
             } else { 
-                _showModal('Error', 'Función compartir no disponible.'); 
-            }
-            if(callbackDespuesDeCompartir) callbackDespuesDeCompartir(true);
-        } catch(e) { 
-            _showModal('Error', `No se pudo generar/compartir: ${e.message}`); 
-            if(callbackDespuesDeCompartir) callbackDespuesDeCompartir(false); 
-        } finally { 
-            document.body.removeChild(tempDiv); 
-        }
-    }
-    
-    async function handleShareRawText(textContent, callbackDespuesDeCompartir) {
-        let success = false;
+              _showModal('Error', 'Función compartir no disponible.'); 
+          }
+          if(callbackDespuesDeCompartir) callbackDespuesDeCompartir(true);
+      } catch(e) { 
+          _showModal('Error', `No se pudo generar/compartir: ${e.message}`); 
+          if(callbackDespuesDeCompartir) callbackDespuesDeCompartir(false); 
+      } finally { 
+          document.body.removeChild(tempDiv); 
+      }
+  }
+
+  async function handleShareRawText(textContent, callbackDespuesDeCompartir) {
+      let success = false;
          if (navigator.share) { try { await navigator.share({ title: 'Ticket de Venta', text: textContent }); success = true; } catch (err) { console.warn("Share API error:", err.name); } }
          else { try { legacyCopyToClipboard(textContent, (copySuccess) => { success = copySuccess; }); } catch (copyErr) { console.error('Fallback copy failed:', copyErr); } } 
          setTimeout(() => {
@@ -309,9 +318,9 @@
         catch (err) { console.error('Fallback copy failed:', err); _showModal('Error', 'No se pudo copiar el texto.'); success = false;}
         finally { document.body.removeChild(textArea); if(callbackDespuesDeCopia) callbackDespuesDeCopia(success); }
     }
-    
-    function showSharingOptions(venta, productos, vaciosDevueltosPorTipo, tipo, callbackFinal, tipoOperacion) {
-        const modalContent = `<div class="text-center"><h3 class="text-xl font-bold mb-4">Generar ${tipo}</h3><p class="mb-6">Elige formato.</p><div class="space-y-4"><button id="printTextBtn" class="w-full px-6 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600">Imprimir (Texto)</button><button id="shareImageBtn" class="w-full px-6 py-3 bg-green-500 text-white rounded-lg hover:bg-green-600">Compartir (Imagen)</button></div></div>`;
+
+  function showSharingOptions(venta, productos, vaciosDevueltosPorTipo, tipo, callbackFinal, tipoOperacion) {
+      const modalContent = `<div class="text-center"><h3 class="text-xl font-bold mb-4">Generar ${tipo}</h3><p class="mb-6">Elige formato.</p><div class="space-y-4"><button id="printTextBtn" class="w-full px-6 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 font-bold shadow">Imprimir (Texto)</button><button id="shareImageBtn" class="w-full px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 font-bold shadow">Compartir (Imagen)</button></div></div>`;
         _showModal('Elige opción', modalContent, null, ''); 
         
         setTimeout(() => {
@@ -320,14 +329,14 @@
             
             if (printBtn) {
                 printBtn.addEventListener('click', () => { 
-                    const rawText = window.ventasUI.getTicketRawText(venta, productos, vaciosDevueltosPorTipo, tipoOperacion); 
-                    handleShareRawText(rawText, callbackFinal); 
+    const rawText = window.ventasUI.getTicketRawText(venta, productos, vaciosDevueltosPorTipo, tipoOperacion); 
+                  handleShareRawText(rawText, callbackFinal); 
                 });
             }
             if (shareBtn) {
                 shareBtn.addEventListener('click', () => { 
-                    const html = window.ventasUI.getTicketHTML(venta, productos, vaciosDevueltosPorTipo, tipo, tipoOperacion); 
-                    handleShareTicket(html, callbackFinal); 
+                  const html = window.ventasUI.getTicketHTML(venta, productos, vaciosDevueltosPorTipo, tipo, tipoOperacion); 
+                  handleShareTicket(html, callbackFinal); 
                 });
             }
         }, 150);
@@ -349,9 +358,10 @@
         } catch (e) { console.warn("Snapshot check failed (non-blocking)", e); }
 
         const prodsParaGuardar = Object.values(_ventaActual.productos);
-        if (prodsParaGuardar.length === 0 && Object.values(_ventaActual.vaciosDevueltosPorTipo).every(v => v === 0)) {
-             throw new Error("No hay productos ni vacíos para guardar.");
-        }
+
+      if (prodsParaGuardar.length === 0 && Object.values(_ventaActual.vaciosDevueltosPorTipo).every(v => v === 0)) {
+            throw new Error("No hay productos ni vacíos para guardar.");
+      }
 
         const ventaRef = _doc(_collection(_db, `artifacts/${_appId}/users/${_userId}/ventas`));
         const clientRef = _doc(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/clientes`, _ventaActual.cliente.id);
@@ -369,9 +379,9 @@
 
             for (const p of prodsParaGuardar) {
                 const stockLocal = p.cantidadUnidades || 0; 
-                const qtyNeeded = p.totalUnidadesVendidas || 0;
-                
-                if (qtyNeeded > 0) {
+              const qtyNeeded = p.totalUnidadesVendidas || 0;
+              
+              if (qtyNeeded > 0) {
                     if (stockLocal < qtyNeeded) throw new Error(`Stock insuficiente localmente para: ${p.presentacion}`);
                     const invRef = _doc(_db, `artifacts/${_appId}/users/${_userId}/inventario`, p.id);
                     batch.update(invRef, { cantidadUnidades: _increment(-qtyNeeded) });
@@ -381,24 +391,24 @@
                 totalVenta += (precios.cj || 0) * (p.cantCj || 0) + (precios.paq || 0) * (p.cantPaq || 0) + (precios.und || 0) * (p.cantUnd || 0);
 
                 if (p.manejaVacios && p.tipoVacio) {
-                    const cjV = p.cantCj || 0;
-                    if (cjV > 0) vaciosChanges[p.tipoVacio] = (vaciosChanges[p.tipoVacio] || 0) + cjV;
-                }
+                  const cjV = p.cantCj || 0;
+                  if (cjV > 0) vaciosChanges[p.tipoVacio] = (vaciosChanges[p.tipoVacio] || 0) + cjV;
+              }
 
-                if (qtyNeeded > 0) {
-                    itemsVenta.push({
-                        id: p.id, presentacion: p.presentacion, rubro: p.rubro??null, marca: p.marca??null, segmento: p.segmento??null,
-                        precios: p.precios, ventaPor: p.ventaPor, unidadesPorPaquete: p.unidadesPorPaquete, unidadesPorCaja: p.unidadesPorCaja,
-                        cantidadVendida: { cj: p.cantCj||0, paq: p.cantPaq||0, und: p.cantUnd||0 },
-                        totalUnidadesVendidas: p.totalUnidadesVendidas,
-                        iva: p.iva??0, manejaVacios: p.manejaVacios||false, tipoVacio: p.tipoVacio||null
-                    });
-                }
-            }
+              if (qtyNeeded > 0) {
+                  itemsVenta.push({
+                      id: p.id, presentacion: p.presentacion, rubro: p.rubro??null, marca: p.marca??null, segmento: p.segmento??null,
+                      precios: p.precios, ventaPor: p.ventaPor, unidadesPorPaquete: p.unidadesPorPaquete, unidadesPorCaja: p.unidadesPorCaja,
+                      cantidadVendida: { cj: p.cantCj||0, paq: p.cantPaq||0, und: p.cantUnd||0 },
+                      totalUnidadesVendidas: p.totalUnidadesVendidas,
+                      iva: p.iva??0, manejaVacios: p.manejaVacios||false, tipoVacio: p.tipoVacio||null
+                  });
+              }
+          }
 
-            for (const tV in _ventaActual.vaciosDevueltosPorTipo) {
-                const dev = _ventaActual.vaciosDevueltosPorTipo[tV] || 0;
-                if (dev > 0) vaciosChanges[tV] = (vaciosChanges[tV] || 0) - dev;
+          for (const tV in _ventaActual.vaciosDevueltosPorTipo) {
+              const dev = _ventaActual.vaciosDevueltosPorTipo[tV] || 0;
+              if (dev > 0) vaciosChanges[tV] = (vaciosChanges[tV] || 0) - dev;
             }
 
             for (const tV in vaciosChanges) {
@@ -407,25 +417,27 @@
                     const fieldPath = `saldoVacios.${tV}`;
                     batch.update(clientRef, { [fieldPath]: _increment(ch) });
                 }
-            }
+          }
 
-            const ventaDataToSave = {
-                clienteId: _ventaActual.cliente.id,
-                clienteNombre: _ventaActual.cliente.nombreComercial || _ventaActual.cliente.nombrePersonal,
-                clienteNombrePersonal: _ventaActual.cliente.nombrePersonal,
-                fecha: new Date(),
-                total: totalVenta,
-                productos: itemsVenta,
-                vaciosDevueltosPorTipo: _ventaActual.vaciosDevueltosPorTipo,
-                origen: "offline",
-                tipoOperacion: tipoOperacion
-            };
-            batch.set(ventaRef, ventaDataToSave);
+          const ventaDataToSave = {
+              clienteId: _ventaActual.cliente.id,
+              clienteNombre: _ventaActual.cliente.nombreComercial || _ventaActual.cliente.nombrePersonal,
+              clienteNombrePersonal: _ventaActual.cliente.nombrePersonal,
+              fecha: new Date(),
+              total: totalVenta,
+              productos: itemsVenta,
+              vaciosDevueltosPorTipo: _ventaActual.vaciosDevueltosPorTipo,
+              origen: "offline",
+              tipoOperacion: tipoOperacion
+          };
 
-            await batch.commit();
-            return { venta: ventaDataToSave, productos: itemsVenta, vaciosDevueltosPorTipo: ventaDataToSave.vaciosDevueltosPorTipo };
+          batch.set(ventaRef, ventaDataToSave);
 
-        } else {
+          await batch.commit();
+
+          return { venta: ventaDataToSave, productos: itemsVenta, vaciosDevueltosPorTipo: ventaDataToSave.vaciosDevueltosPorTipo };
+
+      } else {
             if (!_runTransaction) throw new Error("Dependencia crítica 'runTransaction' no disponible.");
             console.log("Modo Online: Usando Transaction");
 
@@ -437,7 +449,7 @@
                     for (const p of prodsParaGuardar) {
                         const ref = _doc(_db, `artifacts/${_appId}/users/${_userId}/inventario`, p.id);
                         invRefs.push({ id: p.id, ref: ref, qty: p.totalUnidadesVendidas || 0, presentacion: p.presentacion });
-                    }
+                  }
                     const invDocs = await Promise.all(invRefs.map(item => transaction.get(item.ref)));
                     
                     let totalVenta = 0;
@@ -459,14 +471,14 @@
 
                         const p = prodsParaGuardar.find(prod => prod.id === item.id);
                         const precios = p.precios || { und: p.precioPorUnidad || 0 };
-                        const sub = (precios.cj || 0) * (p.cantCj || 0) + (precios.paq || 0) * (p.cantPaq || 0) + (precios.und || 0) * (p.cantUnd || 0);
-                        totalVenta += sub;
+                      const sub = (precios.cj || 0) * (p.cantCj || 0) + (precios.paq || 0) * (p.cantPaq || 0) + (precios.und || 0) * (p.cantUnd || 0);
+                      totalVenta += sub;
 
-                        if (p.manejaVacios && p.tipoVacio) {
-                            const tV = p.tipoVacio;
-                            const cjV = p.cantCj || 0;
-                            if (cjV > 0) vaciosChanges[tV] = (vaciosChanges[tV] || 0) + cjV;
-                        }
+                      if (p.manejaVacios && p.tipoVacio) {
+                          const tV = p.tipoVacio;
+                          const cjV = p.cantCj || 0;
+                          if (cjV > 0) vaciosChanges[tV] = (vaciosChanges[tV] || 0) + cjV;
+                      }
 
                         if (item.qty > 0) {
                             itemsVenta.push({
@@ -477,41 +489,40 @@
                                totalUnidadesVendidas: p.totalUnidadesVendidas,
                                iva: p.iva??0, manejaVacios: p.manejaVacios||false, tipoVacio: p.tipoVacio||null
                             });
-                        }
-                    });
+                      }
+                  });
 
-                    for (const tV in _ventaActual.vaciosDevueltosPorTipo) {
-                        const dev = _ventaActual.vaciosDevueltosPorTipo[tV] || 0;
-                        if (dev > 0) vaciosChanges[tV] = (vaciosChanges[tV] || 0) - dev;
-                    }
+                  for (const tV in _ventaActual.vaciosDevueltosPorTipo) {
+                      const dev = _ventaActual.vaciosDevueltosPorTipo[tV] || 0;
+                      if (dev > 0) vaciosChanges[tV] = (vaciosChanges[tV] || 0) - dev;
+                  }
 
                     if (Object.values(vaciosChanges).some(c => c !== 0)) {
                         const cliData = clientDoc.data();
-                        const sVac = cliData.saldoVacios || {};
-                        for (const tV in vaciosChanges) {
-                            const ch = vaciosChanges[tV];
-                            if (ch !== 0) sVac[tV] = (sVac[tV] || 0) + ch;
-                        }
-                        transaction.update(clientRef, { saldoVacios: sVac });
-                    }
+                      const sVac = cliData.saldoVacios || {};
+                      for (const tV in vaciosChanges) {
+                          const ch = vaciosChanges[tV];
+                          if (ch !== 0) sVac[tV] = (sVac[tV] || 0) + ch;
+                      }
+                      transaction.update(clientRef, { saldoVacios: sVac });
+                  }
 
-                    const ventaDataToSave = {
-                        clienteId: _ventaActual.cliente.id,
-                        clienteNombre: _ventaActual.cliente.nombreComercial || _ventaActual.cliente.nombrePersonal,
-                        clienteNombrePersonal: _ventaActual.cliente.nombrePersonal,
-                        fecha: new Date(),
-                        total: totalVenta,
-                        productos: itemsVenta,
-                        vaciosDevueltosPorTipo: _ventaActual.vaciosDevueltosPorTipo,
-                        origen: "offline",
-                        tipoOperacion: tipoOperacion
-                    };
-                    
-                    transaction.set(ventaRef, ventaDataToSave);
-                    
-                    return { venta: ventaDataToSave, productos: itemsVenta, vaciosDevueltosPorTipo: ventaDataToSave.vaciosDevueltosPorTipo }; 
-                });
-
+                  const ventaDataToSave = {
+                      clienteId: _ventaActual.cliente.id,
+                      clienteNombre: _ventaActual.cliente.nombreComercial || _ventaActual.cliente.nombrePersonal,
+                      clienteNombrePersonal: _ventaActual.cliente.nombrePersonal,
+                      fecha: new Date(),
+                      total: totalVenta,
+                      productos: itemsVenta,
+                      vaciosDevueltosPorTipo: _ventaActual.vaciosDevueltosPorTipo,
+                      origen: "offline",
+                      tipoOperacion: tipoOperacion
+                  };
+                  
+                  transaction.set(ventaRef, ventaDataToSave);
+                  
+                  return { venta: ventaDataToSave, productos: itemsVenta, vaciosDevueltosPorTipo: ventaDataToSave.vaciosDevueltosPorTipo }; 
+              });
                 return savedData;
             } catch (e) {
                 console.error("Transaction failed: ", e);
@@ -526,31 +537,31 @@
         const hayVac = Object.values(_ventaActual.vaciosDevueltosPorTipo).some(c => c > 0);
         if (prods.length === 0 && !hayVac) { _showModal('Error', 'Agrega productos o registra vacíos devueltos.'); return; }
 
-        _showModal('Confirmar Operación', '¿Guardar esta transacción?', async () => {
-            _showModal('Progreso', 'Guardando transacción...', null, '', null, false); 
-            try {
+      _showModal('Confirmar Operación', '¿Guardar esta transacción?', async () => {
+          _showModal('Progreso', 'Guardando transacción...', null, '', null, false); 
+          try {
                 const savedData = await _processAndSaveVenta();
-                
+              
                 const pModal = document.getElementById('modalContainer');
                 if (pModal) pModal.classList.add('hidden');
-                
+              
                 setTimeout(() => {
                     showSharingOptions(
                         { cliente: _ventaActual.cliente, fecha: savedData.venta.fecha }, 
                         savedData.productos, 
-                        savedData.vaciosDevueltosPorTipo, 
-                        'Nota de Entrega',
-                        () => { _showModal('Éxito', 'Operación registrada y ticket generado/compartido.', showNuevaVentaView); },
-                        savedData.venta.tipoOperacion
+                      savedData.vaciosDevueltosPorTipo, 
+                      'Nota de Entrega',
+                      () => { _showModal('Éxito', 'Operación registrada y ticket generado/compartido.', showNuevaVentaView); },
+                      savedData.venta.tipoOperacion
                     );
                 }, 300);
 
             } catch (saveError) {
                 console.error("Error al guardar venta:", saveError);
-                 const progressModal = document.getElementById('modalContainer'); 
-                 if(progressModal && !progressModal.classList.contains('hidden') && progressModal.querySelector('h3')?.textContent.startsWith('Progreso')) {
-                        progressModal.classList.add('hidden');
-                 }
+               const progressModal = document.getElementById('modalContainer'); 
+                if(progressModal && !progressModal.classList.contains('hidden') && progressModal.querySelector('h3')?.textContent.startsWith('Progreso')) {
+                    progressModal.classList.add('hidden');
+                }
                 _showModal('Error', `Error al guardar la venta: ${saveError.message || saveError}`);
             }
             return false; 
@@ -583,16 +594,16 @@
                     </div>
                 </div>
                 <div id="ventasListContainer" class="overflow-x-auto"><p class="text-center text-gray-500">Cargando...</p></div>
-            </div> </div>
+            </div></div>
         `;
         document.getElementById('backToVentasTotalesBtn').addEventListener('click', showVentasTotalesView);
         document.getElementById('descargarCierrePrevioBtn').addEventListener('click', handleDescargarCierrePrevio);
         renderVentasList();
-    }
+  }
 
-    // --- NUEVO MOTOR CRONOLÓGICO (Filtra las ventas después del Snapshot) ---
-    async function calcularStockTeoricoExacto(userId, ventasActivas, obsequiosActivos) {
-        await ensureHybridCacheLoaded();
+  // --- NUEVO MOTOR CRONOLÓGICO (Filtra las ventas después del Snapshot) ---
+  async function calcularStockTeoricoExacto(userId, ventasActivas, obsequiosActivos) {
+      await ensureHybridCacheLoaded();
         
         const AUDIT_SNAPSHOT_PATH = `artifacts/${_appId}/users/${userId}/config/auditoriaBaseSnapshot`;
         let baseItems = [];
@@ -615,14 +626,14 @@
         const correcciones = cSnapFull.docs.map(d => d.data()).filter(c => (c.fecha?.toDate ? c.fecha.toDate() : new Date(c.fecha)) >= fechaCargaInicial);
         const cierresPasados = cierresSnapFull.docs.map(d => d.data()).filter(c => (c.fecha?.toDate ? c.fecha.toDate() : new Date(c.fecha)) >= fechaCargaInicial);
 
-        const ventasPostSnapshot = ventasActivas.filter(v => {
-            const dObj = v.fecha?.toDate ? v.fecha.toDate() : new Date(v.fecha);
-            return dObj >= fechaCargaInicial;
-        });
+      const ventasPostSnapshot = ventasActivas.filter(v => {
+          const dObj = v.fecha?.toDate ? v.fecha.toDate() : new Date(v.fecha);
+          return dObj >= fechaCargaInicial;
+      });
 
-        const obsequiosPostSnapshot = obsequiosActivos.filter(o => {
-            const dObj = o.fecha?.toDate ? o.fecha.toDate() : new Date(o.fecha);
-            return dObj >= fechaCargaInicial;
+      const obsequiosPostSnapshot = obsequiosActivos.filter(o => {
+          const dObj = o.fecha?.toDate ? o.fecha.toDate() : new Date(o.fecha);
+          return dObj >= fechaCargaInicial;
         });
 
         const cargaInicialExcelMap = new Map(); 
@@ -634,53 +645,53 @@
         recargas.forEach(r => {
             (r.detalles || []).forEach(d => {
                 cargaInicialExcelMap.set(d.productoId, (cargaInicialExcelMap.get(d.productoId) || 0) + (d.diferenciaUnidades || 0));
-            });
-        });
+          });
+      });
 
-        correcciones.forEach(c => {
-            if (c.tipoAjuste === 'LIMPIEZA_PROFUNDA') return;
-            (c.detalles || []).forEach(d => {
-                const ajuste = d.ajusteBase !== undefined ? d.ajusteBase : (d.ajuste !== undefined ? d.ajuste : (d.diferenciaUnidades || d.diferencia || 0));
-                if (d.productoId && d.productoId !== 'ALL') {
+      correcciones.forEach(c => {
+          if (c.tipoAjuste === 'LIMPIEZA_PROFUNDA') return;
+          (c.detalles || []).forEach(d => {
+              const ajuste = d.ajusteBase !== undefined ? d.ajusteBase : (d.ajuste !== undefined ? d.ajuste : (d.diferenciaUnidades || d.diferencia || 0));
+              if (d.productoId && d.productoId !== 'ALL') {
                     cargaInicialExcelMap.set(d.productoId, (cargaInicialExcelMap.get(d.productoId) || 0) + ajuste);
                 }
-            });
-        });
+          });
+      });
 
-        cierresPasados.forEach(c => {
-            (c.ventas || []).forEach(v => {
-                (v.productos || []).forEach(vp => {
-                    cargaInicialExcelMap.set(vp.id, (cargaInicialExcelMap.get(vp.id) || 0) - (vp.totalUnidadesVendidas || 0));
-                });
-            });
-            (c.obsequios || []).forEach(o => {
-                const pMaster = _masterCatalogCache[o.productoId] || { unidadesPorCaja: 1 };
-                const factor = o.unidadesPorCaja || pMaster.unidadesPorCaja || 1;
-                cargaInicialExcelMap.set(o.productoId, (cargaInicialExcelMap.get(o.productoId) || 0) - ((o.cantidadCajas || 0) * factor));
-            });
-        });
+      cierresPasados.forEach(c => {
+          (c.ventas || []).forEach(v => {
+              (v.productos || []).forEach(vp => {
+                  cargaInicialExcelMap.set(vp.id, (cargaInicialExcelMap.get(vp.id) || 0) - (vp.totalUnidadesVendidas || 0));
+              });
+          });
+          (c.obsequios || []).forEach(o => {
+              const pMaster = _masterCatalogCache[o.productoId] || { unidadesPorCaja: 1 };
+              const factor = o.unidadesPorCaja || pMaster.unidadesPorCaja || 1;
+              cargaInicialExcelMap.set(o.productoId, (cargaInicialExcelMap.get(o.productoId) || 0) - ((o.cantidadCajas || 0) * factor));
+          });
+      });
 
-        const cargaParaExcel = [];
-        cargaInicialExcelMap.forEach((qty, pId) => {
-            if (qty > 0 || ventasPostSnapshot.some(v => v.productos.some(vp => vp.id === pId)) || obsequiosPostSnapshot.some(o => o.productoId === pId)) {
-                const pMaster = _masterCatalogCache[pId] || {};
-                cargaParaExcel.push({
-                    productoId: pId,
-                    presentacion: pMaster.presentacion || 'Desconocido',
-                    rubro: pMaster.rubro || 'SIN RUBRO',
-                    segmento: pMaster.segmento || 'SIN SEGMENTO',
-                    marca: pMaster.marca || 'S/M',
-                    cantidadUnidades: qty
-                });
-            }
-        });
+      const cargaParaExcel = [];
+      cargaInicialExcelMap.forEach((qty, pId) => {
+          if (qty > 0 || ventasPostSnapshot.some(v => v.productos.some(vp => vp.id === pId)) || obsequiosPostSnapshot.some(o => o.productoId === pId)) {
+              const pMaster = _masterCatalogCache[pId] || {};
+              cargaParaExcel.push({
+                  productoId: pId,
+                  presentacion: pMaster.presentacion || 'Desconocido',
+                  rubro: pMaster.rubro || 'SIN RUBRO',
+                  segmento: pMaster.segmento || 'SIN SEGMENTO',
+                  marca: pMaster.marca || 'S/M',
+                  cantidadUnidades: qty
+              });
+          }
+      });
 
-        return { cargaParaExcel, ventasPostSnapshot, obsequiosPostSnapshot };
-    }
+      return { cargaParaExcel, ventasPostSnapshot, obsequiosPostSnapshot };
+  }
 
-    async function handleDescargarCierrePrevio() {
-        _showModal('Progreso', 'Calculando y Generando Cierre Previo (Excel)...');
-        try {
+  async function handleDescargarCierrePrevio() {
+      _showModal('Progreso', 'Calculando y Generando Cierre Previo (Excel)...');
+      try {
             const ventasSnap = await _getDocs(_collection(_db, `artifacts/${_appId}/users/${_userId}/ventas`)); 
             const ventas = ventasSnap.docs.map(d => ({ id: d.id, ...d.data() }));
             const obsequiosSnap = await _getDocs(_collection(_db, `artifacts/${_appId}/users/${_userId}/obsequios_entregados`));
@@ -688,7 +699,7 @@
 
             const { cargaParaExcel } = await calcularStockTeoricoExacto(_userId, ventas, obsequios);
 
-            let vendedorInfo = {};
+          let vendedorInfo = {};
             if (window.userRole === 'user') {
                  const uDoc = await _getDoc(_doc(_db, "users", _userId)); 
                  const uData = uDoc.exists() ? uDoc.data() : {};
@@ -701,22 +712,22 @@
                  const p = _masterCatalogCache[o.productoId] || {};
                  obsequiosTotal += (o.cantidadCajas || 0) * (p.precios?.cj || 0);
             });
-            
-            const cierreDataForExport = { 
-                 fecha: { toDate: () => fechaCierre }, 
-                 ventas: ventas.map(({id, ...rest}) => rest), 
-                 obsequios: obsequios.map(({id, ...rest}) => rest),
-                 total: ventas.reduce((s, v) => s + (v.total || 0), 0) + obsequiosTotal,
-                 cargaInicialInventario: cargaParaExcel,
-                 vendedorInfo: vendedorInfo
-            }; 
+          
+          const cierreDataForExport = { 
+               fecha: { toDate: () => fechaCierre }, 
+               ventas: ventas.map(({id, ...rest}) => rest), 
+               obsequios: obsequios.map(({id, ...rest}) => rest),
+               total: ventas.reduce((s, v) => s + (v.total || 0), 0) + obsequiosTotal,
+               cargaInicialInventario: cargaParaExcel,
+               vendedorInfo: vendedorInfo
+          }; 
 
             if (window.dataModule?.exportSingleClosingToExcel) {
                 await window.dataModule.exportSingleClosingToExcel(cierreDataForExport, true); 
                 document.getElementById('modalContainer')?.classList.add('hidden');
             } else { throw new Error("Módulo de reportes no cargado."); }
-        } catch(e) { _showModal('Error', `Fallo al generar Cierre Previo: ${e.message}`); }
-    }
+      } catch(e) { _showModal('Error', `Fallo al generar Cierre Previo: ${e.message}`); }
+  }
 
     function renderVentasList() {
         const cont = document.getElementById('ventasListContainer'); if (!cont) return;
@@ -725,13 +736,13 @@
         const unsub = _onSnapshot(q, (snap) => {
             _ventasGlobal = snap.docs.map(d => ({ id: d.id, ...d.data() })); 
             _ventasGlobal.sort((a,b) => (b.fecha?.toDate()??0) - (a.fecha?.toDate()??0));
-            
-            cont.innerHTML = window.ventasUI.getSalesListTemplate(_ventasGlobal);
+          
+          cont.innerHTML = window.ventasUI.getSalesListTemplate(_ventasGlobal);
             
         }, (err) => { 
             if (err.code === 'permission-denied' || err.code === 'unauthenticated') return;
             console.error("Error lista ventas:", err); 
-            if(cont) cont.innerHTML = `<p class="text-red-500">Error al cargar.</p>`; 
+          if(cont) cont.innerHTML = `<p class="text-red-500">Error al cargar.</p>`; 
         });
         
         _activeListeners.push(unsub);
@@ -745,21 +756,26 @@
         document.getElementById('backToVentasTotalesBtn').addEventListener('click', showVentasTotalesView);
     }
 
+    // --- NUEVO SISTEMA DE VISTA PREVIA FULL SCREEN (TABS POR HOJAS) ---
     async function showVerCierreView() {
-        _showModal('Progreso', 'Generando reporte...');
+        _showModal('Progreso', 'Generando vista previa interactiva...');
         try {
             const ventasSnap = await _getDocs(_collection(_db, `artifacts/${_appId}/users/${_userId}/ventas`));
             const ventas = ventasSnap.docs.map(doc => doc.data());
             const obsequiosSnap = await _getDocs(_collection(_db, `artifacts/${_appId}/users/${_userId}/obsequios_entregados`));
             const obsequios = obsequiosSnap.docs.map(doc => doc.data());
 
-            if (ventas.length === 0 && obsequios.length === 0) { _showModal('Aviso', 'No hay ventas ni obsequios.'); return; }
+            if (ventas.length === 0 && obsequios.length === 0) { 
+                _showModal('Aviso', 'No hay ventas ni obsequios registrados.'); 
+                return; 
+            }
 
             const { cargaParaExcel, ventasPostSnapshot, obsequiosPostSnapshot } = await calcularStockTeoricoExacto(_userId, ventas, obsequios);
-            
+
             if (!window.dataModule?._processSalesDataForModal) throw new Error("Módulo de datos no disponible.");
 
-            const { clientData, clientTotals, grandTotalValue, sortedClients, finalProductOrder } = 
+            // FIX: Extraer vaciosMovementsPorTipo correctamente
+            const { clientData, clientTotals, grandTotalValue, sortedClients, finalProductOrder, vaciosMovementsPorTipo } = 
                 await window.dataModule._processSalesDataForModal(ventasPostSnapshot, obsequiosPostSnapshot, cargaParaExcel, _userId);
 
             const enrichedProductOrder = finalProductOrder.map(p => {
@@ -767,128 +783,257 @@
                 return liveProd ? { ...p, ventaPor: liveProd.ventaPor, unidadesPorCaja: liveProd.unidadesPorCaja, unidadesPorPaquete: liveProd.unidadesPorPaquete } : p;
             });
 
-            let hHTML = `<tr class="sticky top-0 z-20 bg-gray-200"><th class="p-1 border sticky left-0 z-30 bg-gray-200">Cliente</th>`;
-            enrichedProductOrder.forEach(p => { hHTML += `<th class="p-1 border whitespace-nowrap text-xs" title="${p.marca||''} - ${p.segmento||''}">${p.presentacion}</th>`; });
-            hHTML += `<th class="p-1 border sticky right-0 z-30 bg-gray-200">Total Cliente</th></tr>`;
-            
-            let bHTML=''; 
-            sortedClients.forEach(cli=>{
-                const cCli = clientData[cli]; 
-                const esSoloObsequio = cCli.isObsequioRow;
-                const esSoloConsignacion = cCli.isConsignacionRow; 
-                
-                let rowClass = 'hover:bg-blue-50';
-                if (esSoloObsequio) rowClass = 'bg-blue-100 hover:bg-blue-200 text-blue-900';
-                if (esSoloConsignacion) rowClass = 'bg-orange-50 hover:bg-orange-100 text-orange-900';
-                
-                bHTML+=`<tr class="${rowClass}"><td class="p-1 border font-medium bg-white sticky left-0 z-10">${cli}</td>`; 
-                enrichedProductOrder.forEach(p=>{
-                    const qU=cCli.products[p.id]||0; 
-                    const qtyDisplay = window.dataModule.getDisplayQty(qU, p);
-                    
-                    let suffix = '';
-                    if (esSoloObsequio) suffix = ` <span class="text-[10px] text-blue-600 font-black ml-1">(Regalo)</span>`;
-
-                    let dQ = qU > 0 ? (typeof qtyDisplay.value === 'number' ? `${qtyDisplay.value} ${qtyDisplay.unit}` : qtyDisplay.value) + suffix : '';
-                    
-                    let cellClass = qU > 0 ? 'font-bold' : '';
-                    if (esSoloObsequio && qU > 0) cellClass += ' bg-blue-50 text-blue-800';
-                    if (esSoloConsignacion && qU > 0) cellClass += ' bg-orange-50 text-orange-800';
-
-                    bHTML+=`<td class="p-1 border text-center ${cellClass}">${dQ}</td>`;
-                }); 
-                bHTML+=`<td class="p-1 border text-right font-semibold bg-white sticky right-0 z-10">$${cCli.totalValue.toFixed(2)}</td></tr>`;
+            // Agrupar por Rubro para crear las Pestañas (Hojas simuladas)
+            const rubrosMap = {};
+            enrichedProductOrder.forEach(p => {
+                const r = p.rubro || 'SIN RUBRO';
+                if(!rubrosMap[r]) rubrosMap[r] = [];
+                rubrosMap[r].push(p);
             });
+            const rubrosKeys = Object.keys(rubrosMap).sort();
 
-            let fHTML='<tr class="bg-gray-200 font-bold"><td class="p-1 border sticky left-0 z-10">TOTALES</td>'; 
-            enrichedProductOrder.forEach(p=>{
-                let tQ=0; sortedClients.forEach(cli=>tQ+=clientData[cli].products[p.id]||0); 
-                const qtyDisplay = window.dataModule.getDisplayQty(tQ, p);
-                let dT = tQ > 0 ? (typeof qtyDisplay.value === 'number' ? `${qtyDisplay.value} ${qtyDisplay.unit}` : qtyDisplay.value) : '';
-                fHTML+=`<td class="p-1 border text-center whitespace-nowrap">${dT}</td>`;
-            }); 
-            fHTML+=`<td class="p-1 border text-right sticky right-0 z-10">$${grandTotalValue.toFixed(2)}</td></tr>`;
-            
+            // Setup Data Vendedor
+            let vendedorInfo = {};
+            if (window.userRole === 'user') {
+                 const uDoc = await _getDoc(_doc(_db, "users", _userId));
+                 const uData = uDoc.exists() ? uDoc.data() : {};
+                 vendedorInfo = { userId: _userId, nombre: uData.nombre || '', apellido: uData.apellido || '', camion: uData.camion || '', email: uData.email || '' };
+            }
+            let vNameModal = vendedorInfo.nombre || 'Desconocido';
+            if(!vendedorInfo.nombre && vendedorInfo.userId && window._usersMapCache && window._usersMapCache.has(vendedorInfo.userId)){
+                 vNameModal = window._usersMapCache.get(vendedorInfo.userId).nombre;
+            }
+            const fechaCierreStr = new Date().toLocaleString('es-ES');
+
+            // --- CONSTRUCCIÓN DEL OVERLAY FULL SCREEN ---
+            const overlayId = 'fullScreenPreviewOverlay';
+            const existing = document.getElementById(overlayId);
+            if(existing) existing.remove();
+
+            const overlay = document.createElement('div');
+            overlay.id = overlayId;
+            overlay.className = 'fixed inset-0 z-[9999] bg-gray-100 flex flex-col overflow-hidden animate-fade-in';
+            overlay.innerHTML = `<style>.hide-scrollbar::-webkit-scrollbar { display: none; } .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }</style>`;
+
+            // Header Principal
+            let html = `
+                <div class="bg-gray-800 text-white p-3 sm:p-4 flex justify-between items-center shadow-md shrink-0">
+                    <div>
+                        <h2 class="text-lg sm:text-xl font-bold uppercase tracking-wider">Vista Previa de Cierre</h2>
+                        <p class="text-xs sm:text-sm text-gray-300">Vendedor: ${vNameModal} ${vendedorInfo.apellido||''} | Camión: ${vendedorInfo.camion||'N/A'} | ${fechaCierreStr}</p>
+                    </div>
+                    <button id="closePreviewOverlayBtn" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded shadow font-bold transition-colors">Cerrar</button>
+                </div>
+            `;
+
+            // Configurar Pestañas (Hojas)
+            const sheets = [{ id: 'tab-consolidado', name: 'Consolidado', prods: enrichedProductOrder }];
+            rubrosKeys.forEach((r, i) => sheets.push({ id: `tab-rubro-${i}`, name: r, prods: rubrosMap[r] }));
+            sheets.push({ id: 'tab-vacios', name: 'Vacíos', prods: null });
+
+            // Cabecera de Pestañas
+            html += `<div class="bg-white border-b border-gray-300 flex overflow-x-auto shrink-0 hide-scrollbar shadow-sm">`;
+            sheets.forEach((s, i) => {
+                const activeCls = i === 0 ? 'border-b-4 border-blue-600 text-blue-800 font-bold bg-blue-50' : 'text-gray-600 hover:bg-gray-50 font-medium';
+                html += `<button data-target="${s.id}" class="preview-tab-btn px-5 py-3 whitespace-nowrap text-sm uppercase tracking-wide transition-colors ${activeCls}">${s.name}</button>`;
+            });
+            html += `</div>`;
+
+            // Contenedor General de Vistas
+            html += `<div class="flex-1 overflow-auto bg-gray-50 p-2 sm:p-4 hide-scrollbar" style="-webkit-overflow-scrolling: touch;">`;
+
             const TIPOS_VACIO_GLOBAL = window.TIPOS_VACIO_GLOBAL || ["1/4 - 1/3", "ret 350 ml", "ret 1.25 Lts"];
-            let vHTML=''; 
-            const cliVacios = Object.keys(vaciosMovementsPorTipo).filter(cli => 
-                TIPOS_VACIO_GLOBAL.some(t => (vaciosMovementsPorTipo[cli][t]?.entregados || 0) > 0 || (vaciosMovementsPorTipo[cli][t]?.devueltos || 0) > 0)
-            ).sort(); 
-            
-            if (cliVacios.length > 0) { 
-                vHTML = `
-                    <h3 class="text-lg font-bold text-gray-800 mt-6 mb-2 border-t pt-4">Resumen de Envases (Vacíos)</h3>
-                    <div class="overflow-hidden border border-gray-300 rounded-lg shadow-sm">
-                        <table class="min-w-full bg-white text-sm">
-                            <thead class="bg-gray-800 text-white">
+
+            // Generar las Vistas por Pestaña
+            sheets.forEach((sheet, index) => {
+                const isHidden = index === 0 ? '' : 'hidden';
+                html += `<div id="${sheet.id}" class="preview-sheet ${isHidden} bg-white rounded shadow-md border border-gray-200 h-full flex flex-col overflow-hidden">`;
+
+                if (sheet.id === 'tab-vacios') {
+                    // --- VISTA DE VACÍOS ---
+                    const cliVacios = Object.keys(vaciosMovementsPorTipo || {}).filter(cli =>
+                        TIPOS_VACIO_GLOBAL.some(t => ((vaciosMovementsPorTipo[cli][t]?.entregados || 0) > 0 || (vaciosMovementsPorTipo[cli][t]?.devueltos || 0) > 0))
+                    ).sort();
+
+                    if (cliVacios.length > 0) {
+                        html += `
+                        <div class="p-4 bg-gray-50 border-b border-gray-200 shrink-0">
+                            <h3 class="text-lg font-bold text-gray-800 uppercase tracking-wide">Resumen de Envases (Vacíos)</h3>
+                        </div>
+                        <div class="flex-1 overflow-auto hide-scrollbar">
+                            <table class="min-w-full bg-white text-sm">
+                                <thead class="bg-gray-800 text-white sticky top-0 z-10 shadow-sm">
+                                    <tr>
+                                        <th class="py-3 px-4 text-left font-semibold uppercase">Cliente</th>
+                                        <th class="py-3 px-4 text-center font-semibold uppercase">Tipo</th>
+                                        <th class="py-3 px-4 text-center font-semibold uppercase">Entregados</th>
+                                        <th class="py-3 px-4 text-center font-semibold uppercase">Devueltos</th>
+                                        <th class="py-3 px-4 text-center font-semibold uppercase">Pendiente</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-gray-200">`;
+
+                        cliVacios.forEach(cli => {
+                            const movs = vaciosMovementsPorTipo[cli];
+                            TIPOS_VACIO_GLOBAL.forEach(t => {
+                                const mov = movs[t];
+                                if (mov && (mov.entregados > 0 || mov.devueltos > 0)) {
+                                    const neto = mov.entregados - mov.devueltos;
+                                    const nClass = neto > 0 ? 'text-red-600 font-bold bg-red-50' : (neto < 0 ? 'text-green-600 font-bold bg-green-50' : 'text-gray-500');
+                                    let netoText = neto;
+                                    if (neto > 0) netoText = `+${neto} (Debe)`;
+                                    else if (neto < 0) netoText = `${neto} (A favor)`;
+                                    else netoText = `0 (Solvente)`;
+
+                                    html += `
+                                    <tr class="hover:bg-gray-50 transition-colors">
+                                        <td class="py-3 px-4 text-gray-800 font-medium whitespace-nowrap">${cli}</td>
+                                        <td class="py-3 px-4 text-center text-gray-600 whitespace-nowrap">${t}</td>
+                                        <td class="py-3 px-4 text-center font-semibold text-gray-700">${mov.entregados}</td>
+                                        <td class="py-3 px-4 text-center font-semibold text-gray-700">${mov.devueltos}</td>
+                                        <td class="py-3 px-4 text-center whitespace-nowrap ${nClass}">${netoText}</td>
+                                    </tr>`;
+                                }
+                            });
+                        });
+                        html += `</tbody></table></div>`;
+                    } else {
+                        html += `<div class="p-8 text-center text-gray-500 font-medium">No hay movimientos de vacíos registrados.</div>`;
+                    }
+                } else {
+                    // --- VISTA DE PRODUCTOS (Consolidado o Rubro) ---
+                    html += `<div class="flex-1 overflow-auto hide-scrollbar" style="-webkit-overflow-scrolling: touch;">
+                        <table class="min-w-full text-xs sm:text-sm border-collapse">
+                            <thead class="bg-gray-200 sticky top-0 z-30 shadow-sm">
                                 <tr>
-                                    <th class="py-2 px-3 text-left font-semibold">Cliente</th>
-                                    <th class="py-2 px-3 text-center font-semibold">Tipo</th>
-                                    <th class="py-2 px-3 text-center font-semibold">Entregados</th>
-                                    <th class="py-2 px-3 text-center font-semibold">Devueltos</th>
-                                    <th class="py-2 px-3 text-center font-semibold">Pendiente</th>
+                                    <th class="p-2 sm:p-3 border-b border-gray-300 sticky left-0 z-40 bg-gray-200 min-w-[140px] text-left uppercase tracking-wider text-gray-700 shadow-[1px_0_0_0_#d1d5db]">Cliente</th>`;
+
+                    sheet.prods.forEach(p => {
+                        html += `<th class="p-2 sm:p-3 border-b border-gray-300 whitespace-nowrap uppercase tracking-wider text-gray-700" title="${p.marca||''} - ${p.segmento||''}">${p.presentacion}</th>`;
+                    });
+
+                    html += `<th class="p-2 sm:p-3 border-b border-gray-300 sticky right-0 z-40 bg-gray-200 text-right uppercase tracking-wider text-gray-700 shadow-[-1px_0_0_0_#d1d5db]">Total</th>
                                 </tr>
                             </thead>
-                            <tbody class="divide-y divide-gray-200">
-                `; 
-                
-                cliVacios.forEach(cli => {
-                    const movs = vaciosMovementsPorTipo[cli]; 
-                    TIPOS_VACIO_GLOBAL.forEach(t => {
-                        const mov = movs[t]; 
-                        if (mov && (mov.entregados > 0 || mov.devueltos > 0)) {
-                            const neto = mov.entregados - mov.devueltos; 
-                            const nClass = neto > 0 ? 'text-red-600 font-bold bg-red-50' : (neto < 0 ? 'text-green-600 font-bold bg-green-50' : 'text-gray-500'); 
-                            
-                            let netoText = neto;
-                            if (neto > 0) netoText = `+${neto} (Debe)`;
-                            else if (neto < 0) netoText = `${neto} (A favor)`;
-                            else netoText = `0 (Solvente)`;
+                            <tbody class="divide-y divide-gray-200">`;
 
-                            vHTML += `
-                                <tr class="hover:bg-gray-50">
-                                    <td class="py-2 px-3 text-gray-800 font-medium">${cli}</td>
-                                    <td class="py-2 px-3 text-center text-gray-600">${t}</td>
-                                    <td class="py-2 px-3 text-center font-semibold text-gray-700">${mov.entregados}</td>
-                                    <td class="py-2 px-3 text-center font-semibold text-gray-700">${mov.devueltos}</td>
-                                    <td class="py-2 px-3 text-center ${nClass}">${netoText}</td>
-                                </tr>
-                            `;
-                        }
+                    sortedClients.forEach(cli => {
+                        const cCli = clientData[cli];
+                        const esSoloObsequio = cCli.isObsequioRow;
+                        const esSoloConsignacion = cCli.isConsignacionRow;
+
+                        // Ocultar si el cliente no tiene productos de esta hoja (y no estamos en consolidado)
+                        const hasProductsInSheet = sheet.prods.some(p => (cCli.products[p.id] || 0) > 0);
+                        if (!hasProductsInSheet && sheet.id !== 'tab-consolidado') return;
+
+                        let rowClass = 'hover:bg-blue-50';
+                        if (esSoloObsequio) rowClass = 'bg-blue-100 hover:bg-blue-200 text-blue-900';
+                        if (esSoloConsignacion) rowClass = 'bg-orange-50 hover:bg-orange-100 text-orange-900';
+
+                        html += `<tr class="${rowClass} transition-colors">
+                            <td class="p-2 sm:p-3 border-b border-gray-200 font-bold bg-white sticky left-0 z-20 whitespace-nowrap shadow-[1px_0_0_0_#e5e7eb]">${cli}</td>`;
+
+                        sheet.prods.forEach(p => {
+                            const qU = cCli.products[p.id] || 0;
+                            const qtyDisplay = window.dataModule.getDisplayQty(qU, p);
+                            let suffix = '';
+                            if (esSoloObsequio) suffix = ` <span class="text-[10px] text-blue-600 font-black ml-1">(R)</span>`;
+                            let dQ = qU > 0 ? (typeof qtyDisplay.value === 'number' ? `${qtyDisplay.value} ${qtyDisplay.unit}` : qtyDisplay.value) + suffix : '';
+
+                            let cellClass = qU > 0 ? 'font-bold text-gray-900' : 'text-gray-400';
+                            if (esSoloObsequio && qU > 0) cellClass += ' bg-blue-50 text-blue-800';
+                            if (esSoloConsignacion && qU > 0) cellClass += ' bg-orange-50 text-orange-800';
+
+                            html += `<td class="p-2 sm:p-3 border-b border-gray-200 text-center whitespace-nowrap ${cellClass}">${dQ}</td>`;
+                        });
+
+                        // Se utiliza el total consolidado del cliente como referencia general
+                        html += `<td class="p-2 sm:p-3 border-b border-gray-200 text-right font-black bg-white sticky right-0 z-20 shadow-[-1px_0_0_0_#e5e7eb]">$${cCli.totalValue.toFixed(2)}</td>
+                        </tr>`;
                     });
-                }); 
-                vHTML += '</tbody></table></div>';
-            }
 
-            const vendedor = closingData.vendedorInfo || {};
-            let vNameModal = vendedor.nombre || 'Desconocido';
-            if(!vendedor.nombre && vendedor.userId && _usersMapCache.has(vendedor.userId)){
-                 vNameModal = _usersMapCache.get(vendedor.userId).nombre;
-            }
+                    // Footer
+                    html += `</tbody>
+                            <tfoot class="bg-gray-200 sticky bottom-0 z-30 font-black shadow-[0_-1px_0_0_#d1d5db]">
+                                <tr>
+                                    <td class="p-2 sm:p-3 border-t border-gray-300 sticky left-0 z-40 bg-gray-200 uppercase shadow-[1px_0_0_0_#d1d5db]">Totales</td>`;
 
-            const reportHTML = `<div class="text-left max-h-[80vh] overflow-auto"> <div class="mb-4"> <p><strong>Vendedor:</strong> ${vNameModal} ${vendedor.apellido||''}</p> <p><strong>Camión:</strong> ${vendedor.camion||'N/A'}</p> <p><strong>Fecha:</strong> ${closingData.fecha.toDate().toLocaleString('es-ES')}</p> </div> <h3 class="text-xl mb-4">Reporte Cierre</h3> <div class="overflow-auto border" style="max-height: 40vh;"> <table class="min-w-full bg-white text-xs"> <thead class="bg-gray-200">${hHTML}</thead> <tbody>${bHTML}</tbody> <tfoot>${fHTML}</tfoot> </table> </div> ${vHTML} </div>`;
-            _showModal(`Detalle Cierre`, reportHTML, null, 'Cerrar');
-        } catch (error) { console.error("Error generando detalle:", error); _showModal('Error', `No se pudo generar: ${error.message}`); }
+                    sheet.prods.forEach(p => {
+                        let tQ = 0;
+                        sortedClients.forEach(cli => tQ += clientData[cli].products[p.id] || 0);
+                        const qtyDisplay = window.dataModule.getDisplayQty(tQ, p);
+                        let dT = tQ > 0 ? (typeof qtyDisplay.value === 'number' ? `${qtyDisplay.value} ${qtyDisplay.unit}` : qtyDisplay.value) : '';
+                        html += `<td class="p-2 sm:p-3 border-t border-gray-300 text-center whitespace-nowrap text-blue-800">${dT}</td>`;
+                    });
+
+                    html += `<td class="p-2 sm:p-3 border-t border-gray-300 text-right sticky right-0 z-40 bg-gray-200 shadow-[-1px_0_0_0_#d1d5db]">$${grandTotalValue.toFixed(2)}</td>
+                                </tr>
+                            </tfoot>
+                        </table></div>`;
+                }
+                html += `</div>`;
+            });
+
+            html += `</div>`; // Cerrar contenedor general
+            overlay.insertAdjacentHTML('beforeend', html);
+            document.body.appendChild(overlay);
+
+            // Ocultar cualquier modal previo existente de progreso
+            const m = document.getElementById('modalContainer');
+            if (m) m.classList.add('hidden');
+
+            // --- LISTENERS DE INTERACCIÓN ---
+            overlay.querySelector('#closePreviewOverlayBtn').addEventListener('click', () => {
+                overlay.remove();
+            });
+
+            overlay.querySelectorAll('.preview-tab-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    // Reset estilos de pestañas
+                    overlay.querySelectorAll('.preview-tab-btn').forEach(b => {
+                        b.classList.remove('border-b-4', 'border-blue-600', 'text-blue-800', 'font-bold', 'bg-blue-50');
+                        b.classList.add('text-gray-600', 'font-medium');
+                    });
+                    // Ocultar todas las hojas
+                    overlay.querySelectorAll('.preview-sheet').forEach(s => s.classList.add('hidden'));
+
+                    // Activar selección
+                    e.target.classList.add('border-b-4', 'border-blue-600', 'text-blue-800', 'font-bold', 'bg-blue-50');
+                    e.target.classList.remove('text-gray-600', 'font-medium');
+                    
+                    const targetId = e.target.getAttribute('data-target');
+                    overlay.querySelector(`#${targetId}`).classList.remove('hidden');
+                });
+            });
+
+        } catch (error) { 
+            console.error("Error generando detalle:", error); 
+            _showModal('Error', `No se pudo generar la vista previa: ${error.message}`); 
+        }
     }
 
-    async function ejecutarCierre() {
-        _showModal('Confirmar Cierre Definitivo', 'Se generará el reporte y se limpiará la jornada para iniciar una nueva. ¿Deseas continuar?', async () => {
-            _showModal('Progreso', 'Guardando reporte de cierre y limpiando jornada...', null, '', null, false);
-            try {
+
+  async function ejecutarCierre() {
+      _showModal('Confirmar Cierre Definitivo', 'Se generará el reporte y se limpiará la jornada para iniciar una nueva. ¿Deseas continuar?', async () => {
+          _showModal('Progreso', 'Guardando reporte de cierre y limpiando jornada...', null, '', null, false);
+          try {
                 const ventasRef = _collection(_db, `artifacts/${_appId}/users/${_userId}/ventas`); 
                 const ventasSnap = await _getDocs(ventasRef); 
                 const ventas = ventasSnap.docs.map(d=>({id: d.id, ...d.data()}));
-                
+              
                 const obsequiosRef = _collection(_db, `artifacts/${_appId}/users/${_userId}/obsequios_entregados`);
                 const obsequiosSnap = await _getDocs(obsequiosRef);
                 const obsequios = obsequiosSnap.docs.map(d => ({id: d.id, ...d.data()}));
 
                 if (ventas.length === 0 && obsequios.length === 0) { _showModal('Aviso', 'No hay ventas activas ni obsequios para cerrar.'); return false; }
 
-                const { cargaParaExcel, ventasPostSnapshot, obsequiosPostSnapshot } = await calcularStockTeoricoExacto(_userId, ventas, obsequios);
 
-                _showModal('Progreso', 'Generando Reporte y Finalizando...');
-                let vendedorInfo = {};
+              const { cargaParaExcel, ventasPostSnapshot, obsequiosPostSnapshot } = await calcularStockTeoricoExacto(_userId, ventas, obsequios);
+
+
+              _showModal('Progreso', 'Generando Reporte y Finalizando...');
+
+              let vendedorInfo = {};
                 if (window.userRole === 'user') {
                     const uDoc = await _getDoc(_doc(_db, "users", _userId)); 
                     vendedorInfo = uDoc.exists() ? { userId:_userId, nombre:uDoc.data().nombre||'', apellido:uDoc.data().apellido||'', camion:uDoc.data().camion||'', email:uDoc.data().email||'' } : {};
@@ -897,29 +1042,31 @@
                 const fechaCierre = new Date();
                 let obsequiosTotal = 0;
                 obsequiosPostSnapshot.forEach(o => { obsequiosTotal += (o.cantidadCajas || 0) * (_masterCatalogCache[o.productoId]?.precios?.cj || 0); });
-                 
-                const cierreData = { 
-                     fecha: fechaCierre, 
-                     ventas: ventasPostSnapshot.map(({id,...r})=>r), 
-                     obsequios: obsequiosPostSnapshot.map(({id,...r})=>r),
-                     total: ventasPostSnapshot.reduce((s,v)=>s+(v.total||0),0) + obsequiosTotal,
-                     cargaInicialInventario: cargaParaExcel, 
-                     vendedorInfo: vendedorInfo 
-                }; 
-
-                if (window.dataModule?.exportSingleClosingToExcel) await window.dataModule.exportSingleClosingToExcel({ ...cierreData, fecha: { toDate: () => fechaCierre } });
-                 
-                const batchLimp = _writeBatch(_db);
-                batchLimp.set(_doc(_collection(_db, `artifacts/${_appId}/users/${_userId}/cierres`)), cierreData);
                 
+                const cierreData = { 
+                   fecha: fechaCierre, 
+                   ventas: ventasPostSnapshot.map(({id,...r})=>r), 
+                   obsequios: obsequiosPostSnapshot.map(({id,...r})=>r),
+                   total: ventasPostSnapshot.reduce((s,v)=>s+(v.total||0),0) + obsequiosTotal,
+                  cargaInicialInventario: cargaParaExcel, 
+                  vendedorInfo: vendedorInfo 
+              }; 
+
+              if (window.dataModule?.exportSingleClosingToExcel) await window.dataModule.exportSingleClosingToExcel({ ...cierreData, fecha: { toDate: () => fechaCierre } });
+                
+              const batchLimp = _writeBatch(_db);
+                batchLimp.set(_doc(_collection(_db, `artifacts/${_appId}/users/${_userId}/cierres`)), cierreData);
+              
                 ventasPostSnapshot.forEach(v => { batchLimp.delete(_doc(ventasRef, v.id)); });
                 obsequiosPostSnapshot.forEach(o => { batchLimp.delete(_doc(obsequiosRef, o.id)); });
 
                 await batchLimp.commit();
-                _showModal('Éxito', 'Cierre completado. La jornada se ha limpiado correctamente.', showVentasTotalesView); return true;
-            } catch(e) { _showModal('Error', `Error al cerrar: ${e.message}`); return false; }
-        }, 'Sí, Ejecutar Cierre', null, true);
-    }
+                _showModal('Éxito', 'Cierre completado. La jornada se ha limpiado correctamente.', showVentasTotalesView);
+                return true;
+
+          } catch(e) { _showModal('Error', `Error al cerrar: ${e.message}`); return false; }
+      }, 'Sí, Ejecutar Cierre', null, true);
+  }
 
     async function ensureHybridCacheLoaded() {
         try {
@@ -935,45 +1082,50 @@
             stockSnap.forEach(d => { 
                 const data = d.data();
                 _userStockCache[d.id] = { cantidadUnidades: data.cantidadUnidades || 0, _legacyData: data };
-            });
-            
-            mergeInventarioCache();
-        } catch (err) {
-            console.error("Error al cargar caché híbrido para edición:", err);
-            throw err;
+          });
+          
+          mergeInventarioCache();
+
+      } catch (err) {
+          console.error("Error al cargar caché híbrido para edición:", err);
+          throw err;
         }
     }
 
     window.showPastSaleOptions = function(ventaId, tipo = 'ticket') {
         const venta = _ventasGlobal.find(v => v.id === ventaId);
-        if (!venta) { _showModal('Error', 'Venta no encontrada.'); return; }
-        const productosFormateados = (venta.productos || []).map(p => ({
-            ...p,
-            cantidadVendida: p.cantidadVendida || { cj: 0, paq: 0, und: 0 },
-            totalUnidadesVendidas: p.totalUnidadesVendidas || 0,
-            precios: p.precios || { und: 0, paq: 0, cj: 0 }
-        }));
 
-        // PASO CLAVE: Leer de la db el tipo, si no existe asumir 'venta' a menos que el origen diga Consignacion
-        const tipoOp = venta.tipoOperacion || (venta.origen === 'Consignación' ? 'consignacion' : 'venta');
+      if (!venta) { _showModal('Error', 'Venta no encontrada.'); return; }
 
-        showSharingOptions(venta, productosFormateados, venta.vaciosDevueltosPorTipo || {}, tipo, showVentasActualesView, tipoOp);
-    };
+      const productosFormateados = (venta.productos || []).map(p => ({
+          ...p,
+          cantidadVendida: p.cantidadVendida || { cj: 0, paq: 0, und: 0 },
+          totalUnidadesVendidas: p.totalUnidadesVendidas || 0,
+          precios: p.precios || { und: 0, paq: 0, cj: 0 }
+      }));
 
-    function editVenta(ventaId) {
-        const venta = _ventasGlobal.find(v => v.id === ventaId);
-        if (!venta) { _showModal('Error', 'Venta no encontrada.'); return; }
-         _originalVentaForEdit = JSON.parse(JSON.stringify(venta));
-        showEditVentaView(venta);
+      // PASO CLAVE: Leer de la db el tipo, si no existe asumir 'venta' a menos que el origen diga Consignacion
+      const tipoOp = venta.tipoOperacion || (venta.origen === 'Consignación' ? 'consignacion' : 'venta');
+
+      showSharingOptions(venta, productosFormateados, venta.vaciosDevueltosPorTipo || {}, tipo, showVentasActualesView, tipoOp);
+  };
+
+
+  function editVenta(ventaId) {
+      const venta = _ventasGlobal.find(v => v.id === ventaId);
+      if (!venta) { _showModal('Error', 'Venta no encontrada.'); return; }
+       _originalVentaForEdit = JSON.parse(JSON.stringify(venta));
+      showEditVentaView(venta);
     }
     
     function deleteVenta(ventaId) {
          const venta = _ventasGlobal.find(v => v.id === ventaId);
-         if (!venta) { _showModal('Error', 'Venta no encontrada en la lista actual.'); return; }
 
-        _showModal('Confirmar Eliminación', `¿Eliminar venta de ${venta.clienteNombre}? <strong class="text-red-600">Esta acción revertirá el stock y el saldo de vacíos asociados a esta venta.</strong> ¿Continuar?`, async () => {
-            _showModal('Progreso', 'Eliminando venta y ajustando datos...');
-            try {
+       if (!venta) { _showModal('Error', 'Venta no encontrada en la lista actual.'); return; }
+
+      _showModal('Confirmar Eliminación', `¿Eliminar venta de ${venta.clienteNombre}? <strong class="text-red-600">Esta acción revertirá el stock y el saldo de vacíos asociados a esta venta.</strong> ¿Continuar?`, async () => {
+          _showModal('Progreso', 'Eliminando venta y ajustando datos...');
+          try {
                 const ventaRef = _doc(_db, `artifacts/${_appId}/users/${_userId}/ventas`, ventaId);
                 const clienteRef = _doc(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/clientes`, venta.clienteId);
 
@@ -984,10 +1136,10 @@
                     const clienteDoc = await transaction.get(clienteRef);
                     if (!ventaDoc.exists()) throw new Error("La venta ya no existe.");
 
-                    const ventaData = ventaDoc.data();
-                    const productosVendidos = ventaData.productos || [];
+                  const ventaData = ventaDoc.data();
+                  const productosVendidos = ventaData.productos || [];
 
-                    const inventarioRefs = {};
+                  const inventarioRefs = {};
                     const productoIds = productosVendidos.map(p => p.id).filter(id => id);
                     const inventarioDocsMap = new Map();
                     if (productoIds.length > 0) {
@@ -1001,37 +1153,36 @@
                         inventarioDocs.forEach((docSnap, index) => {
                             inventarioDocsMap.set(uniqueProductIds[index], docSnap);
                         });
-                    }
+                  }
 
-                    const nuevosSaldoVaciosCliente = { ...(clienteDoc.exists() ? clienteDoc.data().saldoVacios : {}) };
-                    const ajustesInventario = [];
-                    const ajustesVaciosNetos = {};
+                  const nuevosSaldoVaciosCliente = { ...(clienteDoc.exists() ? clienteDoc.data().saldoVacios : {}) };
+                  const ajustesInventario = [];
+                  const ajustesVaciosNetos = {};
 
-                    for (const productoVendido of productosVendidos) {
-                        const unidadesARestaurar = productoVendido.totalUnidadesVendidas || 0;
-                        if (unidadesARestaurar > 0) {
-                            const productoInventarioRef = inventarioRefs[productoVendido.id];
-                            if (productoInventarioRef) {
-                                ajustesInventario.push({ ref: productoInventarioRef, cantidad: unidadesARestaurar, id: productoVendido.id, datosBackup: productoVendido });
-                            }
-                        }
-                        if (productoVendido.manejaVacios && productoVendido.tipoVacio) {
-                            const tipo = productoVendido.tipoVacio;
-                            const cajasEntregadas = productoVendido.cantidadVendida?.cj || 0;
-                            if (cajasEntregadas > 0) ajustesVaciosNetos[tipo] = (ajustesVaciosNetos[tipo] || 0) - cajasEntregadas;
-                        }
-                    }
+                  for (const productoVendido of productosVendidos) {
+                      const unidadesARestaurar = productoVendido.totalUnidadesVendidas || 0;
+                      if (unidadesARestaurar > 0) {
+                          const productoInventarioRef = inventarioRefs[productoVendido.id];
+                          if (productoInventarioRef) {
+                              ajustesInventario.push({ ref: productoInventarioRef, cantidad: unidadesARestaurar, id: productoVendido.id, datosBackup: productoVendido });
+                          }
+                      }
+                      if (productoVendido.manejaVacios && productoVendido.tipoVacio) {
+                          const tipo = productoVendido.tipoVacio;
+                          const cajasEntregadas = productoVendido.cantidadVendida?.cj || 0;
+                          if (cajasEntregadas > 0) ajustesVaciosNetos[tipo] = (ajustesVaciosNetos[tipo] || 0) - cajasEntregadas;
+                      }
+                  }
 
-                    const vaciosDevueltosEnVenta = ventaData.vaciosDevueltosPorTipo || {};
-                    for (const tipo in vaciosDevueltosEnVenta) {
-                        const cajasDevueltas = vaciosDevueltosEnVenta[tipo] || 0;
-                        if (cajasDevueltas > 0) ajustesVaciosNetos[tipo] = (ajustesVaciosNetos[tipo] || 0) + cajasDevueltas;
-                    }
-
+                  const vaciosDevueltosEnVenta = ventaData.vaciosDevueltosPorTipo || {};
+                  for (const tipo in vaciosDevueltosEnVenta) {
+                      const cajasDevueltas = vaciosDevueltosEnVenta[tipo] || 0;
+                      if (cajasDevueltas > 0) ajustesVaciosNetos[tipo] = (ajustesVaciosNetos[tipo] || 0) + cajasDevueltas;
+                  }
+                
                     for (const ajuste of ajustesInventario) {
                          const invDoc = inventarioDocsMap.get(ajuste.id);
                          let dataToSet = {};
-                         
                          if (invDoc && invDoc.exists()) {
                              const stockActual = invDoc.data().cantidadUnidades || 0;
                              dataToSet = { cantidadUnidades: stockActual + ajuste.cantidad };
@@ -1049,8 +1200,8 @@
                              };
                          }
                          transaction.set(ajuste.ref, dataToSet, { merge: true });
-                    }
-
+                  }
+                
                     if (clienteDoc.exists()) {
                         let modificado = false;
                         for (const tipo in ajustesVaciosNetos) {
@@ -1058,32 +1209,37 @@
                                 nuevosSaldoVaciosCliente[tipo] = (nuevosSaldoVaciosCliente[tipo] || 0) + ajustesVaciosNetos[tipo];
                                 modificado = true;
                             }
-                        }
-                        if (modificado) transaction.update(clienteRef, { saldoVacios: nuevosSaldoVaciosCliente });
-                    }
-                    transaction.delete(ventaRef);
-                });
-                _showModal('Éxito', 'Venta eliminada. Inventario y saldos de vacíos ajustados.');
-            } catch (error) { console.error("Error eliminando:", error); _showModal('Error', `No se pudo eliminar: ${error.message}`); }
-        }, 'Sí, Eliminar y Revertir', null, true);
-    }
+                      }
+                      if (modificado) transaction.update(clienteRef, { saldoVacios: nuevosSaldoVaciosCliente });
+                  }
+                  
+                  transaction.delete(ventaRef);
+              });
+
+              _showModal('Éxito', 'Venta eliminada. Inventario y saldos de vacíos ajustados.');
+
+          } catch (error) { console.error("Error eliminando:", error); _showModal('Error', `No se pudo eliminar: ${error.message}`); }
+
+      }, 'Sí, Eliminar y Revertir', null, true);
+  }
 
     async function showEditVentaView(venta) {
         if (_floatingControls) _floatingControls.classList.add('hidden'); _monedaActual = 'USD';
         
         _mainContent.innerHTML = window.ventasUI.getEditSaleTemplate(venta, TIPOS_VACIO);
-        
-        document.getElementById('saveChangesBtn').addEventListener('click', handleGuardarVentaEditada); 
-        document.getElementById('backToVentasBtn').addEventListener('click', showVentasActualesView);
-        
-        _showModal('Progreso', 'Cargando datos de la venta...', null, '', null, false);
-        try {
-            await ensureHybridCacheLoaded();
-            
-            _ventaActual = { 
-                cliente: { id: venta.clienteId, nombreComercial: venta.clienteNombre, nombrePersonal: venta.clienteNombrePersonal }, 
-                productos: (venta.productos||[]).reduce((acc,p)=>{
-                    const pComp=_inventarioCache.find(inv=>inv.id===p.id)||p; 
+
+      document.getElementById('saveChangesBtn').addEventListener('click', handleGuardarVentaEditada); 
+      document.getElementById('backToVentasBtn').addEventListener('click', showVentasActualesView);
+
+      _showModal('Progreso', 'Cargando datos de la venta...', null, '', null, false);
+
+      try {
+          await ensureHybridCacheLoaded();
+          
+          _ventaActual = { 
+              cliente: { id: venta.clienteId, nombreComercial: venta.clienteNombre, nombrePersonal: venta.clienteNombrePersonal }, 
+              productos: (venta.productos||[]).reduce((acc,p)=>{
+                  const pComp=_inventarioCache.find(inv=>inv.id===p.id)||p; 
                     const cant=p.cantidadVendida||{}; 
                     acc[p.id]={
                         ...pComp, 
@@ -1091,67 +1247,71 @@
                         cantPaq:cant.paq||0, 
                         cantUnd:cant.und||0, 
                         totalUnidadesVendidas:p.totalUnidadesVendidas||0
-                    }; 
-                    return acc;
-                },{}), 
-                vaciosDevueltosPorTipo: venta.vaciosDevueltosPorTipo||{} 
-            };
-            TIPOS_VACIO.forEach(t => { if(!_ventaActual.vaciosDevueltosPorTipo[t]) _ventaActual.vaciosDevueltosPorTipo[t]=0; });
-            document.getElementById('rubroFilter').addEventListener('change', renderEditVentasInventario); 
-            populateRubroFilter(); 
-            document.getElementById('rubroFilter').value = '';
-            
-            renderEditVentasInventario(); 
-            const m = document.getElementById('modalContainer'); if(m) m.classList.add('hidden');
-        } catch (error) { 
-            console.error("Error edit init:", error); 
-            _showModal('Error', `Error al inicializar edición: ${error.message}`); 
-            showVentasActualesView(); 
-        }
-    }
+                  }; 
+                  return acc;
+              },{}), 
+              vaciosDevueltosPorTipo: venta.vaciosDevueltosPorTipo||{} 
+          };
 
-    async function handleGuardarVentaEditada() {
-        if (!_originalVentaForEdit) { _showModal('Error', 'Venta original no encontrada.'); return; }
-        const prods = Object.values(_ventaActual.productos).filter(p => p.totalUnidadesVendidas > 0);
-        const hayVac = Object.values(_ventaActual.vaciosDevueltosPorTipo || {}).some(c => c > 0);
-        if (prods.length === 0 && !hayVac && Object.values(_originalVentaForEdit.vaciosDevueltosPorTipo || {}).every(c => c === 0)) { _showModal('Error', 'La venta no puede quedar vacía.'); return; }
+          TIPOS_VACIO.forEach(t => { if(!_ventaActual.vaciosDevueltosPorTipo[t]) _ventaActual.vaciosDevueltosPorTipo[t]=0; });
 
-        // LEER EL SELECTOR EN LA VISTA DE EDICIÓN (LECTURA SEGURA SÍNCRONA)
-        const editTipoOperacionSelect = document.getElementById('editTipoOperacion');
-        // Si el usuario no tocó el selector o no existe, mantenemos el que trajo de la db
-        const nuevoTipoOperacion = editTipoOperacionSelect ? editTipoOperacionSelect.value : (_originalVentaForEdit.tipoOperacion || 'venta');
+          document.getElementById('rubroFilter').addEventListener('change', renderEditVentasInventario); 
+          populateRubroFilter(); 
+          document.getElementById('rubroFilter').value = '';
+          
+          renderEditVentasInventario(); 
+          const m = document.getElementById('modalContainer'); if(m) m.classList.add('hidden');
 
-        _showModal('Confirmar Cambios', '¿Guardar cambios? Stock y saldos se ajustarán.', async () => {
-            _showModal('Progreso', 'Guardando y ajustando...');
-            try {
+      } catch (error) { 
+          console.error("Error edit init:", error); 
+          _showModal('Error', `Error al inicializar edición: ${error.message}`); 
+          showVentasActualesView(); 
+      }
+  }
+
+
+  async function handleGuardarVentaEditada() {
+      if (!_originalVentaForEdit) { _showModal('Error', 'Venta original no encontrada.'); return; }
+      const prods = Object.values(_ventaActual.productos).filter(p => p.totalUnidadesVendidas > 0);
+      const hayVac = Object.values(_ventaActual.vaciosDevueltosPorTipo || {}).some(c => c > 0);
+
+      if (prods.length === 0 && !hayVac && Object.values(_originalVentaForEdit.vaciosDevueltosPorTipo || {}).every(c => c === 0)) { _showModal('Error', 'La venta no puede quedar vacía.'); return; }
+
+      // LEER EL SELECTOR EN LA VISTA DE EDICIÓN
+      const editTipoOperacionSelect = document.getElementById('editTipoOperacion');
+      const nuevoTipoOperacion = editTipoOperacionSelect ? editTipoOperacionSelect.value : (_originalVentaForEdit.tipoOperacion || 'venta');
+
+      _showModal('Confirmar Cambios', '¿Guardar cambios? Stock y saldos se ajustarán.', async () => {
+          _showModal('Progreso', 'Guardando y ajustando...');
+          try {
                 const ventaRef = _doc(_db, `artifacts/${_appId}/users/${_userId}/ventas`, _originalVentaForEdit.id);
                 const clientRef = _doc(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/clientes`, _originalVentaForEdit.clienteId);
 
                 if (!_runTransaction) throw new Error("Dependencia crítica 'runTransaction' no disponible.");
 
                 await _runTransaction(_db, async (transaction) => {
-                      const origProds = new Map((_originalVentaForEdit.productos||[]).map(p=>[p.id,p]));
-                      const newProds = new Map(Object.values(_ventaActual.productos).map(p=>[p.id,p]));
-                      const allPIds = new Set([...origProds.keys(),...newProds.keys()]);
-                      const clientDoc = await transaction.get(clientRef);
-                      
-                      const invRefs = [];
-                      allPIds.forEach(id => { invRefs.push({ id: id, ref: _doc(_db, `artifacts/${_appId}/users/${_userId}/inventario`, id) }); });
-                      const invDocs = await Promise.all(invRefs.map(item => transaction.get(item.ref)));
-                      const invMap = new Map();
-                      invDocs.forEach((doc, i) => { if (doc.exists()) invMap.set(invRefs[i].id, doc); });
+                    const origProds = new Map((_originalVentaForEdit.productos||[]).map(p=>[p.id,p]));
+                    const newProds = new Map(Object.values(_ventaActual.productos).map(p=>[p.id,p]));
+                    const allPIds = new Set([...origProds.keys(),...newProds.keys()]);
+                    const clientDoc = await transaction.get(clientRef);
+                    
+                    const invRefs = [];
+                    allPIds.forEach(id => { invRefs.push({ id: id, ref: _doc(_db, `artifacts/${_appId}/users/${_userId}/inventario`, id) }); });
+                    const invDocs = await Promise.all(invRefs.map(item => transaction.get(item.ref)));
+                    const invMap = new Map();
+                    invDocs.forEach((doc, i) => { if (doc.exists()) invMap.set(invRefs[i].id, doc); });
 
-                      const vaciosAdj = {}; TIPOS_VACIO.forEach(t=>vaciosAdj[t]=0);
-                      
-                      for (const pId of allPIds) {
+                    const vaciosAdj = {}; TIPOS_VACIO.forEach(t=>vaciosAdj[t]=0);
+                    
+                    for (const pId of allPIds) {
                           const origP = origProds.get(pId);
                           const newP = newProds.get(pId);
                           const origU = origP ? (origP.totalUnidadesVendidas||0) : 0;
                           const newU = newP ? (newP.totalUnidadesVendidas||0) : 0;
                           const deltaU = origU - newU; 
-
+                        
                           const invDoc = invMap.get(pId);
-                          
+                        
                           if (!invDoc) { 
                               if (deltaU < 0) throw new Error(`Producto ${pId} no existe, imposible vender más.`); 
                               if (deltaU > 0) {
@@ -1164,7 +1324,7 @@
                                   continue;
                               }
                           }
-                          
+                        
                           if (invDoc) {
                               const pData = invDoc.data();
                               if (deltaU !== 0) {
@@ -1179,52 +1339,51 @@
                                   if (vaciosAdj.hasOwnProperty(tV)) vaciosAdj[tV] += deltaCj;
                               }
                           }
-                      }
+                    }
 
-                      const origVac = _originalVentaForEdit.vaciosDevueltosPorTipo || {};
-                      const newVac = _ventaActual.vaciosDevueltosPorTipo || {};
-                      TIPOS_VACIO.forEach(t => { if (vaciosAdj.hasOwnProperty(t)) vaciosAdj[t] -= ((newVac[t] || 0) - (origVac[t] || 0)); });
+                    const origVac = _originalVentaForEdit.vaciosDevueltosPorTipo || {};
+                    const newVac = _ventaActual.vaciosDevueltosPorTipo || {};
+                    TIPOS_VACIO.forEach(t => { if (vaciosAdj.hasOwnProperty(t)) vaciosAdj[t] -= ((newVac[t] || 0) - (origVac[t] || 0)); });
 
-                      if (clientDoc.exists() && Object.values(vaciosAdj).some(a => a !== 0)) {
-                          const sVac = clientDoc.data().saldoVacios || {};
-                          for (const tV in vaciosAdj) if (vaciosAdj[tV] !== 0) sVac[tV] = (sVac[tV] || 0) + vaciosAdj[tV];
-                          transaction.update(clientRef, { saldoVacios: sVac });
-                      }
+                    if (clientDoc.exists() && Object.values(vaciosAdj).some(a => a !== 0)) {
+                        const sVac = clientDoc.data().saldoVacios || {};
+                        for (const tV in vaciosAdj) if (vaciosAdj[tV] !== 0) sVac[tV] = (sVac[tV] || 0) + vaciosAdj[tV];
+                        transaction.update(clientRef, { saldoVacios: sVac });
+                    }
 
-                      let nTotal = 0;
-                      const nItems = Object.values(_ventaActual.productos).filter(p => p.totalUnidadesVendidas > 0).map(p => {
-                          const pr = p.precios || { und: p.precioPorUnidad || 0 };
-                          nTotal += (pr.cj || 0) * (p.cantCj || 0) + (pr.paq || 0) * (p.cantPaq || 0) + (pr.und || 0) * (p.cantUnd || 0);
-                          return {
-                              id: p.id, presentacion: p.presentacion, rubro: p.rubro, marca: p.marca, segmento: p.segmento,
-                              precios: p.precios, ventaPor: p.ventaPor, unidadesPorPaquete: p.unidadesPorPaquete, unidadesPorCaja: p.unidadesPorCaja,
-                              cantidadVendida: { cj: p.cantCj || 0, paq: p.cantPaq || 0, und: p.cantUnd || 0 },
-                              totalUnidadesVendidas: (p.cantCj||0)*(p.unidadesPorCaja||1) + (p.cantPaq||0)*(p.unidadesPorPaquete||1) + (p.cantUnd||0), 
-                              iva: p.iva ?? 0, manejaVacios: p.manejaVacios || false, tipoVacio: p.tipoVacio || null
-                          };
-                      });
-                      
-                      // Actualizamos el registro completo con el nuevo tipoOperacion
-                      transaction.update(ventaRef, { 
-                          productos: nItems, 
-                          total: nTotal, 
-                          vaciosDevueltosPorTipo: _ventaActual.vaciosDevueltosPorTipo, 
-                          fechaModificacion: new Date(),
-                          tipoOperacion: nuevoTipoOperacion 
-                      });
-                });
-                
-                // Actualizamos _ventasGlobal localmente para no esperar a Firebase y que la UI reaccione instantáneo
-                const index = _ventasGlobal.findIndex(v => v.id === _originalVentaForEdit.id);
+                    let nTotal = 0;
+                    const nItems = Object.values(_ventaActual.productos).filter(p => p.totalUnidadesVendidas > 0).map(p => {
+                        const pr = p.precios || { und: p.precioPorUnidad || 0 };
+                        nTotal += (pr.cj || 0) * (p.cantCj || 0) + (pr.paq || 0) * (p.cantPaq || 0) + (pr.und || 0) * (p.cantUnd || 0);
+                        return {
+                            id: p.id, presentacion: p.presentacion, rubro: p.rubro, marca: p.marca, segmento: p.segmento,
+                            precios: p.precios, ventaPor: p.ventaPor, unidadesPorPaquete: p.unidadesPorPaquete, unidadesPorCaja: p.unidadesPorCaja,
+                            cantidadVendida: { cj: p.cantCj || 0, paq: p.cantPaq || 0, und: p.cantUnd || 0 },
+                            totalUnidadesVendidas: (p.cantCj||0)*(p.unidadesPorCaja||1) + (p.cantPaq||0)*(p.unidadesPorPaquete||1) + (p.cantUnd||0), 
+                            iva: p.iva ?? 0, manejaVacios: p.manejaVacios || false, tipoVacio: p.tipoVacio || null
+                        };
+                    });
+                    
+                    transaction.update(ventaRef, { 
+                        productos: nItems, 
+                        total: nTotal, 
+                        vaciosDevueltosPorTipo: _ventaActual.vaciosDevueltosPorTipo, 
+                        fechaModificacion: new Date(),
+                        tipoOperacion: nuevoTipoOperacion 
+                    });
+              });
+              
+              const index = _ventasGlobal.findIndex(v => v.id === _originalVentaForEdit.id);
                 if(index !== -1) {
                     _ventasGlobal[index].tipoOperacion = nuevoTipoOperacion;
-                }
+              }
 
-                _originalVentaForEdit=null; 
-                _showModal('Éxito','Venta actualizada.', showVentasActualesView);
-            } catch (error) { console.error("Error edit:", error); _showModal('Error', `Error: ${error.message}`); }
-        }, 'Sí, Guardar', null, true);
-    }
+              _originalVentaForEdit=null; 
+              _showModal('Éxito','Venta actualizada.', showVentasActualesView);
 
-    window.ventasModule = { toggleMoneda, handleQuantityChange, handleTipoVacioChange, showPastSaleOptions, editVenta, deleteVenta, invalidateCache: () => { } };
+          } catch (error) { console.error("Error edit:", error); _showModal('Error', `Error: ${error.message}`); }
+      }, 'Sí, Guardar', null, true);
+  }
+
+  window.ventasModule = { toggleMoneda, handleQuantityChange, handleTipoVacioChange, showPastSaleOptions, editVenta, deleteVenta, invalidateCache: () => { } };
 })();
