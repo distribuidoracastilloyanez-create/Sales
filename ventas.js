@@ -774,7 +774,6 @@
 
             if (!window.dataModule?._processSalesDataForModal) throw new Error("Módulo de datos no disponible.");
 
-            // FIX: Extraer vaciosMovementsPorTipo correctamente
             const { clientData, clientTotals, grandTotalValue, sortedClients, finalProductOrder, vaciosMovementsPorTipo } = 
                 await window.dataModule._processSalesDataForModal(ventasPostSnapshot, obsequiosPostSnapshot, cargaParaExcel, _userId);
 
@@ -820,9 +819,9 @@
                 <div class="bg-gray-800 text-white p-3 sm:p-4 flex justify-between items-center shadow-md shrink-0">
                     <div>
                         <h2 class="text-lg sm:text-xl font-bold uppercase tracking-wider">Vista Previa de Cierre</h2>
-                        <p class="text-xs sm:text-sm text-gray-300">Vendedor: ${vNameModal} ${vendedorInfo.apellido||''} | Camión: ${vendedorInfo.camion||'N/A'} | ${fechaCierreStr}</p>
+                        <p class="text-xs sm:text-sm text-gray-300">Vend: ${vNameModal} ${vendedorInfo.apellido||''} | Camión: ${vendedorInfo.camion||'N/A'}</p>
                     </div>
-                    <button id="closePreviewOverlayBtn" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded shadow font-bold transition-colors">Cerrar</button>
+                    <button id="closePreviewOverlayBtn" class="bg-red-600 hover:bg-red-700 text-white px-3 sm:px-4 py-1.5 sm:py-2 rounded shadow font-bold transition-colors">Cerrar</button>
                 </div>
             `;
 
@@ -835,12 +834,12 @@
             html += `<div class="bg-white border-b border-gray-300 flex overflow-x-auto shrink-0 hide-scrollbar shadow-sm">`;
             sheets.forEach((s, i) => {
                 const activeCls = i === 0 ? 'border-b-4 border-blue-600 text-blue-800 font-bold bg-blue-50' : 'text-gray-600 hover:bg-gray-50 font-medium';
-                html += `<button data-target="${s.id}" class="preview-tab-btn px-5 py-3 whitespace-nowrap text-sm uppercase tracking-wide transition-colors ${activeCls}">${s.name}</button>`;
+                html += `<button data-target="${s.id}" class="preview-tab-btn px-4 sm:px-5 py-2.5 sm:py-3 whitespace-nowrap text-xs sm:text-sm uppercase tracking-wide transition-colors ${activeCls}">${s.name}</button>`;
             });
             html += `</div>`;
 
             // Contenedor General de Vistas
-            html += `<div class="flex-1 overflow-auto bg-gray-50 p-2 sm:p-4 hide-scrollbar" style="-webkit-overflow-scrolling: touch;">`;
+            html += `<div class="flex-1 overflow-auto bg-gray-50 p-1 sm:p-4 hide-scrollbar" style="-webkit-overflow-scrolling: touch;">`;
 
             const TIPOS_VACIO_GLOBAL = window.TIPOS_VACIO_GLOBAL || ["1/4 - 1/3", "ret 350 ml", "ret 1.25 Lts"];
 
@@ -857,18 +856,18 @@
 
                     if (cliVacios.length > 0) {
                         html += `
-                        <div class="p-4 bg-gray-50 border-b border-gray-200 shrink-0">
-                            <h3 class="text-lg font-bold text-gray-800 uppercase tracking-wide">Resumen de Envases (Vacíos)</h3>
+                        <div class="p-3 sm:p-4 bg-gray-50 border-b border-gray-200 shrink-0">
+                            <h3 class="text-base sm:text-lg font-bold text-gray-800 uppercase tracking-wide">Resumen de Envases (Vacíos)</h3>
                         </div>
                         <div class="flex-1 overflow-auto hide-scrollbar">
-                            <table class="min-w-full bg-white text-sm">
+                            <table class="min-w-full bg-white text-xs sm:text-sm">
                                 <thead class="bg-gray-800 text-white sticky top-0 z-10 shadow-sm">
                                     <tr>
-                                        <th class="py-3 px-4 text-left font-semibold uppercase">Cliente</th>
-                                        <th class="py-3 px-4 text-center font-semibold uppercase">Tipo</th>
-                                        <th class="py-3 px-4 text-center font-semibold uppercase">Entregados</th>
-                                        <th class="py-3 px-4 text-center font-semibold uppercase">Devueltos</th>
-                                        <th class="py-3 px-4 text-center font-semibold uppercase">Pendiente</th>
+                                        <th class="py-2.5 px-2 sm:px-4 text-left font-semibold uppercase min-w-[85px] max-w-[85px] sm:min-w-[150px] sm:max-w-none truncate">Cliente</th>
+                                        <th class="py-2.5 px-2 sm:px-4 text-center font-semibold uppercase">Tipo</th>
+                                        <th class="py-2.5 px-2 sm:px-4 text-center font-semibold uppercase">Entreg.</th>
+                                        <th class="py-2.5 px-2 sm:px-4 text-center font-semibold uppercase">Devuel.</th>
+                                        <th class="py-2.5 px-2 sm:px-4 text-center font-semibold uppercase">Pendiente</th>
                                     </tr>
                                 </thead>
                                 <tbody class="divide-y divide-gray-200">`;
@@ -887,11 +886,11 @@
 
                                     html += `
                                     <tr class="hover:bg-gray-50 transition-colors">
-                                        <td class="py-3 px-4 text-gray-800 font-medium whitespace-nowrap">${cli}</td>
-                                        <td class="py-3 px-4 text-center text-gray-600 whitespace-nowrap">${t}</td>
-                                        <td class="py-3 px-4 text-center font-semibold text-gray-700">${mov.entregados}</td>
-                                        <td class="py-3 px-4 text-center font-semibold text-gray-700">${mov.devueltos}</td>
-                                        <td class="py-3 px-4 text-center whitespace-nowrap ${nClass}">${netoText}</td>
+                                        <td class="py-2 sm:py-3 px-2 sm:px-4 text-gray-800 font-medium min-w-[85px] max-w-[85px] sm:min-w-[150px] sm:max-w-none truncate" title="${cli}">${cli}</td>
+                                        <td class="py-2 sm:py-3 px-2 sm:px-4 text-center text-gray-600 whitespace-nowrap">${t}</td>
+                                        <td class="py-2 sm:py-3 px-2 sm:px-4 text-center font-semibold text-gray-700">${mov.entregados}</td>
+                                        <td class="py-2 sm:py-3 px-2 sm:px-4 text-center font-semibold text-gray-700">${mov.devueltos}</td>
+                                        <td class="py-2 sm:py-3 px-2 sm:px-4 text-center whitespace-nowrap ${nClass}">${netoText}</td>
                                     </tr>`;
                                 }
                             });
@@ -902,17 +901,18 @@
                     }
                 } else {
                     // --- VISTA DE PRODUCTOS (Consolidado o Rubro) ---
+                    // Reducido tamaño de letra base en movil: text-[11px]
                     html += `<div class="flex-1 overflow-auto hide-scrollbar" style="-webkit-overflow-scrolling: touch;">
-                        <table class="min-w-full text-xs sm:text-sm border-collapse">
+                        <table class="min-w-full text-[11px] sm:text-sm border-collapse">
                             <thead class="bg-gray-200 sticky top-0 z-30 shadow-sm">
                                 <tr>
-                                    <th class="p-2 sm:p-3 border-b border-gray-300 sticky left-0 z-40 bg-gray-200 min-w-[140px] text-left uppercase tracking-wider text-gray-700 shadow-[1px_0_0_0_#d1d5db]">Cliente</th>`;
+                                    <th class="p-1.5 sm:p-3 border-b border-gray-300 sticky left-0 z-40 bg-gray-200 min-w-[85px] max-w-[85px] sm:min-w-[150px] sm:max-w-none w-[85px] sm:w-auto truncate text-left uppercase tracking-wider text-gray-700 shadow-[1px_0_0_0_#d1d5db]">Cliente</th>`;
 
                     sheet.prods.forEach(p => {
-                        html += `<th class="p-2 sm:p-3 border-b border-gray-300 whitespace-nowrap uppercase tracking-wider text-gray-700" title="${p.marca||''} - ${p.segmento||''}">${p.presentacion}</th>`;
+                        html += `<th class="p-1.5 sm:p-3 border-b border-gray-300 whitespace-nowrap uppercase tracking-wider text-gray-700" title="${p.marca||''} - ${p.segmento||''}">${p.presentacion}</th>`;
                     });
 
-                    html += `<th class="p-2 sm:p-3 border-b border-gray-300 sticky right-0 z-40 bg-gray-200 text-right uppercase tracking-wider text-gray-700 shadow-[-1px_0_0_0_#d1d5db]">Total</th>
+                    html += `<th class="p-1.5 sm:p-3 border-b border-gray-300 sticky right-0 z-40 bg-gray-200 text-right uppercase tracking-wider text-gray-700 shadow-[-1px_0_0_0_#d1d5db]">Total</th>
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-gray-200">`;
@@ -931,24 +931,23 @@
                         if (esSoloConsignacion) rowClass = 'bg-orange-50 hover:bg-orange-100 text-orange-900';
 
                         html += `<tr class="${rowClass} transition-colors">
-                            <td class="p-2 sm:p-3 border-b border-gray-200 font-bold bg-white sticky left-0 z-20 whitespace-nowrap shadow-[1px_0_0_0_#e5e7eb]">${cli}</td>`;
+                            <td class="p-1.5 sm:p-3 border-b border-gray-200 font-bold bg-white sticky left-0 z-20 min-w-[85px] max-w-[85px] sm:min-w-[150px] sm:max-w-none w-[85px] sm:w-auto truncate shadow-[1px_0_0_0_#e5e7eb]" title="${cli}">${cli}</td>`;
 
                         sheet.prods.forEach(p => {
                             const qU = cCli.products[p.id] || 0;
                             const qtyDisplay = window.dataModule.getDisplayQty(qU, p);
                             let suffix = '';
-                            if (esSoloObsequio) suffix = ` <span class="text-[10px] text-blue-600 font-black ml-1">(R)</span>`;
+                            if (esSoloObsequio) suffix = ` <span class="text-[9px] text-blue-600 font-black ml-0.5">(R)</span>`;
                             let dQ = qU > 0 ? (typeof qtyDisplay.value === 'number' ? `${qtyDisplay.value} ${qtyDisplay.unit}` : qtyDisplay.value) + suffix : '';
 
                             let cellClass = qU > 0 ? 'font-bold text-gray-900' : 'text-gray-400';
                             if (esSoloObsequio && qU > 0) cellClass += ' bg-blue-50 text-blue-800';
                             if (esSoloConsignacion && qU > 0) cellClass += ' bg-orange-50 text-orange-800';
 
-                            html += `<td class="p-2 sm:p-3 border-b border-gray-200 text-center whitespace-nowrap ${cellClass}">${dQ}</td>`;
+                            html += `<td class="p-1.5 sm:p-3 border-b border-gray-200 text-center whitespace-nowrap ${cellClass}">${dQ}</td>`;
                         });
 
-                        // Se utiliza el total consolidado del cliente como referencia general
-                        html += `<td class="p-2 sm:p-3 border-b border-gray-200 text-right font-black bg-white sticky right-0 z-20 shadow-[-1px_0_0_0_#e5e7eb]">$${cCli.totalValue.toFixed(2)}</td>
+                        html += `<td class="p-1.5 sm:p-3 border-b border-gray-200 text-right font-black bg-white sticky right-0 z-20 shadow-[-1px_0_0_0_#e5e7eb]">$${cCli.totalValue.toFixed(2)}</td>
                         </tr>`;
                     });
 
@@ -956,17 +955,17 @@
                     html += `</tbody>
                             <tfoot class="bg-gray-200 sticky bottom-0 z-30 font-black shadow-[0_-1px_0_0_#d1d5db]">
                                 <tr>
-                                    <td class="p-2 sm:p-3 border-t border-gray-300 sticky left-0 z-40 bg-gray-200 uppercase shadow-[1px_0_0_0_#d1d5db]">Totales</td>`;
+                                    <td class="p-1.5 sm:p-3 border-t border-gray-300 sticky left-0 z-40 bg-gray-200 uppercase shadow-[1px_0_0_0_#d1d5db] min-w-[85px] max-w-[85px] sm:min-w-[150px] sm:max-w-none w-[85px] sm:w-auto truncate" title="Totales">Totales</td>`;
 
                     sheet.prods.forEach(p => {
                         let tQ = 0;
                         sortedClients.forEach(cli => tQ += clientData[cli].products[p.id] || 0);
                         const qtyDisplay = window.dataModule.getDisplayQty(tQ, p);
                         let dT = tQ > 0 ? (typeof qtyDisplay.value === 'number' ? `${qtyDisplay.value} ${qtyDisplay.unit}` : qtyDisplay.value) : '';
-                        html += `<td class="p-2 sm:p-3 border-t border-gray-300 text-center whitespace-nowrap text-blue-800">${dT}</td>`;
+                        html += `<td class="p-1.5 sm:p-3 border-t border-gray-300 text-center whitespace-nowrap text-blue-800">${dT}</td>`;
                     });
 
-                    html += `<td class="p-2 sm:p-3 border-t border-gray-300 text-right sticky right-0 z-40 bg-gray-200 shadow-[-1px_0_0_0_#d1d5db]">$${grandTotalValue.toFixed(2)}</td>
+                    html += `<td class="p-1.5 sm:p-3 border-t border-gray-300 text-right sticky right-0 z-40 bg-gray-200 shadow-[-1px_0_0_0_#d1d5db]">$${grandTotalValue.toFixed(2)}</td>
                                 </tr>
                             </tfoot>
                         </table></div>`;
@@ -978,7 +977,6 @@
             overlay.insertAdjacentHTML('beforeend', html);
             document.body.appendChild(overlay);
 
-            // Ocultar cualquier modal previo existente de progreso
             const m = document.getElementById('modalContainer');
             if (m) m.classList.add('hidden');
 
@@ -989,15 +987,12 @@
 
             overlay.querySelectorAll('.preview-tab-btn').forEach(btn => {
                 btn.addEventListener('click', (e) => {
-                    // Reset estilos de pestañas
                     overlay.querySelectorAll('.preview-tab-btn').forEach(b => {
                         b.classList.remove('border-b-4', 'border-blue-600', 'text-blue-800', 'font-bold', 'bg-blue-50');
                         b.classList.add('text-gray-600', 'font-medium');
                     });
-                    // Ocultar todas las hojas
                     overlay.querySelectorAll('.preview-sheet').forEach(s => s.classList.add('hidden'));
 
-                    // Activar selección
                     e.target.classList.add('border-b-4', 'border-blue-600', 'text-blue-800', 'font-bold', 'bg-blue-50');
                     e.target.classList.remove('text-gray-600', 'font-medium');
                     
@@ -1011,7 +1006,6 @@
             _showModal('Error', `No se pudo generar la vista previa: ${error.message}`); 
         }
     }
-
 
   async function ejecutarCierre() {
       _showModal('Confirmar Cierre Definitivo', 'Se generará el reporte y se limpiará la jornada para iniciar una nueva. ¿Deseas continuar?', async () => {
