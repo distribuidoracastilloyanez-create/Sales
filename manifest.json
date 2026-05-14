@@ -35,5 +35,27 @@
             "description": "Consultar el stock de productos",
             "url": "index.html#inventario"
         }
-    ]
+    ],
+    "share_target": {
+        "action": "./index.html?share-pending=1",
+        "method": "POST",
+        "enctype": "multipart/form-data",
+        "params": {
+            "files": [
+                {
+                    "name": "file",
+                    "accept": [
+                        "image/png",
+                        "image/jpeg",
+                        "image/jpg",
+                        "application/pdf",
+                        "application/msword",
+                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                        "application/vnd.ms-excel",
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    ]
+                }
+            ]
+        }
+    }
 }
