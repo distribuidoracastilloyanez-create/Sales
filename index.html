@@ -186,7 +186,9 @@
     <script src="cxc.js" defer></script>
     <script src="supervision.js" defer></script>
     <script src="facturacion.js" defer></script> 
-    <script src="archivos.js" defer></script> <script type="module"> 
+    <script src="archivos.js" defer></script>
+
+    <script type="module"> 
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAnalytics } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-analytics.js";
         import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, createUserWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
@@ -198,10 +200,8 @@
             initializeFirestore, persistentLocalCache, persistentMultipleTabManager
         } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // ---> IMPORTACIÓN PARA STORAGE <---
         import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
 
-        // Exportar funciones de Storage al objeto global
         window.firebaseStorageFunctions = {
             ref: ref,
             uploadBytes: uploadBytes,
@@ -214,40 +214,37 @@
             alert("Error de Sistema: No se pudo cargar la configuración. Verifique que 'config.js' existe y se carga correctamente.");
         }
 
-        const firebaseConfig = window.AppConfig.firebaseConfig;
-        const appId = firebaseConfig.projectId;
-        const PUBLIC_DATA_ID = window.AppConfig.PUBLIC_DATA_ID; // Usar ID centralizado
+        const firebaseConfig  = window.AppConfig.firebaseConfig;
+        const appId           = firebaseConfig.projectId;
+        const PUBLIC_DATA_ID  = window.AppConfig.PUBLIC_DATA_ID;
 
         let db, auth, storage, userId;
-        window.userRole = 'user'; 
+        window.userRole   = 'user'; 
         let activeListeners = [];
         window.isLoggingOut = false; 
         window.TIPOS_VACIO_GLOBAL = ["1/4 - 1/3", "ret 350 ml", "ret 1.25 Lts"];
         let manualOffline = localStorage.getItem('manualOfflineMode') === 'true';
 
-        const mainContent = document.getElementById('mainContent');
-        const modalContainer = document.getElementById('modalContainer');
-        const modalContent = document.getElementById('modalContent');
-        const loginForm = document.getElementById('loginForm');
-        const authMessage = document.getElementById('authMessage');
-        const loginContent = document.getElementById('loginContent');
-        const registerContent = document.getElementById('registerContent');
-        const registerForm = document.getElementById('registerForm');
-        const registerMessage = document.getElementById('registerMessage');
-        const floatingControls = document.getElementById('floating-controls');
+        const mainContent       = document.getElementById('mainContent');
+        const modalContainer    = document.getElementById('modalContainer');
+        const modalContent      = document.getElementById('modalContent');
+        const loginForm         = document.getElementById('loginForm');
+        const authMessage       = document.getElementById('authMessage');
+        const loginContent      = document.getElementById('loginContent');
+        const registerContent   = document.getElementById('registerContent');
+        const registerForm      = document.getElementById('registerForm');
+        const registerMessage   = document.getElementById('registerMessage');
+        const floatingControls  = document.getElementById('floating-controls');
         const connectionStatusEl = document.getElementById('connectionStatusFloating');
 
-        // --- LÓGICA DE CONEXIÓN CENTRALIZADA ---
+        // ── Estado de conexión ────────────────────────────────────────────────
         function updateConnectionDisplay(isOnline) {
             if (!connectionStatusEl) return;
-            
-            // Prioridad a modo manual
             if (manualOffline) {
                 connectionStatusEl.textContent = "OFFLINE (MANUAL)";
                 connectionStatusEl.className = "block text-xs font-bold px-3 py-2 rounded-full shadow-lg transition-colors duration-300 bg-red-600 text-white";
                 return;
             }
-
             if (isOnline) {
                 connectionStatusEl.textContent = "EN LÍNEA";
                 connectionStatusEl.className = "block text-xs font-bold px-3 py-2 rounded-full shadow-lg transition-colors duration-300 bg-green-500 text-white";
@@ -257,13 +254,11 @@
             }
         }
 
-        // Listeners inmediatos del navegador (Feedback rápido)
-        window.addEventListener('online', () => updateConnectionDisplay(true));
+        window.addEventListener('online',  () => updateConnectionDisplay(true));
         window.addEventListener('offline', () => updateConnectionDisplay(false));
-        // Estado inicial
         updateConnectionDisplay(navigator.onLine);
 
-        // Función Modal Global
+        // ── Modal global ──────────────────────────────────────────────────────
         window.showModal = function(title, message, onConfirm = null, confirmText = 'Confirmar', onCancel = null, triggerConfirmLogic = false) {
             modalContent.innerHTML = `
                 <div class="text-center">
@@ -299,7 +294,7 @@
             modalContainer.classList.remove('hidden');
         };
 
-        // Función para Agregar Items Rápidos
+        // ── Modal rápido para agregar items ───────────────────────────────────
         window.showAddItemModal = async function(collectionName, itemName) {
             modalContent.innerHTML = `
                 <div class="text-center">
@@ -319,31 +314,34 @@
             document.getElementById('addItemForm').addEventListener('submit', async (e) => {
                 e.preventDefault();
                 const name = document.getElementById('newItemInput').value.trim().toUpperCase();
-                const msg = document.getElementById('addItemMessage');
+                const msg  = document.getElementById('addItemMessage');
                 try {
-                    const colRef = collection(db, collectionName.startsWith('artifacts') ? collectionName : `artifacts/${appId}/users/${userId}/${collectionName}`);
-                    
+                    const colRef = collection(db, collectionName.startsWith('artifacts')
+                        ? collectionName
+                        : `artifacts/${appId}/users/${userId}/${collectionName}`);
                     await addDoc(colRef, { name });
                     msg.textContent = "¡Agregado con éxito!";
-                    msg.className = "text-green-600 text-sm";
+                    msg.className   = "text-green-600 text-sm";
                     setTimeout(() => modalContainer.classList.add('hidden'), 1000);
                 } catch (err) {
                     console.error(err);
                     msg.textContent = "Error al guardar.";
-                    msg.className = "text-red-600 text-sm";
+                    msg.className   = "text-red-600 text-sm";
                 }
             });
         };
 
-        // Poblado de Dropdowns Global
+        // ── Dropdown global ───────────────────────────────────────────────────
         window.populateDropdown = async function(collectionPath, elementId, itemName, selectedValue = null) {
             const select = document.getElementById(elementId);
             if (!select) return;
             select.innerHTML = `<option value="">Cargando...</option>`;
             try {
-                const fullPath = collectionPath.startsWith('artifacts') ? collectionPath : `artifacts/${appId}/users/${userId}/${collectionPath}`;
-                const snap = await getDocs(collection(db, fullPath));
-                const items = snap.docs.map(d => d.data().name).sort((a,b) => a.localeCompare(b));
+                const fullPath = collectionPath.startsWith('artifacts')
+                    ? collectionPath
+                    : `artifacts/${appId}/users/${userId}/${collectionPath}`;
+                const snap  = await getDocs(collection(db, fullPath));
+                const items = snap.docs.map(d => d.data().name).sort((a, b) => a.localeCompare(b));
                 select.innerHTML = `<option value="">Seleccione un ${itemName}</option>`;
                 items.forEach(name => {
                     const opt = document.createElement('option');
@@ -359,7 +357,7 @@
             }
         };
 
-        // Pre-carga de datos para optimizar offline
+        // ── Pre-carga de datos para offline ───────────────────────────────────
         async function preloadAllData() {
             const collectionsToPreload = [
                 { path: `artifacts/${appId}/users/${userId}/inventario` },
@@ -371,14 +369,13 @@
                 { path: `artifacts/${PUBLIC_DATA_ID}/public/data/sectores` },
                 { path: `artifacts/${PUBLIC_DATA_ID}/public/data/config/obsequio` }
             ];
-            
             await Promise.allSettled(collectionsToPreload.map(col => {
                 if (col.path.includes('/config/')) return getDoc(doc(db, col.path));
                 return getDocs(collection(db, col.path));
             }));
         }
 
-        // Vista Principal del Menú
+        // ── Menú principal ────────────────────────────────────────────────────
         window.showMainMenu = function() {
             cleanupListeners();
             mainContent.classList.remove('hidden');
@@ -428,7 +425,6 @@
                 </div>
             `;
 
-            // Listeners Seguros
             const safeNav = (fn, name) => {
                 if (typeof fn === 'function') {
                     floatingControls.classList.add('hidden'); 
@@ -439,18 +435,18 @@
                 }
             };
 
-            document.getElementById('inventarioBtn')?.addEventListener('click', () => safeNav(window.showInventarioSubMenu, 'Inventario'));
-            document.getElementById('editInventarioBtn')?.addEventListener('click', () => safeNav(window.showEditInventarioMenu, 'Edición Inventario'));
-            document.getElementById('clientesBtn')?.addEventListener('click', () => safeNav(window.showClientesSubMenu, 'Clientes'));
-            document.getElementById('ventasBtn')?.addEventListener('click', () => safeNav(window.showVentasView, 'Ventas'));
-            document.getElementById('cxcBtn')?.addEventListener('click', () => safeNav(window.showCXCView, 'CXC'));
-            document.getElementById('facturacionBtn')?.addEventListener('click', () => safeNav(window.showFacturacionView, 'Facturación')); 
-            document.getElementById('archivosBtn')?.addEventListener('click', () => safeNav(window.showArchivosView, 'Archivos'));
-            document.getElementById('obsequiosBtn')?.addEventListener('click', () => safeNav(window.showGestionObsequiosView, 'Obsequios'));
-            document.getElementById('catalogoBtn')?.addEventListener('click', () => safeNav(window.showCatalogoSubMenu, 'Catálogo'));
-            document.getElementById('profileAdminBtn')?.addEventListener('click', () => safeNav(window.showAdminOrProfileView, 'Perfil/Admin'));
-            document.getElementById('dataBtn')?.addEventListener('click', () => safeNav(window.showDataView, 'Data'));
-            document.getElementById('supervisionBtn')?.addEventListener('click', () => safeNav(window.showSupervisionMenu, 'Supervisión'));
+            document.getElementById('inventarioBtn')?.addEventListener('click',     () => safeNav(window.showInventarioSubMenu,      'Inventario'));
+            document.getElementById('editInventarioBtn')?.addEventListener('click', () => safeNav(window.showEditInventarioMenu,      'Edición Inventario'));
+            document.getElementById('clientesBtn')?.addEventListener('click',       () => safeNav(window.showClientesSubMenu,         'Clientes'));
+            document.getElementById('ventasBtn')?.addEventListener('click',         () => safeNav(window.showVentasView,              'Ventas'));
+            document.getElementById('cxcBtn')?.addEventListener('click',           () => safeNav(window.showCXCView,                 'CXC'));
+            document.getElementById('facturacionBtn')?.addEventListener('click',   () => safeNav(window.showFacturacionView,          'Facturación'));
+            document.getElementById('archivosBtn')?.addEventListener('click',       () => safeNav(window.showArchivosView,            'Archivos'));
+            document.getElementById('obsequiosBtn')?.addEventListener('click',     () => safeNav(window.showGestionObsequiosView,    'Obsequios'));
+            document.getElementById('catalogoBtn')?.addEventListener('click',       () => safeNav(window.showCatalogoSubMenu,         'Catálogo'));
+            document.getElementById('profileAdminBtn')?.addEventListener('click',  () => safeNav(window.showAdminOrProfileView,      'Perfil/Admin'));
+            document.getElementById('dataBtn')?.addEventListener('click',           () => safeNav(window.showDataView,               'Data'));
+            document.getElementById('supervisionBtn')?.addEventListener('click',   () => safeNav(window.showSupervisionMenu,         'Supervisión'));
 
             const toggle = document.getElementById('offline-toggle');
             toggle.checked = localStorage.getItem('manualOfflineMode') === 'true';
@@ -468,6 +464,7 @@
             });
         };
 
+        // ── Inicialización principal ──────────────────────────────────────────
         async function initializeAppAndListeners() {
             const app = initializeApp(firebaseConfig);
             
@@ -477,14 +474,15 @@
                 }) 
             });
 
-            storage = getStorage(app); // Inicializando Storage
-            auth = getAuth(app);
+            storage = getStorage(app);
+            auth    = getAuth(app);
 
             onAuthStateChanged(auth, async (user) => {
                 cleanupListeners();
+
                 if (user) {
                     userId = user.uid;
-                    const userDoc = await getDoc(doc(db, "users", userId));
+                    const userDoc   = await getDoc(doc(db, "users", userId));
                     window.userRole = userDoc.exists() ? userDoc.data().role : 'user';
                     
                     document.getElementById('loginContent').classList.add('hidden');
@@ -503,21 +501,27 @@
                         increment 
                     };
                     
-                    // Init de módulos con chequeo de seguridad
-                    if (window.initData) window.initData(deps); else console.warn("Módulo Data no encontrado");
-                    if (window.initAdmin) window.initAdmin(deps); else console.warn("Módulo Admin no encontrado");
-                    if (window.initInventario) window.initInventario(deps); else console.warn("Módulo Inventario no encontrado");
-                    if (window.initCatalogo) window.initCatalogo(deps); else console.warn("Módulo Catálogo no encontrado");
-                    if (window.initClientes) window.initClientes(deps); else console.warn("Módulo Clientes no encontrado");
-                    if (window.initVentas) window.initVentas(deps); else console.warn("Módulo Ventas no encontrado");
-                    if (window.initObsequios) window.initObsequios(deps); else console.warn("Módulo Obsequios no encontrado");
-                    if (window.initCXC) window.initCXC(deps); else console.warn("Módulo CXC no encontrado");
+                    if (window.initData)          window.initData(deps);          else console.warn("Módulo Data no encontrado");
+                    if (window.initAdmin)         window.initAdmin(deps);         else console.warn("Módulo Admin no encontrado");
+                    if (window.initInventario)    window.initInventario(deps);    else console.warn("Módulo Inventario no encontrado");
+                    if (window.initCatalogo)      window.initCatalogo(deps);      else console.warn("Módulo Catálogo no encontrado");
+                    if (window.initClientes)      window.initClientes(deps);      else console.warn("Módulo Clientes no encontrado");
+                    if (window.initVentas)        window.initVentas(deps);        else console.warn("Módulo Ventas no encontrado");
+                    if (window.initObsequios)     window.initObsequios(deps);     else console.warn("Módulo Obsequios no encontrado");
+                    if (window.initCXC)           window.initCXC(deps);           else console.warn("Módulo CXC no encontrado");
                     if (window.initEditInventario) window.initEditInventario(deps); else console.warn("Módulo Edit Inventario no encontrado");
-                    if (window.initSupervision) window.initSupervision(deps); else console.warn("Módulo Supervisión no encontrado");
-                    if (window.initFacturacion) window.initFacturacion(deps); else console.warn("Módulo Facturación no encontrado"); 
-                    if (window.initArchivos) window.initArchivos(deps); else console.warn("Módulo Archivos no encontrado");
+                    if (window.initSupervision)   window.initSupervision(deps);   else console.warn("Módulo Supervisión no encontrado");
+                    if (window.initFacturacion)   window.initFacturacion(deps);   else console.warn("Módulo Facturación no encontrado");
+                    if (window.initArchivos)      window.initArchivos(deps);      else console.warn("Módulo Archivos no encontrado");
 
+                    // ── Mostrar menú principal ────────────────────────────────
                     showMainMenu();
+
+                    // ── Web Share Target: si la app fue abierta desde Android ─
+                    // Detecta ?share-pending=1 en la URL y redirige directamente
+                    // al módulo de Archivos con los archivos listos para guardar.
+                    if (window.checkAndHandleShareTarget) window.checkAndHandleShareTarget();
+
                 } else {
                     document.getElementById('loginContent').classList.remove('hidden');
                     mainContent.classList.add('hidden');
@@ -527,24 +531,25 @@
         }
 
         function cleanupListeners() {
-            activeListeners.forEach(u => { if(typeof u === 'function') u(); });
+            activeListeners.forEach(u => { if (typeof u === 'function') u(); });
             activeListeners = [];
         }
 
-        // Manejo de Forms
+        // ── Formulario de login ───────────────────────────────────────────────
         loginForm?.addEventListener('submit', (e) => {
             e.preventDefault();
             const email = document.getElementById('emailInput').value;
-            const pass = document.getElementById('passwordInput').value;
-            signInWithEmailAndPassword(auth, email, pass).catch(err => {
+            const pass  = document.getElementById('passwordInput').value;
+            signInWithEmailAndPassword(auth, email, pass).catch(() => {
                 authMessage.textContent = "Correo o contraseña incorrectos.";
             });
         });
 
+        // ── Formulario de registro ────────────────────────────────────────────
         registerForm?.addEventListener('submit', async (e) => {
             e.preventDefault();
-            const email = document.getElementById('registerEmailInput').value;
-            const pass = document.getElementById('registerPasswordInput').value;
+            const email   = document.getElementById('registerEmailInput').value;
+            const pass    = document.getElementById('registerPasswordInput').value;
             const confirm = document.getElementById('confirmPasswordInput').value;
             if (pass !== confirm) { registerMessage.textContent = "Las contraseñas no coinciden."; return; }
             try {
@@ -573,7 +578,6 @@
 
     <script>
         if ('serviceWorker' in navigator) {
-            // Solo registrar si estamos en HTTP/HTTPS (evita errores en preview)
             if (window.location.protocol.startsWith('http')) {
                 navigator.serviceWorker.register('./sw.js').catch(err => console.log('SW Error:', err));
             }
