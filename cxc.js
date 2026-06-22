@@ -490,7 +490,16 @@
     // HELPER: Normalizador estricto para comparar textos ignorando acentos y mayúsculas
     function normalizeStr(str) {
         if (!str) return '';
-        return str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9 ]/g, '');
+        // Reemplaza non-breaking spaces (\xa0) y otros espacios unicode por espacio normal
+        // antes de normalizar, para evitar que clientes del Excel con \xa0 no sean encontrados
+        return str
+            .replace(/[\u00A0\u200B\u200C\u200D\uFEFF\t]/g, ' ')
+            .normalize("NFD")
+            .replace(/[\u0300-\u036f]/g, "")
+            .toLowerCase()
+            .replace(/[^a-z0-9 ]/g, '')
+            .replace(/\s+/g, ' ')
+            .trim();
     }
 
     async function searchConsolidatedConsignments(clientName) {
