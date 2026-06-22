@@ -174,6 +174,7 @@
     
     <script src="config.js"></script>
 
+    <script src="calculadora.js" defer></script>
     <script src="data.js" defer></script>
     <script src="admin.js" defer></script>
     <script src="inventario.js" defer></script>
@@ -399,6 +400,10 @@
                             
                             <button id="cxcBtn" class="w-full px-6 py-3 bg-orange-500 text-white rounded-lg shadow-md hover:bg-orange-600 font-bold transition transform hover:-translate-y-1">CXC</button>
 
+                            <button id="calculadoraBtn" class="w-full px-6 py-3 bg-teal-500 text-white rounded-lg shadow-md hover:bg-teal-600 font-bold transition transform hover:-translate-y-1 flex items-center justify-center gap-2">
+                                <span class="text-xl">🧮</span> Calculadora de Pedido
+                            </button>
+
                             <button id="facturacionBtn" class="w-full px-6 py-3 bg-gray-700 text-white font-bold rounded-lg shadow-md hover:bg-gray-800 transition transform hover:-translate-y-1 flex items-center justify-center gap-2">
                                 <span class="text-xl">🧾</span> Facturación (Simulador)
                             </button>
@@ -442,6 +447,7 @@
             document.getElementById('cxcBtn')?.addEventListener('click',           () => safeNav(window.showCXCView,                 'CXC'));
             document.getElementById('facturacionBtn')?.addEventListener('click',   () => safeNav(window.showFacturacionView,          'Facturación'));
             document.getElementById('archivosBtn')?.addEventListener('click',       () => safeNav(window.showArchivosView,            'Archivos'));
+            document.getElementById('calculadoraBtn')?.addEventListener('click',   () => safeNav(window.showCalculadoraView,          'Calculadora'));
             document.getElementById('obsequiosBtn')?.addEventListener('click',     () => safeNav(window.showGestionObsequiosView,    'Obsequios'));
             document.getElementById('catalogoBtn')?.addEventListener('click',       () => safeNav(window.showCatalogoSubMenu,         'Catálogo'));
             document.getElementById('profileAdminBtn')?.addEventListener('click',  () => safeNav(window.showAdminOrProfileView,      'Perfil/Admin'));
@@ -513,6 +519,7 @@
                     if (window.initSupervision)   window.initSupervision(deps);   else console.warn("Módulo Supervisión no encontrado");
                     if (window.initFacturacion)   window.initFacturacion(deps);   else console.warn("Módulo Facturación no encontrado");
                     if (window.initArchivos)      window.initArchivos(deps);      else console.warn("Módulo Archivos no encontrado");
+                    if (window.initCalculadora)   window.initCalculadora(deps);   else console.warn("Módulo Calculadora no encontrado");
 
                     // ── Mostrar menú principal ────────────────────────────────
                     showMainMenu();
