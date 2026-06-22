@@ -232,16 +232,11 @@
                         <div class="text-xs text-gray-400 leading-tight">${p.marca || ''}${p.segmento ? ' · ' + p.segmento : ''}</div>
                         <div class="text-xs font-bold text-blue-500">${kgPorBulto} ${unidad}/bulto</div>
                     </div>
-                    <div class="flex items-center gap-1 shrink-0">
-                        <button data-id="${p.id}" data-action="dec"
-                            class="w-7 h-7 rounded-full bg-gray-200 hover:bg-red-100 hover:text-red-600 font-bold text-base flex items-center justify-center transition leading-none select-none">−</button>
+                    <div class="flex items-center shrink-0">
                         <input type="number" inputmode="numeric" pattern="[0-9]*"
                             id="bultos-${p.id}" data-id="${p.id}" data-action="input"
                             value="${cant}" min="0" step="1"
-                            class="w-12 text-center text-sm font-black text-gray-800 border border-gray-300 rounded-md py-0.5 focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white"
-                            style="-moz-appearance:textfield;appearance:textfield;">
-                        <button data-id="${p.id}" data-action="inc"
-                            class="w-7 h-7 rounded-full bg-blue-500 hover:bg-blue-600 text-white font-bold text-base flex items-center justify-center transition leading-none select-none">+</button>
+                            class="w-16 text-center text-sm font-black text-gray-800 border border-gray-300 rounded-md py-0.5 focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white">
                     </div>
                     <div class="text-right w-14 shrink-0">
                         <div class="text-xs font-bold ${kgEste > 0 ? 'text-green-600' : 'text-gray-300'} leading-tight" id="kg-${p.id}">${kgEste > 0 ? kgEste.toFixed(1) : '—'}</div>
@@ -255,20 +250,6 @@
 
         // Referencia a lista filtrada activa para _updateUI
         list._filteredProductos = filtered;
-
-        // Botones +/−
-        list.querySelectorAll('button[data-action]').forEach(btn => {
-            btn.addEventListener('click', () => {
-                const id = btn.dataset.id;
-                const action = btn.dataset.action;
-                _pedidoActual[id] = Math.max(0, (_pedidoActual[id] || 0) + (action === 'inc' ? 1 : -1));
-                if (_pedidoActual[id] === 0) delete _pedidoActual[id];
-                // Sincronizar input
-                const inp = document.getElementById('bultos-' + id);
-                if (inp) inp.value = _pedidoActual[id] || 0;
-                _updateUI(list._filteredProductos);
-            });
-        });
 
         // Inputs numéricos — escritura directa
         list.querySelectorAll('input[data-action="input"]').forEach(inp => {
@@ -321,12 +302,8 @@
                 const bultosEl = document.getElementById(`bultos-${p.id}`);
                 const kgEl = document.getElementById(`kg-${p.id}`);
                 // El elemento ahora es un input — actualizar su value
-                if (bultosEl) {
-                    if (bultosEl.tagName === 'INPUT') {
-                        if (document.activeElement !== bultosEl) bultosEl.value = cantidad;
-                    } else {
-                        bultosEl.textContent = cantidad;
-                    }
+                if (bultosEl && document.activeElement !== bultosEl) {
+                    bultosEl.value = cantidad;
                 }
                 if (kgEl) {
                     kgEl.textContent = kgEste > 0 ? kgEste.toFixed(1) : '—';
@@ -581,5 +558,6 @@
     }
 
 })();
+
 
 
