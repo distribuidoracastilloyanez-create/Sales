@@ -1018,13 +1018,22 @@
 
                     const headerRowIndex = rows.findIndex(r => r[0] && r[0].toString().toUpperCase().includes('CLIENTE'));
                     if (headerRowIndex !== -1 && rows[headerRowIndex][1]) {
-                        clientName = rows[headerRowIndex][1].toString().trim();
+                        // Concatenar col[1] + col[2] por si el nombre está partido
+                        // en dos celdas (celdas combinadas rotas al exportar a Excel)
+                        const part1 = (rows[headerRowIndex][1] || '').toString().trim();
+                        const part2 = (rows[headerRowIndex][2] || '').toString().trim();
+                        // Si part2 existe y no es un encabezado conocido, concatenar
+                        const isHeaderVal = ['TOTALES','FECHA','NOMBRE','DEUDA'].some(h => part2.toUpperCase().startsWith(h));
+                        clientName = (part1 + (part2 && !isHeaderVal ? part2 : '')).trim();
                         isClientSheet = true;
                     }
                     if (!clientName) {
                          const nameRowIndex = rows.findIndex(r => r[0] && r[0].toString().toUpperCase().includes('NOMBRE'));
                          if (nameRowIndex !== -1 && rows[nameRowIndex][1]) {
-                             clientName = rows[nameRowIndex][1].toString().trim();
+                             const part1 = (rows[nameRowIndex][1] || '').toString().trim();
+                             const part2 = (rows[nameRowIndex][2] || '').toString().trim();
+                             const isHeaderVal = ['TOTALES','FECHA','NOMBRE','DEUDA'].some(h => part2.toUpperCase().startsWith(h));
+                             clientName = (part1 + (part2 && !isHeaderVal ? part2 : '')).trim();
                              isClientSheet = true;
                          }
                     }
