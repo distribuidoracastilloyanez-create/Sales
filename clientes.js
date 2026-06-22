@@ -112,7 +112,11 @@
         
         document.getElementById('backToClientesFromEditSaldosBtn').addEventListener('click', showClientesSubMenu);
         const searchInput = document.getElementById('edit-saldo-search-input');
-        if (searchInput) searchInput.addEventListener('input', renderEditSaldosList);
+        let _saldosSearchDebounce = null;
+        if (searchInput) searchInput.addEventListener('input', () => {
+            clearTimeout(_saldosSearchDebounce);
+            _saldosSearchDebounce = setTimeout(renderEditSaldosList, 200);
+        });
 
         if (_clientesCache.length === 0) {
             const clientesRef = _collection(_db, CLIENTES_COLLECTION_PATH);
@@ -955,7 +959,11 @@
 
         const applyFilters = () => renderClientesList(containerId, false);
 
-        searchInput?.addEventListener('input', applyFilters);
+        let _clientListDebounce = null;
+        searchInput?.addEventListener('input', () => {
+            clearTimeout(_clientListDebounce);
+            _clientListDebounce = setTimeout(applyFilters, 200);
+        });
         sectorFilter?.addEventListener('change', applyFilters);
         incompletosFilter?.addEventListener('change', applyFilters);
         adcFilter?.addEventListener('change', applyFilters);
@@ -1655,7 +1663,11 @@
         document.getElementById('backToClientesBtn').addEventListener('click', showClientesSubMenu);
         const searchInput = document.getElementById('saldo-search-input');
         if (searchInput) {
-             searchInput.addEventListener('input', renderSaldosList);
+             let _saldosDebounce = null;
+             searchInput.addEventListener('input', () => {
+                 clearTimeout(_saldosDebounce);
+                 _saldosDebounce = setTimeout(renderSaldosList, 200);
+             });
         }
 
         const clientesRef = _collection(_db, CLIENTES_COLLECTION_PATH);
@@ -1870,3 +1882,4 @@
     };
 
 })();
+
