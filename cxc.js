@@ -1049,14 +1049,14 @@
 
                     const totalRow = rows.find(r => r[0] && r[0].toString().toUpperCase() === 'TOTALES');
                     if (totalRow) {
-                        for (let i = 1; i < totalRow.length; i++) {
-                            let valStr = (totalRow[i] || '').toString().replace(/[^0-9.-]/g, '');
-                            if (valStr && !isNaN(parseFloat(valStr))) {
-                                totalAmount = parseFloat(valStr);
-                                if (currentClientData) currentClientData.amount = totalAmount;
-                                break; 
-                            }
-                        }
+                        // El monto (DEUDA Y ABONOS) siempre está en col[2].
+                        // Un guion '-' o null significa deuda $0, NO buscar la siguiente columna
+                        // (que contiene vacíos y causaría confundir vacíos con deuda).
+                        const rawMonto = totalRow[2];
+                        const rawStr = (rawMonto == null ? '' : rawMonto.toString()).trim();
+                        const isCero = rawStr === '' || rawStr === '-' || rawStr.replace(/[$\s]/g, '') === '-';
+                        totalAmount = isCero ? 0 : (parseFloat(rawStr.replace(/[^0-9.-]/g, '')) || 0);
+                        if (currentClientData) currentClientData.amount = totalAmount;
                     }
 
                     let startRowIndex = 0;
