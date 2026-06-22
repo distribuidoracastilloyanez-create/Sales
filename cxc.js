@@ -139,7 +139,11 @@
             input.addEventListener('change', handleFileUpload);
         }
 
-        document.getElementById('clientSearch').addEventListener('input', (e) => renderCXCList(e.target.value));
+        let _cxcSearchDebounce = null;
+        document.getElementById('clientSearch').addEventListener('input', (e) => {
+            clearTimeout(_cxcSearchDebounce);
+            _cxcSearchDebounce = setTimeout(() => renderCXCList(e.target.value), 200);
+        });
 
         loadTasasBCV();
         await syncAndLoadData();
@@ -987,6 +991,11 @@
     async function handleFileUpload(event) {
         const file = event.target.files[0];
         if (!file) return;
+        // Validar extensión
+        if (!file.name.match(/\.(xlsx|xls)$/i)) {
+            _showModal('Error', 'El archivo debe ser un Excel (.xlsx o .xls).');
+            return;
+        }
 
         _showModal('Procesando', 'Leyendo archivo Excel... Extrayendo historial detallado.');
         const reader = new FileReader();
@@ -1135,3 +1144,4 @@
         searchConsolidatedConsignments
     };
 })();
+
