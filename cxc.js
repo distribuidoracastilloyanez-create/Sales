@@ -291,8 +291,8 @@
             return;
         }
 
-        const term = searchTerm.toLowerCase();
-        let filtered = _cxcDataCache.filter(c => c.name.toLowerCase().includes(term));
+        const term = searchTerm.toLowerCase().replace(/\u00A0/g, ' ');
+        let filtered = _cxcDataCache.filter(c => c.name.toLowerCase().replace(/\u00A0/g, ' ').includes(term));
         filtered.sort((a, b) => a.name.localeCompare(b.name));
 
         const totalMatches = filtered.length;
@@ -1144,4 +1144,5 @@
         searchConsolidatedConsignments
     };
 })();
+
 
