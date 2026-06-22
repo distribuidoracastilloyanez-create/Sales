@@ -260,6 +260,16 @@
         updateConnectionDisplay(navigator.onLine);
 
         // ── Modal global ──────────────────────────────────────────────────────
+        // Toast no intrusivo para feedback de guardado
+        window.showToast = function(msg, type = 'success') {
+            const colors = { success: 'bg-green-600', error: 'bg-red-600', info: 'bg-blue-600' };
+            const t = document.createElement('div');
+            t.className = `fixed bottom-20 left-1/2 -translate-x-1/2 z-[9999] px-4 py-2 rounded-full text-white text-sm font-semibold shadow-lg transition-all duration-300 ${colors[type] || colors.success}`;
+            t.textContent = msg;
+            document.body.appendChild(t);
+            setTimeout(() => { t.style.opacity = '0'; setTimeout(() => t.remove(), 300); }, 2500);
+        };
+
         window.showModal = function(title, message, onConfirm = null, confirmText = 'Confirmar', onCancel = null, triggerConfirmLogic = false) {
             modalContent.innerHTML = `
                 <div class="text-center">
@@ -396,7 +406,9 @@
                             
                             <button id="clientesBtn" class="w-full px-6 py-3 bg-indigo-500 text-white rounded-lg shadow-md hover:bg-indigo-600 font-bold transition transform hover:-translate-y-1">Clientes</button>
                             
-                            <button id="ventasBtn" class="w-full px-6 py-3 bg-green-500 text-white rounded-lg shadow-md hover:bg-green-600 font-bold transition transform hover:-translate-y-1">Ventas</button>
+                            <button id="ventasBtn" class="w-full px-6 py-3 bg-green-500 text-white rounded-lg shadow-md hover:bg-green-600 font-bold transition transform hover:-translate-y-1 flex items-center justify-center gap-2">
+                                Ventas <span id="ventasBadge" class="hidden bg-white text-green-700 text-xs font-black px-2 py-0.5 rounded-full"></span>
+                            </button>
                             
                             <button id="cxcBtn" class="w-full px-6 py-3 bg-orange-500 text-white rounded-lg shadow-md hover:bg-orange-600 font-bold transition transform hover:-translate-y-1">CXC</button>
 
@@ -453,6 +465,19 @@
             document.getElementById('profileAdminBtn')?.addEventListener('click',  () => safeNav(window.showAdminOrProfileView,      'Perfil/Admin'));
             document.getElementById('dataBtn')?.addEventListener('click',           () => safeNav(window.showDataView,               'Data'));
             document.getElementById('supervisionBtn')?.addEventListener('click',   () => safeNav(window.showSupervisionMenu,         'Supervisión'));
+
+            // Cargar badge de ventas del día
+            (async () => {
+                try {
+                    if (typeof _getDocs === 'function' && typeof _collection === 'function') {
+                        const vSnap = await deps?.getDocs?.(deps?.collection?.(_db, `artifacts/${appId}/users/${userId}/ventas`));
+                        if (vSnap && vSnap.size > 0) {
+                            const badge = document.getElementById('ventasBadge');
+                            if (badge) { badge.textContent = vSnap.size; badge.classList.remove('hidden'); }
+                        }
+                    }
+                } catch(e) { /* no bloquear el menú si falla */ }
+            })();
 
             const toggle = document.getElementById('offline-toggle');
             toggle.checked = localStorage.getItem('manualOfflineMode') === 'true';
@@ -592,3 +617,4 @@
     </script>
 </body>
 </html>
+
