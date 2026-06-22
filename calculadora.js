@@ -65,7 +65,7 @@
     // ─── ENTRADA PRINCIPAL ────────────────────────────────────────────────────
     window.showCalculadoraView = async function() {
         _mainContent.classList.remove('hidden');
-        _floatingControls.classList.remove('hidden');
+        if (_floatingControls) _floatingControls.classList.add('hidden');
         _pedidoActual = {};
 
         _mainContent.innerHTML = `
@@ -581,4 +581,5 @@
     }
 
 })();
+
 
