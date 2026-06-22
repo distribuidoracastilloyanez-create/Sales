@@ -82,7 +82,16 @@
 
       const clienteSearchInput = document.getElementById('clienteSearch');
 
-      clienteSearchInput.addEventListener('input', () => { const term = clienteSearchInput.value.toLowerCase(); const filtered = _clientesCache.filter(c=>(c.nombreComercial||'').toLowerCase().includes(term)||(c.nombrePersonal||'').toLowerCase().includes(term)); renderClienteDropdown(filtered); document.getElementById('clienteDropdown').classList.remove('hidden'); });
+      let _clienteSearchDebounce = null;
+      clienteSearchInput.addEventListener('input', () => {
+          clearTimeout(_clienteSearchDebounce);
+          _clienteSearchDebounce = setTimeout(() => {
+              const term = clienteSearchInput.value.toLowerCase();
+              const filtered = _clientesCache.filter(c=>(c.nombreComercial||'').toLowerCase().includes(term)||(c.nombrePersonal||'').toLowerCase().includes(term));
+              renderClienteDropdown(filtered);
+              document.getElementById('clienteDropdown').classList.remove('hidden');
+          }, 200);
+      });
 
       const savedTasa = localStorage.getItem('tasaCOP'); if (savedTasa) { _tasaCOP = parseFloat(savedTasa); document.getElementById('tasaCopInput').value = _tasaCOP; }
 
@@ -539,11 +548,10 @@
 
       _showModal('Confirmar Operación', '¿Guardar esta transacción?', async () => {
           _showModal('Progreso', 'Guardando transacción...', null, '', null, false); 
+          const hideProgress = () => { const pModal = document.getElementById('modalContainer'); if (pModal) pModal.classList.add('hidden'); };
           try {
                 const savedData = await _processAndSaveVenta();
-              
-                const pModal = document.getElementById('modalContainer');
-                if (pModal) pModal.classList.add('hidden');
+                hideProgress();
               
                 setTimeout(() => {
                     showSharingOptions(
@@ -558,10 +566,7 @@
 
             } catch (saveError) {
                 console.error("Error al guardar venta:", saveError);
-               const progressModal = document.getElementById('modalContainer'); 
-                if(progressModal && !progressModal.classList.contains('hidden') && progressModal.querySelector('h3')?.textContent.startsWith('Progreso')) {
-                    progressModal.classList.add('hidden');
-                }
+                hideProgress();
                 _showModal('Error', `Error al guardar la venta: ${saveError.message || saveError}`);
             }
             return false; 
@@ -1021,7 +1026,17 @@
     }
 
   async function ejecutarCierre() {
-      _showModal('Confirmar Cierre Definitivo', 'Se generará el reporte y se limpiará la jornada para iniciar una nueva. ¿Deseas continuar?', async () => {
+      // Verificar consignaciones activas antes de cerrar
+      const ventasRef2 = _collection(_db, `artifacts/${_appId}/users/${_userId}/ventas`);
+      const snapCheck = await _getDocs(ventasRef2);
+      const consignacionesActivas = snapCheck.docs.filter(d => d.data().tipoOperacion === 'consignacion');
+      const totalConsig = consignacionesActivas.reduce((s, d) => s + (d.data().total || 0), 0);
+
+      const msgCierre = consignacionesActivas.length > 0
+          ? `⚠️ Tienes <strong>${consignacionesActivas.length} consignación(es) activa(s)</strong> por un total de <strong>$${totalConsig.toFixed(2)}</strong> que también serán incluidas en el cierre.<br><br>Se generará el reporte y se limpiará la jornada. ¿Deseas continuar?`
+          : 'Se generará el reporte y se limpiará la jornada para iniciar una nueva. ¿Deseas continuar?';
+
+      _showModal('Confirmar Cierre Definitivo', msgCierre, async () => {
           _showModal('Progreso', 'Guardando reporte de cierre y limpiando jornada...', null, '', null, false);
           try {
                 const ventasRef = _collection(_db, `artifacts/${_appId}/users/${_userId}/ventas`); 
@@ -1394,3 +1409,4 @@
 
   window.ventasModule = { toggleMoneda, handleQuantityChange, handleTipoVacioChange, showPastSaleOptions, editVenta, deleteVenta, invalidateCache: () => { } };
 })();
+
