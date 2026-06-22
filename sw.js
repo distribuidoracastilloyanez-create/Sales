@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v15'; // Actualizado a v15: Soporte Web Share Target
+const CACHE_NAME = 'ventas-app-cache-v16'; // Actualizado a v16: Calculadora de Pedido
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
@@ -20,6 +20,7 @@ const urlsToCache = [
     './supervision.js',
     './facturacion.js',
     './archivos.js',
+    './calculadora.js',
     // --- Librerías Externas ---
     './tailwind.js',
     'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js',
@@ -177,3 +178,4 @@ self.addEventListener('fetch', event => {
             })
     );
 });
+
