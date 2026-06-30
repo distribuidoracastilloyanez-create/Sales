@@ -487,6 +487,8 @@
         });
     }
 
+    let _isSavingCorrections = false; // Guardia contra doble-clic / doble-tap al guardar correcciones
+
     async function handleSaveCorrections(targetUser) {
         const changes = Object.entries(_correccionActualState)
             .filter(([pid, data]) => data.ajuste !== 0)
@@ -499,7 +501,14 @@
         const missingObs = changes.some(c => !c.observacion || c.observacion.length < 3);
         if (missingObs) { _showModal('Validación', 'Por favor, ingrese una observación válida para CADA producto con ajuste.'); return; }
 
+        const correctionsBtn = document.getElementById('btnApplyCorrections');
+
         _showModal('Confirmar', `Se ajustarán ${changes.length} productos del inventario de ${targetUser.email}. ¿Continuar?`, async () => {
+            // Guardia contra doble-clic / doble-tap al confirmar
+            if (_isSavingCorrections) return false;
+            _isSavingCorrections = true;
+            if (correctionsBtn) { correctionsBtn.disabled = true; correctionsBtn.classList.add('opacity-50', 'cursor-not-allowed'); }
+
             _showModal('Progreso', 'Aplicando correcciones...', null, '', null, false);
             try {
                 await _runTransaction(_db, async (transaction) => {
@@ -579,7 +588,11 @@
             } catch (error) {
                 console.error("Transaction Error:", error);
                 _showModal('Error', `Falló la corrección: ${error.message}`);
+            } finally {
+                _isSavingCorrections = false;
+                if (correctionsBtn) { correctionsBtn.disabled = false; correctionsBtn.classList.remove('opacity-50', 'cursor-not-allowed'); }
             }
+            return false;
         }, 'Sí, Aplicar', null, true);
     }
 
@@ -596,7 +609,15 @@
             } catch(e) { console.error("Error loading users", e); }
         }
 
-        const today = new Date().toISOString().split('T')[0];
+        // Fecha de "hoy" en hora LOCAL (no UTC), para que filtros nocturnos
+        // no salten al día siguiente. toISOString() siempre da UTC.
+        const today = (() => {
+            const d = new Date();
+            const y = d.getFullYear();
+            const m = String(d.getMonth() + 1).padStart(2, '0');
+            const dd = String(d.getDate()).padStart(2, '0');
+            return `${y}-${m}-${dd}`;
+        })();
 
         _mainContent.innerHTML = `
             <div class="p-2 md:p-4 pt-8 h-screen flex flex-col">
@@ -1086,7 +1107,15 @@
             } catch(e) { console.error("Error loading users", e); }
         }
 
-        const today = new Date().toISOString().split('T')[0];
+        // Fecha de "hoy" en hora LOCAL (no UTC), para que filtros nocturnos
+        // no salten al día siguiente. toISOString() siempre da UTC.
+        const today = (() => {
+            const d = new Date();
+            const y = d.getFullYear();
+            const m = String(d.getMonth() + 1).padStart(2, '0');
+            const dd = String(d.getDate()).padStart(2, '0');
+            return `${y}-${m}-${dd}`;
+        })();
 
         _mainContent.innerHTML = `
             <div class="p-2 md:p-4 pt-8 h-screen flex flex-col">
@@ -1855,3 +1884,4 @@
     }
 
 })();
+
