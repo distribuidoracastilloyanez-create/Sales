@@ -1101,8 +1101,11 @@
 
         let mapBtnHTML = '';
         if (cliente.coordenadas) {
-            const urlCoords = encodeURIComponent(cliente.coordenadas);
-            mapBtnHTML = `<a href="https://googleusercontent.com/maps.google.com/?q=${urlCoords}" target="_blank" rel="noopener noreferrer" class="inline-block mt-3 w-full text-center px-4 py-2 bg-indigo-50 text-indigo-700 border border-indigo-200 font-bold rounded shadow-sm hover:bg-indigo-100 transition text-sm uppercase tracking-wide">Abrir en Google Maps</a>`;
+            // Normalizar "lat, lng" a "lat,lng" sin espacios para máxima compatibilidad
+            // con la app de Google Maps en Android y con el navegador.
+            const coordsLimpias = cliente.coordenadas.toString().replace(/\s+/g, '');
+            const urlCoords = encodeURIComponent(coordsLimpias);
+            mapBtnHTML = `<a href="https://www.google.com/maps/search/?api=1&query=${urlCoords}" target="_blank" rel="noopener noreferrer" class="inline-block mt-3 w-full text-center px-4 py-2 bg-indigo-50 text-indigo-700 border border-indigo-200 font-bold rounded shadow-sm hover:bg-indigo-100 transition text-sm uppercase tracking-wide">Abrir en Google Maps</a>`;
         }
 
         // Lógica Inteligente para Documentos (Sin Emojis, diseño limpio)
@@ -1882,4 +1885,5 @@
     };
 
 })();
+
 
