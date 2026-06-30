@@ -540,13 +540,22 @@
         }
     }
 
+    let _isSavingVenta = false; // Guardia contra doble-clic / doble-tap al guardar
+
     async function generarTicket() {
         if (!_ventaActual.cliente) { _showModal('Error', 'Selecciona cliente.'); return; }
         const prods = Object.values(_ventaActual.productos);
         const hayVac = Object.values(_ventaActual.vaciosDevueltosPorTipo).some(c => c > 0);
         if (prods.length === 0 && !hayVac) { _showModal('Error', 'Agrega productos o registra vacíos devueltos.'); return; }
 
+      const ticketBtn = document.getElementById('generarTicketBtn');
+
       _showModal('Confirmar Operación', '¿Guardar esta transacción?', async () => {
+          // Si ya hay un guardado en curso, ignorar confirmaciones repetidas
+          if (_isSavingVenta) return false;
+          _isSavingVenta = true;
+          if (ticketBtn) { ticketBtn.disabled = true; ticketBtn.classList.add('opacity-50', 'cursor-not-allowed'); }
+
           _showModal('Progreso', 'Guardando transacción...', null, '', null, false); 
           const hideProgress = () => { const pModal = document.getElementById('modalContainer'); if (pModal) pModal.classList.add('hidden'); };
           try {
@@ -568,6 +577,9 @@
                 console.error("Error al guardar venta:", saveError);
                 hideProgress();
                 _showModal('Error', `Error al guardar la venta: ${saveError.message || saveError}`);
+            } finally {
+                _isSavingVenta = false;
+                if (ticketBtn) { ticketBtn.disabled = false; ticketBtn.classList.remove('opacity-50', 'cursor-not-allowed'); }
             }
             return false; 
         }, 'Sí, Generar Ticket', null, true); 
@@ -1409,4 +1421,5 @@
 
   window.ventasModule = { toggleMoneda, handleQuantityChange, handleTipoVacioChange, showPastSaleOptions, editVenta, deleteVenta, invalidateCache: () => { } };
 })();
+
 
