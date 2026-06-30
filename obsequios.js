@@ -375,7 +375,15 @@
             }
         }
 
-        const today = new Date().toISOString().split('T')[0];
+        // Fecha de "hoy" en hora LOCAL (no UTC), para que filtros nocturnos
+        // no salten al día siguiente. toISOString() siempre da UTC.
+        const today = (() => {
+            const d = new Date();
+            const y = d.getFullYear();
+            const m = String(d.getMonth() + 1).padStart(2, '0');
+            const dd = String(d.getDate()).padStart(2, '0');
+            return `${y}-${m}-${dd}`;
+        })();
 
         let adminFiltersHTML = '';
         if (_userRole === 'admin') {
@@ -627,3 +635,4 @@
     window.obsequiosModule = { deleteObsequio };
 
 })();
+
