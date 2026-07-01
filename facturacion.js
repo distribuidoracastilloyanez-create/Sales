@@ -1,6 +1,10 @@
-// --- Módulo de Simulación de Facturación Fiscal v3 ---
-// Layout fiel a la factura física de Dist. Castillo Yañez
-// Vista: pantalla completa, sin scroll visible, deslizable con el dedo (Android)
+// --- Módulo de Simulación de Facturación Fiscal v4 ---
+// Novedades v4:
+//  · Selector de tipo de simulación: Venta Individual o Venta Mensual
+//  · Venta Mensual: agrega los totales por producto de todas las ventas del mes
+//    (por defecto el mes anterior, seleccionable)
+//  · Panel de detalle con productos y totales antes de generar
+//  · Plantilla rediseñada al formato "FACTURA GUÍA" de la hoja física
 
 (function () {
     let _db, _userId, _userRole, _appId, _mainContent, _floatingControls;
@@ -11,9 +15,10 @@
     let _clientesCache   = [];
     let _tasasCache      = {};
     let _productosCache  = {};
-    let _ventasEncontradas  = [];
+    let _ventasEncontradas   = [];
     let _clienteSeleccionado = null;
     let _ventaParaFacturar   = null;
+    let _tipoSimulacion      = null; // 'individual' | 'mensual'
 
     // ─────────────────────────────────────────────
     // INIT
@@ -35,59 +40,92 @@
         _doc              = deps.doc;
         _orderBy          = deps.orderBy;
         _limit            = deps.limit;
-        console.log('Módulo Facturación v3 inicializado.');
+        console.log('Módulo Facturación v4 inicializado.');
     };
 
+    // Fecha local helpers
+    function hoyLocalISO() {
+        const d = new Date();
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    }
+    function mesAnteriorISO() {
+        const d = new Date();
+        d.setMonth(d.getMonth() - 1);
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    }
+
     // ─────────────────────────────────────────────
-    // VISTA PRINCIPAL (selección cliente / venta / tasa)
+    // VISTA PRINCIPAL
     // ─────────────────────────────────────────────
     window.showFacturacionView = async function () {
         if (_floatingControls) _floatingControls.classList.add('hidden');
-        // Fecha de "hoy" en hora LOCAL (no UTC), para que filtros nocturnos
-        // no salten al día siguiente. toISOString() siempre da UTC.
-        const today = (() => {
-            const d = new Date();
-            const y = d.getFullYear();
-            const m = String(d.getMonth() + 1).padStart(2, '0');
-            const dd = String(d.getDate()).padStart(2, '0');
-            return `${y}-${m}-${dd}`;
-        })();
+        const today = hoyLocalISO();
+        _tipoSimulacion    = null;
+        _ventaParaFacturar = null;
+        _clienteSeleccionado = null;
 
         _mainContent.innerHTML = `
-            <div class="p-2 sm:p-4 pt-8 w-full max-w-5xl mx-auto flex flex-col h-screen">
-                <div class="bg-white/95 backdrop-blur-sm p-4 sm:p-6 rounded-lg shadow-xl flex flex-col flex-grow overflow-hidden border-t-4 border-blue-800">
+            <div class="p-2 sm:p-4 pt-8 w-full max-w-5xl mx-auto flex flex-col min-h-screen">
+                <div class="bg-white/95 backdrop-blur-sm p-4 sm:p-6 rounded-lg shadow-xl flex flex-col flex-grow border-t-4 border-blue-800">
 
-                    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-3">
+                    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-5 gap-3">
                         <h2 class="text-xl sm:text-2xl font-black text-gray-800 tracking-tight">🧾 Simulador de Facturación</h2>
                         <button id="btnVolverFacturacion" class="w-full sm:w-auto px-4 py-2 bg-gray-500 text-white font-bold rounded shadow hover:bg-gray-600 transition">Volver al Menú</button>
                     </div>
 
-                    <!-- Paso 1 y 2 -->
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6 mb-6 p-4 sm:p-5 bg-gray-50 rounded-lg border border-gray-200 shadow-inner">
+                    <!-- Paso 1: Cliente -->
+                    <div class="p-4 bg-gray-50 rounded-lg border border-gray-200 shadow-inner mb-4">
+                        <label class="block text-xs font-bold text-gray-700 mb-1 uppercase tracking-wider">1. Seleccionar Cliente:</label>
                         <div class="relative">
-                            <label class="block text-xs font-bold text-gray-700 mb-1 uppercase tracking-wider">1. Seleccionar Cliente:</label>
                             <input type="text" id="facClientSearch" placeholder="Escriba el nombre o RIF..."
                                 class="w-full border border-gray-300 rounded-md p-2.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none shadow-sm transition">
                             <div id="facClientDropdown"
                                 class="absolute z-50 w-full bg-white border border-gray-300 rounded-b-md shadow-lg hidden max-h-60 overflow-y-auto mt-1"></div>
                             <div id="facClientSelected"
-                                class="hidden mt-2 p-2 bg-blue-100 text-blue-800 font-bold rounded flex justify-between items-center border border-blue-200 shadow-sm">
+                                class="hidden mt-1 p-2 bg-blue-100 text-blue-800 font-bold rounded flex justify-between items-center border border-blue-200 shadow-sm">
                                 <span id="facClientName" class="truncate pr-2 text-sm sm:text-base"></span>
                                 <button id="facClientClear" class="text-red-500 hover:text-red-700 text-xl leading-none font-black px-2">&times;</button>
                             </div>
                         </div>
-                        <div>
-                            <label class="block text-xs font-bold text-gray-700 mb-1 uppercase tracking-wider">2. Seleccionar Venta:</label>
+                    </div>
+
+                    <!-- Paso 2: Tipo de simulación -->
+                    <div id="facPanelTipo" class="hidden p-4 bg-gray-50 rounded-lg border border-gray-200 shadow-inner mb-4">
+                        <label class="block text-xs font-bold text-gray-700 mb-2 uppercase tracking-wider">2. Tipo de Simulación:</label>
+                        <div class="grid grid-cols-2 gap-3">
+                            <button id="btnTipoIndividual"
+                                class="fac-tipo-btn px-3 py-3 rounded-lg border-2 border-gray-300 bg-white text-gray-700 font-bold text-sm transition hover:border-blue-400">
+                                📄 Venta Individual
+                            </button>
+                            <button id="btnTipoMensual"
+                                class="fac-tipo-btn px-3 py-3 rounded-lg border-2 border-gray-300 bg-white text-gray-700 font-bold text-sm transition hover:border-blue-400">
+                                📆 Venta Mensual
+                            </button>
+                        </div>
+
+                        <!-- Sub-panel: venta individual -->
+                        <div id="facSubIndividual" class="hidden mt-4">
+                            <label class="block text-xs font-bold text-gray-700 mb-1 uppercase tracking-wider">Seleccionar Venta:</label>
                             <select id="facSelectVenta"
                                 class="w-full border border-gray-300 rounded-md p-2.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none shadow-sm disabled:bg-gray-200 transition cursor-pointer"
                                 disabled>
-                                <option value="">Primero seleccione un cliente...</option>
+                                <option value="">Cargando ventas...</option>
                             </select>
+                        </div>
+
+                        <!-- Sub-panel: venta mensual -->
+                        <div id="facSubMensual" class="hidden mt-4">
+                            <label class="block text-xs font-bold text-gray-700 mb-1 uppercase tracking-wider">Mes a Facturar:</label>
+                            <div class="flex gap-2 items-center">
+                                <input type="month" id="facMesInput" value="${mesAnteriorISO()}"
+                                    class="flex-1 border border-gray-300 rounded-md p-2.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none shadow-sm">
+                            </div>
+                            <p id="facMesResumen" class="text-xs text-gray-500 mt-2 font-semibold"></p>
                         </div>
                     </div>
 
-                    <!-- Paso 3: tasa -->
-                    <div id="facPanelTasa" class="hidden flex-col bg-indigo-50 border border-indigo-200 rounded-lg p-4 sm:p-5 shadow-sm mt-2">
+                    <!-- Paso 3: Datos de emisión -->
+                    <div id="facPanelTasa" class="hidden flex-col bg-indigo-50 border border-indigo-200 rounded-lg p-4 sm:p-5 shadow-sm mb-4">
                         <h3 class="font-bold text-indigo-900 border-b border-indigo-200 pb-2 mb-4 text-sm sm:text-base">3. Datos de Emisión</h3>
                         <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 items-end">
                             <div>
@@ -109,9 +147,18 @@
                         </div>
                     </div>
 
+                    <!-- Panel de detalle previo -->
+                    <div id="facPanelDetalle" class="hidden bg-white border border-gray-300 rounded-lg shadow-sm mb-4 overflow-hidden">
+                        <div class="bg-gray-800 text-white px-4 py-2 text-xs font-bold uppercase tracking-wider flex justify-between items-center">
+                            <span>Detalle de la Simulación</span>
+                            <span id="facDetalleTag" class="bg-blue-500 px-2 py-0.5 rounded text-[10px]"></span>
+                        </div>
+                        <div id="facDetalleBody" class="overflow-x-auto"></div>
+                    </div>
+
                     <div id="facEmptyState"
-                        class="flex-grow flex items-center justify-center text-gray-400 font-medium border-2 border-dashed border-gray-200 rounded-lg bg-gray-50 mt-4 text-center p-4">
-                        Seleccione un cliente para cargar su historial de ventas.
+                        class="flex-grow flex items-center justify-center text-gray-400 font-medium border-2 border-dashed border-gray-200 rounded-lg bg-gray-50 text-center p-6 min-h-[120px]">
+                        Seleccione un cliente para comenzar.
                     </div>
                 </div>
             </div>`;
@@ -119,49 +166,227 @@
         // ── Eventos ──────────────────────────────────────
         document.getElementById('btnVolverFacturacion').addEventListener('click', _showMainMenu);
 
+        let _facSearchDebounce = null;
         document.getElementById('facClientSearch').addEventListener('input', (e) => {
-            const term = e.target.value.toLowerCase().trim();
-            if (!term) { document.getElementById('facClientDropdown').classList.add('hidden'); return; }
-            const filtered = _clientesCache.filter(c =>
-                (c.nombreComercial || '').toLowerCase().includes(term) ||
-                (c.rif || '').toLowerCase().includes(term)
-            ).slice(0, 15);
-            renderClientDropdown(filtered);
+            clearTimeout(_facSearchDebounce);
+            _facSearchDebounce = setTimeout(() => {
+                const term = e.target.value.toLowerCase().trim();
+                if (!term) { document.getElementById('facClientDropdown').classList.add('hidden'); return; }
+                const filtered = _clientesCache.filter(c =>
+                    (c.nombreComercial || '').toLowerCase().includes(term) ||
+                    (c.rif || '').toLowerCase().includes(term)
+                ).slice(0, 15);
+                renderClientDropdown(filtered);
+            }, 200);
         });
 
-        document.getElementById('facClientClear').addEventListener('click', () => {
-            _clienteSeleccionado = null;
-            _ventaParaFacturar   = null;
-            document.getElementById('facClientSelected').classList.add('hidden');
-            document.getElementById('facClientSearch').classList.remove('hidden');
-            document.getElementById('facClientSearch').value = '';
-            const sel = document.getElementById('facSelectVenta');
-            sel.innerHTML = '<option value="">Primero seleccione un cliente...</option>';
-            sel.disabled = true;
-            document.getElementById('facPanelTasa').classList.add('hidden');
-            const es = document.getElementById('facEmptyState');
-            es.classList.remove('hidden');
-            es.textContent = 'Seleccione un cliente para cargar su historial de ventas.';
-        });
+        document.getElementById('facClientClear').addEventListener('click', resetFlujo);
+
+        document.getElementById('btnTipoIndividual').addEventListener('click', () => seleccionarTipo('individual'));
+        document.getElementById('btnTipoMensual').addEventListener('click', () => seleccionarTipo('mensual'));
 
         document.getElementById('facSelectVenta').addEventListener('change', (e) => {
             if (e.target.value !== '') {
                 _ventaParaFacturar = _ventasEncontradas[parseInt(e.target.value)];
-                document.getElementById('facPanelTasa').classList.remove('hidden');
-                document.getElementById('facEmptyState').classList.add('hidden');
-                document.getElementById('btnGenerarFactura').onclick = generarFacturaFiscal;
+                mostrarEmisionYDetalle();
             } else {
                 _ventaParaFacturar = null;
-                document.getElementById('facPanelTasa').classList.add('hidden');
-                document.getElementById('facEmptyState').classList.remove('hidden');
+                ocultarEmisionYDetalle();
             }
+        });
+
+        document.getElementById('facMesInput').addEventListener('change', (e) => {
+            procesarMesSeleccionado(e.target.value);
         });
 
         document.getElementById('facFechaTasa').addEventListener('change', (e) =>
             cargarTasaBcvPorFecha(e.target.value));
 
+        document.getElementById('btnGenerarFactura').addEventListener('click', generarFacturaFiscal);
+
         await cargarDatosIniciales();
     };
+
+    function resetFlujo() {
+        _clienteSeleccionado = null;
+        _ventaParaFacturar   = null;
+        _tipoSimulacion      = null;
+        document.getElementById('facClientSelected').classList.add('hidden');
+        document.getElementById('facClientSearch').classList.remove('hidden');
+        document.getElementById('facClientSearch').value = '';
+        document.getElementById('facPanelTipo').classList.add('hidden');
+        document.getElementById('facSubIndividual').classList.add('hidden');
+        document.getElementById('facSubMensual').classList.add('hidden');
+        document.querySelectorAll('.fac-tipo-btn').forEach(b => b.classList.remove('border-blue-600', 'bg-blue-50', 'text-blue-800'));
+        ocultarEmisionYDetalle();
+        const es = document.getElementById('facEmptyState');
+        es.classList.remove('hidden');
+        es.textContent = 'Seleccione un cliente para comenzar.';
+    }
+
+    function ocultarEmisionYDetalle() {
+        document.getElementById('facPanelTasa').classList.add('hidden');
+        document.getElementById('facPanelDetalle').classList.add('hidden');
+        document.getElementById('facEmptyState').classList.remove('hidden');
+    }
+
+    function mostrarEmisionYDetalle() {
+        document.getElementById('facPanelTasa').classList.remove('hidden');
+        document.getElementById('facEmptyState').classList.add('hidden');
+        renderDetallePrevio();
+    }
+
+    function seleccionarTipo(tipo) {
+        _tipoSimulacion = tipo;
+        _ventaParaFacturar = null;
+        ocultarEmisionYDetalle();
+
+        const bI = document.getElementById('btnTipoIndividual');
+        const bM = document.getElementById('btnTipoMensual');
+        [bI, bM].forEach(b => b.classList.remove('border-blue-600', 'bg-blue-50', 'text-blue-800'));
+        (tipo === 'individual' ? bI : bM).classList.add('border-blue-600', 'bg-blue-50', 'text-blue-800');
+
+        document.getElementById('facSubIndividual').classList.toggle('hidden', tipo !== 'individual');
+        document.getElementById('facSubMensual').classList.toggle('hidden', tipo !== 'mensual');
+
+        if (tipo === 'individual') {
+            const sel = document.getElementById('facSelectVenta');
+            if (sel.options.length > 0 && !sel.disabled) sel.value = '';
+        } else {
+            procesarMesSeleccionado(document.getElementById('facMesInput').value);
+        }
+    }
+
+    // ─────────────────────────────────────────────
+    // AGREGACIÓN MENSUAL
+    // ─────────────────────────────────────────────
+    function procesarMesSeleccionado(mesStr) {
+        const resumen = document.getElementById('facMesResumen');
+        if (!mesStr) { resumen.textContent = ''; _ventaParaFacturar = null; ocultarEmisionYDetalle(); return; }
+
+        const [y, m] = mesStr.split('-').map(Number);
+        const ventasMes = _ventasEncontradas.filter(v =>
+            v.fechaObj.getFullYear() === y && (v.fechaObj.getMonth() + 1) === m);
+
+        if (!ventasMes.length) {
+            resumen.textContent = '⚠️ No hay ventas registradas para este mes.';
+            resumen.className = 'text-xs text-amber-600 mt-2 font-semibold';
+            _ventaParaFacturar = null;
+            ocultarEmisionYDetalle();
+            return;
+        }
+
+        // Agregar cantidades por producto (los precios se toman de la venta más reciente
+        // porque _ventasEncontradas está ordenado descendente por fecha)
+        const productosMap = {};
+        ventasMes.forEach(v => {
+            (v.productos || []).forEach(p => {
+                const key = p.id || `${p.marca || ''}|${p.presentacion || ''}`;
+                if (!productosMap[key]) {
+                    productosMap[key] = JSON.parse(JSON.stringify(p));
+                    productosMap[key].cantidadVendida = {
+                        cj:  parseInt(p.cantidadVendida?.cj)  || 0,
+                        paq: parseInt(p.cantidadVendida?.paq) || 0,
+                        und: parseInt(p.cantidadVendida?.und) || 0
+                    };
+                    productosMap[key].cantidad = parseInt(p.cantidad) || 0;
+                    productosMap[key].total    = parseFloat(p.total)  || 0;
+                } else {
+                    const t = productosMap[key];
+                    t.cantidadVendida.cj  += parseInt(p.cantidadVendida?.cj)  || 0;
+                    t.cantidadVendida.paq += parseInt(p.cantidadVendida?.paq) || 0;
+                    t.cantidadVendida.und += parseInt(p.cantidadVendida?.und) || 0;
+                    t.cantidad += parseInt(p.cantidad) || 0;
+                    t.total    += parseFloat(p.total)  || 0;
+                }
+            });
+        });
+
+        const totalMes = ventasMes.reduce((s, v) => s + (v.total || 0), 0);
+        const nombreMes = new Date(y, m - 1, 1).toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
+
+        _ventaParaFacturar = {
+            productos: Object.values(productosMap),
+            total:     totalMes,
+            esMensual: true,
+            mes:       mesStr,
+            nombreMes: nombreMes,
+            numVentas: ventasMes.length
+        };
+
+        resumen.textContent = `✅ ${ventasMes.length} venta(s) en ${nombreMes} · Total: $${totalMes.toFixed(2)}`;
+        resumen.className = 'text-xs text-green-700 mt-2 font-semibold';
+        mostrarEmisionYDetalle();
+    }
+
+    // ─────────────────────────────────────────────
+    // PANEL DE DETALLE PREVIO
+    // ─────────────────────────────────────────────
+    function renderDetallePrevio() {
+        const panel = document.getElementById('facPanelDetalle');
+        const body  = document.getElementById('facDetalleBody');
+        const tag   = document.getElementById('facDetalleTag');
+        if (!panel || !_ventaParaFacturar) return;
+
+        tag.textContent = _ventaParaFacturar.esMensual
+            ? `MENSUAL · ${_ventaParaFacturar.nombreMes.toUpperCase()}`
+            : 'VENTA INDIVIDUAL';
+
+        let rowsHtml = '';
+        let totalGeneral = 0;
+
+        (_ventaParaFacturar.productos || []).forEach(p => {
+            const qCj  = parseInt(p.cantidadVendida?.cj)  || 0;
+            const qPaq = parseInt(p.cantidadVendida?.paq) || 0;
+            const qUnd = parseInt(p.cantidadVendida?.und) || 0;
+            const pCj  = parseFloat(p.precios?.cj)  || 0;
+            const pPaq = parseFloat(p.precios?.paq) || 0;
+            const pUnd = parseFloat(p.precios?.und) || parseFloat(p.precioPorUnidad) || 0;
+
+            let cantidades = [];
+            let totalProd = 0;
+            if (qCj  > 0) { cantidades.push(`${qCj} Cj`);  totalProd += qCj  * pCj; }
+            if (qPaq > 0) { cantidades.push(`${qPaq} Pq`); totalProd += qPaq * pPaq; }
+            if (qUnd > 0) { cantidades.push(`${qUnd} Un`); totalProd += qUnd * pUnd; }
+
+            if (!cantidades.length) {
+                const fQty = parseInt(p.cantidad) || 1;
+                const fPrc = pUnd > 0 ? pUnd : ((parseFloat(p.total) || 0) / fQty);
+                cantidades.push(`${fQty} Un`);
+                totalProd = fQty * fPrc;
+            }
+
+            totalGeneral += totalProd;
+            const desc = [p.marca, p.segmento, p.presentacion].filter(s => s && !['S/M','S/S'].includes(s)).join(' · ') || 'Producto';
+
+            rowsHtml += `
+                <tr class="border-b border-gray-100 hover:bg-gray-50">
+                    <td class="px-3 py-1.5 text-xs text-gray-800">${desc}</td>
+                    <td class="px-3 py-1.5 text-xs text-center font-bold text-gray-700 whitespace-nowrap">${cantidades.join(' + ')}</td>
+                    <td class="px-3 py-1.5 text-xs text-right font-bold text-green-700 whitespace-nowrap">$${totalProd.toFixed(2)}</td>
+                </tr>`;
+        });
+
+        body.innerHTML = `
+            <table class="w-full text-left border-collapse">
+                <thead>
+                    <tr class="bg-gray-100 text-[10px] uppercase text-gray-500 tracking-wider">
+                        <th class="px-3 py-2">Producto</th>
+                        <th class="px-3 py-2 text-center">Cantidades</th>
+                        <th class="px-3 py-2 text-right">Total USD</th>
+                    </tr>
+                </thead>
+                <tbody>${rowsHtml}</tbody>
+                <tfoot>
+                    <tr class="bg-gray-800 text-white">
+                        <td class="px-3 py-2 text-xs font-black uppercase" colspan="2">Total General</td>
+                        <td class="px-3 py-2 text-sm font-black text-right">$${totalGeneral.toFixed(2)}</td>
+                    </tr>
+                </tfoot>
+            </table>`;
+
+        panel.classList.remove('hidden');
+    }
 
     // ─────────────────────────────────────────────
     // CARGA DE DATOS INICIALES
@@ -227,12 +452,10 @@
     }
 
     async function cargarVentasCliente(cliente) {
-        const sel = document.getElementById('facSelectVenta');
         const es  = document.getElementById('facEmptyState');
-        sel.innerHTML = '<option value="">Buscando ventas...</option>';
-        sel.disabled  = true;
-        document.getElementById('facPanelTasa').classList.add('hidden');
-        es.innerHTML  = '<p class="animate-pulse text-blue-500 font-semibold">Consultando base de datos...</p>';
+        document.getElementById('facPanelTipo').classList.add('hidden');
+        ocultarEmisionYDetalle();
+        es.innerHTML = '<p class="animate-pulse text-blue-500 font-semibold">Consultando base de datos...</p>';
         es.classList.remove('hidden');
 
         try {
@@ -272,12 +495,14 @@
             }
 
             if (!_ventasEncontradas.length) {
-                sel.innerHTML = '<option value="">Sin ventas registradas</option>';
                 es.textContent = 'El cliente no posee historial de compras.';
                 return;
             }
 
             _ventasEncontradas.sort((a, b) => b.fechaObj - a.fechaObj);
+
+            // Poblar el select de venta individual
+            const sel = document.getElementById('facSelectVenta');
             sel.innerHTML = '<option value="">— Seleccione una venta —</option>';
             _ventasEncontradas.forEach((v, i) => {
                 const fd = v.fechaObj.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' });
@@ -288,17 +513,16 @@
                 sel.appendChild(o);
             });
             sel.disabled = false;
-            es.textContent = '← Seleccione una venta del menú desplegable.';
+
+            // Mostrar el panel de tipo de simulación
+            document.getElementById('facPanelTipo').classList.remove('hidden');
+            es.textContent = '← Seleccione el tipo de simulación (Individual o Mensual).';
         } catch (err) {
             console.error('Error cargando ventas:', err);
-            sel.innerHTML = '<option value="">Error al cargar</option>';
             es.textContent = 'Error al consultar la base de datos.';
         }
     }
 
-    // ─────────────────────────────────────────────
-    // GENERACIÓN DE FACTURA
-    // ─────────────────────────────────────────────
     // ─────────────────────────────────────────────
     // CLASIFICACIÓN DE PRODUCTO EN CATEGORÍA
     // Orden: 0-MALTIN · 1-RETORNABLES · 2-PET · 3-EXENTOS por marca · 4-GRAVADOS por marca
@@ -311,12 +535,10 @@
         const marca = n(p.marca      || '');
         const pres  = n(p.presentacion || '');
 
-        // ── 1. MALTIN (segmento malta / marca maltin) ──────────────────────
         if (seg.includes('malta') || marca.includes('maltin')) {
             return { label: 'MALTIN', orden: 0 };
         }
 
-        // ── 2. REFRESCOS RETORNABLES (vacío / ret / retornable) ────────────
         const tiposVacio = (window.TIPOS_VACIO_GLOBAL || []).map(t => n(t));
         const esRetornable = seg.includes('retornable')
             || tiposVacio.some(tv => pres.includes(tv))
@@ -325,26 +547,31 @@
             return { label: 'REFRESCOS\nRETORNABLES', orden: 1 };
         }
 
-        // ── 3. REFRESCOS PET (pet / 1lts / 1.5lts / 2lts plástico) ────────
         const esPET = seg.includes('pet')
             || pres.includes('pet')
-            || /\b(1[\s.]?000|1[\s.]?500|2[\s.]?000)\b/.test(pres)    // 1.000 1.500 2.000 Lts
-            || /\b(1\.?5?\s*lts?|2\s*lts?|1\s*lts?)\b/.test(pres);   // 1lts 1.5lts 2lts
+            || /\b(1[\s.]?000|1[\s.]?500|2[\s.]?000)\b/.test(pres)
+            || /\b(1\.?5?\s*lts?|2\s*lts?|1\s*lts?)\b/.test(pres);
         if (esPET) {
             return { label: 'REFRESCOS\nPET', orden: 2 };
         }
 
-        // ── 4 y 5. Resto: agrupa por marca real ────────────────────────────
         const marcaDisplay = (p.marca && !['s/m','sin marca'].includes(marca))
             ? p.marca.toUpperCase().trim()
             : 'VARIOS';
 
         return esExento
-            ? { label: marcaDisplay, orden: 3 }   // exentos primero
-            : { label: marcaDisplay, orden: 4 };   // gravados al final
+            ? { label: marcaDisplay, orden: 3 }
+            : { label: marcaDisplay, orden: 4 };
     }
 
+    // ─────────────────────────────────────────────
+    // GENERACIÓN DE FACTURA
+    // ─────────────────────────────────────────────
+    let _isGeneratingFactura = false;
+
     function generarFacturaFiscal() {
+        if (_isGeneratingFactura) return;
+
         const tasaBs = parseFloat(document.getElementById('facValorTasa').value);
         if (isNaN(tasaBs) || tasaBs <= 0) {
             _showModal('Error', 'Debe ingresar una Tasa BCV válida mayor a 0.');
@@ -352,16 +579,17 @@
             return;
         }
         if (!_ventaParaFacturar) {
-            _showModal('Error', 'Debe seleccionar una venta de la lista.');
+            _showModal('Error', 'Debe seleccionar una venta o un mes con ventas.');
             return;
         }
+
+        _isGeneratingFactura = true;
+        try {
 
         let subtotalBase   = 0;
         let subtotalExento = 0;
         let ivaTotal       = 0;
 
-        // Mapa: key → { label, orden, lineas[] }
-        // Key única = orden+label para evitar colisiones entre exento y gravado de igual marca
         const catMap = {};
 
         (_ventaParaFacturar.productos || []).forEach(p => {
@@ -419,12 +647,11 @@
 
             if (qCj === 0 && qPaq === 0 && qUnd === 0) {
                 const fQty   = parseInt(p.cantidad) || parseInt(p.totalUnidadesVendidas) || 1;
-                const fPrice = pUnd > 0 ? pUnd : ((p.total || 0) / fQty);
+                const fPrice = pUnd > 0 ? pUnd : ((parseFloat(p.total) || 0) / fQty);
                 if (fPrice > 0) addLinea(fQty, 'Un', fPrice);
             }
         });
 
-        // Ordenamos: por orden numérico, luego alfabético dentro del mismo orden
         const categoriasOrdenadas = Object.values(catMap)
             .filter(c => c.lineas.length > 0)
             .sort((a, b) => a.orden !== b.orden
@@ -436,6 +663,7 @@
         const totalPagar   = totalOp - retencionUSD;
 
         const numFactura = String(Math.floor(1000 + Math.random() * 9000)).padStart(6, '0');
+        const numControl = '00-' + String(Math.floor(10000 + Math.random() * 89999)).padStart(6, '0');
 
         const html = buildFacturaHtml({
             cliente:    _clienteSeleccionado,
@@ -444,10 +672,16 @@
             categoriasOrdenadas,
             subtotalBase, subtotalExento, ivaTotal,
             totalOp, retencionUSD, totalPagar,
-            numFactura
+            numFactura, numControl,
+            esMensual:  !!_ventaParaFacturar.esMensual,
+            nombreMes:  _ventaParaFacturar.nombreMes || ''
         });
 
         abrirFacturaFullscreen(html);
+
+        } finally {
+            _isGeneratingFactura = false;
+        }
     }
 
     // ─────────────────────────────────────────────
@@ -466,7 +700,6 @@
     display:flex;flex-direction:column;
     overscroll-behavior:contain;
 }
-/* ── Barra superior ── */
 #facTopBar{
     background:#1a3560;color:#fff;
     padding:10px 12px;
@@ -492,28 +725,25 @@
 .fac-b.comp{background:#2563eb;color:#fff;}
 .fac-b.desc{background:#16a34a;color:#fff;}
 .fac-b.cerr{background:#dc2626;color:#fff;}
-/* ── Área de pan (drag to navigate) ── */
 #facPanArea{
     flex:1;
-    overflow:scroll;                   /* scroll nativo = deslizamiento suave */
-    -webkit-overflow-scrolling:touch;  /* inercia en Android/iOS              */
+    overflow:scroll;
+    -webkit-overflow-scrolling:touch;
     overscroll-behavior:contain;
-    scrollbar-width:none;              /* Firefox: sin barra visible           */
+    scrollbar-width:none;
     -ms-overflow-style:none;
     padding:14px;
     cursor:grab;
 }
 #facPanArea:active{cursor:grabbing;}
-#facPanArea::-webkit-scrollbar{display:none;}  /* Chrome/Android: sin barra */
-/* ── Papel de la factura ── */
+#facPanArea::-webkit-scrollbar{display:none;}
 #facPaper{
-    width:900px;             /* ancho fijo del "papel" */
+    width:960px;
     background:#fff;
     box-shadow:0 6px 32px rgba(0,0,0,.35);
     border-radius:2px;
-    display:inline-block;   /* se encoge al ancho del contenido si es menor */
+    display:inline-block;
 }
-/* ── Hint de deslizamiento ── */
 .fac-hint{
     position:fixed;bottom:18px;left:50%;transform:translateX(-50%);
     background:rgba(0,0,0,.68);color:#fff;
@@ -599,31 +829,28 @@
     }
 
     // ─────────────────────────────────────────────
-    // PLANTILLA HTML — fiel a la factura física
+    // PLANTILLA HTML — formato "FACTURA GUÍA" fiel a la hoja física
     // ─────────────────────────────────────────────
     function buildFacturaHtml({
         cliente, fechaISO, tasaBs, categoriasOrdenadas,
         subtotalBase, subtotalExento, ivaTotal,
         totalOp, retencionUSD, totalPagar,
-        numFactura
+        numFactura, numControl,
+        esMensual, nombreMes
     }) {
-        // ── Formateadores ───────────────────────────────────────────────────
         const fBs  = n => (isFinite(n) ? n : 0)
             .toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         const fUSD = n => (isFinite(n) ? n : 0).toFixed(2);
 
         const [year, month, day] = (fechaISO || '2026-01-01').split('-');
 
-        // ── Estilos reutilizables ───────────────────────────────────────────
-        const B  = 'border:1px solid #444;';
-        const BB = 'border:2px solid #1a1a1a;';
-        const td = `${B}padding:4px 5px;font-size:10px;`;
+        const B  = 'border:1px solid #333;';
+        const td = `${B}padding:3px 5px;font-size:10px;`;
         const tR = `${td}text-align:right;padding-right:6px;`;
         const tC = `${td}text-align:center;`;
-        const th = `${B}padding:4px 3px;font-size:8.5px;font-weight:700;text-align:center;background:#e0e0e0;`;
-        const thL = th + 'text-align:left;padding-left:5px;';
+        const th = `${B}padding:3px 3px;font-size:8px;font-weight:700;text-align:center;background:#e8e8e8;`;
 
-        // ── Filas de productos (categorías ya ordenadas) ────────────────────
+        // ── Filas de productos ──────────────────────────────────────────────
         let rows = '';
         let totalLineas = 0;
 
@@ -631,29 +858,33 @@
             const lineas = cat.lineas;
             if (!lineas.length) return;
             totalLineas += lineas.length;
-
-            // Label de la categoría (soporta salto de línea con \n)
             const labelHtml = cat.label.replace(/\n/g, '<br>');
 
             lineas.forEach((l, i) => {
                 rows += '<tr>';
-
-                // Columna izquierda: nombre de categoría con rowspan
                 if (i === 0) {
                     rows += `<td rowspan="${lineas.length}"
                         style="${B}padding:3px 2px;vertical-align:middle;text-align:center;
-                                font-weight:900;font-size:8.5px;line-height:1.3;
-                                word-break:break-word;max-width:60px;background:#f7f7f7;">
+                                font-weight:900;font-size:9px;line-height:1.35;
+                                font-family:Arial,sans-serif;letter-spacing:0.3px;
+                                word-break:break-word;max-width:70px;">
                         ${labelHtml}</td>`;
                 }
+                // DESCRIPCIÓN estilo hoja: "24 BOTELLAS RETORNABLES", "12 LATAS"...
+                const descLinea = [
+                    l.unidades ? `${l.unidades}` : '',
+                    l.descripcion.toUpperCase()
+                ].filter(Boolean).join(' ');
+
+                const litrosStr = l.contenido
+                    ? `${l.contenido} Lts`.replace('LtsLts','Lts')
+                    : '';
 
                 rows += `
-                    <td style="${td}">${l.descripcion}</td>
-                    <td style="${tC}">${l.unidades}</td>
-                    <td style="${tC}">${l.contenido}</td>
-                    <td style="${tC}font-weight:700;">${String(l.cantidad).padStart(2,'0')}&nbsp;${l.unidadMedida}</td>
+                    <td style="${td}text-transform:uppercase;">${descLinea}</td>
+                    <td style="${tC}white-space:nowrap;">${litrosStr}</td>
+                    <td style="${tC}font-weight:700;white-space:nowrap;">${l.cantidad.toLocaleString('es-VE')}&nbsp;${l.unidadMedida}</td>
                     <td style="${tC}font-weight:900;color:#b00000;">${l.exento ? 'E' : ''}</td>
-                    <td style="${tC}">${l.alicuota}</td>
                     <td style="${tR}">${fBs(l.precioUnitarioBs)}</td>
                     <td style="${tR}font-weight:700;">${fBs(l.totalBs)}</td>
                 `;
@@ -661,34 +892,50 @@
             });
         });
 
-        // Filas vacías de relleno (mínimo 24 líneas para llenar la hoja)
-        const relleno = Math.max(0, 24 - totalLineas);
+        // Filas vacías de relleno (para llenar la hoja como el formato físico)
+        const relleno = Math.max(0, 22 - totalLineas);
         for (let i = 0; i < relleno; i++) {
-            rows += `<tr><td colspan="9" style="${B}height:20px;"></td></tr>`;
+            rows += `<tr>
+                <td style="${B}height:19px;"></td>
+                <td style="${B}"></td><td style="${B}"></td><td style="${B}"></td>
+                <td style="${B}"></td><td style="${B}"></td>
+            </tr>`;
         }
 
-        // ── Conversiones finales a Bs ───────────────────────────────────────
-        const exentoBs    = subtotalExento * tasaBs;
-        const baseBs      = subtotalBase   * tasaBs;
-        const ivaBs       = ivaTotal       * tasaBs;
-        const retBs       = retencionUSD   * tasaBs;
-        const totalPagarBs = totalPagar    * tasaBs;
+        // ── Conversiones a Bs ───────────────────────────────────────────────
+        const exentoBs     = subtotalExento * tasaBs;
+        const baseBs       = subtotalBase   * tasaBs;
+        const ivaBs        = ivaTotal       * tasaBs;
+        const retBs        = retencionUSD   * tasaBs;
+        const subTotalBs   = (subtotalBase + subtotalExento) * tasaBs;
+        const totalVentaBs = totalOp        * tasaBs;
+        const totalPagarBs = totalPagar     * tasaBs;
 
         const filaRetencion = cliente.aplicaRetencion ? `
-            <tr style="background:#fff5f5;">
-                <td style="${B}font-size:8.5px;padding:4px 8px;color:#9b0000;font-weight:700;" colspan="2">
-                    Retención I.V.A. (75%) &nbsp;·&nbsp; Ref: &minus;$${fUSD(retencionUSD)} USD
+            <tr>
+                <td style="${B}font-size:8px;padding:3px 6px;color:#9b0000;font-weight:700;">
+                    RETENCIÓN I.V.A. (75%) &nbsp; Bs.
                 </td>
-                <td style="${B}text-align:right;padding:4px 8px;font-weight:900;font-size:10.5px;color:#9b0000;">
-                    &minus;Bs.&nbsp;${fBs(retBs)}
+                <td style="${B}text-align:right;padding:3px 6px;font-weight:900;font-size:10px;color:#9b0000;">
+                    &minus;${fBs(retBs)}
                 </td>
             </tr>` : '';
+
+        const chkBox = `<span style="display:inline-block;width:11px;height:11px;border:1.5px solid #333;
+                        vertical-align:middle;margin:0 4px 0 8px;"></span>`;
+
+        const mensualBadge = esMensual ? `
+            <div style="text-align:center;font-size:9px;font-weight:900;color:#1a3560;
+                        border:1.5px dashed #1a3560;padding:2px 6px;margin-top:4px;
+                        text-transform:uppercase;letter-spacing:1px;">
+                Consolidado Mensual · ${nombreMes}
+            </div>` : '';
 
         // ── HTML FINAL ──────────────────────────────────────────────────────
         return `
 <div style="font-family:'Courier New',Courier,monospace;font-size:10px;color:#111;
-            background:#fff;padding:16px 18px;position:relative;
-            min-width:900px;box-sizing:border-box;">
+            background:#fff;padding:14px 16px;position:relative;
+            min-width:960px;box-sizing:border-box;">
 
   <!-- MARCA DE AGUA -->
   <div style="position:absolute;inset:0;display:flex;align-items:center;
@@ -700,181 +947,274 @@
 
   <div style="position:relative;z-index:1;">
 
-  <!-- ══════════════════════════════════════════════════════
-       CABECERA: Nombre empresa (sin dirección) | RIF + Fecha
-       ══════════════════════════════════════════════════════ -->
-  <table style="width:100%;border-collapse:collapse;${BB}">
+  <!-- ══ BANNER SUPERIOR ══ -->
+  <div style="border:2px solid #1a1a1a;border-bottom:0;text-align:center;
+              font-size:12px;font-weight:900;font-family:Arial,sans-serif;
+              letter-spacing:1px;padding:4px 0;background:#fff;">
+    ESTA FACTURA VA SIN TACHADURA NI ENMENDADURA
+  </div>
+
+  <!-- ══ FILA: EMPRESA DESPACHADORA / TERRITORIO / AGENCIA / REGISTRO / LEGAL ══ -->
+  <table style="width:100%;border-collapse:collapse;border:2px solid #1a1a1a;border-bottom:0;">
     <tr>
-      <!-- Nombre empresa + número de factura -->
-      <td style="${B}padding:10px 14px;width:60%;vertical-align:middle;">
-        <div style="font-size:19px;font-weight:900;font-family:Arial,sans-serif;
-                    letter-spacing:0.3px;">
-          Distribuidora Castillo Yañez, C.A.
-        </div>
-        <div style="margin-top:8px;display:flex;align-items:baseline;gap:16px;">
-          <span style="font-size:15px;font-weight:900;letter-spacing:1.5px;">FACTURA</span>
-          <span style="font-size:11px;font-weight:700;">SERIE "A"</span>
-          <span style="font-size:13px;font-weight:900;margin-left:8px;">N°&nbsp;${numFactura}</span>
+      <td style="${B}padding:3px 6px;width:22%;vertical-align:top;">
+        <div style="font-size:7px;font-weight:700;">EMPRESA DESPACHADORA:</div>
+        <div style="font-size:9.5px;font-weight:900;text-align:center;margin-top:2px;">CERVECERÍA POLAR C.A.</div>
+      </td>
+      <td style="${B}padding:3px 6px;width:16%;vertical-align:top;">
+        <div style="font-size:7px;font-weight:700;">TERRITORIO COMERCIAL:</div>
+        <div style="font-size:9.5px;font-weight:900;text-align:center;margin-top:2px;">LOS ANDES</div>
+      </td>
+      <td style="${B}padding:3px 6px;width:14%;vertical-align:top;">
+        <div style="font-size:7px;font-weight:700;">AGENCIA:</div>
+        <div style="font-size:9.5px;font-weight:900;text-align:center;margin-top:2px;">SAN CRISTÓBAL</div>
+      </td>
+      <td style="${B}padding:3px 6px;width:12%;vertical-align:top;">
+        <div style="font-size:7px;font-weight:700;">REGISTRO N°</div>
+        <div style="font-size:9.5px;font-weight:900;text-align:center;margin-top:2px;">My 679</div>
+      </td>
+      <td style="${B}padding:3px 6px;width:36%;vertical-align:middle;">
+        <div style="font-size:6.3px;line-height:1.35;font-weight:700;text-align:justify;">
+          PRODUCTO CONSUMIBLE, SE GARANTIZA QUE EL PRODUCTO ES APTO PARA EL CONSUMO HUMANO
+          Y EL SANEAMIENTO QUE CORRESPONDA DE CONFORMIDAD CON LA LEY.
+          (RESOLUCIÓN 071 DEL MINISTERIO DE PRODUCCIÓN Y COMERCIO)
         </div>
       </td>
+    </tr>
+    <tr>
+      <td style="${B}padding:3px 6px;" colspan="2">
+        <div style="font-size:8px;font-weight:900;text-align:center;letter-spacing:1px;">OTROS PRODUCTOS</div>
+      </td>
+      <td style="${B}padding:3px 6px;" colspan="1">
+        <div style="font-size:7px;font-weight:700;text-align:center;">ORIGEN:</div>
+        <div style="font-size:8.5px;font-weight:900;text-align:center;">FERMENTACIÓN</div>
+      </td>
+      <td style="${B}padding:3px 6px;" colspan="2">
+        <div style="font-size:8px;font-weight:900;text-align:center;">FABRICADO POR: CERVECERÍA POLAR, C.A.</div>
+      </td>
+    </tr>
+  </table>
 
-      <!-- RIF empresa + Cajas de fecha -->
-      <td style="${B}padding:6px;width:40%;vertical-align:top;">
-        <div style="text-align:center;font-weight:900;font-size:12px;
-                    border:1.5px solid #333;padding:3px 0;margin-bottom:4px;
-                    letter-spacing:0.5px;">
+  <!-- ══ CABECERA PRINCIPAL: EMPRESA + RIF + FECHA + CONTROL ══ -->
+  <table style="width:100%;border-collapse:collapse;border:2px solid #1a1a1a;border-bottom:0;">
+    <tr>
+      <!-- Empresa + domicilio fiscal -->
+      <td style="${B}padding:8px 12px;width:52%;vertical-align:top;">
+        <div style="font-size:17px;font-weight:900;font-family:Arial,sans-serif;letter-spacing:0.3px;">
+          Distribuidora Castillo Yañez, C.A.
+        </div>
+        <div style="font-size:7.5px;line-height:1.5;margin-top:4px;color:#222;">
+          Domicilio Fiscal: Calle Urbanización Santa Inés Local No. B-PB-3<br>
+          Conjunto Residencial El Alcázar Etapa A Torre B<br>
+          San Cristóbal Estado Táchira Zona Postal 5001
+        </div>
+        ${mensualBadge}
+      </td>
+
+      <!-- RIF + Fecha expedición -->
+      <td style="${B}padding:5px;width:24%;vertical-align:top;">
+        <div style="text-align:center;font-weight:900;font-size:11px;
+                    border:1.5px solid #333;padding:3px 0;margin-bottom:4px;">
           RIF: J-40214875-5
         </div>
-        <div style="text-align:center;font-size:7.5px;font-weight:700;
+        <div style="text-align:center;font-size:7px;font-weight:700;
                     background:#d8d8d8;padding:2px 0;border:1px solid #666;
-                    border-bottom:0;letter-spacing:2px;">
+                    border-bottom:0;letter-spacing:1.5px;">
           FECHA DE EXPEDICIÓN
         </div>
         <table style="width:100%;border-collapse:collapse;border:1px solid #666;">
           <tr>
-            <th style="border:1px solid #666;text-align:center;font-size:7px;
-                       padding:2px;background:#ebebeb;width:33%;">DÍA</th>
-            <th style="border:1px solid #666;text-align:center;font-size:7px;
-                       padding:2px;background:#ebebeb;width:34%;">MES</th>
-            <th style="border:1px solid #666;text-align:center;font-size:7px;
-                       padding:2px;background:#ebebeb;width:33%;">AÑO</th>
+            <th style="border:1px solid #666;text-align:center;font-size:7px;padding:2px;background:#ebebeb;width:33%;">DÍA</th>
+            <th style="border:1px solid #666;text-align:center;font-size:7px;padding:2px;background:#ebebeb;width:34%;">MES</th>
+            <th style="border:1px solid #666;text-align:center;font-size:7px;padding:2px;background:#ebebeb;width:33%;">AÑO</th>
           </tr>
           <tr>
-            <td style="border:1px solid #666;text-align:center;font-size:20px;
-                       font-weight:900;padding:3px;">${day}</td>
-            <td style="border:1px solid #666;text-align:center;font-size:20px;
-                       font-weight:900;padding:3px;">${month}</td>
-            <td style="border:1px solid #666;text-align:center;font-size:20px;
-                       font-weight:900;padding:3px;">${year}</td>
+            <td style="border:1px solid #666;text-align:center;font-size:17px;font-weight:900;padding:2px;">${day}</td>
+            <td style="border:1px solid #666;text-align:center;font-size:17px;font-weight:900;padding:2px;">${month}</td>
+            <td style="border:1px solid #666;text-align:center;font-size:17px;font-weight:900;padding:2px;">${year}</td>
           </tr>
         </table>
       </td>
-    </tr>
-  </table>
 
-  <!-- ══════════════════════════════════════════════════════
-       DATOS DEL CLIENTE (solo nombre + domicilio)
-       ══════════════════════════════════════════════════════ -->
-  <table style="width:100%;border-collapse:collapse;${BB}border-top:0;">
-    <tr>
-      <td style="${B}padding:5px 10px;">
-        <div style="font-size:7px;color:#666;text-transform:uppercase;letter-spacing:1px;">
-          Nombre y Apellido o Razón Social:
-        </div>
-        <div style="font-size:14px;font-weight:900;border-bottom:1px dashed #aaa;
-                    padding-bottom:2px;margin-top:3px;">
-          ${cliente.nombreComercial}
-        </div>
-      </td>
-    </tr>
-    <tr>
-      <td style="${B}padding:5px 10px;">
-        <span style="font-size:7px;color:#666;text-transform:uppercase;">Domicilio Fiscal:&nbsp;</span>
-        <span style="font-size:11px;font-weight:700;">
-          ${cliente.sector || cliente.sectorNombre || cliente.domicilio || 'N/A'}
-        </span>
-        ${cliente.telefono
-            ? `<span style="font-size:9px;color:#555;"> &nbsp;|&nbsp; Tel:&nbsp;${cliente.telefono}</span>`
-            : ''}
+      <!-- CONTROL N° + FACTURA GUÍA N° -->
+      <td style="${B}padding:6px;width:24%;vertical-align:top;text-align:center;">
+        <div style="font-size:10px;font-weight:900;">CONTROL N° <span style="color:#c00000;font-size:12px;letter-spacing:1px;">${numControl}</span></div>
+        <div style="border-top:1px solid #999;margin:6px 0;"></div>
+        <div style="font-size:11px;font-weight:900;letter-spacing:0.5px;">FACTURA GUÍA</div>
+        <div style="font-size:15px;font-weight:900;color:#c00000;letter-spacing:2px;margin-top:2px;">N° ${numFactura}</div>
+        <div style="border-top:1px solid #999;margin:6px 0;"></div>
+        <div style="font-size:7px;font-weight:700;text-align:left;">PROVIENE DE LA GUÍA N°: <span style="border-bottom:1px solid #999;display:inline-block;min-width:60px;"></span></div>
       </td>
     </tr>
   </table>
 
-  <!-- ══════════════════════════════════════════════════════
-       TABLA DE PRODUCTOS
-       Orden: MALTIN → RETORNABLES → PET → EXENTOS → GRAVADOS
-       ══════════════════════════════════════════════════════ -->
-  <table style="width:100%;border-collapse:collapse;${BB}border-top:0;">
+  <!-- ══ LEYENDA DE REMESA + DATOS DEL CLIENTE ══ -->
+  <table style="width:100%;border-collapse:collapse;border:2px solid #1a1a1a;border-bottom:0;">
+    <tr>
+      <td style="${B}padding:3px 8px;font-size:7px;font-weight:700;" colspan="2">
+        LA REMESA DE PRODUCTOS QUE A CONTINUACIÓN SE DETALLA, HA SIDO EXPEDIDA EN ESTA FECHA, CON DESTINO AL ESTABLECIMIENTO MERCANTIL:
+      </td>
+    </tr>
+    <tr>
+      <td style="${B}padding:4px 8px;width:65%;">
+        <span style="font-size:7px;color:#555;text-transform:uppercase;">Nombre y Apellido o Razón Social:&nbsp;</span>
+        <span style="font-size:12px;font-weight:900;">${cliente.nombreComercial}</span>
+      </td>
+      <td style="${B}padding:4px 8px;width:35%;">
+        <span style="font-size:7px;color:#555;text-transform:uppercase;">N° RIF, Cédula o Pasaporte:&nbsp;</span>
+        <span style="font-size:11px;font-weight:900;">${cliente.rif || 'N/A'}</span>
+      </td>
+    </tr>
+    <tr>
+      <td style="${B}padding:4px 8px;" colspan="2">
+        <span style="font-size:7px;color:#555;text-transform:uppercase;">Domicilio Fiscal:&nbsp;</span>
+        <span style="font-size:10px;font-weight:700;">${cliente.sector || cliente.sectorNombre || cliente.domicilio || 'N/A'}</span>
+        ${cliente.telefono ? `<span style="font-size:8.5px;color:#555;"> &nbsp;|&nbsp; Tel: ${cliente.telefono}</span>` : ''}
+      </td>
+    </tr>
+  </table>
+
+  <!-- ══ TABLA DE PRODUCTOS (formato FACTURA GUÍA) ══ -->
+  <table style="width:100%;border-collapse:collapse;border:2px solid #1a1a1a;border-bottom:0;">
     <thead>
       <tr>
-        <th style="${th}width:7%;"></th>
-        <th style="${thL}width:24%;">DESCRIPCIÓN</th>
-        <th style="${th}width:8%;">UNI&shy;DADES</th>
+        <th style="${th}width:9%;"></th>
+        <th style="${th}width:33%;text-align:left;padding-left:5px;">DESCRIPCIÓN</th>
         <th style="${th}width:9%;">LITROS</th>
-        <th style="${th}width:9%;">CANTI&shy;DAD</th>
-        <th style="${th}width:5%;">(E)</th>
-        <th style="${th}width:7%;">ALÍ&shy;C.&nbsp;%</th>
-        <th style="${th}width:16%;text-align:right;padding-right:5px;">PRECIO&nbsp;UNIT.<br>Bs.</th>
-        <th style="${th}width:15%;text-align:right;padding-right:5px;">MONTO<br>Bs.</th>
+        <th style="${th}width:12%;">CANT.&nbsp;EN&nbsp;CAJAS</th>
+        <th style="${th}width:4%;">(E)</th>
+        <th style="${th}width:16%;text-align:right;padding-right:5px;">PRECIO&nbsp;UNITARIO<br>Bs.</th>
+        <th style="${th}width:17%;text-align:right;padding-right:5px;">MONTO<br>Bs.</th>
       </tr>
     </thead>
     <tbody>${rows}</tbody>
   </table>
 
-  <!-- ══════════════════════════════════════════════════════
-       PIE DE FACTURA — TOTALES FISCALES
-       ══════════════════════════════════════════════════════ -->
-  <table style="width:100%;border-collapse:collapse;${BB}border-top:0;">
+  <!-- ══ PIE: FORMA DE PAGO / CONDUCTOR / OBSERVACIONES | TOTALES ══ -->
+  <table style="width:100%;border-collapse:collapse;border:2px solid #1a1a1a;">
     <tr>
-      <!-- Caja izquierda -->
-      <td style="${B}padding:10px;width:30%;vertical-align:top;text-align:center;">
-        <div style="font-size:8.5px;font-weight:700;color:#333;line-height:1.6;
-                    border:1px solid #999;padding:6px;">
-          ESTA FACTURA VA SIN TACHADURA<br>NI ENMENDADURA
-        </div>
-        <div style="margin-top:14px;font-size:15px;font-weight:900;
-                    color:#cc0000;letter-spacing:3px;">ORIGINAL</div>
-        <div style="margin-top:16px;border-top:1px dashed #bbb;padding-top:8px;">
-          <div style="font-size:7.5px;color:#555;">Tasa BCV aplicada:</div>
-          <div style="font-size:12px;font-weight:900;color:#1a3560;">Bs.&nbsp;${fBs(tasaBs)}</div>
-        </div>
-        <div style="margin-top:6px;">
-          <div style="font-size:7.5px;color:#555;">Referencia en USD:</div>
-          <div style="font-size:11px;font-weight:900;color:#1a3560;">$${fUSD(totalPagar)}</div>
-        </div>
-      </td>
-
-      <!-- Tabla de totales fiscales -->
-      <td style="${B}padding:0;width:70%;vertical-align:top;">
+      <!-- Columna izquierda -->
+      <td style="${B}padding:0;width:55%;vertical-align:top;">
         <table style="width:100%;border-collapse:collapse;">
           <tr>
-            <td style="${B}font-size:8.5px;padding:5px 8px;width:72%;line-height:1.4;">
-              Monto Total de Bienes o Servicios Exentos o Exonerados<br>
-              del Impuesto al Valor Agregado &nbsp; Bs.
-            </td>
-            <td style="${B}text-align:right;padding:5px 8px;font-weight:700;font-size:11px;">
-              ${fBs(exentoBs)}
+            <td style="${B}padding:4px 8px;font-size:8px;" colspan="2">
+              <strong>FORMA DE PAGO:</strong>
+              ${chkBox}EFECTIVO ${chkBox}CHEQUE ${chkBox}OTRO
             </td>
           </tr>
           <tr>
-            <td style="${B}font-size:8.5px;padding:5px 8px;color:#666;">
-              Adiciones al precio por concepto de: &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Bs.
+            <td style="${B}padding:4px 8px;font-size:8px;width:60%;">
+              NOMBRE DEL CONDUCTOR: <span style="border-bottom:1px solid #999;display:inline-block;min-width:110px;"></span>
             </td>
-            <td style="${B}padding:5px 8px;"></td>
-          </tr>
-          <tr>
-            <td style="${B}font-size:8.5px;padding:5px 8px;color:#666;">
-              Valor de los descuentos, bonificaciones, anulaciones al precio &nbsp; Bs.
-            </td>
-            <td style="${B}padding:5px 8px;"></td>
-          </tr>
-          <tr>
-            <td style="${B}font-size:8.5px;padding:5px 8px;line-height:1.4;">
-              Monto Total de la Base Imponible del I.V.A.<br>
-              según Alícuota <strong>16</strong> % &nbsp; Bs.
-            </td>
-            <td style="${B}text-align:right;padding:5px 8px;font-weight:700;font-size:11px;">
-              ${fBs(baseBs)}
+            <td style="${B}padding:4px 8px;font-size:8px;">
+              C.I.: <span style="border-bottom:1px solid #999;display:inline-block;min-width:80px;"></span>
             </td>
           </tr>
           <tr>
-            <td style="${B}font-size:8.5px;padding:5px 8px;line-height:1.4;">
-              Monto Total del Impuesto al Valor Agregado<br>
-              según Alícuota <strong>16</strong> % &nbsp; Bs.
+            <td style="${B}padding:4px 8px;font-size:8px;">
+              TIPO DE VEHÍCULO: <span style="border-bottom:1px solid #999;display:inline-block;min-width:110px;"></span>
             </td>
-            <td style="${B}text-align:right;padding:5px 8px;font-weight:700;font-size:11px;">
-              ${fBs(ivaBs)}
+            <td style="${B}padding:4px 8px;font-size:8px;">
+              PLACAS: <span style="border-bottom:1px solid #999;display:inline-block;min-width:80px;"></span>
             </td>
+          </tr>
+          <tr>
+            <td style="${B}padding:4px 8px;font-size:7px;line-height:1.4;" colspan="2">
+              <strong>OBSERVACIONES</strong> (EN CASO DE VENTA A PERSONA NATURAL, ESCRIBA "NO DA DERECHO A CRÉDITO FISCAL"):<br>
+              <span style="border-bottom:1px solid #999;display:inline-block;width:98%;margin-top:8px;"></span>
+            </td>
+          </tr>
+          <tr>
+            <td style="${B}padding:4px 8px;vertical-align:bottom;" colspan="2">
+              <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:10px;">
+                <div style="flex:1;">
+                  <div style="font-size:7px;font-weight:700;margin-bottom:24px;">FECHA DE CANCELACIÓN:</div>
+                  <div style="border-bottom:1px solid #999;width:90%;"></div>
+                </div>
+                <div style="flex:1;text-align:center;">
+                  <div style="font-size:7px;font-weight:700;margin-bottom:24px;">FIRMA Y SELLO DEL CLIENTE</div>
+                  <div style="border-bottom:1px solid #999;width:90%;margin:0 auto;"></div>
+                </div>
+              </div>
+              <div style="margin-top:10px;border-top:1px dashed #bbb;padding-top:6px;display:flex;gap:16px;font-size:7.5px;">
+                <div><span style="color:#555;">Tasa BCV aplicada:</span> <strong style="color:#1a3560;font-size:9.5px;">Bs. ${fBs(tasaBs)}</strong></div>
+                <div><span style="color:#555;">Ref. USD:</span> <strong style="color:#1a3560;font-size:9.5px;">$${fUSD(totalPagar)}</strong></div>
+              </div>
+            </td>
+          </tr>
+        </table>
+      </td>
+
+      <!-- Columna derecha: totales fiscales -->
+      <td style="${B}padding:0;width:45%;vertical-align:top;">
+        <table style="width:100%;border-collapse:collapse;">
+          <tr>
+            <td style="${B}font-size:8px;padding:3px 6px;width:68%;">SUB-TOTAL &nbsp; Bs.</td>
+            <td style="${B}text-align:right;padding:3px 6px;font-weight:700;font-size:10px;">${fBs(subTotalBs)}</td>
+          </tr>
+          <tr>
+            <td style="${B}font-size:8px;padding:3px 6px;color:#555;">ADICIONES AL PRECIO &nbsp; Bs.</td>
+            <td style="${B}padding:3px 6px;"></td>
+          </tr>
+          <tr>
+            <td style="${B}font-size:8px;padding:3px 6px;color:#555;">DESCUENTOS, BONIFICACIONES, ANULACIONES &nbsp; Bs.</td>
+            <td style="${B}padding:3px 6px;"></td>
+          </tr>
+          <tr>
+            <td style="${B}font-size:8px;padding:3px 6px;line-height:1.35;">MONTO TOTAL EXENTO O EXONERADO &nbsp; Bs.</td>
+            <td style="${B}text-align:right;padding:3px 6px;font-weight:700;font-size:10px;">${fBs(exentoBs)}</td>
+          </tr>
+          <tr>
+            <td style="${B}font-size:8px;padding:3px 6px;line-height:1.35;">MONTO TOTAL DE LA BASE IMPONIBLE DEL I.V.A.<br>SEGÚN ALÍCUOTA <strong>16</strong>% &nbsp; Bs.</td>
+            <td style="${B}text-align:right;padding:3px 6px;font-weight:700;font-size:10px;">${fBs(baseBs)}</td>
+          </tr>
+          <tr>
+            <td style="${B}font-size:8px;padding:3px 6px;line-height:1.35;">MONTO DEL I.V.A. SEGÚN ALÍCUOTA <strong>16</strong>% &nbsp; Bs.</td>
+            <td style="${B}text-align:right;padding:3px 6px;font-weight:700;font-size:10px;">${fBs(ivaBs)}</td>
+          </tr>
+          <tr>
+            <td style="${B}font-size:8.5px;padding:3px 6px;font-weight:900;">VALOR TOTAL DE LA VENTA &nbsp; Bs.</td>
+            <td style="${B}text-align:right;padding:3px 6px;font-weight:900;font-size:11px;">${fBs(totalVentaBs)}</td>
+          </tr>
+          <tr>
+            <td style="${B}font-size:8px;padding:3px 6px;color:#555;">DEPÓSITO POR ENVASE RETORNABLE &nbsp; Bs.</td>
+            <td style="${B}padding:3px 6px;"></td>
+          </tr>
+          <tr>
+            <td style="${B}font-size:8px;padding:3px 6px;color:#555;">DIFERENCIA POR ENVASE RETORNABLE &nbsp; Bs.</td>
+            <td style="${B}padding:3px 6px;"></td>
           </tr>
           ${filaRetencion}
-          <tr style="background:#f0f0f0;">
-            <td style="border:2px solid #222;font-size:10px;padding:6px 8px;font-weight:900;
-                       text-transform:uppercase;letter-spacing:0.3px;">
-              Valor Total de la Venta de los Bienes &nbsp; Bs.
-            </td>
-            <td style="border:2px solid #222;text-align:right;padding:6px 8px;
-                       font-weight:900;font-size:13px;">
-              ${fBs(totalPagarBs)}
+          <tr style="background:#e8e8e8;">
+            <td style="border:2px solid #1a1a1a;font-size:10px;padding:5px 6px;font-weight:900;letter-spacing:1px;">TOTAL A PAGAR &nbsp; Bs.</td>
+            <td style="border:2px solid #1a1a1a;text-align:right;padding:5px 6px;font-weight:900;font-size:13px;">${fBs(totalPagarBs)}</td>
+          </tr>
+          <tr>
+            <td style="${B}padding:4px 6px;" colspan="2">
+              <div style="font-size:6.5px;color:#555;line-height:1.4;">
+                <strong>DEPÓSITO A COBRAR POR ENVASES RETORNABLES:</strong> el monto será reembolsado
+                a la devolución de los envases en buen estado.
+              </div>
+              <table style="width:100%;border-collapse:collapse;margin-top:3px;">
+                <tr>
+                  <th style="border:1px solid #999;font-size:6.5px;padding:2px;background:#f0f0f0;">TIPO DE ENVASE</th>
+                  <th style="border:1px solid #999;font-size:6.5px;padding:2px;background:#f0f0f0;">ENTREGADOS</th>
+                  <th style="border:1px solid #999;font-size:6.5px;padding:2px;background:#f0f0f0;">DEVUELTOS</th>
+                  <th style="border:1px solid #999;font-size:6.5px;padding:2px;background:#f0f0f0;">TOTAL Bs.</th>
+                </tr>
+                <tr>
+                  <td style="border:1px solid #999;font-size:7px;padding:2px 4px;">ENVASE 1/4</td>
+                  <td style="border:1px solid #999;padding:2px;"></td>
+                  <td style="border:1px solid #999;padding:2px;"></td>
+                  <td style="border:1px solid #999;padding:2px;"></td>
+                </tr>
+                <tr>
+                  <td style="border:1px solid #999;font-size:7px;padding:2px 4px;">ENVASE 1/3</td>
+                  <td style="border:1px solid #999;padding:2px;"></td>
+                  <td style="border:1px solid #999;padding:2px;"></td>
+                  <td style="border:1px solid #999;padding:2px;"></td>
+                </tr>
+              </table>
             </td>
           </tr>
         </table>
@@ -883,8 +1223,8 @@
   </table>
 
   <!-- Datos de imprenta -->
-  <div style="font-size:7px;color:#777;margin-top:7px;text-align:center;
-              border-top:1px solid #ddd;padding-top:5px;line-height:1.5;">
+  <div style="font-size:7px;color:#777;margin-top:6px;text-align:center;
+              border-top:1px solid #ddd;padding-top:4px;line-height:1.5;">
     LITOANDES, S.A. Av. Carabobo Esq. Carrera 20 · Sector La Romera · Tlf: (0276) 356.19.55
     San Cristóbal, Edo. Táchira &nbsp;/&nbsp; RIF: J-30406057-2
     &nbsp;·&nbsp; N° PROVIDENCIA SENIAT 05/00579 de 14/03/2008 &nbsp;·&nbsp; Reg. Los Andes
@@ -892,7 +1232,7 @@
   </div>
 
   <!-- Aviso simulación -->
-  <div style="text-align:center;margin-top:5px;font-size:7.5px;font-weight:700;
+  <div style="text-align:center;margin-top:4px;font-size:7.5px;font-weight:700;
               color:#cc0000;letter-spacing:1px;">
     *** DOCUMENTO SIMULADO SIN VALIDEZ FISCAL — DIST. CASTILLO YAÑEZ APP ***
   </div>
@@ -902,4 +1242,3 @@
     }
 
 })();
-
