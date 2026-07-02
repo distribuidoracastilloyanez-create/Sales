@@ -381,13 +381,12 @@
             ? `MENSUAL · ${_ventaParaFacturar.nombreMes.toUpperCase()}`
             : 'VENTA INDIVIDUAL');
 
-        // Filtrar por tipo de facturación y ordenar igual que el inventario
-        let productosDetalle = (_ventaParaFacturar.productos || []).slice();
-        if (_tipoFacturacion === 'cerveceria') productosDetalle = productosDetalle.filter(esProductoCerveceria);
-        productosDetalle = ordenarComoInventario(productosDetalle);
+        // Incluir TODOS los productos, solo ordenar igual que el inventario.
+        // El tipo de facturación cambia el formato de la hoja, no qué productos entran.
+        let productosDetalle = ordenarComoInventario((_ventaParaFacturar.productos || []).slice());
 
         if (!productosDetalle.length) {
-            body.innerHTML = '<p class="p-4 text-center text-xs text-amber-600 font-semibold">⚠️ La venta seleccionada no contiene productos de este tipo de facturación.</p>';
+            body.innerHTML = '<p class="p-4 text-center text-xs text-amber-600 font-semibold">⚠️ La venta seleccionada no contiene productos.</p>';
             panel.classList.remove('hidden');
             return;
         }
@@ -647,16 +646,9 @@
             return;
         }
 
-        // Filtrar y ordenar productos según tipo de facturación
-        let productosFactura = (_ventaParaFacturar.productos || []).slice();
-        if (_tipoFacturacion === 'cerveceria') {
-            productosFactura = productosFactura.filter(esProductoCerveceria);
-            if (!productosFactura.length) {
-                _showModal('Aviso', 'La venta seleccionada no contiene productos de Cervecería.');
-                return;
-            }
-        }
-        productosFactura = ordenarComoInventario(productosFactura);
+        // Incluir TODOS los productos, ordenados como el inventario.
+        // El tipo de facturación solo cambia el formato de la hoja generada.
+        let productosFactura = ordenarComoInventario((_ventaParaFacturar.productos || []).slice());
 
         _isGeneratingFactura = true;
         try {
@@ -1009,28 +1001,64 @@
     }
 
     function matchFilaSeccion(sec, texto) {
+        // Mapeo de las presentaciones del inventario a las filas fijas de la hoja física:
+        //   1/4  → 36 botellas retornables (0,222 Lts)
+        //   1/3  → 24 botellas retornables (0,330 Lts, solo en Pilsen)
+        //   1.75 Lts (en Sangría) → 6 PET
+        //   latas por litraje (250 / 355 ml)
         const t = _nrm(texto);
-        const esRet  = /\bret/.test(t) || t.includes('retornable') || t.includes('botella');
-        const esLata = t.includes('lata') || /\blta\b/.test(t);
-        const esPet  = t.includes('pet');
-        const c330   = /330|1\/3/.test(t);
-        const c355   = /355/.test(t);
-        const cTinto = t.includes('tinto');
+
+        // Detección de la presentación de origen
+        const es14   = /\b1\s*\/\s*4\b/.test(t) || t.includes('1 4') || /\b1\.?/.test(t) && t.includes('/4');
+        const es13   = /\b1\s*\/\s*3\b/.test(t) || t.includes('1 3');
+        const esPet  = t.includes('pet') || /1[.,]?75\s*lt/.test(t) || t.includes('1.75') || t.includes('1,75');
+        const esLata = t.includes('lata') || /\blta\b/.test(t) || t.includes('lat');
+        const c355   = /355|0[.,]?355/.test(t);
+        const cTinto = t.includes('tinto') || t.includes('verano');
+        // Retornable genérico (cuando no dice 1/4 ni 1/3 explícito pero es botella/ret)
+        const esRet  = es14 || es13 || /\bret/.test(t) || t.includes('retornable') || t.includes('botella');
+
+        // ¿La sección tiene una única fila retornable? (caso Sangría: solo tinto verano)
+        const filasRet = sec.filas.filter(f => f.desc &&
+            (_nrm(f.desc).includes('botella') || _nrm(f.desc).includes('ret')));
+        const unicaFilaRet = filasRet.length === 1;
+
         let best = -1;
         sec.filas.forEach((f, i) => {
             if (!f.desc) return;
             const fd = _nrm(f.desc);
-            if (esPet && fd.includes('pet')) {
+            const fEs36 = fd.includes('36') && (fd.includes('botella') || fd.includes('ret'));
+            const fEs24Ret = fd.includes('24') && (fd.includes('botella') || fd.includes('ret'));
+            const fEsRet = fd.includes('botella') || fd.includes('ret');
+            const fEsPet = fd.includes('pet');
+            const fEsLata = fd.includes('lata');
+            const fEsTinto = fd.includes('tinto') || fd.includes('verano');
+
+            // ── PET / 1.75 Lts ──
+            if (esPet && fEsPet) { if (best < 0) best = i; return; }
+
+            // ── Retornables ──
+            if (esRet && fEsRet) {
+                // Si la sección solo tiene una fila retornable (Sangría), cualquier
+                // retornable de esa marca va ahí sin importar el "tinto verano".
+                if (unicaFilaRet) { best = i; return; }
+                // Tinto verano explícito
+                if (cTinto && fEsTinto) { best = i; return; }
+                if (fEsTinto && !cTinto) return; // no mezclar tinto con no-tinto
+                // 1/3 → 24 botellas retornables
+                if (es13 && fEs24Ret) { best = i; return; }
+                // 1/4 → 36 botellas retornables
+                if (es14 && fEs36) { best = i; return; }
+                // Sin especificar → 36 botellas por defecto
+                if (!es13 && !es14 && fEs36 && best < 0) best = i;
+                return;
+            }
+
+            // ── Latas ──
+            if (esLata && fEsLata) {
+                if (c355 && (f.lts || '').includes('355')) { best = i; return; }
+                if (!c355 && (f.lts || '').includes('250')) { best = i; return; }
                 if (best < 0) best = i;
-            } else if (esRet && (fd.includes('ret') || fd.includes('botella'))) {
-                if (cTinto && fd.includes('tinto')) best = i;
-                else if (c330 && (f.lts || '').includes('330')) best = i;
-                else if (!c330 && !cTinto && !fd.includes('tinto') && (f.lts || '').includes('222')) best = i;
-                else if (best < 0 && !fd.includes('tinto')) best = i;
-            } else if (esLata && fd.includes('lata')) {
-                if (c355 && (f.lts || '').includes('355')) best = i;
-                else if (!c355 && (f.lts || '').includes('250')) best = i;
-                else if (best < 0) best = i;
             }
         });
         return best;
@@ -1852,3 +1880,4 @@
 
 
 })();
+
