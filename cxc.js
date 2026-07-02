@@ -160,65 +160,199 @@
         } catch (e) { console.error("Error cargando tasas:", e); }
     }
 
+    // ═══════════════════════════════════════════════════════════
+    // TASAS BCV — Vista tipo CALENDARIO
+    // ═══════════════════════════════════════════════════════════
+    let _calYear, _calMonth; // mes/año actualmente visible en el calendario
+
     async function showTasasBCVManagementView() {
+        const hoy = new Date();
+        _calYear  = hoy.getFullYear();
+        _calMonth = hoy.getMonth(); // 0-11
+
         _mainContent.innerHTML = `
-            <div class="p-4 pt-8 w-full max-w-md mx-auto">
-                <div class="bg-white/90 backdrop-blur-sm p-6 rounded-lg shadow-xl">
-                    <h2 class="text-2xl font-bold text-gray-800 mb-4 text-center">Tasas BCV Históricas</h2>
-                    <p class="text-sm text-gray-600 mb-6 text-center">Registra el valor del dólar BCV por fecha.</p>
-                    <form id="tasaForm" class="space-y-4 mb-6 border-b pb-6">
-                        <div><label class="block text-sm font-bold text-gray-700">Fecha:</label><input type="date" id="tasaDate" class="w-full p-2 border rounded" required></div>
-                        <div><label class="block text-sm font-bold text-gray-700">Tasa (Bs/USD):</label><input type="number" id="tasaValue" step="0.0001" class="w-full p-2 border rounded" required placeholder="0.0000"></div>
-                        <button type="submit" class="w-full bg-purple-600 text-white py-2 rounded hover:bg-purple-700 font-bold transition">Guardar Tasa</button>
-                    </form>
-                    <div id="tasasList" class="max-h-60 overflow-y-auto space-y-2"><p class="text-center text-gray-500 text-sm">Cargando...</p></div>
-                    <button onclick="window.showCXCView()" class="w-full mt-6 bg-gray-400 text-white py-2 rounded hover:bg-gray-500 font-bold transition">Volver</button>
+            <div class="p-3 pt-8 w-full max-w-lg mx-auto">
+                <div class="bg-white/95 backdrop-blur-sm p-4 sm:p-6 rounded-lg shadow-xl">
+                    <div class="flex items-center justify-between mb-4">
+                        <h2 class="text-xl font-bold text-gray-800 flex items-center gap-2">💵 Tasas BCV</h2>
+                        <button onclick="window.showCXCView()" class="px-3 py-1.5 bg-gray-400 text-white text-sm rounded hover:bg-gray-500 font-bold transition">Volver</button>
+                    </div>
+                    <p class="text-xs text-gray-500 mb-4">Toca un día para registrar o editar su tasa. Los días con tasa aparecen resaltados.</p>
+
+                    <!-- Navegación de mes -->
+                    <div class="flex items-center justify-between mb-3 bg-purple-50 rounded-lg p-2 border border-purple-100">
+                        <button id="calPrev" class="w-9 h-9 flex items-center justify-center rounded-full hover:bg-purple-200 text-purple-700 font-black text-lg transition">‹</button>
+                        <div class="text-center">
+                            <div id="calMonthLabel" class="font-black text-gray-800 text-base capitalize"></div>
+                        </div>
+                        <button id="calNext" class="w-9 h-9 flex items-center justify-center rounded-full hover:bg-purple-200 text-purple-700 font-black text-lg transition">›</button>
+                    </div>
+
+                    <!-- Cabecera de días -->
+                    <div class="grid grid-cols-7 gap-1 mb-1">
+                        ${['D','L','M','M','J','V','S'].map(d => `<div class="text-center text-[10px] font-black text-gray-400 uppercase py-1">${d}</div>`).join('')}
+                    </div>
+
+                    <!-- Grilla del calendario -->
+                    <div id="calGrid" class="grid grid-cols-7 gap-1"></div>
+
+                    <!-- Resumen del mes -->
+                    <div id="calResumen" class="mt-4 pt-3 border-t border-gray-200 text-xs text-gray-500 text-center"></div>
+
+                    <button id="calHoy" class="w-full mt-3 bg-purple-100 text-purple-700 py-2 rounded-lg hover:bg-purple-200 font-bold text-sm transition">📅 Ir al mes actual</button>
                 </div>
             </div>
         `;
-        document.getElementById('tasaDate').valueAsDate = new Date();
-        document.getElementById('tasaForm').addEventListener('submit', handleSaveTasa);
-        renderTasasList();
+
+        document.getElementById('calPrev').addEventListener('click', () => cambiarMesCalendario(-1));
+        document.getElementById('calNext').addEventListener('click', () => cambiarMesCalendario(1));
+        document.getElementById('calHoy').addEventListener('click', () => {
+            const h = new Date();
+            _calYear = h.getFullYear(); _calMonth = h.getMonth();
+            renderCalendario();
+        });
+
+        renderCalendario();
     }
 
-    async function handleSaveTasa(e) {
-        e.preventDefault();
-        const date = document.getElementById('tasaDate').value;
-        const rate = parseFloat(document.getElementById('tasaValue').value);
-        if (!date || !rate) return;
-        _showModal('Guardando', 'Registrando tasa...');
-        try {
-            await _setDoc(_doc(_db, TASAS_COLLECTION_PATH, date), { rate: rate });
-            _tasasCache[date] = rate;
-            _showModal('Éxito', 'Tasa guardada correctamente.');
-            renderTasasList();
-        } catch (err) { _showModal('Error', err.message); }
+    function cambiarMesCalendario(delta) {
+        _calMonth += delta;
+        if (_calMonth < 0)  { _calMonth = 11; _calYear--; }
+        if (_calMonth > 11) { _calMonth = 0;  _calYear++; }
+        renderCalendario();
     }
 
-    async function handleDeleteTasa(date) {
-        _showModal('Confirmar', `¿Borrar tasa del ${date}?`, async () => {
+    function _fechaISO(y, m, d) {
+        return `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    }
+
+    function renderCalendario() {
+        const grid  = document.getElementById('calGrid');
+        const label = document.getElementById('calMonthLabel');
+        if (!grid || !label) return;
+
+        const nombreMes = new Date(_calYear, _calMonth, 1)
+            .toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
+        label.textContent = nombreMes;
+
+        const primerDia   = new Date(_calYear, _calMonth, 1).getDay(); // 0=Dom
+        const diasEnMes    = new Date(_calYear, _calMonth + 1, 0).getDate();
+        const hoyISO       = _fechaISO(new Date().getFullYear(), new Date().getMonth(), new Date().getDate());
+
+        let html = '';
+        // Celdas vacías antes del primer día
+        for (let i = 0; i < primerDia; i++) html += `<div></div>`;
+
+        let conTasa = 0;
+        for (let d = 1; d <= diasEnMes; d++) {
+            const iso   = _fechaISO(_calYear, _calMonth, d);
+            const tasa  = _tasasCache[iso];
+            const tiene = tasa !== undefined && tasa !== null;
+            if (tiene) conTasa++;
+            const esHoy = iso === hoyISO;
+
+            html += `
+                <button data-iso="${iso}" data-dia="${d}"
+                    class="cal-day relative flex flex-col items-center justify-center rounded-lg py-1.5 transition
+                        ${tiene ? 'bg-purple-600 text-white shadow-sm hover:bg-purple-700' : 'bg-gray-50 text-gray-700 hover:bg-gray-200'}
+                        ${esHoy && !tiene ? 'ring-2 ring-purple-400' : ''}
+                        ${esHoy && tiene ? 'ring-2 ring-yellow-300' : ''}">
+                    <span class="text-sm font-bold leading-none">${d}</span>
+                    ${tiene
+                        ? `<span class="text-[9px] font-semibold leading-none mt-0.5 opacity-90">${Number(tasa).toFixed(2)}</span>`
+                        : `<span class="text-[9px] leading-none mt-0.5 text-gray-300">—</span>`}
+                </button>`;
+        }
+        grid.innerHTML = html;
+
+        grid.querySelectorAll('.cal-day').forEach(btn => {
+            btn.addEventListener('click', () => abrirEditorTasa(btn.dataset.iso));
+        });
+
+        const resumen = document.getElementById('calResumen');
+        if (resumen) {
+            resumen.innerHTML = conTasa > 0
+                ? `<span class="font-bold text-purple-700">${conTasa}</span> día(s) con tasa registrada este mes`
+                : 'Sin tasas registradas este mes';
+        }
+    }
+
+    function abrirEditorTasa(iso) {
+        const existente = _tasasCache[iso];
+        const [y, m, d] = iso.split('-');
+        const fechaLegible = new Date(parseInt(y), parseInt(m) - 1, parseInt(d))
+            .toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+
+        document.getElementById('tasaEditorOverlay')?.remove();
+        const overlay = document.createElement('div');
+        overlay.id = 'tasaEditorOverlay';
+        overlay.className = 'fixed inset-0 z-[9998] bg-black/50 flex items-center justify-center p-4';
+        overlay.innerHTML = `
+            <div class="bg-white w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden">
+                <div class="bg-purple-600 text-white px-4 py-3">
+                    <div class="text-xs opacity-80 uppercase tracking-wider">Tasa BCV</div>
+                    <div class="font-bold text-base capitalize">${fechaLegible}</div>
+                </div>
+                <div class="p-5">
+                    <label class="block text-xs font-bold text-gray-600 mb-1 uppercase tracking-wider">Valor (Bs/USD):</label>
+                    <input type="number" id="tasaEditorInput" step="0.0001" inputmode="decimal"
+                        value="${existente !== undefined ? existente : ''}"
+                        placeholder="0.0000"
+                        class="w-full p-3 border-2 border-purple-200 rounded-lg text-lg font-bold text-purple-900 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none text-center">
+                    <div class="flex gap-2 mt-4">
+                        ${existente !== undefined ? `
+                        <button id="tasaEditorDelete" class="px-4 py-2.5 bg-red-100 text-red-700 font-bold rounded-lg hover:bg-red-200 transition text-sm">🗑️ Borrar</button>` : ''}
+                        <button id="tasaEditorCancel" class="flex-1 px-4 py-2.5 bg-gray-100 text-gray-600 font-bold rounded-lg hover:bg-gray-200 transition text-sm">Cancelar</button>
+                        <button id="tasaEditorSave" class="flex-1 px-4 py-2.5 bg-green-600 text-white font-bold rounded-lg hover:bg-green-700 transition text-sm">Guardar</button>
+                    </div>
+                </div>
+            </div>`;
+        document.body.appendChild(overlay);
+
+        const input = document.getElementById('tasaEditorInput');
+        input.focus();
+        input.select();
+
+        overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+        document.getElementById('tasaEditorCancel').addEventListener('click', () => overlay.remove());
+
+        document.getElementById('tasaEditorSave').addEventListener('click', async () => {
+            const rate = parseFloat(input.value);
+            if (isNaN(rate) || rate <= 0) {
+                input.classList.add('border-red-400', 'ring-2', 'ring-red-300');
+                input.focus();
+                return;
+            }
+            const btn = document.getElementById('tasaEditorSave');
+            btn.textContent = 'Guardando...'; btn.disabled = true;
             try {
-                await _deleteDoc(_doc(_db, TASAS_COLLECTION_PATH, date));
-                delete _tasasCache[date];
-                renderTasasList();
-                _showModal('Éxito', 'Eliminada.');
-            } catch (err) { _showModal('Error', err.message); }
-        }, 'Sí, borrar');
+                await _setDoc(_doc(_db, TASAS_COLLECTION_PATH, iso), { rate });
+                _tasasCache[iso] = rate;
+                overlay.remove();
+                renderCalendario();
+            } catch (err) {
+                _showModal('Error', err.message);
+                btn.textContent = 'Guardar'; btn.disabled = false;
+            }
+        });
+
+        const delBtn = document.getElementById('tasaEditorDelete');
+        if (delBtn) {
+            delBtn.addEventListener('click', async () => {
+                delBtn.textContent = '...'; delBtn.disabled = true;
+                try {
+                    await _deleteDoc(_doc(_db, TASAS_COLLECTION_PATH, iso));
+                    delete _tasasCache[iso];
+                    overlay.remove();
+                    renderCalendario();
+                } catch (err) {
+                    _showModal('Error', err.message);
+                    delBtn.textContent = '🗑️ Borrar'; delBtn.disabled = false;
+                }
+            });
+        }
     }
 
-    function renderTasasList() {
-        const list = document.getElementById('tasasList');
-        if (!list) return;
-        const dates = Object.keys(_tasasCache).sort().reverse();
-        if (dates.length === 0) { list.innerHTML = '<p class="text-center text-gray-400 text-sm">No hay tasas registradas.</p>'; return; }
-        list.innerHTML = dates.map(date => `
-            <div class="flex justify-between items-center p-2 bg-gray-50 rounded border">
-                <span class="font-mono text-sm font-bold text-gray-700">${date}</span>
-                <span class="text-purple-700 font-bold">${_tasasCache[date].toFixed(4)} Bs</span>
-                <button onclick="window.cxcModule.deleteTasa('${date}')" class="text-red-500 hover:text-red-700 text-xs">🗑️</button>
-            </div>
-        `).join('');
-    }
 
     // --- SINCRONIZACIÓN Y CARGA DE DATOS ---
     async function syncAndLoadData() {
@@ -1149,9 +1283,9 @@
         showClientDetailsByName,
         searchSaleDetails,
         handleShareClientHistory,
-        deleteTasa: handleDeleteTasa,
         searchConsolidatedConsignments
     };
 })();
+
 
 
