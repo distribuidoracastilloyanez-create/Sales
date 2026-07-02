@@ -19,6 +19,7 @@
     let _clienteSeleccionado = null;
     let _ventaParaFacturar   = null;
     let _tipoSimulacion      = null; // 'individual' | 'mensual'
+    let _tipoFacturacion     = null; // 'cerveceria' | 'alimentos'
 
     // ─────────────────────────────────────────────
     // INIT
@@ -61,6 +62,7 @@
         if (_floatingControls) _floatingControls.classList.add('hidden');
         const today = hoyLocalISO();
         _tipoSimulacion    = null;
+        _tipoFacturacion   = null;
         _ventaParaFacturar = null;
         _clienteSeleccionado = null;
 
@@ -124,9 +126,24 @@
                         </div>
                     </div>
 
-                    <!-- Paso 3: Datos de emisión -->
+                    <!-- Paso 3: Tipo de facturación -->
+                    <div id="facPanelTipoFact" class="hidden p-4 bg-gray-50 rounded-lg border border-gray-200 shadow-inner mb-4">
+                        <label class="block text-xs font-bold text-gray-700 mb-2 uppercase tracking-wider">3. Tipo de Facturación:</label>
+                        <div class="grid grid-cols-2 gap-3">
+                            <button id="btnFactCerveceria"
+                                class="fac-fact-btn px-3 py-3 rounded-lg border-2 border-gray-300 bg-white text-gray-700 font-bold text-sm transition hover:border-amber-400">
+                                🍺 Cervecería
+                            </button>
+                            <button id="btnFactAlimentos"
+                                class="fac-fact-btn px-3 py-3 rounded-lg border-2 border-gray-300 bg-white text-gray-700 font-bold text-sm transition hover:border-red-400">
+                                🥫 Alimentos
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Paso 4: Datos de emisión -->
                     <div id="facPanelTasa" class="hidden flex-col bg-indigo-50 border border-indigo-200 rounded-lg p-4 sm:p-5 shadow-sm mb-4">
-                        <h3 class="font-bold text-indigo-900 border-b border-indigo-200 pb-2 mb-4 text-sm sm:text-base">3. Datos de Emisión</h3>
+                        <h3 class="font-bold text-indigo-900 border-b border-indigo-200 pb-2 mb-4 text-sm sm:text-base">4. Datos de Emisión</h3>
                         <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 items-end">
                             <div>
                                 <label class="block text-xs font-bold text-indigo-800 mb-1 uppercase tracking-wider">Fecha Tasa BCV:</label>
@@ -185,10 +202,13 @@
         document.getElementById('btnTipoIndividual').addEventListener('click', () => seleccionarTipo('individual'));
         document.getElementById('btnTipoMensual').addEventListener('click', () => seleccionarTipo('mensual'));
 
+        document.getElementById('btnFactCerveceria').addEventListener('click', () => seleccionarTipoFacturacion('cerveceria'));
+        document.getElementById('btnFactAlimentos').addEventListener('click', () => seleccionarTipoFacturacion('alimentos'));
+
         document.getElementById('facSelectVenta').addEventListener('change', (e) => {
             if (e.target.value !== '') {
                 _ventaParaFacturar = _ventasEncontradas[parseInt(e.target.value)];
-                mostrarEmisionYDetalle();
+                mostrarPanelTipoFact();
             } else {
                 _ventaParaFacturar = null;
                 ocultarEmisionYDetalle();
@@ -218,6 +238,9 @@
         document.getElementById('facSubIndividual').classList.add('hidden');
         document.getElementById('facSubMensual').classList.add('hidden');
         document.querySelectorAll('.fac-tipo-btn').forEach(b => b.classList.remove('border-blue-600', 'bg-blue-50', 'text-blue-800'));
+        _tipoFacturacion = null;
+        document.getElementById('facPanelTipoFact').classList.add('hidden');
+        document.querySelectorAll('.fac-fact-btn').forEach(b => b.classList.remove('border-amber-600', 'bg-amber-50', 'text-amber-900', 'border-red-600', 'bg-red-50', 'text-red-900'));
         ocultarEmisionYDetalle();
         const es = document.getElementById('facEmptyState');
         es.classList.remove('hidden');
@@ -227,7 +250,30 @@
     function ocultarEmisionYDetalle() {
         document.getElementById('facPanelTasa').classList.add('hidden');
         document.getElementById('facPanelDetalle').classList.add('hidden');
+        document.getElementById('facPanelTipoFact')?.classList.add('hidden');
         document.getElementById('facEmptyState').classList.remove('hidden');
+    }
+
+    function mostrarPanelTipoFact() {
+        document.getElementById('facPanelTipoFact').classList.remove('hidden');
+        document.getElementById('facEmptyState').classList.add('hidden');
+        if (_tipoFacturacion) {
+            mostrarEmisionYDetalle();
+        } else {
+            document.getElementById('facPanelTasa').classList.add('hidden');
+            document.getElementById('facPanelDetalle').classList.add('hidden');
+        }
+    }
+
+    function seleccionarTipoFacturacion(tipo) {
+        _tipoFacturacion = tipo;
+        const bC = document.getElementById('btnFactCerveceria');
+        const bA = document.getElementById('btnFactAlimentos');
+        bC.classList.remove('border-amber-600', 'bg-amber-50', 'text-amber-900');
+        bA.classList.remove('border-red-600', 'bg-red-50', 'text-red-900');
+        if (tipo === 'cerveceria') bC.classList.add('border-amber-600', 'bg-amber-50', 'text-amber-900');
+        else bA.classList.add('border-red-600', 'bg-red-50', 'text-red-900');
+        mostrarEmisionYDetalle();
     }
 
     function mostrarEmisionYDetalle() {
@@ -316,7 +362,7 @@
 
         resumen.textContent = `✅ ${ventasMes.length} venta(s) en ${nombreMes} · Total: $${totalMes.toFixed(2)}`;
         resumen.className = 'text-xs text-green-700 mt-2 font-semibold';
-        mostrarEmisionYDetalle();
+        mostrarPanelTipoFact();
     }
 
     // ─────────────────────────────────────────────
@@ -328,14 +374,28 @@
         const tag   = document.getElementById('facDetalleTag');
         if (!panel || !_ventaParaFacturar) return;
 
-        tag.textContent = _ventaParaFacturar.esMensual
+        const tipoTag = _tipoFacturacion
+            ? (_tipoFacturacion === 'cerveceria' ? '🍺 CERVECERÍA · ' : '🥫 ALIMENTOS · ')
+            : '';
+        tag.textContent = tipoTag + (_ventaParaFacturar.esMensual
             ? `MENSUAL · ${_ventaParaFacturar.nombreMes.toUpperCase()}`
-            : 'VENTA INDIVIDUAL';
+            : 'VENTA INDIVIDUAL');
+
+        // Filtrar por tipo de facturación y ordenar igual que el inventario
+        let productosDetalle = (_ventaParaFacturar.productos || []).slice();
+        if (_tipoFacturacion === 'cerveceria') productosDetalle = productosDetalle.filter(esProductoCerveceria);
+        productosDetalle = ordenarComoInventario(productosDetalle);
+
+        if (!productosDetalle.length) {
+            body.innerHTML = '<p class="p-4 text-center text-xs text-amber-600 font-semibold">⚠️ La venta seleccionada no contiene productos de este tipo de facturación.</p>';
+            panel.classList.remove('hidden');
+            return;
+        }
 
         let rowsHtml = '';
         let totalGeneral = 0;
 
-        (_ventaParaFacturar.productos || []).forEach(p => {
+        productosDetalle.forEach(p => {
             const qCj  = parseInt(p.cantidadVendida?.cj)  || 0;
             const qPaq = parseInt(p.cantidadVendida?.paq) || 0;
             const qUnd = parseInt(p.cantidadVendida?.und) || 0;
@@ -582,6 +642,21 @@
             _showModal('Error', 'Debe seleccionar una venta o un mes con ventas.');
             return;
         }
+        if (!_tipoFacturacion) {
+            _showModal('Error', 'Seleccione el tipo de facturación (Cervecería o Alimentos).');
+            return;
+        }
+
+        // Filtrar y ordenar productos según tipo de facturación
+        let productosFactura = (_ventaParaFacturar.productos || []).slice();
+        if (_tipoFacturacion === 'cerveceria') {
+            productosFactura = productosFactura.filter(esProductoCerveceria);
+            if (!productosFactura.length) {
+                _showModal('Aviso', 'La venta seleccionada no contiene productos de Cervecería.');
+                return;
+            }
+        }
+        productosFactura = ordenarComoInventario(productosFactura);
 
         _isGeneratingFactura = true;
         try {
@@ -591,8 +666,9 @@
         let ivaTotal       = 0;
 
         const catMap = {};
+        const lineasPlanas = [];
 
-        (_ventaParaFacturar.productos || []).forEach(p => {
+        productosFactura.forEach(p => {
             const prod     = _productosCache[p.id] || p;
             const esExento = !(prod.iva && parseFloat(prod.iva) > 0);
 
@@ -628,7 +704,7 @@
                     subtotalBase += cantidad * baseUSD;
                     ivaTotal     += cantidad * (pvpUSD - baseUSD);
                 }
-                catMap[key].lineas.push({
+                const linea = {
                     descripcion:      descCorta,
                     unidades:         String(unidades),
                     contenido:        String(contenido),
@@ -637,8 +713,13 @@
                     exento:           esExento,
                     alicuota:         esExento ? '' : '16',
                     precioUnitarioBs: baseUSD * tasaBs,
-                    totalBs:          cantidad * baseUSD * tasaBs
-                });
+                    totalBs:          cantidad * baseUSD * tasaBs,
+                    marca:            p.marca || '',
+                    segmento:         p.segmento || '',
+                    presentacion:     p.presentacion || ''
+                };
+                catMap[key].lineas.push(linea);
+                lineasPlanas.push(linea);
             };
 
             addLinea(qCj,  'Cj', pCj);
@@ -665,17 +746,22 @@
         const numFactura = String(Math.floor(1000 + Math.random() * 9000)).padStart(6, '0');
         const numControl = '00-' + String(Math.floor(10000 + Math.random() * 89999)).padStart(6, '0');
 
-        const html = buildFacturaHtml({
+        const datosFactura = {
             cliente:    _clienteSeleccionado,
             fechaISO:   document.getElementById('facFechaTasa').value,
             tasaBs,
             categoriasOrdenadas,
+            lineasPlanas,
             subtotalBase, subtotalExento, ivaTotal,
             totalOp, retencionUSD, totalPagar,
             numFactura, numControl,
             esMensual:  !!_ventaParaFacturar.esMensual,
             nombreMes:  _ventaParaFacturar.nombreMes || ''
-        });
+        };
+
+        const html = (_tipoFacturacion === 'cerveceria')
+            ? buildFacturaCerveceriaHtml(datosFactura)
+            : buildFacturaHtml(datosFactura);
 
         abrirFacturaFullscreen(html);
 
@@ -826,6 +912,171 @@
             btn.innerHTML = orig;
             btn.disabled  = false;
         }
+    }
+
+
+    // ─────────────────────────────────────────────
+    // ORDEN DE INVENTARIO (mismo criterio que inventario/ventas)
+    // ─────────────────────────────────────────────
+    function ordenarComoInventario(arr) {
+        return arr.slice().sort((a, b) => {
+            const ca = _productosCache[a.id] || a;
+            const cb = _productosCache[b.id] || b;
+            const rA = ((ca.rubro ?? a.rubro) || 'SIN RUBRO').toUpperCase();
+            const rB = ((cb.rubro ?? b.rubro) || 'SIN RUBRO').toUpperCase();
+            if (rA !== rB) return rA.localeCompare(rB);
+            const sOA = ca.ordenSegmento ?? 9999, sOB = cb.ordenSegmento ?? 9999;
+            if (sOA !== sOB) return sOA - sOB;
+            const sA = ((ca.segmento ?? a.segmento) || '').toUpperCase();
+            const sB = ((cb.segmento ?? b.segmento) || '').toUpperCase();
+            if (sA !== sB) return sA.localeCompare(sB);
+            const mOA = ca.ordenMarca ?? 9999, mOB = cb.ordenMarca ?? 9999;
+            if (mOA !== mOB) return mOA - mOB;
+            const mA = ((ca.marca ?? a.marca) || '').toUpperCase();
+            const mB = ((cb.marca ?? b.marca) || '').toUpperCase();
+            if (mA !== mB) return mA.localeCompare(mB);
+            const pOA = ca.ordenProducto ?? 9999, pOB = cb.ordenProducto ?? 9999;
+            if (pOA !== pOB) return pOA - pOB;
+            return ((ca.presentacion ?? a.presentacion) || '').toUpperCase()
+                .localeCompare(((cb.presentacion ?? b.presentacion) || '').toUpperCase());
+        });
+    }
+
+    // ─────────────────────────────────────────────
+    // DETECCIÓN DE PRODUCTO DE CERVECERÍA
+    // ─────────────────────────────────────────────
+    function esProductoCerveceria(p) {
+        const cat = _productosCache[p.id] || {};
+        const rubro = ((cat.rubro || p.rubro) || '').toLowerCase()
+            .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        if (rubro.includes('cerveceria') || rubro.includes('cerveza') || rubro.includes('vinos')) return true;
+        const s = ((p.marca || '') + ' ' + (p.segmento || '') + ' ' + (p.presentacion || '')).toLowerCase()
+            .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        return /pilsen|solera|sangria|carore/.test(s);
+    }
+
+    // ─────────────────────────────────────────────
+    // FORMATO FIJO DE LA HOJA DE CERVECERÍA
+    // (filas preimpresas de la FACTURA GUÍA física)
+    // ─────────────────────────────────────────────
+    const FORMATO_CERVECERIA = [
+        { marca: 'POLAR<br>PILSEN', sub: '4,5 %<br>VOL (°GL)', key: 'pilsen', filas: [
+            { desc: '36 BOTELLAS RETORNABLES', lts: '0,222 Lts', ltsCaja: '7,992' },
+            { desc: '24 BOTELLAS RETORNABLES', lts: '0,330 Lts', ltsCaja: '7,920' },
+            { desc: '24 LATAS',                lts: '0,250 Lts', ltsCaja: '6,000' },
+            { desc: '24 LATAS',                lts: '0,355 Lts', ltsCaja: '8,520' },
+            {}, {}
+        ]},
+        { marca: 'POLAR<br>LIGHT', sub: '3,5 %<br>VOL (°GL)', key: 'polarlight', filas: [
+            { desc: '36 BOTELLAS RETORNABLES', lts: '0,222 Lts', ltsCaja: '7,992' },
+            { desc: '24 LATAS',                lts: '0,250 Lts', ltsCaja: '6,000' },
+            { desc: '24 LATAS',                lts: '0,355 Lts', ltsCaja: '8,520' },
+            {}, {}
+        ]},
+        { marca: 'SOLERA<br>LIGHT', sub: '4,3 %<br>VOL (°GL)', key: 'soleralight', filas: [
+            { desc: '36 BOTELLAS RETORNABLES', lts: '0,222 Lts', ltsCaja: '7,992' },
+            { desc: '12 LATAS',                lts: '0,250 Lts', ltsCaja: '3,000' },
+            {}, {}
+        ]},
+        { marca: 'SOLERA', sub: '6 %<br>VOL (°GL)', key: 'solera', filas: [
+            { desc: '36 BOTELLAS RETORNABLES', lts: '0,222 Lts', ltsCaja: '7,992' },
+            { desc: '12 LATAS',                lts: '0,250 Lts', ltsCaja: '3,000' },
+            {}, {}
+        ]},
+        { marca: 'SANGRIA<br>CAROREÑA', sub: '9,5% Vol. (°G.L.)', key: 'sangria', filas: [
+            { desc: '6 PET',                          lts: '1,750 Lts', ltsCaja: '10,500' },
+            { desc: '36 BOTELLAS RET (TINTO VERANO)', lts: '0,222 Lts', ltsCaja: '7,992' },
+            { desc: '12 LATAS',                       lts: '0,250 Lts', ltsCaja: '3,000' },
+            {}, {}
+        ]},
+        { marca: 'OTROS<br>PRODUCTOS', sub: '', key: 'otros', filas: [
+            {}, {}, {}, {}, {}, {}, {}, {}
+        ]}
+    ];
+
+    function _nrm(s) {
+        return (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    }
+
+    function matchSeccionCerveceria(texto) {
+        const s = _nrm(texto);
+        if (s.includes('pilsen')) return 0;
+        if (s.includes('solera') && s.includes('light')) return 2;
+        if (s.includes('solera')) return 3;
+        if (s.includes('light')) return 1;
+        if (s.includes('sangria') || s.includes('carore')) return 4;
+        return 5; // OTROS PRODUCTOS
+    }
+
+    function matchFilaSeccion(sec, texto) {
+        const t = _nrm(texto);
+        const esRet  = /\bret/.test(t) || t.includes('retornable') || t.includes('botella');
+        const esLata = t.includes('lata') || /\blta\b/.test(t);
+        const esPet  = t.includes('pet');
+        const c330   = /330|1\/3/.test(t);
+        const c355   = /355/.test(t);
+        const cTinto = t.includes('tinto');
+        let best = -1;
+        sec.filas.forEach((f, i) => {
+            if (!f.desc) return;
+            const fd = _nrm(f.desc);
+            if (esPet && fd.includes('pet')) {
+                if (best < 0) best = i;
+            } else if (esRet && (fd.includes('ret') || fd.includes('botella'))) {
+                if (cTinto && fd.includes('tinto')) best = i;
+                else if (c330 && (f.lts || '').includes('330')) best = i;
+                else if (!c330 && !cTinto && !fd.includes('tinto') && (f.lts || '').includes('222')) best = i;
+                else if (best < 0 && !fd.includes('tinto')) best = i;
+            } else if (esLata && fd.includes('lata')) {
+                if (c355 && (f.lts || '').includes('355')) best = i;
+                else if (!c355 && (f.lts || '').includes('250')) best = i;
+                else if (best < 0) best = i;
+            }
+        });
+        return best;
+    }
+
+    function llenarFormatoCerveceria(lineas) {
+        const fmt = FORMATO_CERVECERIA.map(sec => ({
+            marca: sec.marca, sub: sec.sub, key: sec.key,
+            filas: sec.filas.map(f => ({
+                desc: f.desc || '', lts: f.lts || '', ltsCaja: f.ltsCaja || '',
+                cantidad: 0, unidad: '', precioBs: 0, montoBs: 0, descOverride: ''
+            }))
+        }));
+        const otros = fmt[fmt.length - 1];
+
+        lineas.forEach(l => {
+            const texto = [l.marca, l.segmento, l.presentacion, l.descripcion].filter(Boolean).join(' ');
+            const secIdx = matchSeccionCerveceria(texto);
+            const sec = fmt[secIdx];
+
+            let target = null;
+            if (secIdx < fmt.length - 1) {
+                const fIdx = matchFilaSeccion(sec, texto);
+                if (fIdx >= 0) {
+                    const f = sec.filas[fIdx];
+                    if (f.cantidad === 0 || f.unidad === l.unidadMedida) target = f;
+                }
+            }
+            if (!target) {
+                target = sec.filas.find(f => !f.desc && f.cantidad === 0);
+                if (target) target.descOverride = (l.descripcion || '').toUpperCase();
+            }
+            if (!target) {
+                target = otros.filas.find(f => f.cantidad === 0 && !f.desc);
+                if (!target) {
+                    otros.filas.push({ desc: '', lts: '', ltsCaja: '', cantidad: 0, unidad: '', precioBs: 0, montoBs: 0, descOverride: '' });
+                    target = otros.filas[otros.filas.length - 1];
+                }
+                target.descOverride = (l.descripcion || '').toUpperCase();
+            }
+            target.cantidad += l.cantidad;
+            target.unidad    = l.unidadMedida;
+            target.precioBs  = l.precioUnitarioBs;
+            target.montoBs  += l.totalBs;
+        });
+        return fmt;
     }
 
     // ─────────────────────────────────────────────
@@ -1240,5 +1491,364 @@
   </div><!-- /z-index:1 -->
 </div>`;
     }
+
+    // ─────────────────────────────────────────────
+    // PLANTILLA HTML — HOJA DE CERVECERÍA (formato fijo preimpreso)
+    // ─────────────────────────────────────────────
+    function buildFacturaCerveceriaHtml({
+        cliente, fechaISO, tasaBs, lineasPlanas,
+        subtotalBase, subtotalExento, ivaTotal,
+        totalOp, retencionUSD, totalPagar,
+        numFactura, numControl,
+        esMensual, nombreMes
+    }) {
+        const fBs  = n => (isFinite(n) ? n : 0)
+            .toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        const fUSD = n => (isFinite(n) ? n : 0).toFixed(2);
+        const [year, month, day] = (fechaISO || '2026-01-01').split('-');
+
+        const B  = 'border:1px solid #333;';
+        const th = `${B}padding:3px 3px;font-size:8px;font-weight:700;text-align:center;background:#e8e8e8;`;
+
+        const fmt = llenarFormatoCerveceria(lineasPlanas);
+
+        // ── Filas del formato fijo ──────────────────────────────────────────
+        let rows = '';
+        fmt.forEach(sec => {
+            sec.filas.forEach((f, i) => {
+                rows += '<tr>';
+                if (i === 0) {
+                    rows += `<td rowspan="${sec.filas.length}"
+                        style="${B}padding:4px 3px;vertical-align:middle;text-align:center;
+                                font-family:Arial,sans-serif;">
+                        <div style="font-weight:900;font-size:11px;line-height:1.25;letter-spacing:0.3px;">${sec.marca}</div>
+                        ${sec.sub ? `<div style="font-weight:700;font-size:8px;margin-top:6px;line-height:1.3;">${sec.sub}</div>` : ''}
+                    </td>`;
+                }
+                const desc = f.descOverride || f.desc;
+                const cantStr = f.cantidad > 0
+                    ? f.cantidad.toLocaleString('es-VE') + (f.unidad && f.unidad !== 'Cj' ? '&nbsp;' + f.unidad : '')
+                    : '';
+                rows += `
+                    <td style="${B}padding:3px 5px;font-size:9.5px;font-weight:700;text-align:center;text-transform:uppercase;height:18px;">${desc}</td>
+                    <td style="${B}padding:3px 3px;font-size:9px;text-align:center;white-space:nowrap;font-weight:700;">${f.lts}</td>
+                    <td style="${B}padding:3px 3px;font-size:9px;text-align:center;white-space:nowrap;font-weight:700;">${f.ltsCaja}</td>
+                    <td style="${B}padding:3px 4px;font-size:10px;text-align:center;font-weight:900;">${cantStr}</td>
+                    <td style="${B}padding:3px 6px;font-size:10px;text-align:right;">${f.precioBs > 0 ? fBs(f.precioBs) : ''}</td>
+                    <td style="${B}padding:3px 6px;font-size:10px;text-align:right;font-weight:700;">${f.montoBs > 0 ? fBs(f.montoBs) : ''}</td>
+                `;
+                rows += '</tr>';
+            });
+        });
+
+        // ── Conversiones a Bs ───────────────────────────────────────────────
+        const exentoBs     = subtotalExento * tasaBs;
+        const baseBs       = subtotalBase   * tasaBs;
+        const ivaBs        = ivaTotal       * tasaBs;
+        const retBs        = retencionUSD   * tasaBs;
+        const subTotalBs   = (subtotalBase + subtotalExento) * tasaBs;
+        const totalVentaBs = totalOp        * tasaBs;
+        const totalPagarBs = totalPagar     * tasaBs;
+
+        const filaRetencion = cliente.aplicaRetencion ? `
+            <tr>
+                <td style="${B}font-size:8px;padding:3px 6px;color:#9b0000;font-weight:700;text-align:right;">RETENCIÓN I.V.A. (75%) &nbsp; Bs.</td>
+                <td style="${B}text-align:right;padding:3px 6px;font-weight:900;font-size:10px;color:#9b0000;">&minus;${fBs(retBs)}</td>
+            </tr>
+            <tr style="background:#e8e8e8;">
+                <td style="border:2px solid #1a1a1a;font-size:9.5px;padding:4px 6px;font-weight:900;text-align:right;letter-spacing:0.5px;">TOTAL A PAGAR &nbsp; Bs.</td>
+                <td style="border:2px solid #1a1a1a;text-align:right;padding:4px 6px;font-weight:900;font-size:12px;">${fBs(totalPagarBs)}</td>
+            </tr>` : '';
+
+        const chkBox = `<span style="display:inline-block;width:11px;height:11px;border:1.5px solid #333;
+                        vertical-align:middle;margin:0 4px 0 8px;"></span>`;
+
+        const mensualBadge = esMensual ? `
+            <div style="text-align:center;font-size:9px;font-weight:900;color:#1a3560;
+                        border:1.5px dashed #1a3560;padding:2px 6px;margin-top:4px;
+                        text-transform:uppercase;letter-spacing:1px;">
+                Consolidado Mensual · ${nombreMes}
+            </div>` : '';
+
+        const depositoCols = () => `
+            <td style="border:1px solid #999;padding:3px;"></td>
+            <td style="border:1px solid #999;padding:3px;"></td>
+            <td style="border:1px solid #999;padding:3px;"></td>
+            <td style="border:1px solid #999;padding:3px;"></td>`;
+
+        return `
+<div style="font-family:'Courier New',Courier,monospace;font-size:10px;color:#111;
+            background:#fff;padding:14px 16px;position:relative;
+            min-width:960px;box-sizing:border-box;">
+
+  <!-- MARCA DE AGUA -->
+  <div style="position:absolute;inset:0;display:flex;align-items:center;
+              justify-content:center;pointer-events:none;overflow:hidden;z-index:0;">
+    <span style="font-size:120px;font-weight:900;font-family:Arial,sans-serif;
+                 color:rgba(0,0,0,0.028);transform:rotate(-38deg);
+                 letter-spacing:12px;white-space:nowrap;">SIMULADOR</span>
+  </div>
+
+  <div style="position:relative;z-index:1;">
+
+  <!-- ══ BANNER ══ -->
+  <div style="border:2px solid #1a1a1a;border-bottom:0;text-align:center;
+              font-size:12px;font-weight:900;font-family:Arial,sans-serif;
+              letter-spacing:1px;padding:4px 0;background:#fff;">
+    ESTA FACTURA VA SIN TACHADURA NI ENMENDADURA
+  </div>
+
+  <!-- ══ EMPRESA DESPACHADORA ══ -->
+  <table style="width:100%;border-collapse:collapse;border:2px solid #1a1a1a;border-bottom:0;">
+    <tr>
+      <td style="${B}padding:3px 6px;width:22%;vertical-align:top;">
+        <div style="font-size:7px;font-weight:700;">EMPRESA DESPACHADORA:</div>
+        <div style="font-size:9.5px;font-weight:900;text-align:center;margin-top:2px;">CERVECERÍA POLAR C.A.</div>
+      </td>
+      <td style="${B}padding:3px 6px;width:16%;vertical-align:top;">
+        <div style="font-size:7px;font-weight:700;">TERRITORIO COMERCIAL:</div>
+        <div style="font-size:9.5px;font-weight:900;text-align:center;margin-top:2px;">LOS ANDES</div>
+      </td>
+      <td style="${B}padding:3px 6px;width:14%;vertical-align:top;">
+        <div style="font-size:7px;font-weight:700;">AGENCIA:</div>
+        <div style="font-size:9.5px;font-weight:900;text-align:center;margin-top:2px;">SAN CRISTÓBAL</div>
+      </td>
+      <td style="${B}padding:3px 6px;width:12%;vertical-align:top;">
+        <div style="font-size:7px;font-weight:700;">REGISTRO N°</div>
+        <div style="font-size:9.5px;font-weight:900;text-align:center;margin-top:2px;">My 679</div>
+      </td>
+      <td style="${B}padding:3px 6px;width:36%;vertical-align:middle;">
+        <div style="font-size:6.3px;line-height:1.35;font-weight:700;text-align:justify;">
+          PRODUCTO CONSUMIBLE, SE GARANTIZA QUE EL PRODUCTO ES APTO PARA EL CONSUMO HUMANO
+          Y EL SANEAMIENTO QUE CORRESPONDA DE CONFORMIDAD CON LA LEY.
+          (RESOLUCIÓN 071 DEL MINISTERIO DE PRODUCCIÓN Y COMERCIO)
+        </div>
+      </td>
+    </tr>
+    <tr>
+      <td style="${B}padding:3px 6px;" colspan="2">
+        <div style="font-size:8px;font-weight:900;text-align:center;letter-spacing:1px;">CERVEZA Y MALTA</div>
+      </td>
+      <td style="${B}padding:3px 6px;">
+        <div style="font-size:7px;font-weight:700;text-align:center;">ORIGEN:</div>
+        <div style="font-size:8.5px;font-weight:900;text-align:center;">FERMENTACIÓN</div>
+      </td>
+      <td style="${B}padding:3px 6px;" colspan="2">
+        <div style="font-size:8px;font-weight:900;text-align:center;">FABRICADO POR: CERVECERÍA POLAR, C.A.</div>
+      </td>
+    </tr>
+  </table>
+
+  <!-- ══ CABECERA: EMPRESA + RIF/FECHA + CONTROL ══ -->
+  <table style="width:100%;border-collapse:collapse;border:2px solid #1a1a1a;border-bottom:0;">
+    <tr>
+      <td style="${B}padding:8px 12px;width:52%;vertical-align:top;">
+        <div style="font-size:17px;font-weight:900;font-family:Arial,sans-serif;letter-spacing:0.3px;">
+          Distribuidora Castillo Yañez, C.A.
+        </div>
+        <div style="font-size:7.5px;line-height:1.5;margin-top:4px;color:#222;">
+          Domicilio Fiscal: Calle Urbanización Santa Inés Local No. B-PB-3<br>
+          Conjunto Residencial El Alcázar Etapa A Torre B<br>
+          San Cristóbal Estado Táchira Zona Postal 5001
+        </div>
+        ${mensualBadge}
+      </td>
+      <td style="${B}padding:5px;width:24%;vertical-align:top;">
+        <div style="text-align:center;font-weight:900;font-size:11px;border:1.5px solid #333;padding:3px 0;margin-bottom:4px;">
+          RIF: J-40214875-5
+        </div>
+        <div style="text-align:center;font-size:7px;font-weight:700;background:#d8d8d8;padding:2px 0;
+                    border:1px solid #666;border-bottom:0;letter-spacing:1.5px;">
+          FECHA DE EXPEDICIÓN
+        </div>
+        <table style="width:100%;border-collapse:collapse;border:1px solid #666;">
+          <tr>
+            <th style="border:1px solid #666;text-align:center;font-size:7px;padding:2px;background:#ebebeb;width:33%;">DÍA</th>
+            <th style="border:1px solid #666;text-align:center;font-size:7px;padding:2px;background:#ebebeb;width:34%;">MES</th>
+            <th style="border:1px solid #666;text-align:center;font-size:7px;padding:2px;background:#ebebeb;width:33%;">AÑO</th>
+          </tr>
+          <tr>
+            <td style="border:1px solid #666;text-align:center;font-size:17px;font-weight:900;padding:2px;">${day}</td>
+            <td style="border:1px solid #666;text-align:center;font-size:17px;font-weight:900;padding:2px;">${month}</td>
+            <td style="border:1px solid #666;text-align:center;font-size:17px;font-weight:900;padding:2px;">${year}</td>
+          </tr>
+        </table>
+      </td>
+      <td style="${B}padding:6px;width:24%;vertical-align:top;text-align:center;">
+        <div style="font-size:10px;font-weight:900;">CONTROL N° <span style="color:#c00000;font-size:12px;letter-spacing:1px;">${numControl}</span></div>
+        <div style="border-top:1px solid #999;margin:6px 0;"></div>
+        <div style="font-size:11px;font-weight:900;letter-spacing:0.5px;">FACTURA GUÍA</div>
+        <div style="font-size:15px;font-weight:900;color:#c00000;letter-spacing:2px;margin-top:2px;">N° ${numFactura}</div>
+        <div style="border-top:1px solid #999;margin:6px 0;"></div>
+        <div style="font-size:7px;font-weight:700;text-align:left;">PROVIENE DE LA GUÍA N°: <span style="border-bottom:1px solid #999;display:inline-block;min-width:60px;"></span></div>
+      </td>
+    </tr>
+  </table>
+
+  <!-- ══ REMESA + CLIENTE ══ -->
+  <table style="width:100%;border-collapse:collapse;border:2px solid #1a1a1a;border-bottom:0;">
+    <tr>
+      <td style="${B}padding:3px 8px;font-size:7px;font-weight:700;" colspan="2">
+        LA REMESA DE PRODUCTOS QUE A CONTINUACIÓN SE DETALLA, HA SIDO EXPEDIDA EN ESTA FECHA, CON DESTINO AL ESTABLECIMIENTO MERCANTIL:
+      </td>
+    </tr>
+    <tr>
+      <td style="${B}padding:4px 8px;width:65%;">
+        <span style="font-size:7px;color:#555;text-transform:uppercase;">Nombre y Apellido o Razón Social:&nbsp;</span>
+        <span style="font-size:12px;font-weight:900;">${cliente.nombreComercial}</span>
+      </td>
+      <td style="${B}padding:4px 8px;width:35%;">
+        <span style="font-size:7px;color:#555;text-transform:uppercase;">N° RIF, Cédula o Pasaporte:&nbsp;</span>
+        <span style="font-size:11px;font-weight:900;">${cliente.rif || 'N/A'}</span>
+      </td>
+    </tr>
+    <tr>
+      <td style="${B}padding:4px 8px;" colspan="2">
+        <span style="font-size:7px;color:#555;text-transform:uppercase;">Domicilio Fiscal:&nbsp;</span>
+        <span style="font-size:10px;font-weight:700;">${cliente.sector || cliente.sectorNombre || cliente.domicilio || 'N/A'}</span>
+        ${cliente.telefono ? `<span style="font-size:8.5px;color:#555;"> &nbsp;|&nbsp; Tel: ${cliente.telefono}</span>` : ''}
+      </td>
+    </tr>
+  </table>
+
+  <!-- ══ TABLA FIJA DE PRODUCTOS ══ -->
+  <table style="width:100%;border-collapse:collapse;border:2px solid #1a1a1a;border-bottom:0;">
+    <thead>
+      <tr>
+        <th style="${th}width:11%;"></th>
+        <th style="${th}width:30%;">DESCRIPCIÓN</th>
+        <th style="${th}width:9%;"></th>
+        <th style="${th}width:8%;">LITROS</th>
+        <th style="${th}width:11%;">CANT.&nbsp;EN&nbsp;CAJAS</th>
+        <th style="${th}width:15%;">PRECIO&nbsp;UNITARIO</th>
+        <th style="${th}width:16%;">MONTO&nbsp;Bs.</th>
+      </tr>
+    </thead>
+    <tbody>${rows}</tbody>
+  </table>
+
+  <!-- ══ PIE: OBSERVACIONES / FORMA DE PAGO | TOTALES ══ -->
+  <table style="width:100%;border-collapse:collapse;border:2px solid #1a1a1a;border-bottom:0;">
+    <tr>
+      <td style="${B}padding:0;width:52%;vertical-align:top;">
+        <table style="width:100%;border-collapse:collapse;height:100%;">
+          <tr>
+            <td style="${B}padding:4px 8px;font-size:7px;line-height:1.4;">
+              <strong>OBSERVACIONES</strong> (EN CASO DE VENTA A PERSONA NATURAL ESCRIBA "NO DA DERECHO A CRÉDITO FISCAL"):<br>
+              <span style="border-bottom:1px solid #999;display:inline-block;width:98%;margin-top:10px;"></span>
+              <span style="border-bottom:1px solid #999;display:inline-block;width:98%;margin-top:12px;"></span>
+            </td>
+          </tr>
+          <tr>
+            <td style="${B}padding:4px 8px;font-size:8px;">
+              <strong>FORMA DE PAGO:</strong>
+              ${chkBox}EFECTIVO ${chkBox}CHEQUE ${chkBox}OTRO <span style="border-bottom:1px solid #999;display:inline-block;min-width:80px;"></span>
+            </td>
+          </tr>
+          <tr>
+            <td style="${B}padding:4px 8px;font-size:8px;">
+              NOMBRE DEL CONDUCTOR: <span style="border-bottom:1px solid #999;display:inline-block;min-width:180px;"></span>
+            </td>
+          </tr>
+          <tr>
+            <td style="${B}padding:4px 8px;font-size:8px;">
+              TIPO DE VEHÍCULO: <span style="border-bottom:1px solid #999;display:inline-block;min-width:100px;"></span>
+              &nbsp;&nbsp;PLACAS: <span style="border-bottom:1px solid #999;display:inline-block;min-width:80px;"></span>
+            </td>
+          </tr>
+          <tr>
+            <td style="${B}padding:4px 8px;vertical-align:bottom;">
+              <div style="display:flex;gap:16px;font-size:7.5px;border-top:1px dashed #bbb;padding-top:6px;">
+                <div><span style="color:#555;">Tasa BCV aplicada:</span> <strong style="color:#1a3560;font-size:9.5px;">Bs. ${fBs(tasaBs)}</strong></div>
+                <div><span style="color:#555;">Ref. USD:</span> <strong style="color:#1a3560;font-size:9.5px;">$${fUSD(totalPagar)}</strong></div>
+              </div>
+            </td>
+          </tr>
+        </table>
+      </td>
+      <td style="${B}padding:0;width:48%;vertical-align:top;">
+        <table style="width:100%;border-collapse:collapse;">
+          <tr>
+            <td style="${B}font-size:8px;padding:3px 6px;text-align:right;width:70%;">SUB-TOTAL &nbsp; Bs.</td>
+            <td style="${B}text-align:right;padding:3px 6px;font-weight:700;font-size:10px;">${fBs(subTotalBs)}</td>
+          </tr>
+          <tr>
+            <td style="${B}font-size:8px;padding:3px 6px;color:#555;text-align:right;">ADICIONES AL PRECIO &nbsp; Bs.</td>
+            <td style="${B}padding:3px 6px;"></td>
+          </tr>
+          <tr>
+            <td style="${B}font-size:8px;padding:3px 6px;color:#555;text-align:right;">DESCUENTOS, BONIFICACIONES, ANULACIONES &nbsp; Bs.</td>
+            <td style="${B}padding:3px 6px;"></td>
+          </tr>
+          <tr>
+            <td style="${B}font-size:8px;padding:3px 6px;text-align:right;">SUB-TOTAL &nbsp; Bs.</td>
+            <td style="${B}text-align:right;padding:3px 6px;font-weight:700;font-size:10px;">${fBs(subTotalBs)}</td>
+          </tr>
+          <tr>
+            <td style="${B}font-size:8px;padding:3px 6px;text-align:right;">MONTO TOTAL EXENTO, EXONERADO O NO GRAVADO &nbsp; Bs.</td>
+            <td style="${B}text-align:right;padding:3px 6px;font-weight:700;font-size:10px;">${fBs(exentoBs)}</td>
+          </tr>
+          <tr>
+            <td style="${B}font-size:8px;padding:3px 6px;text-align:right;">MONTO TOTAL DE LA BASE IMPONIBLE DEL I.V.A. SEGÚN ALÍCUOTA <strong>16</strong>% &nbsp; Bs.</td>
+            <td style="${B}text-align:right;padding:3px 6px;font-weight:700;font-size:10px;">${fBs(baseBs)}</td>
+          </tr>
+          <tr>
+            <td style="${B}font-size:8px;padding:3px 6px;text-align:right;">MONTO DEL I.V.A. SEGÚN ALÍCUOTA <strong>16</strong>% &nbsp; Bs.</td>
+            <td style="${B}text-align:right;padding:3px 6px;font-weight:700;font-size:10px;">${fBs(ivaBs)}</td>
+          </tr>
+          <tr style="${cliente.aplicaRetencion ? '' : 'background:#e8e8e8;'}">
+            <td style="border:2px solid #1a1a1a;font-size:9.5px;padding:4px 6px;font-weight:900;text-align:right;letter-spacing:0.5px;">VALOR TOTAL DE LA VENTA &nbsp; Bs.</td>
+            <td style="border:2px solid #1a1a1a;text-align:right;padding:4px 6px;font-weight:900;font-size:12px;">${fBs(totalVentaBs)}</td>
+          </tr>
+          ${filaRetencion}
+        </table>
+      </td>
+    </tr>
+  </table>
+
+  <!-- ══ DEPÓSITO EN GARANTÍA POR ENVASES RETORNABLES ══ -->
+  <table style="width:100%;border-collapse:collapse;border:2px solid #1a1a1a;">
+    <tr>
+      <td colspan="13" style="${B}padding:3px;text-align:center;font-size:8px;font-weight:900;letter-spacing:0.5px;background:#e8e8e8;">
+        DEPÓSITO EN GARANTÍA A COBRAR O A DESCONTAR POR ENVASES RETORNABLES
+      </td>
+    </tr>
+    <tr>
+      <td style="${B}padding:2px;font-size:6.5px;font-weight:900;text-align:center;" rowspan="2">BASE</td>
+      <td colspan="4" style="border:1px solid #999;padding:2px;text-align:center;font-size:7px;font-weight:900;background:#f0f0f0;">CASILLEROS CON BOTELLAS</td>
+      <td colspan="4" style="border:1px solid #999;padding:2px;text-align:center;font-size:7px;font-weight:900;background:#f0f0f0;">CASILLEROS SIN BOTELLAS</td>
+      <td colspan="4" style="border:1px solid #999;padding:2px;text-align:center;font-size:7px;font-weight:900;background:#f0f0f0;">BOTELLAS SUELTAS O BARRILES</td>
+    </tr>
+    <tr>
+      ${['ENTREGADOS','DEVUELTOS','DIFERENCIA','TOTAL Bs.','ENTREGADOS','DEVUELTOS','DIFERENCIA','TOTAL Bs.','ENTREGADOS','DEVUELTOS','DIFERENCIA','TOTAL Bs.']
+        .map(h => `<th style="border:1px solid #999;padding:2px;font-size:6px;background:#f7f7f7;">${h}</th>`).join('')}
+    </tr>
+    <tr>
+      <td style="${B}padding:4px;height:16px;"></td>
+      ${depositoCols()}${depositoCols()}${depositoCols()}
+    </tr>
+    <tr>
+      <td style="${B}padding:4px;height:16px;"></td>
+      ${depositoCols()}${depositoCols()}${depositoCols()}
+    </tr>
+  </table>
+
+  <!-- Imprenta -->
+  <div style="font-size:7px;color:#777;margin-top:6px;text-align:center;
+              border-top:1px solid #ddd;padding-top:4px;line-height:1.5;">
+    LITOANDES, S.A. Av. Carabobo Esq. Carrera 20 · Sector La Romera · Tlf: (0276) 356.19.55
+    San Cristóbal, Edo. Táchira &nbsp;/&nbsp; RIF: J-30406057-2
+    &nbsp;·&nbsp; N° PROVIDENCIA SENIAT 05/00579 de 14/03/2008 &nbsp;·&nbsp; Reg. Los Andes
+  </div>
+
+  <div style="text-align:center;margin-top:4px;font-size:7.5px;font-weight:700;
+              color:#cc0000;letter-spacing:1px;">
+    *** DOCUMENTO SIMULADO SIN VALIDEZ FISCAL — DIST. CASTILLO YAÑEZ APP ***
+  </div>
+
+  </div>
+</div>`;
+    }
+
 
 })();
