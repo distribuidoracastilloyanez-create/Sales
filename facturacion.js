@@ -20,6 +20,8 @@
     let _ventaParaFacturar   = null;
     let _tipoSimulacion      = null; // 'individual' | 'mensual'
     let _tipoFacturacion     = null; // 'cerveceria' | 'alimentos'
+    let _esVentaSimulada     = false;
+    let _simuladaItems       = {}; // { productoId: { cj, paq, und } }
 
     // ─────────────────────────────────────────────
     // INIT
@@ -75,8 +77,22 @@
                         <button id="btnVolverFacturacion" class="w-full sm:w-auto px-4 py-2 bg-gray-500 text-white font-bold rounded shadow hover:bg-gray-600 transition">Volver al Menú</button>
                     </div>
 
+                    <!-- Simular Venta (armar venta desde cero) -->
+                    <div class="mb-4">
+                        <button id="btnSimularVenta"
+                            class="w-full px-4 py-3 bg-purple-600 text-white font-bold rounded-lg shadow hover:bg-purple-700 transition flex items-center justify-center gap-2 text-sm">
+                            🧪 Simular Venta <span class="text-xs font-normal opacity-80">(armar una venta de prueba)</span>
+                        </button>
+                    </div>
+
+                    <div id="facSepOr" class="flex items-center gap-3 mb-4">
+                        <div class="flex-1 h-px bg-gray-300"></div>
+                        <span class="text-xs text-gray-400 font-bold uppercase">o factura una venta real</span>
+                        <div class="flex-1 h-px bg-gray-300"></div>
+                    </div>
+
                     <!-- Paso 1: Cliente -->
-                    <div class="p-4 bg-gray-50 rounded-lg border border-gray-200 shadow-inner mb-4">
+                    <div id="facPanelCliente" class="p-4 bg-gray-50 rounded-lg border border-gray-200 shadow-inner mb-4">
                         <label class="block text-xs font-bold text-gray-700 mb-1 uppercase tracking-wider">1. Seleccionar Cliente:</label>
                         <div class="relative">
                             <input type="text" id="facClientSearch" placeholder="Escriba el nombre o RIF..."
@@ -182,6 +198,7 @@
 
         // ── Eventos ──────────────────────────────────────
         document.getElementById('btnVolverFacturacion').addEventListener('click', _showMainMenu);
+        document.getElementById('btnSimularVenta').addEventListener('click', abrirSimuladorVenta);
 
         let _facSearchDebounce = null;
         document.getElementById('facClientSearch').addEventListener('input', (e) => {
@@ -231,6 +248,17 @@
         _clienteSeleccionado = null;
         _ventaParaFacturar   = null;
         _tipoSimulacion      = null;
+        _esVentaSimulada     = false;
+        _simuladaItems       = {};
+        // Restaurar botón y paneles de venta real
+        const bSim = document.getElementById('btnSimularVenta');
+        if (bSim) {
+            bSim.innerHTML = '🧪 Simular Venta <span class="text-xs font-normal opacity-80">(armar una venta de prueba)</span>';
+            bSim.classList.remove('bg-purple-800');
+            bSim.classList.add('bg-purple-600', 'hover:bg-purple-700');
+        }
+        document.getElementById('facPanelCliente')?.classList.remove('hidden');
+        document.getElementById('facSepOr')?.classList.remove('hidden');
         document.getElementById('facClientSelected').classList.add('hidden');
         document.getElementById('facClientSearch').classList.remove('hidden');
         document.getElementById('facClientSearch').value = '';
@@ -381,11 +409,17 @@
             ? `MENSUAL · ${_ventaParaFacturar.nombreMes.toUpperCase()}`
             : 'VENTA INDIVIDUAL');
 
-        // Incluir TODOS los productos, solo ordenar igual que el inventario.
-        // El tipo de facturación cambia el formato de la hoja, no qué productos entran.
-        let productosDetalle = ordenarComoInventario((_ventaParaFacturar.productos || []).slice());
+        // Ordenar como inventario. Si es ALIMENTOS, los productos del rubro
+        // CERVECERIA Y VINOS se omiten de la factura y se listan aparte.
+        let todos = ordenarComoInventario((_ventaParaFacturar.productos || []).slice());
+        let productosOmitidos = [];
+        let productosDetalle = todos;
+        if (_tipoFacturacion === 'alimentos') {
+            productosDetalle   = todos.filter(p => !esProductoCerveceria(p));
+            productosOmitidos  = todos.filter(p =>  esProductoCerveceria(p));
+        }
 
-        if (!productosDetalle.length) {
+        if (!productosDetalle.length && !productosOmitidos.length) {
             body.innerHTML = '<p class="p-4 text-center text-xs text-amber-600 font-semibold">⚠️ La venta seleccionada no contiene productos.</p>';
             panel.classList.remove('hidden');
             return;
@@ -442,7 +476,22 @@
                         <td class="px-3 py-2 text-sm font-black text-right">$${totalGeneral.toFixed(2)}</td>
                     </tr>
                 </tfoot>
-            </table>`;
+            </table>
+            ${productosOmitidos.length ? `
+            <div class="border-t-2 border-amber-300 bg-amber-50 px-3 py-3">
+                <p class="text-[11px] font-black text-amber-800 uppercase tracking-wider mb-2 flex items-center gap-1">
+                    ⚠️ Se omitirán al generar (Cervecería y Vinos) — ${productosOmitidos.length}
+                </p>
+                <ul class="space-y-1">
+                    ${productosOmitidos.map(p => {
+                        const d = [p.marca, p.segmento, p.presentacion].filter(s => s && !['S/M','S/S'].includes(s)).join(' · ') || 'Producto';
+                        return `<li class="text-xs text-amber-700 flex items-center gap-1.5">
+                            <span class="text-amber-400">✕</span> <span class="line-through">${d}</span>
+                        </li>`;
+                    }).join('')}
+                </ul>
+                <p class="text-[10px] text-amber-600 mt-2 italic">Estos productos son de Cervecería; use el tipo de facturación "Cervecería" para incluirlos.</p>
+            </div>` : ''}`;
 
         panel.classList.remove('hidden');
     }
@@ -450,6 +499,193 @@
     // ─────────────────────────────────────────────
     // CARGA DE DATOS INICIALES
     // ─────────────────────────────────────────────
+
+    // ═════════════════════════════════════════════
+    // SIMULADOR DE VENTA — armar una venta puntual desde el catálogo
+    // ═════════════════════════════════════════════
+    function abrirSimuladorVenta() {
+        _simuladaItems = {};
+        const productos = ordenarComoInventario(
+            Object.entries(_productosCache).map(([id, d]) => ({ id, ...d }))
+                .filter(p => p.presentacion || p.marca)
+        );
+
+        if (!productos.length) {
+            _showModal('Aviso', 'El catálogo de productos aún no ha cargado. Intente de nuevo en unos segundos.');
+            return;
+        }
+
+        const rubros = [...new Set(productos.map(p => p.rubro).filter(Boolean))].sort();
+
+        document.getElementById('facSimOverlay')?.remove();
+        const overlay = document.createElement('div');
+        overlay.id = 'facSimOverlay';
+        overlay.className = 'fixed inset-0 z-[9998] bg-black/50 flex items-end sm:items-center justify-center p-0 sm:p-4';
+        overlay.innerHTML = `
+            <div class="bg-white w-full sm:max-w-2xl h-[92vh] sm:h-[85vh] rounded-t-2xl sm:rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+                <div class="bg-purple-600 text-white px-4 py-3 flex items-center justify-between shrink-0">
+                    <h3 class="font-bold text-base flex items-center gap-2">🧪 Simular Venta</h3>
+                    <button id="simClose" class="text-white text-2xl leading-none font-black px-2 hover:opacity-70">&times;</button>
+                </div>
+
+                <div class="p-3 border-b border-gray-200 shrink-0 flex gap-2">
+                    <div class="relative flex-1 min-w-0">
+                        <input type="text" id="simSearch" placeholder="Buscar producto..."
+                            class="w-full pl-8 pr-2 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-400 outline-none">
+                        <svg class="absolute left-2 top-2.5 h-4 w-4 text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M17 11A6 6 0 115 11a6 6 0 0112 0z"/></svg>
+                    </div>
+                    <select id="simRubro" class="shrink-0 px-2 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-purple-400 outline-none max-w-[130px]">
+                        <option value="">Todos</option>
+                        ${rubros.map(r => `<option value="${r}">${r}</option>`).join('')}
+                    </select>
+                </div>
+
+                <div id="simList" class="flex-1 overflow-y-auto p-2 space-y-1.5"></div>
+
+                <div class="border-t border-gray-200 p-3 shrink-0 bg-gray-50">
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="text-xs font-bold text-gray-500 uppercase">Productos en la venta:</span>
+                        <span id="simCount" class="text-sm font-black text-purple-700">0</span>
+                    </div>
+                    <button id="simConfirm"
+                        class="w-full px-4 py-2.5 bg-green-600 text-white font-bold rounded-lg shadow hover:bg-green-700 transition disabled:bg-gray-300 disabled:cursor-not-allowed text-sm"
+                        disabled>
+                        Continuar a Facturación →
+                    </button>
+                </div>
+            </div>`;
+        document.body.appendChild(overlay);
+
+        let currentSearch = '', currentRubro = '';
+
+        const renderList = () => {
+            const list = document.getElementById('simList');
+            let filtered = productos;
+            if (currentRubro)  filtered = filtered.filter(p => p.rubro === currentRubro);
+            if (currentSearch) filtered = filtered.filter(p =>
+                (p.presentacion || '').toLowerCase().includes(currentSearch) ||
+                (p.marca || '').toLowerCase().includes(currentSearch) ||
+                (p.segmento || '').toLowerCase().includes(currentSearch));
+
+            if (!filtered.length) {
+                list.innerHTML = '<p class="text-center text-gray-400 py-6 text-sm">No se encontraron productos.</p>';
+                return;
+            }
+
+            list.innerHTML = filtered.map(p => {
+                const it = _simuladaItems[p.id] || { cj: 0, paq: 0, und: 0 };
+                const vp = p.ventaPor || { und: true };
+                const desc = [p.marca, p.segmento, p.presentacion].filter(s => s && !['S/M','S/S'].includes(s)).join(' · ') || 'Producto';
+                const activo = (it.cj + it.paq + it.und) > 0;
+
+                const inputQty = (tipo, label, precio) => {
+                    if (!precio || precio <= 0) return '';
+                    return `
+                        <div class="flex items-center gap-1">
+                            <span class="text-[10px] text-gray-400 font-bold w-5">${label}</span>
+                            <input type="number" min="0" step="1" inputmode="numeric"
+                                data-id="${p.id}" data-tipo="${tipo}" value="${it[tipo] || 0}"
+                                class="sim-qty w-12 text-center text-sm border border-gray-300 rounded py-0.5 focus:ring-2 focus:ring-purple-400 outline-none">
+                            <span class="text-[9px] text-gray-400">$${parseFloat(precio).toFixed(2)}</span>
+                        </div>`;
+                };
+
+                const controls = [];
+                if (vp.cj)  controls.push(inputQty('cj',  'Cj', p.precios?.cj));
+                if (vp.paq) controls.push(inputQty('paq', 'Pq', p.precios?.paq));
+                if (vp.und) controls.push(inputQty('und', 'Un', p.precios?.und || p.precioPorUnidad));
+                if (!controls.filter(Boolean).length) {
+                    controls.push(inputQty('und', 'Un', p.precios?.und || p.precioPorUnidad || 0.01));
+                }
+
+                return `
+                <div class="border ${activo ? 'border-purple-300 bg-purple-50' : 'border-gray-200 bg-white'} rounded-lg px-2.5 py-2 transition">
+                    <div class="font-semibold text-gray-800 text-xs leading-tight mb-1.5">${desc}</div>
+                    <div class="flex flex-wrap gap-x-3 gap-y-1.5">${controls.join('')}</div>
+                </div>`;
+            }).join('');
+
+            list.querySelectorAll('.sim-qty').forEach(inp => {
+                inp.addEventListener('wheel', e => e.preventDefault(), { passive: false });
+                inp.addEventListener('input', () => {
+                    const id = inp.dataset.id, tipo = inp.dataset.tipo;
+                    const val = Math.max(0, parseInt(inp.value, 10) || 0);
+                    if (!_simuladaItems[id]) _simuladaItems[id] = { cj: 0, paq: 0, und: 0 };
+                    _simuladaItems[id][tipo] = val;
+                    if (_simuladaItems[id].cj + _simuladaItems[id].paq + _simuladaItems[id].und === 0)
+                        delete _simuladaItems[id];
+                    actualizarContador();
+                });
+            });
+        };
+
+        const actualizarContador = () => {
+            const n = Object.keys(_simuladaItems).length;
+            document.getElementById('simCount').textContent = n;
+            document.getElementById('simConfirm').disabled = n === 0;
+        };
+
+        let _simDebounce = null;
+        document.getElementById('simSearch').addEventListener('input', e => {
+            clearTimeout(_simDebounce);
+            _simDebounce = setTimeout(() => { currentSearch = e.target.value.toLowerCase().trim(); renderList(); }, 180);
+        });
+        document.getElementById('simRubro').addEventListener('change', e => { currentRubro = e.target.value; renderList(); });
+        document.getElementById('simClose').addEventListener('click', () => overlay.remove());
+        document.getElementById('simConfirm').addEventListener('click', () => {
+            construirVentaSimulada();
+            overlay.remove();
+        });
+
+        renderList();
+    }
+
+    function construirVentaSimulada() {
+        const productos = [];
+        let total = 0;
+
+        Object.entries(_simuladaItems).forEach(([id, qty]) => {
+            const cat = _productosCache[id];
+            if (!cat) return;
+            const pCj  = parseFloat(cat.precios?.cj)  || 0;
+            const pPaq = parseFloat(cat.precios?.paq) || 0;
+            const pUnd = parseFloat(cat.precios?.und) || parseFloat(cat.precioPorUnidad) || 0;
+            total += (qty.cj * pCj) + (qty.paq * pPaq) + (qty.und * pUnd);
+
+            productos.push({
+                id,
+                marca:        cat.marca || '',
+                segmento:     cat.segmento || '',
+                presentacion: cat.presentacion || '',
+                rubro:        cat.rubro || '',
+                precios:      { cj: pCj, paq: pPaq, und: pUnd },
+                cantidadVendida: { cj: qty.cj, paq: qty.paq, und: qty.und }
+            });
+        });
+
+        _esVentaSimulada = true;
+        _clienteSeleccionado = {
+            id: '__simulada__',
+            nombreComercial: 'CLIENTE DE PRUEBA (SIMULACIÓN)',
+            rif: 'J-00000000-0',
+            aplicaRetencion: false
+        };
+        _ventaParaFacturar = { productos, total, esMensual: false, esSimulada: true };
+
+        // Ocultar los paneles de cliente y tipo de venta; ir directo a tipo de facturación
+        document.getElementById('facPanelCliente')?.classList.add('hidden');
+        document.getElementById('facSepOr')?.classList.add('hidden');
+        document.getElementById('facPanelTipo')?.classList.add('hidden');
+        document.getElementById('btnSimularVenta').innerHTML =
+            '✅ Venta simulada lista — <span class="text-xs font-normal opacity-80">' +
+            productos.length + ' producto(s) · $' + total.toFixed(2) + '</span>';
+        document.getElementById('btnSimularVenta').classList.remove('bg-purple-600', 'hover:bg-purple-700');
+        document.getElementById('btnSimularVenta').classList.add('bg-purple-800');
+
+        mostrarPanelTipoFact();
+    }
+
+
     async function cargarDatosIniciales() {
         try {
             const [snapClientes, snapTasas, snapProductos] = await Promise.all([
@@ -511,6 +747,7 @@
     }
 
     async function cargarVentasCliente(cliente) {
+        _esVentaSimulada = false; // al elegir cliente real dejamos de estar en modo simulación
         const es  = document.getElementById('facEmptyState');
         document.getElementById('facPanelTipo').classList.add('hidden');
         ocultarEmisionYDetalle();
@@ -646,9 +883,16 @@
             return;
         }
 
-        // Incluir TODOS los productos, ordenados como el inventario.
-        // El tipo de facturación solo cambia el formato de la hoja generada.
+        // Ordenar como inventario. Si es ALIMENTOS, se omiten los productos
+        // del rubro CERVECERIA Y VINOS (van solo en la hoja de Cervecería).
         let productosFactura = ordenarComoInventario((_ventaParaFacturar.productos || []).slice());
+        if (_tipoFacturacion === 'alimentos') {
+            productosFactura = productosFactura.filter(p => !esProductoCerveceria(p));
+            if (!productosFactura.length) {
+                _showModal('Aviso', 'Todos los productos de esta venta son de Cervecería. Use el tipo de facturación "Cervecería".');
+                return;
+            }
+        }
 
         _isGeneratingFactura = true;
         try {
@@ -1880,4 +2124,5 @@
 
 
 })();
+
 
