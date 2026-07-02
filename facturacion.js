@@ -540,7 +540,18 @@
                     </select>
                 </div>
 
-                <div id="simList" class="flex-1 overflow-y-auto p-2 space-y-1.5"></div>
+                <div class="flex-1 overflow-y-auto">
+                    <table class="min-w-full bg-white text-sm">
+                        <thead class="bg-gray-200 sticky top-0 z-10">
+                            <tr class="uppercase text-xs">
+                                <th class="py-2 px-2 text-center w-20">Cant</th>
+                                <th class="py-2 px-2 text-left">Producto</th>
+                                <th class="py-2 px-2 text-left">Precio</th>
+                            </tr>
+                        </thead>
+                        <tbody id="simList" class="text-gray-600"></tbody>
+                    </table>
+                </div>
 
                 <div class="border-t border-gray-200 p-3 shrink-0 bg-gray-50">
                     <div class="flex items-center justify-between mb-2">
@@ -568,42 +579,59 @@
                 (p.segmento || '').toLowerCase().includes(currentSearch));
 
             if (!filtered.length) {
-                list.innerHTML = '<p class="text-center text-gray-400 py-6 text-sm">No se encontraron productos.</p>';
+                list.innerHTML = '<tr><td colspan="3" class="text-center text-gray-400 py-6 text-sm">No se encontraron productos.</td></tr>';
                 return;
             }
 
-            list.innerHTML = filtered.map(p => {
-                const it = _simuladaItems[p.id] || { cj: 0, paq: 0, und: 0 };
-                const vp = p.ventaPor || { und: true };
-                const desc = [p.marca, p.segmento, p.presentacion].filter(s => s && !['S/M','S/S'].includes(s)).join(' · ') || 'Producto';
-                const activo = (it.cj + it.paq + it.und) > 0;
+            // Mismo formato que "Nueva Venta": filas por modo de venta, agrupadas por segmento
+            let html = '';
+            let lastHeaderKey = null;
 
-                const inputQty = (tipo, label, precio) => {
-                    if (!precio || precio <= 0) return '';
-                    return `
-                        <div class="flex items-center gap-1">
-                            <span class="text-[10px] text-gray-400 font-bold w-5">${label}</span>
-                            <input type="number" min="0" step="1" inputmode="numeric"
-                                data-id="${p.id}" data-tipo="${tipo}" value="${it[tipo] || 0}"
-                                class="sim-qty w-12 text-center text-sm border border-gray-300 rounded py-0.5 focus:ring-2 focus:ring-purple-400 outline-none">
-                            <span class="text-[9px] text-gray-400">$${parseFloat(precio).toFixed(2)}</span>
-                        </div>`;
-                };
-
-                const controls = [];
-                if (vp.cj)  controls.push(inputQty('cj',  'Cj', p.precios?.cj));
-                if (vp.paq) controls.push(inputQty('paq', 'Pq', p.precios?.paq));
-                if (vp.und) controls.push(inputQty('und', 'Un', p.precios?.und || p.precioPorUnidad));
-                if (!controls.filter(Boolean).length) {
-                    controls.push(inputQty('und', 'Un', p.precios?.und || p.precioPorUnidad || 0.01));
+            filtered.forEach(prod => {
+                const curHeaderVal = prod.segmento || 'Sin segmento';
+                if (curHeaderVal !== lastHeaderKey) {
+                    lastHeaderKey = curHeaderVal;
+                    html += `<tr class="bg-gray-100"><td colspan="3" class="py-1 px-2 font-bold text-gray-700 sticky top-9 z-[9]">${lastHeaderKey}</td></tr>`;
                 }
 
-                return `
-                <div class="border ${activo ? 'border-purple-300 bg-purple-50' : 'border-gray-200 bg-white'} rounded-lg px-2.5 py-2 transition">
-                    <div class="font-semibold text-gray-800 text-xs leading-tight mb-1.5">${desc}</div>
-                    <div class="flex flex-wrap gap-x-3 gap-y-1.5">${controls.join('')}</div>
-                </div>`;
-            }).join('');
+                const vp = prod.ventaPor || { und: true };
+                const it = _simuladaItems[prod.id] || { cj: 0, paq: 0, und: 0 };
+                const precios = prod.precios || { und: prod.precioPorUnidad || 0 };
+
+                const createRow = (tipo, currentQty, price, descText) => `
+                    <tr class="border-b hover:bg-gray-50">
+                        <td class="py-2 px-2 text-center align-middle">
+                            <input type="number" min="0" value="${currentQty}" inputmode="numeric"
+                                class="sim-qty w-16 p-1 text-center border rounded-md font-bold text-gray-800 focus:ring-2 focus:ring-purple-500 outline-none"
+                                data-id="${prod.id}" data-tipo="${tipo}">
+                        </td>
+                        <td class="py-2 px-2 text-left align-middle font-medium text-gray-700">
+                            ${descText} <span class="text-xs text-gray-500">${prod.marca || 'S/M'}</span>
+                        </td>
+                        <td class="py-2 px-2 text-left align-middle font-bold text-gray-900">$${parseFloat(price || 0).toFixed(2)}</td>
+                    </tr>`;
+
+                let filas = 0;
+                if (vp.cj) {
+                    const uCj = prod.unidadesPorCaja || 1;
+                    html += createRow('cj', it.cj || 0, precios.cj || 0, `${prod.presentacion} (Cj/${uCj} und)`);
+                    filas++;
+                }
+                if (vp.paq) {
+                    const uPaq = prod.unidadesPorPaquete || 1;
+                    html += createRow('paq', it.paq || 0, precios.paq || 0, `${prod.presentacion} (Paq/${uPaq} und)`);
+                    filas++;
+                }
+                if (vp.und) {
+                    html += createRow('und', it.und || 0, precios.und || prod.precioPorUnidad || 0, `${prod.presentacion} (Und)`);
+                    filas++;
+                }
+                if (filas === 0) {
+                    html += createRow('und', it.und || 0, precios.und || prod.precioPorUnidad || 0, `${prod.presentacion} (Und)`);
+                }
+            });
+
+            list.innerHTML = html;
 
             list.querySelectorAll('.sim-qty').forEach(inp => {
                 inp.addEventListener('wheel', e => e.preventDefault(), { passive: false });
@@ -2124,5 +2152,6 @@
 
 
 })();
+
 
 
