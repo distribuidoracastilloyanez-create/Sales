@@ -591,7 +591,7 @@
                 const curHeaderVal = prod.segmento || 'Sin segmento';
                 if (curHeaderVal !== lastHeaderKey) {
                     lastHeaderKey = curHeaderVal;
-                    html += `<tr class="bg-gray-100"><td colspan="3" class="py-1 px-2 font-bold text-gray-700 sticky top-9 z-[9]">${lastHeaderKey}</td></tr>`;
+                    html += `<tr><td colspan="3" class="py-1.5 px-2 font-bold text-gray-700 bg-gray-200 border-y border-gray-300 uppercase text-xs tracking-wide">${lastHeaderKey}</td></tr>`;
                 }
 
                 const vp = prod.ventaPor || { und: true };
@@ -2152,4 +2152,4 @@
 
 
 })();
-// redeploy trigger 1783024041
+// redeploy trigger 1783027831
