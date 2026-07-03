@@ -242,7 +242,54 @@
         document.getElementById('btnGenerarFactura').addEventListener('click', generarFacturaFiscal);
 
         await cargarDatosIniciales();
+
+        // Si venimos desde CXC (recibo encontrado), armar la venta y saltar al paso 3
+        if (window.__ventaDesdeCXC) {
+            const v = window.__ventaDesdeCXC;
+            window.__ventaDesdeCXC = null; // consumir una sola vez
+            cargarVentaDesdeCXC(v);
+        }
     };
+
+    // Recibe una venta encontrada en CXC y la prepara para facturar (salta a tipo de facturación)
+    function cargarVentaDesdeCXC(v) {
+        const productos = (v.productos || []).map(p => ({
+            id:              p.id || '',
+            marca:           p.marca || '',
+            segmento:        p.segmento || '',
+            presentacion:    p.presentacion || '',
+            rubro:           p.rubro || (p.id && _productosCache[p.id] ? _productosCache[p.id].rubro : '') || '',
+            precios:         p.precios || { cj: 0, paq: 0, und: p.precioPorUnidad || 0 },
+            cantidadVendida: p.cantidadVendida || { cj: 0, paq: 0, und: 0 },
+            cantidad:        p.cantidad || 0,
+            total:           p.total || 0
+        }));
+
+        _esVentaSimulada   = false;
+        _clienteSeleccionado = {
+            id:              v.clienteId || '__desde_cxc__',
+            nombreComercial: v.clienteNombre || 'Cliente',
+            nombrePersonal:  v.clienteNombrePersonal || '',
+            rif:             v.clienteRif || v.rif || 'N/A',
+            aplicaRetencion: v.aplicaRetencion || false
+        };
+        _ventaParaFacturar = { productos, total: v.total || 0, esMensual: false, desdeCXC: true };
+
+        // Ocultar los paneles de origen (cliente / simular / tipo de venta), ir directo al paso 3
+        document.getElementById('facPanelCliente')?.classList.add('hidden');
+        document.getElementById('facSepOr')?.classList.add('hidden');
+        document.getElementById('facPanelTipo')?.classList.add('hidden');
+
+        const bSim = document.getElementById('btnSimularVenta');
+        if (bSim) {
+            bSim.innerHTML = '📄 Venta recuperada desde CXC — <span class="text-xs font-normal opacity-80">' +
+                productos.length + ' producto(s) · $' + (v.total || 0).toFixed(2) + '</span>';
+            bSim.classList.remove('bg-purple-600', 'hover:bg-purple-700');
+            bSim.classList.add('bg-blue-700');
+        }
+
+        mostrarPanelTipoFact();
+    }
 
     function resetFlujo() {
         _clienteSeleccionado = null;
@@ -2153,3 +2200,4 @@
 
 })();
 // redeploy trigger 1783027831
+
