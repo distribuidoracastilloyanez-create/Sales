@@ -588,7 +588,12 @@
                 `;
             });
         } else {
-            rowsHTML = '<tr><td colspan="3" class="p-4 text-center text-gray-500 text-sm">Sin movimientos recientes.</td></tr>';
+            // Cliente sin historial (nuevo punto de partida tras cuadre de cuentas).
+            // Puede tener deuda pero sin movimientos registrados.
+            const msgVacio = deudaTotal !== 0
+                ? 'Sin movimientos en el historial. La deuda mostrada es el saldo inicial (nuevo punto de partida).'
+                : 'Sin movimientos registrados.';
+            rowsHTML = `<tr><td colspan="3" class="p-4 text-center text-gray-500 text-sm">${msgVacio}</td></tr>`;
         }
 
         const modalHTML = `
@@ -1204,7 +1209,12 @@
                 workbook.SheetNames.forEach(sheetName => {
                     const sheet = workbook.Sheets[sheetName];
                     const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false, dateNF: 'dd/mm/yyyy' });
-                    if (rows.length < 5) return; 
+                    // Descartar solo hojas completamente vacías. NO descartar por tener pocas
+                    // filas: un cliente con deuda pero sin historial (cuadre/borrón de cuentas)
+                    // tiene solo CLIENTE, NOMBRE, TOTALES, FECHA (4 filas) y DEBE incluirse.
+                    // La decisión real de descartar (hoja que no es de cliente ni continuación)
+                    // se toma más abajo, tras detectar la estructura.
+                    if (!rows || rows.length === 0) return;
 
                     let clientName = "";
                     let totalAmount = 0;
@@ -1391,6 +1401,7 @@
         searchConsolidatedConsignments
     };
 })();
+
 
 
 
