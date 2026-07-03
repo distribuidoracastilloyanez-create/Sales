@@ -1312,7 +1312,34 @@
                         // Saltar filas completamente vacías (sin deuda ni retención)
                         if (montoDeuda === 0 && montoReten === 0) continue;
 
-                        if (currentClientData) {
+                        if (!currentClientData) continue;
+
+                        // ── Separación de filas MIXTAS ──────────────────────────────
+                        // Si es un ABONO (no venta F, no consignación, no retención pura)
+                        // que ADEMÁS trae retención, se divide en DOS movimientos:
+                        //   1) el abono/transferencia (con su monto de deuda)
+                        //   2) la entrega de retención (fila R independiente, misma fecha)
+                        // Así el usuario ve por separado cuándo transfirió y cuándo entregó
+                        // el comprobante de retención.
+                        // Las ventas F NO se separan: ahí la retención es parte del facturado.
+                        const esAbono = (type !== 'F' && type !== 'C' && type !== 'R');
+                        if (esAbono && montoReten !== 0) {
+                            // Se pushea [retención, abono] en orden cronológico para que,
+                            // como el historial se muestra invertido (más nuevo arriba),
+                            // el abono quede ARRIBA y la retención JUSTO DEBAJO, misma fecha.
+                            currentClientData.transactions.push({
+                                date: dateRaw.toString(),
+                                type: 'R',
+                                amount: montoReten,
+                                retencion: montoReten
+                            });
+                            currentClientData.transactions.push({
+                                date: dateRaw.toString(),
+                                type: type,
+                                amount: montoDeuda,
+                                retencion: 0
+                            });
+                        } else {
                             currentClientData.transactions.push({
                                 date: dateRaw.toString(),
                                 type: type,
@@ -1364,6 +1391,7 @@
         searchConsolidatedConsignments
     };
 })();
+
 
 
 
