@@ -506,26 +506,42 @@
         
         const totalFacturado = deudaTotal - totalConsignado;
 
+        // Retención pendiente = suma neta de toda la columna retención (todas las filas).
+        // Positivas (generadas en ventas) menos negativas (compensadas por el cliente).
+        // Solo se muestra si el cliente TIENE historial de retenciones.
+        const tieneRetencion = allTxs.some(t => (t.retencion || 0) !== 0);
+        const retencionPendiente = allTxs.reduce((sum, t) => sum + (t.retencion || 0), 0);
+
         if (allTxs.length > 0) {
             // INVERTIMOS EL ARREGLO PARA MOSTRAR LAS MÁS NUEVAS PRIMERO
             const reversedTransactions = [...allTxs].reverse();
             
             reversedTransactions.forEach(t => {
-                const amountClass = t.amount > 0 ? 'text-red-600' : 'text-green-600';
-                const sign = t.amount > 0 ? '+' : '';
-                
+                const reten = t.retencion || 0;
+                // Para ventas con retención, el monto FACTURADO es deuda + retención
+                const facturado = (t.type === 'F') ? (t.amount + reten) : t.amount;
+                const amountClass = facturado > 0 ? 'text-red-600' : 'text-green-600';
+                const sign = facturado > 0 ? '+' : '';
+
                 let typeLabel = t.type;
                 let actionButton = '';
-                let bsAmountHtml = ''; 
+                let bsAmountHtml = '';
+                let retenHtml = '';
 
                 if (t.type === 'F') {
                     typeLabel = '🛒 Venta';
+                    // El botón busca por el FACTURADO (deuda + retención) para que el ticket coincida
                     actionButton = `
-                        <button onclick="window.cxcModule.searchSaleDetails('${safeClientName}', '${t.date}', ${t.amount})" 
+                        <button onclick="window.cxcModule.searchSaleDetails('${safeClientName}', '${t.date}', ${facturado})" 
                             class="p-1 bg-blue-100 text-blue-700 rounded-full border border-blue-200 hover:bg-blue-200 flex-shrink-0 transition-colors ml-1" title="Ver Detalle de Venta">
                             🔍
                         </button>
                     `;
+                    // Recuadro de detalle: retención y neto (el facturado ya se ve grande arriba)
+                    if (reten > 0) {
+                        const neto = t.amount;
+                        retenHtml = `<div class="text-[10px] text-gray-500 font-normal leading-snug mt-1 text-right bg-gray-50 rounded px-1.5 py-0.5 border border-gray-200 inline-block">Retención: <span class="font-bold text-purple-700">-$${reten.toFixed(2)}</span> · Neto: <span class="font-bold text-gray-700">$${neto.toFixed(2)}</span></div>`;
+                    }
                 } else if (t.type === 'T') typeLabel = '🏦 Transf';
                 else if (t.type === 'E') typeLabel = '💵 Efectivo';
                 else if (t.type === 'R') typeLabel = '🧾 Retenc';
@@ -562,9 +578,10 @@
                         <td class="py-2 px-2 font-medium align-top text-xs ${t.type === 'C' ? 'text-orange-700' : ''}">${typeLabel}</td>
                         <td class="py-2 px-2 align-top text-right">
                             <div class="flex justify-end items-center">
-                                <span class="${t.type === 'C' ? 'text-orange-600' : amountClass} font-bold text-sm">${sign}$${t.amount.toFixed(2)}</span>
+                                <span class="${t.type === 'C' ? 'text-orange-600' : amountClass} font-bold text-sm">${sign}$${facturado.toFixed(2)}</span>
                                 ${actionButton}
                             </div>
+                            ${retenHtml}
                             ${bsAmountHtml}
                         </td>
                     </tr>
@@ -582,11 +599,18 @@
                     
                     <div class="space-y-3">
                         <div class="flex justify-between items-center bg-gray-50 p-2 rounded border border-gray-200">
-                            <span class="font-bold text-gray-700 text-sm">DEUDA TOTAL:</span>
+                            <span class="font-bold text-gray-700 text-sm">${tieneRetencion ? 'DEUDA NETA:' : 'DEUDA TOTAL:'}</span>
                             <span class="font-black text-xl ${deudaTotal > 0 ? 'text-red-600' : 'text-green-600'}">
                                 $${deudaTotal.toLocaleString('en-US', {minimumFractionDigits: 2})}
                             </span>
                         </div>
+                        ${tieneRetencion ? `
+                        <div class="flex justify-between items-center bg-purple-50 p-2 rounded border border-purple-200">
+                            <span class="font-bold text-purple-800 text-sm">Retención Pendiente:</span>
+                            <span class="font-black text-lg ${retencionPendiente > 0 ? 'text-purple-700' : (retencionPendiente < 0 ? 'text-green-600' : 'text-gray-500')}">
+                                $${retencionPendiente.toLocaleString('en-US', {minimumFractionDigits: 2})}
+                            </span>
+                        </div>` : ''}
                         
                         ${totalConsignado > 0 ? `
                         <div class="flex justify-between items-center px-2">
@@ -1006,6 +1030,9 @@
         const deudaTotal = client.amount || 0;
         const totalFacturado = deudaTotal - totalConsignado;
 
+        const tieneRetencion = allTxs.some(t => (t.retencion || 0) !== 0);
+        const retencionPendiente = allTxs.reduce((sum, t) => sum + (t.retencion || 0), 0);
+
         let last12 = [...allTxs].reverse().slice(0, 12); 
 
         let rows = '';
@@ -1080,9 +1107,14 @@
                     <h1 class="text-xl font-bold text-gray-800">${client.name}</h1>
                     <div class="flex flex-col mt-3 bg-gray-100 p-3 rounded border border-gray-200 shadow-sm">
                         <div class="flex justify-between items-end">
-                            <span class="font-bold text-gray-800 text-sm">DEUDA TOTAL:</span>
+                            <span class="font-bold text-gray-800 text-sm">${tieneRetencion ? 'DEUDA NETA:' : 'DEUDA TOTAL:'}</span>
                             <span class="text-2xl font-black ${deudaTotal > 0 ? 'text-red-600' : 'text-green-600'} leading-none">$${deudaTotal.toLocaleString('en-US', {minimumFractionDigits: 2})}</span>
                         </div>
+                        ${tieneRetencion ? `
+                        <div class="flex justify-between items-center mt-2 pt-2 border-t border-gray-300">
+                            <span class="font-bold text-purple-800 text-xs">RETENCIÓN PENDIENTE:</span>
+                            <span class="text-lg font-black ${retencionPendiente > 0 ? 'text-purple-700' : (retencionPendiente < 0 ? 'text-green-600' : 'text-gray-500')} leading-none">$${retencionPendiente.toLocaleString('en-US', {minimumFractionDigits: 2})}</span>
+                        </div>` : ''}
                         ${breakdownHTML}
                     </div>
                 </div>
@@ -1208,39 +1240,57 @@
                         startRowIndex = tableHeaderIndex + 1;
                     }
 
+                    // Helper para parsear un número de una celda (número o texto)
+                    const parseCell = (cell) => {
+                        if (cell === null || cell === undefined) return 0;
+                        if (typeof cell === 'number') return cell;
+                        const v = parseFloat(cell.toString().replace(/[^0-9.-]/g, ''));
+                        return isNaN(v) ? 0 : v;
+                    };
+
                     for (let i = startRowIndex; i < rows.length; i++) {
                         const row = rows[i];
                         if (!row || row.length < 2) continue;
-                        
-                        const dateRaw = row[0]; 
-                        let type = (row[1] || '').toString().trim().toUpperCase(); 
-                        let amountRaw = 0;
-                        
-                        if (type.startsWith('C') || type.includes('CONSIG')) {
+
+                        const dateRaw = row[0];
+                        if (!dateRaw) continue;
+
+                        let typeRaw = (row[1] || '').toString().trim().toUpperCase();
+
+                        // Dos componentes independientes de cada fila:
+                        //   col[2] = deuda/abono   ·   col[6] = retención
+                        const montoDeuda   = parseCell(row[2]);
+                        const montoReten   = parseCell(row[6]);
+
+                        // Clasificación por CONTENIDO (no por el tipo escrito, que puede
+                        // venir mal marcado por error humano):
+                        //   - Si col[2] tiene valor → es venta/abono normal.
+                        //   - Si col[2] = 0 pero col[6] tiene valor → es una fila de Retención pura.
+                        let type;
+                        if (typeRaw.startsWith('C') || typeRaw.includes('CONSIG')) {
                             type = 'C';
-                        } else if (!type) {
-                            type = 'F'; 
+                        } else if (montoDeuda === 0 && montoReten !== 0) {
+                            type = 'R'; // retención pura (aunque el humano la haya dejado sin tipo)
+                        } else if (!typeRaw) {
+                            type = 'F';
+                        } else {
+                            type = typeRaw;
                         }
 
-                        if (type === 'R') amountRaw = row[6]; else amountRaw = row[2];
+                        // Para filas de retención pura, el "amount" visible es la retención misma.
+                        // Para el resto, el amount es la deuda/abono de col[2].
+                        let amountVal = (type === 'R') ? montoReten : montoDeuda;
 
-                        if (dateRaw && (amountRaw || amountRaw === 0)) {
-                            let amountVal = 0;
-                            if (typeof amountRaw === 'number') amountVal = amountRaw;
-                            else amountVal = parseFloat(amountRaw.toString().replace(/[^0-9.-]/g, ''));
+                        // Saltar filas completamente vacías (sin deuda ni retención)
+                        if (montoDeuda === 0 && montoReten === 0) continue;
 
-                            if (!isNaN(amountVal)) {
-                                if (type === '%') { if (amountVal > 0) amountVal = -amountVal; } 
-                                else if (type === 'R') { if (amountVal > 0) amountVal = -amountVal; }
-                                
-                                if (currentClientData) {
-                                    currentClientData.transactions.push({ 
-                                        date: dateRaw.toString(), 
-                                        type: type, 
-                                        amount: amountVal 
-                                    });
-                                }
-                            }
+                        if (currentClientData) {
+                            currentClientData.transactions.push({
+                                date: dateRaw.toString(),
+                                type: type,
+                                amount: amountVal,
+                                retencion: montoReten  // se guarda SIEMPRE la retención de la fila
+                            });
                         }
                     }
                 });
@@ -1286,6 +1336,7 @@
         searchConsolidatedConsignments
     };
 })();
+
 
 
 
