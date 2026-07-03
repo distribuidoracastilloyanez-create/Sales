@@ -970,6 +970,10 @@
                                         <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" /></svg>
                                         Compartir Ticket
                                     </button>
+                                    <button id="btnFacturarReciboEncontrado" class="w-full mt-2 py-2.5 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold rounded-lg border border-blue-200 transition-colors flex justify-center items-center gap-2 text-sm">
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2M12 11h4M12 15h4M8 11h.01M8 15h.01" /></svg>
+                                        Facturar esta venta →
+                                    </button>
                                 `;
                                 
                                 _showModal('Recibo Encontrado', modalWrapper, null, 'Cerrar');
@@ -991,6 +995,30 @@
                                                 const link = document.createElement('a'); link.href=url; link.download="Ticket.png"; link.click();
                                             }
                                         });
+                                    };
+                                }
+
+                                // Enlace a Facturación: pasa esta venta y salta al paso 3 (tipo de facturación)
+                                const facturarBtn = document.getElementById('btnFacturarReciboEncontrado');
+                                if (facturarBtn) {
+                                    facturarBtn.onclick = () => {
+                                        window.__ventaDesdeCXC = {
+                                            productos:             foundVenta.productos || [],
+                                            total:                 foundVenta.total || 0,
+                                            clienteId:             foundVenta.clienteId || '',
+                                            clienteNombre:         foundVenta.clienteNombre || '',
+                                            clienteNombrePersonal: foundVenta.clienteNombrePersonal || '',
+                                            clienteRif:            foundVenta.clienteRif || '',
+                                            aplicaRetencion:       foundVenta.aplicaRetencion || false
+                                        };
+                                        if (typeof window.showFacturacionView === 'function') {
+                                            // Cerrar el modal del recibo antes de navegar
+                                            const m = document.getElementById('modalContainer');
+                                            if (m) m.classList.add('hidden');
+                                            window.showFacturacionView();
+                                        } else {
+                                            _showModal('Error', 'El módulo de Facturación no está disponible.');
+                                        }
                                     };
                                 }
                             } catch (e) {
@@ -1336,6 +1364,7 @@
         searchConsolidatedConsignments
     };
 })();
+
 
 
 
