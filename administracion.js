@@ -1032,7 +1032,7 @@
                 <div class="flex-1 min-w-0">
                     <div class="flex justify-between items-center mb-0.5">
                         <span class="text-[10px] text-gray-700 truncate">${nombre}</span>
-                        <span class="text-[10px] font-bold text-green-700 shrink-0 ml-1">${p.unidades.toLocaleString('es-VE')}</span>
+                        <span class="text-[10px] font-bold text-green-700 shrink-0 ml-1">${formatUnidadMayor(p, p.unidades)}</span>
                     </div>
                     <div class="w-full bg-gray-200 rounded-full h-2"><div class="bg-green-500 h-2 rounded-full transition-all" style="width:${pct}%"></div></div>
                 </div>
@@ -1055,7 +1055,7 @@
                 const diaMax = dias.reduce((a, b) => (porDia[b] > (porDia[a] || 0) ? b : a), dias[0]);
                 temporalHtml = `
                 <div class="bg-gray-50 border border-gray-200 rounded-lg p-3 mt-2">
-                    <p class="text-[10px] font-bold text-gray-500 uppercase mb-2">Ventas por día · pico: ${diaMax.split('-')[2]}/${diaMax.split('-')[1]}</p>
+                    <p class="text-[10px] font-bold text-gray-500 uppercase mb-2">Ventas por día (unidades) · pico: ${diaMax.split('-')[2]}/${diaMax.split('-')[1]}</p>
                     <div class="flex items-end gap-0.5 h-24 overflow-x-auto">
                         ${dias.map(dia => {
                             const h = (porDia[dia] / maxDia) * 100;
@@ -1080,7 +1080,7 @@
                 const mesMax = meses.reduce((a, b) => (porMes[b] > (porMes[a] || 0) ? b : a), meses[0]);
                 temporalHtml = `
                 <div class="bg-gray-50 border border-gray-200 rounded-lg p-3 mt-2">
-                    <p class="text-[10px] font-bold text-gray-500 uppercase mb-2">Ventas por mes · pico: ${MESES[Number(mesMax.split('-')[1]) - 1]}</p>
+                    <p class="text-[10px] font-bold text-gray-500 uppercase mb-2">Ventas por mes (unidades) · pico: ${MESES[Number(mesMax.split('-')[1]) - 1]}</p>
                     <div class="flex items-end gap-1 h-28">
                         ${meses.map(mes => {
                             const h = (porMes[mes] / maxMes) * 100;
@@ -1126,14 +1126,14 @@
                     <div class="text-xs opacity-80">${p.marca || ''} · salida por día</div>
                 </div>
                 <div class="p-4">
-                    <p class="text-[10px] text-gray-500 mb-2">Día con más salida: <span class="font-bold text-green-700">${diaMax.split('-')[2]}</span> (${p.porDia[diaMax].toLocaleString('es-VE')} und)</p>
+                    <p class="text-[10px] text-gray-500 mb-2">Día con más salida: <span class="font-bold text-green-700">${diaMax.split('-')[2]}</span> (${formatUnidadMayor(p, p.porDia[diaMax])})</p>
                     <div class="flex items-end gap-0.5 h-32">
                         ${dias.map(dia => {
                             const h = (p.porDia[dia] / maxDia) * 100;
                             const d = dia.split('-')[2];
                             const esPico = dia === diaMax;
                             return `<div class="flex-1 flex flex-col items-center justify-end h-full">
-                                <div class="w-full ${esPico ? 'bg-green-600' : 'bg-green-400'} rounded-t hover:bg-green-700" style="height:${h}%" title="Día ${d}: ${p.porDia[dia]} und"></div>
+                                <div class="w-full ${esPico ? 'bg-green-600' : 'bg-green-400'} rounded-t hover:bg-green-700" style="height:${h}%" title="Día ${d}: ${formatUnidadMayor(p, p.porDia[dia])}"></div>
                                 <span class="text-[7px] text-gray-400 mt-0.5">${d}</span>
                             </div>`;
                         }).join('')}
@@ -1435,3 +1435,4 @@
 
 })();
 // redeploy trigger 1783190804
+
