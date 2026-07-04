@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v16'; // Actualizado a v16: Calculadora de Pedido
+const CACHE_NAME = 'ventas-app-cache-v17'; // v17: Módulo Administración (inventario consolidado + analista de datos)
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
@@ -19,6 +19,7 @@ const urlsToCache = [
     './edit-inventario.js',
     './supervision.js',
     './facturacion.js',
+    './administracion.js',
     './archivos.js',
     './calculadora.js',
     // --- Librerías Externas ---
@@ -178,4 +179,5 @@ self.addEventListener('fetch', event => {
             })
     );
 });
+
 
