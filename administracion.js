@@ -16,7 +16,7 @@
     let _usersCache      = [];
     let _masterCache     = {};   // id -> producto maestro
     let _sortFn          = null;
-    let _admConfig       = { inventarioVendedores: [], analistaExcluidos: [] };
+    let _admConfig       = { inventarioVendedores: [], analistaVendedores: [], analistaExcluidos: [] };
 
     // ─── INIT ───────────────────────────────────────────────
     window.initAdministracion = function (deps) {
@@ -100,6 +100,7 @@
                 const d = snap.data();
                 _admConfig = {
                     inventarioVendedores: d.inventarioVendedores || [],
+                    analistaVendedores: d.analistaVendedores || [],
                     analistaExcluidos: d.analistaExcluidos || []
                 };
             }
@@ -115,6 +116,72 @@
 
     function nombreVendedor(u) {
         return `${u.nombre || ''} ${u.apellido || ''}`.trim() || u.email || u.id;
+    }
+
+    // ─── CACHÉ DE CIERRES (localStorage) ────────────────────
+    // Los cierres de días ANTERIORES a hoy son inmutables, así que se cachean
+    // para no releerlos de Firebase. Las ventas del día actual siempre se leen frescas.
+    const CACHE_PREFIX = 'adm_cierres_v1';
+
+    function hoyISO() {
+        const d = new Date();
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    }
+
+    // Clave por vendedor + mes: adm_cierres_v1:{uid}:{YYYY-MM}
+    function cacheKey(uid, mesISO) {
+        return `${CACHE_PREFIX}:${uid}:${mesISO}`;
+    }
+
+    function leerCacheMes(uid, mesISO) {
+        try {
+            const raw = localStorage.getItem(cacheKey(uid, mesISO));
+            if (!raw) return null;
+            const obj = JSON.parse(raw);
+            // El caché es válido solo para meses ya cerrados (anteriores al mes actual).
+            // Para el mes actual, guardamos hasta qué día se cacheó para completar el resto.
+            return obj;
+        } catch (e) { return null; }
+    }
+
+    function guardarCacheMes(uid, mesISO, data) {
+        try {
+            localStorage.setItem(cacheKey(uid, mesISO), JSON.stringify(data));
+        } catch (e) {
+            // localStorage lleno o no disponible: limpiar caché viejo y reintentar una vez
+            try {
+                limpiarCacheAntiguo();
+                localStorage.setItem(cacheKey(uid, mesISO), JSON.stringify(data));
+            } catch (e2) { console.warn('No se pudo cachear (localStorage):', e2); }
+        }
+    }
+
+    function limpiarCacheAntiguo() {
+        // Elimina entradas de caché de más de 8 meses para no acumular
+        try {
+            const ahora = new Date();
+            const limite = new Date(ahora.getFullYear(), ahora.getMonth() - 8, 1);
+            for (let i = localStorage.length - 1; i >= 0; i--) {
+                const k = localStorage.key(i);
+                if (k && k.startsWith(CACHE_PREFIX)) {
+                    const parts = k.split(':');
+                    const mesISO = parts[2];
+                    if (mesISO) {
+                        const [y, m] = mesISO.split('-').map(Number);
+                        if (new Date(y, m - 1, 1) < limite) localStorage.removeItem(k);
+                    }
+                }
+            }
+        } catch (e) {}
+    }
+
+    function limpiarTodoElCache() {
+        try {
+            for (let i = localStorage.length - 1; i >= 0; i--) {
+                const k = localStorage.key(i);
+                if (k && k.startsWith(CACHE_PREFIX)) localStorage.removeItem(k);
+            }
+        } catch (e) {}
     }
 
     // ─── MENÚ PRINCIPAL ─────────────────────────────────────
@@ -146,6 +213,14 @@
                                 <span class="block text-xs text-gray-500 mt-0.5">Productos con más salida por mes</span>
                             </span>
                         </button>
+
+                        <button id="admInvAnaBtn" class="w-full text-left px-4 py-4 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 transition flex items-center gap-3">
+                            <span class="w-11 h-11 bg-amber-600 text-white rounded-lg flex items-center justify-center text-xl shrink-0">🔍</span>
+                            <span>
+                                <span class="block font-bold text-gray-800">Analista de Inventario</span>
+                                <span class="block text-xs text-gray-500 mt-0.5">Productos que se vendían y están agotados o bajos</span>
+                            </span>
+                        </button>
                     </div>
                 </div>
             </div>`;
@@ -153,6 +228,7 @@
         document.getElementById('admBack').addEventListener('click', _showMainMenu);
         document.getElementById('admInvBtn').addEventListener('click', showInventarioConsolidado);
         document.getElementById('admAnaBtn').addEventListener('click', showAnalistaDatos);
+        document.getElementById('admInvAnaBtn').addEventListener('click', showAnalistaInventario);
 
         // Precargar datos base
         await Promise.all([loadUsers(), loadMaster(), loadConfig(), getSortFn()]);
@@ -504,22 +580,26 @@
                         <button id="anaBack" class="px-3 py-1.5 bg-gray-400 text-white text-xs rounded hover:bg-gray-500 font-bold transition">Volver</button>
                     </div>
 
+                    <!-- Vendedores -->
+                    <div class="bg-green-50 border border-green-200 rounded-lg p-3 mb-2">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-xs font-bold text-green-800 uppercase tracking-wide">Vendedores a analizar (máx. 3)</span>
+                            <button id="anaVendConfig" class="text-xs text-green-700 font-bold hover:underline">Configurar</button>
+                        </div>
+                        <div id="anaVendList" class="flex flex-wrap gap-1.5"></div>
+                    </div>
+
                     <!-- Controles -->
                     <div class="bg-green-50 border border-green-200 rounded-lg p-3 mb-3 space-y-2">
-                        <div class="grid grid-cols-2 gap-2">
-                            <div>
-                                <label class="block text-[10px] font-bold text-green-800 uppercase mb-1">Mes a analizar</label>
-                                <input type="month" id="anaMes" value="${mesActualISO()}" class="w-full text-xs border border-green-300 rounded p-1.5 focus:ring-2 focus:ring-green-400 outline-none">
-                            </div>
-                            <div>
-                                <label class="block text-[10px] font-bold text-green-800 uppercase mb-1">Vendedor</label>
-                                <select id="anaVend" class="w-full text-xs border border-green-300 rounded p-1.5 bg-white focus:ring-2 focus:ring-green-400 outline-none">
-                                    <option value="__all__">Todos (consolidado)</option>
-                                    ${_usersCache.map(u => `<option value="${u.id}">${nombreVendedor(u)}</option>`).join('')}
-                                </select>
-                            </div>
+                        <div>
+                            <label class="block text-[10px] font-bold text-green-800 uppercase mb-1">Mes a analizar</label>
+                            <input type="month" id="anaMes" value="${mesActualISO()}" class="w-full text-xs border border-green-300 rounded p-1.5 focus:ring-2 focus:ring-green-400 outline-none">
                         </div>
-                        <button id="anaRun" class="w-full py-2 bg-green-600 text-white font-bold rounded text-sm hover:bg-green-700 transition">📈 Analizar Ventas</button>
+                        <div class="flex gap-2">
+                            <button id="anaRun" class="flex-1 py-2 bg-green-600 text-white font-bold rounded text-sm hover:bg-green-700 transition">📈 Analizar Ventas</button>
+                            <button id="anaRefresh" title="Actualizar datos (recargar de Firebase)" class="px-3 py-2 bg-gray-100 text-gray-600 rounded text-sm hover:bg-gray-200 transition font-bold flex items-center gap-1">🔄</button>
+                        </div>
+                        <p id="anaCacheInfo" class="text-[10px] text-gray-400 text-center"></p>
                     </div>
 
                     <!-- Filtros -->
@@ -529,7 +609,7 @@
                         <select id="anaFMarca" class="text-xs border border-gray-300 rounded p-1.5 bg-white focus:ring-2 focus:ring-green-400 outline-none"><option value="">Marca</option></select>
                     </div>
                     <div class="flex items-center justify-between mb-2">
-                        <button id="anaExcluir" class="text-xs text-red-600 font-bold hover:underline flex items-center gap-1">🚫 Productos excluidos (<span id="anaExcCount">0</span>)</button>
+                        <button id="anaExcluir" class="text-xs text-red-600 font-bold hover:underline flex items-center gap-1">🚫 Excluidos (<span id="anaExcCount">0</span>)</button>
                         <select id="anaOrden" class="text-xs border border-gray-300 rounded p-1.5 bg-white focus:ring-2 focus:ring-green-400 outline-none">
                             <option value="salidaDesc">Más salida ↓</option>
                             <option value="salidaAsc">Menos salida ↑</option>
@@ -537,7 +617,7 @@
                         </select>
                     </div>
 
-                    <div id="anaLoading" class="text-center py-10 text-gray-400 text-sm">Selecciona un mes y toca «Analizar Ventas».</div>
+                    <div id="anaLoading" class="text-center py-10 text-gray-400 text-sm">Selecciona vendedores y un mes, luego «Analizar Ventas».</div>
                     <div id="anaChart" class="hidden mb-3"></div>
                     <div id="anaTableWrap" class="hidden overflow-x-auto max-h-[45vh] overflow-y-auto rounded border border-gray-200"></div>
                     <div id="anaResumen" class="hidden text-xs text-gray-500 mt-2 text-center"></div>
@@ -545,12 +625,70 @@
             </div>`;
 
         document.getElementById('anaBack').addEventListener('click', window.showAdministracionMenu);
-        document.getElementById('anaRun').addEventListener('click', ejecutarAnalisis);
+        document.getElementById('anaVendConfig').addEventListener('click', abrirSelectorVendedoresAna);
+        document.getElementById('anaRun').addEventListener('click', () => ejecutarAnalisis(false));
+        document.getElementById('anaRefresh').addEventListener('click', () => {
+            limpiarTodoElCache();
+            ejecutarAnalisis(true);
+        });
         document.getElementById('anaExcluir').addEventListener('click', abrirSelectorExcluidos);
         ['anaFRubro','anaFSeg','anaFMarca','anaOrden'].forEach(id =>
             document.getElementById(id).addEventListener('change', renderAnaTabla));
 
+        renderVendChipsAna();
         actualizarContadorExcluidos();
+    }
+
+    function renderVendChipsAna() {
+        const cont = document.getElementById('anaVendList');
+        if (!cont) return;
+        const sel = _admConfig.analistaVendedores;
+        if (!sel.length) {
+            cont.innerHTML = '<span class="text-xs text-gray-400 italic">Ninguno seleccionado — toca Configurar</span>';
+            return;
+        }
+        cont.innerHTML = sel.map(uid => {
+            const u = _usersCache.find(x => x.id === uid);
+            return `<span class="text-xs bg-green-600 text-white px-2 py-1 rounded-full font-medium">${u ? nombreVendedor(u) : uid}</span>`;
+        }).join('');
+    }
+
+    function abrirSelectorVendedoresAna() {
+        const sel = new Set(_admConfig.analistaVendedores);
+        document.getElementById('admVendAnaOverlay')?.remove();
+        const ov = document.createElement('div');
+        ov.id = 'admVendAnaOverlay';
+        ov.className = 'fixed inset-0 z-[9998] bg-black/50 flex items-center justify-center p-4';
+        ov.innerHTML = `
+            <div class="bg-white w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden">
+                <div class="bg-green-600 text-white px-4 py-3 font-bold">Vendedores a analizar (máx. 3)</div>
+                <div class="p-3 max-h-[60vh] overflow-y-auto space-y-1">
+                    ${_usersCache.map(u => `
+                        <label class="flex items-center gap-2 p-2 rounded hover:bg-gray-50 cursor-pointer border border-gray-100">
+                            <input type="checkbox" class="vendA-cb w-4 h-4" value="${u.id}" ${sel.has(u.id) ? 'checked' : ''}>
+                            <span class="text-sm text-gray-800">${nombreVendedor(u)}</span>
+                        </label>`).join('')}
+                </div>
+                <div class="p-3 border-t flex gap-2">
+                    <button id="vendACancel" class="flex-1 py-2 bg-gray-100 text-gray-600 rounded font-bold text-sm">Cancelar</button>
+                    <button id="vendASave" class="flex-1 py-2 bg-green-600 text-white rounded font-bold text-sm">Guardar</button>
+                </div>
+                <p id="vendAMsg" class="text-center text-xs text-red-500 pb-2 h-4"></p>
+            </div>`;
+        document.body.appendChild(ov);
+
+        ov.querySelectorAll('.vendA-cb').forEach(cb => cb.addEventListener('change', () => {
+            const checked = ov.querySelectorAll('.vendA-cb:checked');
+            if (checked.length > 3) { cb.checked = false; document.getElementById('vendAMsg').textContent = 'Máximo 3 vendedores.'; }
+            else document.getElementById('vendAMsg').textContent = '';
+        }));
+        document.getElementById('vendACancel').addEventListener('click', () => ov.remove());
+        document.getElementById('vendASave').addEventListener('click', async () => {
+            _admConfig.analistaVendedores = Array.from(ov.querySelectorAll('.vendA-cb:checked')).map(c => c.value);
+            await saveConfig();
+            ov.remove();
+            renderVendChipsAna();
+        });
     }
 
     function actualizarContadorExcluidos() {
@@ -558,32 +696,68 @@
         if (el) el.textContent = _admConfig.analistaExcluidos.length;
     }
 
-    async function ejecutarAnalisis() {
+    // Guardamos por producto: unidades, monto y desglose por día (para gráficos).
+    // _anaData tendrá: { id, ...master, unidades, monto, porDia: { 'YYYY-MM-DD': unidades } }
+    async function ejecutarAnalisis(forzarRecarga) {
         const mes = document.getElementById('anaMes').value;
-        const vendSel = document.getElementById('anaVend').value;
         if (!mes) { _showModal('Aviso', 'Selecciona un mes.'); return; }
+        const vendedores = _admConfig.analistaVendedores;
+        if (!vendedores.length) { _showModal('Aviso', 'Selecciona al menos un vendedor (botón Configurar).'); return; }
 
         const loading = document.getElementById('anaLoading');
         const wrap = document.getElementById('anaTableWrap');
         const chart = document.getElementById('anaChart');
+        const cacheInfo = document.getElementById('anaCacheInfo');
         loading.classList.remove('hidden');
         loading.innerHTML = '<svg class="animate-spin h-6 w-6 mx-auto mb-2 text-green-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path></svg>Analizando ventas del mes...';
         wrap.classList.add('hidden');
         chart.classList.add('hidden');
 
         const [year, month] = mes.split('-').map(Number);
-        const vendedores = vendSel === '__all__' ? _usersCache.map(u => u.id) : [vendSel];
-        const salida = {}; // id -> { unidades, monto }
+        const ahora = new Date();
+        const esMesActual = (year === ahora.getFullYear() && month === (ahora.getMonth() + 1));
+
+        // salida[id] = { unidades, monto, porDia: {dia: unidades} }
+        const salida = {};
+        let lecturasFirebase = 0;
+        let desdeCache = 0;
+
+        const acumular = (id, unidades, monto, diaISO) => {
+            if (!salida[id]) salida[id] = { unidades: 0, monto: 0, porDia: {} };
+            salida[id].unidades += unidades;
+            salida[id].monto += monto;
+            if (diaISO) salida[id].porDia[diaISO] = (salida[id].porDia[diaISO] || 0) + unidades;
+        };
 
         try {
             for (const uid of vendedores) {
-                // Ventas activas
+                const cache = forzarRecarga ? null : leerCacheMes(uid, mes);
+
+                // Si hay caché válido y NO es el mes actual, usarlo directo (mes cerrado, inmutable)
+                if (cache && !esMesActual) {
+                    Object.entries(cache.productos || {}).forEach(([id, d]) => {
+                        acumular(id, d.unidades, d.monto, null);
+                        Object.entries(d.porDia || {}).forEach(([dia, u]) => {
+                            if (!salida[id].porDia[dia]) salida[id].porDia[dia] = 0;
+                            salida[id].porDia[dia] += u;
+                        });
+                    });
+                    desdeCache++;
+                    continue;
+                }
+
+                // Leer de Firebase (ventas activas + cierres del mes)
                 const ventasSnap = await _getDocs(_collection(_db, `artifacts/${_appId}/users/${uid}/ventas`));
                 const cierresSnap = await _getDocs(_collection(_db, `artifacts/${_appId}/users/${uid}/cierres`));
+                lecturasFirebase += ventasSnap.size + cierresSnap.size;
+
+                // Acumulador temporal para este vendedor+mes (para cachear)
+                const cacheProd = {}; // id -> { unidades, monto, porDia }
 
                 const procesarVenta = (v) => {
                     const f = v.fecha?.toDate ? v.fecha.toDate() : new Date(v.fecha);
                     if (!f || f.getFullYear() !== year || (f.getMonth() + 1) !== month) return;
+                    const diaISO = `${f.getFullYear()}-${String(f.getMonth() + 1).padStart(2, '0')}-${String(f.getDate()).padStart(2, '0')}`;
                     (v.productos || []).forEach(p => {
                         if (!p.id) return;
                         const m = _masterCache[p.id] || {};
@@ -591,23 +765,39 @@
                         const cv = p.cantidadVendida || {};
                         const unidades = (cv.cj || 0) * uCj + (cv.paq || 0) * uPaq + (cv.und || 0);
                         const monto = (p.precios?.cj || 0) * (cv.cj || 0) + (p.precios?.paq || 0) * (cv.paq || 0) + (p.precios?.und || 0) * (cv.und || 0);
-                        if (!salida[p.id]) salida[p.id] = { unidades: 0, monto: 0 };
-                        salida[p.id].unidades += unidades;
-                        salida[p.id].monto += monto;
+                        acumular(p.id, unidades, monto, diaISO);
+                        // Guardar en cache solo días ANTERIORES a hoy (inmutables)
+                        if (diaISO < hoyISO()) {
+                            if (!cacheProd[p.id]) cacheProd[p.id] = { unidades: 0, monto: 0, porDia: {} };
+                            cacheProd[p.id].unidades += unidades;
+                            cacheProd[p.id].monto += monto;
+                            cacheProd[p.id].porDia[diaISO] = (cacheProd[p.id].porDia[diaISO] || 0) + unidades;
+                        }
                     });
                 };
 
                 ventasSnap.docs.forEach(d => procesarVenta(d.data()));
                 cierresSnap.docs.forEach(dc => (dc.data().ventas || []).forEach(procesarVenta));
+
+                // Guardar caché de este vendedor+mes (solo días cerrados)
+                guardarCacheMes(uid, mes, { productos: cacheProd, cachedAt: hoyISO() });
             }
 
             _anaData = Object.keys(salida)
                 .filter(id => !_admConfig.analistaExcluidos.includes(id))
                 .map(id => {
                     const m = _masterCache[id] || {};
-                    return { id, ...m, unidades: salida[id].unidades, monto: salida[id].monto };
+                    return { id, ...m, unidades: salida[id].unidades, monto: salida[id].monto, porDia: salida[id].porDia };
                 })
                 .filter(p => p.presentacion || p.marca);
+
+            if (cacheInfo) {
+                const partes = [];
+                if (desdeCache > 0) partes.push(`${desdeCache} vendedor(es) desde caché`);
+                if (lecturasFirebase > 0) partes.push(`${lecturasFirebase} lectura(s) de Firebase`);
+                if (esMesActual) partes.push('mes actual (siempre fresco)');
+                cacheInfo.textContent = partes.join(' · ');
+            }
 
             poblarFiltrosAna();
             renderAnaTabla();
@@ -665,69 +855,149 @@
             return;
         }
 
-        // Gráfico de barras: top 10 por salida
-        renderChartTop(list.slice(0, 10));
+        // Gráficos: Top productos + ventas por día del mes
+        renderGraficos(list);
         chart.classList.remove('hidden');
 
         let html = `<table class="min-w-full text-sm">
             <thead class="bg-gray-200 sticky top-0"><tr class="text-xs uppercase text-gray-600">
                 <th class="py-2 px-2 text-left">#</th>
                 <th class="py-2 px-2 text-left">Producto</th>
-                <th class="py-2 px-2 text-center">Salida (Und)</th>
+                <th class="py-2 px-2 text-center">Salida</th>
                 <th class="py-2 px-2 text-right">Monto $</th>
             </tr></thead><tbody>`;
 
         const maxU = Math.max(...list.map(p => p.unidades), 1);
         list.forEach((p, i) => {
             const pct = (p.unidades / maxU) * 100;
-            html += `<tr class="border-b border-gray-100 hover:bg-green-50">
+            const mayor = formatUnidadMayor(p, p.unidades);
+            html += `<tr class="border-b border-gray-100 hover:bg-green-50 cursor-pointer" data-id="${p.id}">
                 <td class="py-2 px-2 text-gray-400 font-bold text-xs">${i + 1}</td>
                 <td class="py-2 px-2">
                     <div class="font-medium text-gray-800 text-xs leading-tight">${p.presentacion || 'Producto'}</div>
                     <div class="text-[10px] text-gray-400">${p.marca || ''}${p.segmento ? ' · ' + p.segmento : ''}</div>
                     <div class="w-full bg-gray-100 rounded-full h-1 mt-1"><div class="bg-green-500 h-1 rounded-full" style="width:${pct}%"></div></div>
                 </td>
-                <td class="py-2 px-2 text-center font-bold text-green-700">${p.unidades.toLocaleString('es-VE')}</td>
+                <td class="py-2 px-2 text-center font-bold text-green-700">${mayor}<div class="text-[9px] text-gray-400 font-normal">${p.unidades.toLocaleString('es-VE')} und</div></td>
                 <td class="py-2 px-2 text-right text-gray-600 text-xs">$${p.monto.toFixed(2)}</td>
             </tr>`;
         });
         html += '</tbody></table>';
         wrap.innerHTML = html;
 
+        // Click en producto → distribución por día
+        wrap.querySelectorAll('tr[data-id]').forEach(tr =>
+            tr.addEventListener('click', () => mostrarVentasPorDiaProducto(tr.dataset.id)));
+
         const totalU = list.reduce((s, p) => s + p.unidades, 0);
         const totalM = list.reduce((s, p) => s + p.monto, 0);
         resumen.textContent = `${list.length} producto(s) · ${totalU.toLocaleString('es-VE')} und vendidas · $${totalM.toFixed(2)}`;
     }
 
-    function renderChartTop(top) {
+    function renderGraficos(list) {
         const chart = document.getElementById('anaChart');
         if (!chart) return;
-        const max = Math.max(...top.map(p => p.unidades), 1);
-        chart.innerHTML = `
-            <div class="bg-gray-50 border border-gray-200 rounded-lg p-3">
-                <p class="text-[10px] font-bold text-gray-500 uppercase mb-2">Top ${top.length} — Más salida</p>
-                <div class="space-y-1.5">
-                    ${top.map((p, i) => {
-                        const pct = (p.unidades / max) * 100;
-                        const nombre = (p.presentacion || 'Producto').length > 22 ? (p.presentacion || '').slice(0, 22) + '…' : (p.presentacion || 'Producto');
-                        return `<div class="flex items-center gap-2">
-                            <span class="text-[10px] text-gray-400 w-4 text-right">${i + 1}</span>
-                            <div class="flex-1 min-w-0">
-                                <div class="flex justify-between items-center mb-0.5">
-                                    <span class="text-[10px] text-gray-700 truncate">${nombre}</span>
-                                    <span class="text-[10px] font-bold text-green-700 shrink-0 ml-1">${p.unidades.toLocaleString('es-VE')}</span>
-                                </div>
-                                <div class="w-full bg-gray-200 rounded-full h-2"><div class="bg-green-500 h-2 rounded-full transition-all" style="width:${pct}%"></div></div>
-                            </div>
+
+        // 1) Top 10 productos por salida
+        const top = list.slice(0, 10);
+        const maxTop = Math.max(...top.map(p => p.unidades), 1);
+        const topHtml = top.map((p, i) => {
+            const pct = (p.unidades / maxTop) * 100;
+            const nombre = (p.presentacion || 'Producto').length > 22 ? (p.presentacion || '').slice(0, 22) + '…' : (p.presentacion || 'Producto');
+            return `<div class="flex items-center gap-2">
+                <span class="text-[10px] text-gray-400 w-4 text-right">${i + 1}</span>
+                <div class="flex-1 min-w-0">
+                    <div class="flex justify-between items-center mb-0.5">
+                        <span class="text-[10px] text-gray-700 truncate">${nombre}</span>
+                        <span class="text-[10px] font-bold text-green-700 shrink-0 ml-1">${p.unidades.toLocaleString('es-VE')}</span>
+                    </div>
+                    <div class="w-full bg-gray-200 rounded-full h-2"><div class="bg-green-500 h-2 rounded-full transition-all" style="width:${pct}%"></div></div>
+                </div>
+            </div>`;
+        }).join('');
+
+        // 2) Ventas por día del mes (sumando todos los productos filtrados)
+        const porDia = {};
+        list.forEach(p => Object.entries(p.porDia || {}).forEach(([dia, u]) => {
+            porDia[dia] = (porDia[dia] || 0) + u;
+        }));
+        const dias = Object.keys(porDia).sort();
+        const maxDia = Math.max(...Object.values(porDia), 1);
+        const diaMax = dias.reduce((a, b) => (porDia[b] > (porDia[a] || 0) ? b : a), dias[0]);
+
+        let diasHtml = '';
+        if (dias.length) {
+            diasHtml = `
+            <div class="bg-gray-50 border border-gray-200 rounded-lg p-3 mt-2">
+                <p class="text-[10px] font-bold text-gray-500 uppercase mb-2">Ventas por día del mes ${diaMax ? `· pico: ${diaMax.split('-')[2]}` : ''}</p>
+                <div class="flex items-end gap-0.5 h-24">
+                    ${dias.map(dia => {
+                        const h = (porDia[dia] / maxDia) * 100;
+                        const d = dia.split('-')[2];
+                        const esPico = dia === diaMax;
+                        return `<div class="flex-1 flex flex-col items-center justify-end h-full group relative">
+                            <div class="w-full ${esPico ? 'bg-green-600' : 'bg-green-400'} rounded-t transition-all hover:bg-green-700" style="height:${h}%" title="Día ${d}: ${porDia[dia].toLocaleString('es-VE')} und"></div>
+                            <span class="text-[7px] text-gray-400 mt-0.5">${d}</span>
                         </div>`;
                     }).join('')}
                 </div>
             </div>`;
+        }
+
+        chart.innerHTML = `
+            <div class="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                <p class="text-[10px] font-bold text-gray-500 uppercase mb-2">Top ${top.length} — Más salida</p>
+                <div class="space-y-1.5">${topHtml}</div>
+            </div>
+            ${diasHtml}`;
+    }
+
+    function mostrarVentasPorDiaProducto(prodId) {
+        const p = _anaData.find(x => x.id === prodId);
+        if (!p || !p.porDia) return;
+        const dias = Object.keys(p.porDia).sort();
+        if (!dias.length) return;
+        const maxDia = Math.max(...Object.values(p.porDia), 1);
+        const diaMax = dias.reduce((a, b) => (p.porDia[b] > (p.porDia[a] || 0) ? b : a), dias[0]);
+
+        document.getElementById('admDiaProdOverlay')?.remove();
+        const ov = document.createElement('div');
+        ov.id = 'admDiaProdOverlay';
+        ov.className = 'fixed inset-0 z-[9998] bg-black/50 flex items-center justify-center p-4';
+        ov.innerHTML = `
+            <div class="bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden">
+                <div class="bg-green-600 text-white px-4 py-3">
+                    <div class="font-bold text-sm">${p.presentacion || 'Producto'}</div>
+                    <div class="text-xs opacity-80">${p.marca || ''} · salida por día</div>
+                </div>
+                <div class="p-4">
+                    <p class="text-[10px] text-gray-500 mb-2">Día con más salida: <span class="font-bold text-green-700">${diaMax.split('-')[2]}</span> (${p.porDia[diaMax].toLocaleString('es-VE')} und)</p>
+                    <div class="flex items-end gap-0.5 h-32">
+                        ${dias.map(dia => {
+                            const h = (p.porDia[dia] / maxDia) * 100;
+                            const d = dia.split('-')[2];
+                            const esPico = dia === diaMax;
+                            return `<div class="flex-1 flex flex-col items-center justify-end h-full">
+                                <div class="w-full ${esPico ? 'bg-green-600' : 'bg-green-400'} rounded-t hover:bg-green-700" style="height:${h}%" title="Día ${d}: ${p.porDia[dia]} und"></div>
+                                <span class="text-[7px] text-gray-400 mt-0.5">${d}</span>
+                            </div>`;
+                        }).join('')}
+                    </div>
+                </div>
+                <div class="p-3 border-t"><button id="diaProdCerrar" class="w-full py-2 bg-gray-100 text-gray-600 rounded font-bold text-sm">Cerrar</button></div>
+            </div>`;
+        document.body.appendChild(ov);
+        ov.addEventListener('click', e => { if (e.target === ov) ov.remove(); });
+        document.getElementById('diaProdCerrar').addEventListener('click', () => ov.remove());
     }
 
     function abrirSelectorExcluidos() {
         const excl = new Set(_admConfig.analistaExcluidos);
         const productos = Object.values(_masterCache).filter(p => p.presentacion || p.marca).sort(_sortFn);
+        const rubros = [...new Set(productos.map(p => p.rubro).filter(Boolean))].sort();
+        const segs   = [...new Set(productos.map(p => p.segmento).filter(Boolean))].sort();
+        const marcas = [...new Set(productos.map(p => p.marca).filter(Boolean))].sort();
+
         document.getElementById('admExclOverlay')?.remove();
         const ov = document.createElement('div');
         ov.id = 'admExclOverlay';
@@ -738,8 +1008,13 @@
                     <div class="font-bold">Productos excluidos del análisis</div>
                     <div class="text-xs opacity-80">Marca los que NO deben contar (dejaron de llegar, etc.)</div>
                 </div>
-                <div class="p-2 border-b shrink-0">
+                <div class="p-2 border-b shrink-0 space-y-2">
                     <input type="text" id="exclSearch" placeholder="Buscar producto..." class="w-full text-sm border border-gray-300 rounded p-2 focus:ring-2 focus:ring-red-400 outline-none">
+                    <div class="grid grid-cols-3 gap-1.5">
+                        <select id="exclFRubro" class="text-xs border border-gray-300 rounded p-1.5 bg-white focus:ring-2 focus:ring-red-400 outline-none"><option value="">Rubro</option>${rubros.map(r => `<option value="${r}">${r}</option>`).join('')}</select>
+                        <select id="exclFSeg" class="text-xs border border-gray-300 rounded p-1.5 bg-white focus:ring-2 focus:ring-red-400 outline-none"><option value="">Segmento</option>${segs.map(s => `<option value="${s}">${s}</option>`).join('')}</select>
+                        <select id="exclFMarca" class="text-xs border border-gray-300 rounded p-1.5 bg-white focus:ring-2 focus:ring-red-400 outline-none"><option value="">Marca</option>${marcas.map(m => `<option value="${m}">${m}</option>`).join('')}</select>
+                    </div>
                 </div>
                 <div id="exclList" class="p-2 overflow-y-auto flex-1 space-y-1"></div>
                 <div class="p-3 border-t flex gap-2 shrink-0">
@@ -749,10 +1024,15 @@
             </div>`;
         document.body.appendChild(ov);
 
-        const renderExcl = (term = '') => {
+        const renderExcl = () => {
+            const term = (document.getElementById('exclSearch').value || '').toLowerCase().trim();
+            const fR = document.getElementById('exclFRubro').value;
+            const fS = document.getElementById('exclFSeg').value;
+            const fM = document.getElementById('exclFMarca').value;
             const list = document.getElementById('exclList');
             const filt = productos.filter(p =>
-                !term || (p.presentacion || '').toLowerCase().includes(term) || (p.marca || '').toLowerCase().includes(term));
+                (!fR || p.rubro === fR) && (!fS || p.segmento === fS) && (!fM || p.marca === fM) &&
+                (!term || (p.presentacion || '').toLowerCase().includes(term) || (p.marca || '').toLowerCase().includes(term)));
             list.innerHTML = filt.map(p => `
                 <label class="flex items-center gap-2 p-2 rounded hover:bg-gray-50 cursor-pointer border border-gray-100">
                     <input type="checkbox" class="excl-cb w-4 h-4" value="${p.id}" ${excl.has(p.id) ? 'checked' : ''}>
@@ -765,9 +1045,11 @@
         renderExcl();
 
         let deb = null;
-        document.getElementById('exclSearch').addEventListener('input', e => {
-            clearTimeout(deb); deb = setTimeout(() => renderExcl(e.target.value.toLowerCase().trim()), 180);
+        document.getElementById('exclSearch').addEventListener('input', () => {
+            clearTimeout(deb); deb = setTimeout(renderExcl, 180);
         });
+        ['exclFRubro','exclFSeg','exclFMarca'].forEach(id =>
+            document.getElementById(id).addEventListener('change', renderExcl));
         document.getElementById('exclCancel').addEventListener('click', () => ov.remove());
         document.getElementById('exclSave').addEventListener('click', async () => {
             _admConfig.analistaExcluidos = Array.from(excl);
@@ -781,4 +1063,203 @@
         });
     }
 
+
+    // ════════════════════════════════════════════════════════
+    // 3. ANALISTA DE INVENTARIO
+    //    Cruza histórico de ventas (últimos 6 meses) con el inventario
+    //    consolidado actual (mismos vendedores del inventario). Alerta:
+    //      - Productos que se vendían y ahora están AGOTADOS
+    //      - Productos con inventario BAJO (≤ 1 caja/paquete)
+    // ════════════════════════════════════════════════════════
+    let _invAnaData = { agotados: [], bajos: [] };
+
+    async function showAnalistaInventario() {
+        _mainContent.innerHTML = `
+            <div class="p-2 sm:p-3 pt-6 w-full max-w-3xl mx-auto">
+                <div class="bg-white/95 backdrop-blur-sm p-3 sm:p-4 rounded-lg shadow-xl">
+                    <div class="flex items-center justify-between mb-3">
+                        <h2 class="text-lg font-bold text-gray-800 flex items-center gap-2">🔍 Analista de Inventario</h2>
+                        <button id="invAnaBack" class="px-3 py-1.5 bg-gray-400 text-white text-xs rounded hover:bg-gray-500 font-bold transition">Volver</button>
+                    </div>
+
+                    <div class="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-3">
+                        <p class="text-xs text-amber-800 leading-relaxed">
+                            Cruza los productos <b>vendidos en los últimos 6 meses</b> con el inventario consolidado actual
+                            (vendedores: <b id="invAnaVends">—</b>). Muestra los que están <b>agotados</b> o con <b>inventario bajo</b> (≤ 1 caja/paquete).
+                        </p>
+                        <button id="invAnaRun" class="w-full mt-2 py-2 bg-amber-600 text-white font-bold rounded text-sm hover:bg-amber-700 transition">🔍 Analizar Inventario</button>
+                    </div>
+
+                    <!-- Filtros -->
+                    <div class="grid grid-cols-3 gap-2 mb-2">
+                        <select id="invAnaFRubro" class="text-xs border border-gray-300 rounded p-1.5 bg-white focus:ring-2 focus:ring-amber-400 outline-none"><option value="">Rubro</option></select>
+                        <select id="invAnaFSeg" class="text-xs border border-gray-300 rounded p-1.5 bg-white focus:ring-2 focus:ring-amber-400 outline-none"><option value="">Segmento</option></select>
+                        <select id="invAnaFMarca" class="text-xs border border-gray-300 rounded p-1.5 bg-white focus:ring-2 focus:ring-amber-400 outline-none"><option value="">Marca</option></select>
+                    </div>
+
+                    <div id="invAnaLoading" class="text-center py-10 text-gray-400 text-sm">Toca «Analizar Inventario» para comenzar.</div>
+                    <div id="invAnaResult" class="hidden space-y-3"></div>
+                </div>
+            </div>`;
+
+        document.getElementById('invAnaBack').addEventListener('click', window.showAdministracionMenu);
+        document.getElementById('invAnaRun').addEventListener('click', ejecutarAnalisisInventario);
+        ['invAnaFRubro','invAnaFSeg','invAnaFMarca'].forEach(id =>
+            document.getElementById(id).addEventListener('change', renderInvAnaResult));
+
+        // Mostrar los vendedores configurados (los del inventario consolidado)
+        const vends = _admConfig.inventarioVendedores.map(uid => {
+            const u = _usersCache.find(x => x.id === uid); return u ? nombreVendedor(u) : uid;
+        });
+        const el = document.getElementById('invAnaVends');
+        if (el) el.textContent = vends.length ? vends.join(', ') : 'ninguno configurado';
+    }
+
+    async function ejecutarAnalisisInventario() {
+        const vendedores = _admConfig.inventarioVendedores;
+        if (!vendedores.length) {
+            _showModal('Aviso', 'Primero configura los vendedores en «Inventario Consolidado».');
+            return;
+        }
+
+        const loading = document.getElementById('invAnaLoading');
+        const result = document.getElementById('invAnaResult');
+        loading.classList.remove('hidden');
+        loading.innerHTML = '<svg class="animate-spin h-6 w-6 mx-auto mb-2 text-amber-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path></svg>Cruzando ventas con inventario...';
+        result.classList.add('hidden');
+
+        try {
+            // 1) Productos vendidos en los últimos 6 meses (con su total de unidades)
+            const hoy = new Date();
+            const limite = new Date(hoy.getFullYear(), hoy.getMonth() - 6, 1);
+            const vendidos = {}; // id -> unidades vendidas en el periodo
+
+            for (const uid of vendedores) {
+                const ventasSnap = await _getDocs(_collection(_db, `artifacts/${_appId}/users/${uid}/ventas`));
+                const cierresSnap = await _getDocs(_collection(_db, `artifacts/${_appId}/users/${uid}/cierres`));
+
+                const procesar = (v) => {
+                    const f = v.fecha?.toDate ? v.fecha.toDate() : new Date(v.fecha);
+                    if (!f || f < limite) return;
+                    (v.productos || []).forEach(p => {
+                        if (!p.id) return;
+                        const m = _masterCache[p.id] || {};
+                        const uCj = m.unidadesPorCaja || 1, uPaq = m.unidadesPorPaquete || 1;
+                        const cv = p.cantidadVendida || {};
+                        const u = (cv.cj || 0) * uCj + (cv.paq || 0) * uPaq + (cv.und || 0);
+                        vendidos[p.id] = (vendidos[p.id] || 0) + u;
+                    });
+                };
+                ventasSnap.docs.forEach(d => procesar(d.data()));
+                cierresSnap.docs.forEach(dc => (dc.data().ventas || []).forEach(procesar));
+            }
+
+            // 2) Inventario consolidado actual (mismos vendedores)
+            const inv = {}; // id -> unidades en inventario
+            const invSnaps = await Promise.all(vendedores.map(uid =>
+                _getDocs(_collection(_db, `artifacts/${_appId}/users/${uid}/inventario`))));
+            invSnaps.forEach(snap => snap.docs.forEach(d => {
+                inv[d.id] = (inv[d.id] || 0) + (d.data().cantidadUnidades || 0);
+            }));
+
+            // 3) Cruce: productos vendidos que ahora están agotados o bajos
+            const agotados = [], bajos = [];
+            Object.keys(vendidos).forEach(id => {
+                const m = _masterCache[id] || {};
+                if (!m.presentacion && !m.marca) return;
+                const existencia = inv[id] || 0;
+                // Umbral "bajo" = 1 unidad mayor (1 caja o 1 paquete)
+                const uMayor = (m.ventaPor?.cj && m.unidadesPorCaja > 1) ? m.unidadesPorCaja
+                             : (m.ventaPor?.paq && m.unidadesPorPaquete > 1) ? m.unidadesPorPaquete : 1;
+                const item = { id, ...m, existencia, vendido: vendidos[id] };
+                if (existencia <= 0) agotados.push(item);
+                else if (existencia <= uMayor) bajos.push(item);
+            });
+
+            // Ordenar por más vendidos (más urgente primero)
+            agotados.sort((a, b) => b.vendido - a.vendido);
+            bajos.sort((a, b) => b.vendido - a.vendido);
+
+            _invAnaData = { agotados, bajos };
+            poblarFiltrosInvAna();
+            renderInvAnaResult();
+        } catch (e) {
+            console.error('Error analizando inventario:', e);
+            loading.textContent = 'Error al analizar el inventario.';
+        }
+    }
+
+    function poblarFiltrosInvAna() {
+        const all = [..._invAnaData.agotados, ..._invAnaData.bajos];
+        const rubros = [...new Set(all.map(p => p.rubro).filter(Boolean))].sort();
+        const segs   = [...new Set(all.map(p => p.segmento).filter(Boolean))].sort();
+        const marcas = [...new Set(all.map(p => p.marca).filter(Boolean))].sort();
+        const fill = (id, arr, label) => {
+            const el = document.getElementById(id);
+            if (el) el.innerHTML = `<option value="">${label}</option>` + arr.map(v => `<option value="${v}">${v}</option>`).join('');
+        };
+        fill('invAnaFRubro', rubros, 'Rubro');
+        fill('invAnaFSeg', segs, 'Segmento');
+        fill('invAnaFMarca', marcas, 'Marca');
+    }
+
+    function renderInvAnaResult() {
+        const result = document.getElementById('invAnaResult');
+        const loading = document.getElementById('invAnaLoading');
+        if (!result) return;
+
+        const fR = document.getElementById('invAnaFRubro')?.value || '';
+        const fS = document.getElementById('invAnaFSeg')?.value || '';
+        const fM = document.getElementById('invAnaFMarca')?.value || '';
+        const aplica = (arr) => arr.filter(p =>
+            (!fR || p.rubro === fR) && (!fS || p.segmento === fS) && (!fM || p.marca === fM));
+
+        const agotados = aplica(_invAnaData.agotados);
+        const bajos = aplica(_invAnaData.bajos);
+
+        loading.classList.add('hidden');
+        result.classList.remove('hidden');
+
+        const cardProducto = (p, color) => {
+            const mayor = formatUnidadMayor(p, p.existencia);
+            return `<div class="flex items-center justify-between py-2 px-2 border-b border-gray-100">
+                <div class="min-w-0">
+                    <div class="font-medium text-gray-800 text-xs leading-tight truncate">${p.presentacion || 'Producto'}</div>
+                    <div class="text-[10px] text-gray-400">${p.marca || ''}${p.segmento ? ' · ' + p.segmento : ''}</div>
+                </div>
+                <div class="text-right shrink-0 ml-2">
+                    <div class="text-xs font-bold ${color}">${mayor}</div>
+                    <div class="text-[9px] text-gray-400">vendió ${p.vendido.toLocaleString('es-VE')} und/6m</div>
+                </div>
+            </div>`;
+        };
+
+        let html = '';
+        // AGOTADOS
+        html += `<div class="border border-red-200 rounded-lg overflow-hidden">
+            <div class="bg-red-100 px-3 py-2 flex items-center justify-between">
+                <span class="text-xs font-bold text-red-800 uppercase tracking-wide">🔴 Agotados que se vendían</span>
+                <span class="text-xs font-black text-red-700">${agotados.length}</span>
+            </div>
+            <div class="max-h-[30vh] overflow-y-auto">
+                ${agotados.length ? agotados.map(p => cardProducto(p, 'text-red-600')).join('') : '<p class="text-center text-gray-400 text-xs py-4">Ninguno — todo lo que se vende tiene existencia.</p>'}
+            </div>
+        </div>`;
+
+        // BAJOS
+        html += `<div class="border border-amber-200 rounded-lg overflow-hidden">
+            <div class="bg-amber-100 px-3 py-2 flex items-center justify-between">
+                <span class="text-xs font-bold text-amber-800 uppercase tracking-wide">🟡 Inventario bajo (≤ 1 Cj/Paq)</span>
+                <span class="text-xs font-black text-amber-700">${bajos.length}</span>
+            </div>
+            <div class="max-h-[30vh] overflow-y-auto">
+                ${bajos.length ? bajos.map(p => cardProducto(p, 'text-amber-700')).join('') : '<p class="text-center text-gray-400 text-xs py-4">Ninguno con inventario bajo.</p>'}
+            </div>
+        </div>`;
+
+        result.innerHTML = html;
+    }
+
+
 })();
+
