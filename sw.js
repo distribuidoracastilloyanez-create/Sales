@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v17'; // v17: Módulo Administración (inventario consolidado + analista de datos)
+const CACHE_NAME = 'ventas-app-cache-v18'; // v18: Analista de Datos mejorado + Analista de Inventario
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
@@ -179,5 +179,6 @@ self.addEventListener('fetch', event => {
             })
     );
 });
+
 
 
