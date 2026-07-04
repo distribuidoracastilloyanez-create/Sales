@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v18'; // v18: Analista de Datos mejorado + Analista de Inventario
+const CACHE_NAME = 'ventas-app-cache-v19'; // v19: Analista periodo flexible + 3 niveles inventario bajo
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
@@ -179,6 +179,7 @@ self.addEventListener('fetch', event => {
             })
     );
 });
+
 
 
 
