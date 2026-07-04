@@ -565,6 +565,8 @@
     // 2. ANALISTA DE DATOS DE VENTAS
     // ════════════════════════════════════════════════════════
     let _anaData = [];  // productos con salida agregada
+    let _anaGrafico = 'porDia';
+    let _anaLabel = '';
 
     function mesActualISO() {
         const d = new Date();
@@ -592,8 +594,17 @@
                     <!-- Controles -->
                     <div class="bg-green-50 border border-green-200 rounded-lg p-3 mb-3 space-y-2">
                         <div>
-                            <label class="block text-[10px] font-bold text-green-800 uppercase mb-1">Mes a analizar</label>
-                            <input type="month" id="anaMes" value="${mesActualISO()}" class="w-full text-xs border border-green-300 rounded p-1.5 focus:ring-2 focus:ring-green-400 outline-none">
+                            <label class="block text-[10px] font-bold text-green-800 uppercase mb-1">Periodo a analizar</label>
+                            <select id="anaPeriodo" class="w-full text-xs border border-green-300 rounded p-1.5 bg-white focus:ring-2 focus:ring-green-400 outline-none mb-1.5">
+                                <option value="dia">Día específico</option>
+                                <option value="semana">Semana específica</option>
+                                <option value="semanaAnterior">Semana anterior (lun-dom)</option>
+                                <option value="mes" selected>Mes específico</option>
+                                <option value="mesAnterior">Mes anterior</option>
+                                <option value="anioCurso">Año en curso</option>
+                                <option value="anioEspecifico">Año específico</option>
+                            </select>
+                            <div id="anaPeriodoControl"></div>
                         </div>
                         <div class="flex gap-2">
                             <button id="anaRun" class="flex-1 py-2 bg-green-600 text-white font-bold rounded text-sm hover:bg-green-700 transition">📈 Analizar Ventas</button>
@@ -617,7 +628,7 @@
                         </select>
                     </div>
 
-                    <div id="anaLoading" class="text-center py-10 text-gray-400 text-sm">Selecciona vendedores y un mes, luego «Analizar Ventas».</div>
+                    <div id="anaLoading" class="text-center py-10 text-gray-400 text-sm">Selecciona vendedores y un periodo, luego «Analizar Ventas».</div>
                     <div id="anaChart" class="hidden mb-3"></div>
                     <div id="anaTableWrap" class="hidden overflow-x-auto max-h-[45vh] overflow-y-auto rounded border border-gray-200"></div>
                     <div id="anaResumen" class="hidden text-xs text-gray-500 mt-2 text-center"></div>
@@ -634,9 +645,36 @@
         document.getElementById('anaExcluir').addEventListener('click', abrirSelectorExcluidos);
         ['anaFRubro','anaFSeg','anaFMarca','anaOrden'].forEach(id =>
             document.getElementById(id).addEventListener('change', renderAnaTabla));
+        document.getElementById('anaPeriodo').addEventListener('change', renderPeriodoControl);
 
         renderVendChipsAna();
         actualizarContadorExcluidos();
+        renderPeriodoControl();
+    }
+
+    // Renderiza el control secundario según el tipo de periodo elegido
+    function renderPeriodoControl() {
+        const tipo = document.getElementById('anaPeriodo').value;
+        const cont = document.getElementById('anaPeriodoControl');
+        if (!cont) return;
+        const cls = 'w-full text-xs border border-green-300 rounded p-1.5 bg-white focus:ring-2 focus:ring-green-400 outline-none';
+        const hoy = new Date();
+        const anioActual = hoy.getFullYear();
+
+        if (tipo === 'dia') {
+            cont.innerHTML = `<input type="date" id="anaFecha" value="${hoyISO()}" class="${cls}">`;
+        } else if (tipo === 'semana') {
+            cont.innerHTML = `<input type="week" id="anaSemana" class="${cls}">`;
+        } else if (tipo === 'mes') {
+            cont.innerHTML = `<input type="month" id="anaMes" value="${mesActualISO()}" class="${cls}">`;
+        } else if (tipo === 'anioEspecifico') {
+            let opts = '';
+            for (let y = anioActual; y >= anioActual - 6; y--) opts += `<option value="${y}">${y}</option>`;
+            cont.innerHTML = `<select id="anaAnio" class="${cls}">${opts}</select>`;
+        } else {
+            // semanaAnterior, mesAnterior, anioCurso: no requieren control extra
+            cont.innerHTML = '';
+        }
     }
 
     function renderVendChipsAna() {
@@ -698,9 +736,74 @@
 
     // Guardamos por producto: unidades, monto y desglose por día (para gráficos).
     // _anaData tendrá: { id, ...master, unidades, monto, porDia: { 'YYYY-MM-DD': unidades } }
+    // Calcula el rango de fechas [inicio, fin] (inclusive) y metadatos según el periodo elegido.
+    function calcularRangoPeriodo() {
+        const tipo = document.getElementById('anaPeriodo').value;
+        const hoy = new Date();
+        const y = hoy.getFullYear(), mo = hoy.getMonth();
+        const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+        if (tipo === 'dia') {
+            const val = document.getElementById('anaFecha')?.value;
+            if (!val) return null;
+            return { inicio: val, fin: val, label: `Día ${val.split('-').reverse().join('/')}`, grafico: 'ninguno' };
+        }
+        if (tipo === 'semana') {
+            const val = document.getElementById('anaSemana')?.value; // formato YYYY-Www
+            if (!val) return null;
+            const [yy, ww] = val.split('-W').map(Number);
+            // ISO week: el jueves de la semana 1 define el año
+            const simple = new Date(yy, 0, 1 + (ww - 1) * 7);
+            const dow = simple.getDay();
+            const lunes = new Date(simple);
+            lunes.setDate(simple.getDate() - ((dow + 6) % 7)); // retroceder al lunes
+            const domingo = new Date(lunes); domingo.setDate(lunes.getDate() + 6);
+            return { inicio: iso(lunes), fin: iso(domingo), label: `Semana ${ww}/${yy}`, grafico: 'porDia' };
+        }
+        if (tipo === 'semanaAnterior') {
+            const dow = hoy.getDay();
+            const lunesEsta = new Date(hoy); lunesEsta.setDate(hoy.getDate() - ((dow + 6) % 7));
+            const lunesAnt = new Date(lunesEsta); lunesAnt.setDate(lunesEsta.getDate() - 7);
+            const domAnt = new Date(lunesAnt); domAnt.setDate(lunesAnt.getDate() + 6);
+            return { inicio: iso(lunesAnt), fin: iso(domAnt), label: 'Semana anterior', grafico: 'porDia' };
+        }
+        if (tipo === 'mes') {
+            const val = document.getElementById('anaMes')?.value; // YYYY-MM
+            if (!val) return null;
+            const [yy, mm] = val.split('-').map(Number);
+            const ini = new Date(yy, mm - 1, 1), fin = new Date(yy, mm, 0);
+            return { inicio: iso(ini), fin: iso(fin), label: val, grafico: 'porDia' };
+        }
+        if (tipo === 'mesAnterior') {
+            const ini = new Date(y, mo - 1, 1), fin = new Date(y, mo, 0);
+            return { inicio: iso(ini), fin: iso(fin), label: 'Mes anterior', grafico: 'porDia' };
+        }
+        if (tipo === 'anioCurso') {
+            return { inicio: `${y}-01-01`, fin: iso(hoy), label: `Año ${y} (en curso)`, grafico: 'porMes' };
+        }
+        if (tipo === 'anioEspecifico') {
+            const yy = Number(document.getElementById('anaAnio')?.value || y);
+            return { inicio: `${yy}-01-01`, fin: `${yy}-12-31`, label: `Año ${yy}`, grafico: 'porMes' };
+        }
+        return null;
+    }
+
+    // Lista de meses ISO (YYYY-MM) que cubre un rango de fechas
+    function mesesEnRango(inicioISO, finISO) {
+        const [yi, mi] = inicioISO.split('-').map(Number);
+        const [yf, mf] = finISO.split('-').map(Number);
+        const meses = [];
+        let y = yi, m = mi;
+        while (y < yf || (y === yf && m <= mf)) {
+            meses.push(`${y}-${String(m).padStart(2, '0')}`);
+            m++; if (m > 12) { m = 1; y++; }
+        }
+        return meses;
+    }
+
     async function ejecutarAnalisis(forzarRecarga) {
-        const mes = document.getElementById('anaMes').value;
-        if (!mes) { _showModal('Aviso', 'Selecciona un mes.'); return; }
+        const rango = calcularRangoPeriodo();
+        if (!rango) { _showModal('Aviso', 'Selecciona un periodo válido.'); return; }
         const vendedores = _admConfig.analistaVendedores;
         if (!vendedores.length) { _showModal('Aviso', 'Selecciona al menos un vendedor (botón Configurar).'); return; }
 
@@ -709,93 +812,111 @@
         const chart = document.getElementById('anaChart');
         const cacheInfo = document.getElementById('anaCacheInfo');
         loading.classList.remove('hidden');
-        loading.innerHTML = '<svg class="animate-spin h-6 w-6 mx-auto mb-2 text-green-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path></svg>Analizando ventas del mes...';
+        loading.innerHTML = '<svg class="animate-spin h-6 w-6 mx-auto mb-2 text-green-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path></svg>Analizando ventas...';
         wrap.classList.add('hidden');
         chart.classList.add('hidden');
 
-        const [year, month] = mes.split('-').map(Number);
-        const ahora = new Date();
-        const esMesActual = (year === ahora.getFullYear() && month === (ahora.getMonth() + 1));
+        _anaGrafico = rango.grafico;   // 'porDia' | 'porMes' | 'ninguno'
+        _anaLabel = rango.label;
 
-        // salida[id] = { unidades, monto, porDia: {dia: unidades} }
+        const mesActual = mesActualISO();
+        const meses = mesesEnRango(rango.inicio, rango.fin);
+
+        // salida[id] = { unidades, monto, porDia: {dia: u}, porMes: {mes: u} }
         const salida = {};
-        let lecturasFirebase = 0;
-        let desdeCache = 0;
+        let lecturasFirebase = 0, desdeCache = 0;
 
+        const dentroRango = (diaISO) => diaISO >= rango.inicio && diaISO <= rango.fin;
         const acumular = (id, unidades, monto, diaISO) => {
-            if (!salida[id]) salida[id] = { unidades: 0, monto: 0, porDia: {} };
+            if (!salida[id]) salida[id] = { unidades: 0, monto: 0, porDia: {}, porMes: {} };
             salida[id].unidades += unidades;
             salida[id].monto += monto;
-            if (diaISO) salida[id].porDia[diaISO] = (salida[id].porDia[diaISO] || 0) + unidades;
+            if (diaISO) {
+                salida[id].porDia[diaISO] = (salida[id].porDia[diaISO] || 0) + unidades;
+                const mesISO = diaISO.slice(0, 7);
+                salida[id].porMes[mesISO] = (salida[id].porMes[mesISO] || 0) + unidades;
+            }
         };
 
         try {
             for (const uid of vendedores) {
-                const cache = forzarRecarga ? null : leerCacheMes(uid, mes);
+                // Procesamos mes por mes: usamos caché para meses cerrados
+                for (const mes of meses) {
+                    const esMesActual = (mes === mesActual);
+                    const cache = forzarRecarga ? null : leerCacheMes(uid, mes);
 
-                // Si hay caché válido y NO es el mes actual, usarlo directo (mes cerrado, inmutable)
-                if (cache && !esMesActual) {
-                    Object.entries(cache.productos || {}).forEach(([id, d]) => {
-                        acumular(id, d.unidades, d.monto, null);
-                        Object.entries(d.porDia || {}).forEach(([dia, u]) => {
-                            if (!salida[id].porDia[dia]) salida[id].porDia[dia] = 0;
-                            salida[id].porDia[dia] += u;
+                    if (cache && !esMesActual) {
+                        // El caché guarda por día; filtramos por el rango exacto
+                        Object.entries(cache.productos || {}).forEach(([id, d]) => {
+                            Object.entries(d.porDia || {}).forEach(([dia, u]) => {
+                                if (dentroRango(dia)) {
+                                    // Reconstruir monto proporcional no es exacto; guardamos monto aparte
+                                    acumular(id, u, 0, dia);
+                                }
+                            });
+                            // Monto: solo si el mes entero está dentro del rango
+                            const mesInicio = `${mes}-01`;
+                            const [yy, mm] = mes.split('-').map(Number);
+                            const mesFin = `${mes}-${String(new Date(yy, mm, 0).getDate()).padStart(2, '0')}`;
+                            if (mesInicio >= rango.inicio && mesFin <= rango.fin && salida[id]) {
+                                salida[id].monto += d.monto || 0;
+                            }
                         });
-                    });
-                    desdeCache++;
-                    continue;
+                        desdeCache++;
+                        continue;
+                    }
+
+                    // Leer de Firebase
+                    const [year, month] = mes.split('-').map(Number);
+                    const ventasSnap = await _getDocs(_collection(_db, `artifacts/${_appId}/users/${uid}/ventas`));
+                    const cierresSnap = await _getDocs(_collection(_db, `artifacts/${_appId}/users/${uid}/cierres`));
+                    lecturasFirebase += ventasSnap.size + cierresSnap.size;
+
+                    const cacheProd = {};
+
+                    const procesarVenta = (v) => {
+                        const f = v.fecha?.toDate ? v.fecha.toDate() : new Date(v.fecha);
+                        if (!f || f.getFullYear() !== year || (f.getMonth() + 1) !== month) return;
+                        const diaISO = `${f.getFullYear()}-${String(f.getMonth() + 1).padStart(2, '0')}-${String(f.getDate()).padStart(2, '0')}`;
+                        (v.productos || []).forEach(p => {
+                            if (!p.id) return;
+                            const m = _masterCache[p.id] || {};
+                            const uCj = m.unidadesPorCaja || 1, uPaq = m.unidadesPorPaquete || 1;
+                            const cv = p.cantidadVendida || {};
+                            const unidades = (cv.cj || 0) * uCj + (cv.paq || 0) * uPaq + (cv.und || 0);
+                            const monto = (p.precios?.cj || 0) * (cv.cj || 0) + (p.precios?.paq || 0) * (cv.paq || 0) + (p.precios?.und || 0) * (cv.und || 0);
+
+                            // Guardar en caché del mes (todos los días del mes, para reuso futuro)
+                            if (diaISO < hoyISO()) {
+                                if (!cacheProd[p.id]) cacheProd[p.id] = { unidades: 0, monto: 0, porDia: {} };
+                                cacheProd[p.id].unidades += unidades;
+                                cacheProd[p.id].monto += monto;
+                                cacheProd[p.id].porDia[diaISO] = (cacheProd[p.id].porDia[diaISO] || 0) + unidades;
+                            }
+                            // Acumular al resultado solo si cae dentro del rango consultado
+                            if (dentroRango(diaISO)) acumular(p.id, unidades, monto, diaISO);
+                        });
+                    };
+
+                    ventasSnap.docs.forEach(d => procesarVenta(d.data()));
+                    cierresSnap.docs.forEach(dc => (dc.data().ventas || []).forEach(procesarVenta));
+
+                    guardarCacheMes(uid, mes, { productos: cacheProd, cachedAt: hoyISO() });
                 }
-
-                // Leer de Firebase (ventas activas + cierres del mes)
-                const ventasSnap = await _getDocs(_collection(_db, `artifacts/${_appId}/users/${uid}/ventas`));
-                const cierresSnap = await _getDocs(_collection(_db, `artifacts/${_appId}/users/${uid}/cierres`));
-                lecturasFirebase += ventasSnap.size + cierresSnap.size;
-
-                // Acumulador temporal para este vendedor+mes (para cachear)
-                const cacheProd = {}; // id -> { unidades, monto, porDia }
-
-                const procesarVenta = (v) => {
-                    const f = v.fecha?.toDate ? v.fecha.toDate() : new Date(v.fecha);
-                    if (!f || f.getFullYear() !== year || (f.getMonth() + 1) !== month) return;
-                    const diaISO = `${f.getFullYear()}-${String(f.getMonth() + 1).padStart(2, '0')}-${String(f.getDate()).padStart(2, '0')}`;
-                    (v.productos || []).forEach(p => {
-                        if (!p.id) return;
-                        const m = _masterCache[p.id] || {};
-                        const uCj = m.unidadesPorCaja || 1, uPaq = m.unidadesPorPaquete || 1;
-                        const cv = p.cantidadVendida || {};
-                        const unidades = (cv.cj || 0) * uCj + (cv.paq || 0) * uPaq + (cv.und || 0);
-                        const monto = (p.precios?.cj || 0) * (cv.cj || 0) + (p.precios?.paq || 0) * (cv.paq || 0) + (p.precios?.und || 0) * (cv.und || 0);
-                        acumular(p.id, unidades, monto, diaISO);
-                        // Guardar en cache solo días ANTERIORES a hoy (inmutables)
-                        if (diaISO < hoyISO()) {
-                            if (!cacheProd[p.id]) cacheProd[p.id] = { unidades: 0, monto: 0, porDia: {} };
-                            cacheProd[p.id].unidades += unidades;
-                            cacheProd[p.id].monto += monto;
-                            cacheProd[p.id].porDia[diaISO] = (cacheProd[p.id].porDia[diaISO] || 0) + unidades;
-                        }
-                    });
-                };
-
-                ventasSnap.docs.forEach(d => procesarVenta(d.data()));
-                cierresSnap.docs.forEach(dc => (dc.data().ventas || []).forEach(procesarVenta));
-
-                // Guardar caché de este vendedor+mes (solo días cerrados)
-                guardarCacheMes(uid, mes, { productos: cacheProd, cachedAt: hoyISO() });
             }
 
             _anaData = Object.keys(salida)
                 .filter(id => !_admConfig.analistaExcluidos.includes(id))
                 .map(id => {
                     const m = _masterCache[id] || {};
-                    return { id, ...m, unidades: salida[id].unidades, monto: salida[id].monto, porDia: salida[id].porDia };
+                    return { id, ...m, unidades: salida[id].unidades, monto: salida[id].monto, porDia: salida[id].porDia, porMes: salida[id].porMes };
                 })
                 .filter(p => p.presentacion || p.marca);
 
             if (cacheInfo) {
-                const partes = [];
-                if (desdeCache > 0) partes.push(`${desdeCache} vendedor(es) desde caché`);
-                if (lecturasFirebase > 0) partes.push(`${lecturasFirebase} lectura(s) de Firebase`);
-                if (esMesActual) partes.push('mes actual (siempre fresco)');
+                const partes = [`Periodo: ${rango.label}`];
+                if (desdeCache > 0) partes.push(`${desdeCache} desde caché`);
+                if (lecturasFirebase > 0) partes.push(`${lecturasFirebase} lectura(s) Firebase`);
                 cacheInfo.textContent = partes.join(' · ');
             }
 
@@ -898,7 +1019,7 @@
         const chart = document.getElementById('anaChart');
         if (!chart) return;
 
-        // 1) Top 10 productos por salida
+        // 1) Top 10 productos por salida (siempre)
         const top = list.slice(0, 10);
         const maxTop = Math.max(...top.map(p => p.unidades), 1);
         const topHtml = top.map((p, i) => {
@@ -916,41 +1037,73 @@
             </div>`;
         }).join('');
 
-        // 2) Ventas por día del mes (sumando todos los productos filtrados)
-        const porDia = {};
-        list.forEach(p => Object.entries(p.porDia || {}).forEach(([dia, u]) => {
-            porDia[dia] = (porDia[dia] || 0) + u;
-        }));
-        const dias = Object.keys(porDia).sort();
-        const maxDia = Math.max(...Object.values(porDia), 1);
-        const diaMax = dias.reduce((a, b) => (porDia[b] > (porDia[a] || 0) ? b : a), dias[0]);
+        // 2) Gráfico temporal según el periodo: por día, por mes, o ninguno
+        let temporalHtml = '';
+        const MESES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
 
-        let diasHtml = '';
-        if (dias.length) {
-            diasHtml = `
-            <div class="bg-gray-50 border border-gray-200 rounded-lg p-3 mt-2">
-                <p class="text-[10px] font-bold text-gray-500 uppercase mb-2">Ventas por día del mes ${diaMax ? `· pico: ${diaMax.split('-')[2]}` : ''}</p>
-                <div class="flex items-end gap-0.5 h-24">
-                    ${dias.map(dia => {
-                        const h = (porDia[dia] / maxDia) * 100;
-                        const d = dia.split('-')[2];
-                        const esPico = dia === diaMax;
-                        return `<div class="flex-1 flex flex-col items-center justify-end h-full group relative">
-                            <div class="w-full ${esPico ? 'bg-green-600' : 'bg-green-400'} rounded-t transition-all hover:bg-green-700" style="height:${h}%" title="Día ${d}: ${porDia[dia].toLocaleString('es-VE')} und"></div>
-                            <span class="text-[7px] text-gray-400 mt-0.5">${d}</span>
-                        </div>`;
-                    }).join('')}
-                </div>
-            </div>`;
+        if (_anaGrafico === 'porDia') {
+            const porDia = {};
+            list.forEach(p => Object.entries(p.porDia || {}).forEach(([dia, u]) => {
+                porDia[dia] = (porDia[dia] || 0) + u;
+            }));
+            // Solo días con ventas (no rellenamos días vacíos)
+            const dias = Object.keys(porDia).sort();
+            if (dias.length) {
+                const maxDia = Math.max(...Object.values(porDia), 1);
+                const diaMax = dias.reduce((a, b) => (porDia[b] > (porDia[a] || 0) ? b : a), dias[0]);
+                temporalHtml = `
+                <div class="bg-gray-50 border border-gray-200 rounded-lg p-3 mt-2">
+                    <p class="text-[10px] font-bold text-gray-500 uppercase mb-2">Ventas por día · pico: ${diaMax.split('-')[2]}/${diaMax.split('-')[1]}</p>
+                    <div class="flex items-end gap-0.5 h-24 overflow-x-auto">
+                        ${dias.map(dia => {
+                            const h = (porDia[dia] / maxDia) * 100;
+                            const [yy, mm, dd] = dia.split('-');
+                            const esPico = dia === diaMax;
+                            return `<div class="flex flex-col items-center justify-end h-full" style="min-width:14px;flex:1">
+                                <div class="w-full ${esPico ? 'bg-green-600' : 'bg-green-400'} rounded-t transition-all hover:bg-green-700" style="height:${h}%" title="${dd}/${mm}: ${porDia[dia].toLocaleString('es-VE')} und"></div>
+                                <span class="text-[7px] text-gray-400 mt-0.5">${dd}</span>
+                            </div>`;
+                        }).join('')}
+                    </div>
+                </div>`;
+            }
+        } else if (_anaGrafico === 'porMes') {
+            const porMes = {};
+            list.forEach(p => Object.entries(p.porMes || {}).forEach(([mes, u]) => {
+                porMes[mes] = (porMes[mes] || 0) + u;
+            }));
+            const meses = Object.keys(porMes).sort();
+            if (meses.length) {
+                const maxMes = Math.max(...Object.values(porMes), 1);
+                const mesMax = meses.reduce((a, b) => (porMes[b] > (porMes[a] || 0) ? b : a), meses[0]);
+                temporalHtml = `
+                <div class="bg-gray-50 border border-gray-200 rounded-lg p-3 mt-2">
+                    <p class="text-[10px] font-bold text-gray-500 uppercase mb-2">Ventas por mes · pico: ${MESES[Number(mesMax.split('-')[1]) - 1]}</p>
+                    <div class="flex items-end gap-1 h-28">
+                        ${meses.map(mes => {
+                            const h = (porMes[mes] / maxMes) * 100;
+                            const mNum = Number(mes.split('-')[1]);
+                            const esPico = mes === mesMax;
+                            return `<div class="flex-1 flex flex-col items-center justify-end h-full">
+                                <span class="text-[8px] font-bold text-green-700 mb-0.5">${porMes[mes] >= 1000 ? (porMes[mes]/1000).toFixed(1)+'k' : porMes[mes]}</span>
+                                <div class="w-full ${esPico ? 'bg-green-600' : 'bg-green-400'} rounded-t transition-all hover:bg-green-700" style="height:${h}%" title="${MESES[mNum-1]}: ${porMes[mes].toLocaleString('es-VE')} und"></div>
+                                <span class="text-[8px] text-gray-400 mt-0.5">${MESES[mNum-1]}</span>
+                            </div>`;
+                        }).join('')}
+                    </div>
+                </div>`;
+            }
         }
+        // _anaGrafico === 'ninguno' (día específico): sin gráfico temporal
 
         chart.innerHTML = `
             <div class="bg-gray-50 border border-gray-200 rounded-lg p-3">
-                <p class="text-[10px] font-bold text-gray-500 uppercase mb-2">Top ${top.length} — Más salida</p>
+                <p class="text-[10px] font-bold text-gray-500 uppercase mb-2">Top ${top.length} — Más salida${_anaLabel ? ' · ' + _anaLabel : ''}</p>
                 <div class="space-y-1.5">${topHtml}</div>
             </div>
-            ${diasHtml}`;
+            ${temporalHtml}`;
     }
+
 
     function mostrarVentasPorDiaProducto(prodId) {
         const p = _anaData.find(x => x.id === prodId);
@@ -1071,7 +1224,7 @@
     //      - Productos que se vendían y ahora están AGOTADOS
     //      - Productos con inventario BAJO (≤ 1 caja/paquete)
     // ════════════════════════════════════════════════════════
-    let _invAnaData = { agotados: [], bajos: [] };
+    let _invAnaData = { agotados: [], muyBajo: [], bajo: [], porVigilar: [] };
 
     async function showAnalistaInventario() {
         _mainContent.innerHTML = `
@@ -1085,7 +1238,7 @@
                     <div class="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-3">
                         <p class="text-xs text-amber-800 leading-relaxed">
                             Cruza los productos <b>vendidos en los últimos 6 meses</b> con el inventario consolidado actual
-                            (vendedores: <b id="invAnaVends">—</b>). Muestra los que están <b>agotados</b> o con <b>inventario bajo</b> (≤ 1 caja/paquete).
+                            (vendedores: <b id="invAnaVends">—</b>). Muestra los que están <b>agotados</b> o con inventario bajo en 3 niveles.
                         </p>
                         <button id="invAnaRun" class="w-full mt-2 py-2 bg-amber-600 text-white font-bold rounded text-sm hover:bg-amber-700 transition">🔍 Analizar Inventario</button>
                     </div>
@@ -1162,25 +1315,30 @@
                 inv[d.id] = (inv[d.id] || 0) + (d.data().cantidadUnidades || 0);
             }));
 
-            // 3) Cruce: productos vendidos que ahora están agotados o bajos
-            const agotados = [], bajos = [];
+            // 3) Cruce: agotados + 3 niveles EXCLUYENTES de inventario bajo (por cajas):
+            //    Muy bajo  = existencia < 1 caja
+            //    Bajo      = 1 a < 3 cajas
+            //    Por vigilar = 3 a < 5 cajas
+            const agotados = [], muyBajo = [], bajo = [], porVigilar = [];
             Object.keys(vendidos).forEach(id => {
                 const m = _masterCache[id] || {};
                 if (!m.presentacion && !m.marca) return;
                 const existencia = inv[id] || 0;
-                // Umbral "bajo" = 1 unidad mayor (1 caja o 1 paquete)
-                const uMayor = (m.ventaPor?.cj && m.unidadesPorCaja > 1) ? m.unidadesPorCaja
-                             : (m.ventaPor?.paq && m.unidadesPorPaquete > 1) ? m.unidadesPorPaquete : 1;
+                // Tamaño de 1 caja (o paquete si no maneja caja) en unidades
+                const uCaja = (m.ventaPor?.cj && m.unidadesPorCaja > 1) ? m.unidadesPorCaja
+                            : (m.ventaPor?.paq && m.unidadesPorPaquete > 1) ? m.unidadesPorPaquete : 1;
                 const item = { id, ...m, existencia, vendido: vendidos[id] };
-                if (existencia <= 0) agotados.push(item);
-                else if (existencia <= uMayor) bajos.push(item);
+                if (existencia <= 0) { agotados.push(item); return; }
+                const cajas = existencia / uCaja;
+                if (cajas < 1)      muyBajo.push(item);
+                else if (cajas < 3) bajo.push(item);
+                else if (cajas < 5) porVigilar.push(item);
             });
 
-            // Ordenar por más vendidos (más urgente primero)
-            agotados.sort((a, b) => b.vendido - a.vendido);
-            bajos.sort((a, b) => b.vendido - a.vendido);
+            // Ordenar cada nivel por más vendidos (más urgente primero)
+            [agotados, muyBajo, bajo, porVigilar].forEach(arr => arr.sort((a, b) => b.vendido - a.vendido));
 
-            _invAnaData = { agotados, bajos };
+            _invAnaData = { agotados, muyBajo, bajo, porVigilar };
             poblarFiltrosInvAna();
             renderInvAnaResult();
         } catch (e) {
@@ -1190,7 +1348,7 @@
     }
 
     function poblarFiltrosInvAna() {
-        const all = [..._invAnaData.agotados, ..._invAnaData.bajos];
+        const all = [..._invAnaData.agotados, ..._invAnaData.muyBajo, ..._invAnaData.bajo, ..._invAnaData.porVigilar];
         const rubros = [...new Set(all.map(p => p.rubro).filter(Boolean))].sort();
         const segs   = [...new Set(all.map(p => p.segmento).filter(Boolean))].sort();
         const marcas = [...new Set(all.map(p => p.marca).filter(Boolean))].sort();
@@ -1214,8 +1372,10 @@
         const aplica = (arr) => arr.filter(p =>
             (!fR || p.rubro === fR) && (!fS || p.segmento === fS) && (!fM || p.marca === fM));
 
-        const agotados = aplica(_invAnaData.agotados);
-        const bajos = aplica(_invAnaData.bajos);
+        const agotados   = aplica(_invAnaData.agotados);
+        const muyBajo    = aplica(_invAnaData.muyBajo);
+        const bajo       = aplica(_invAnaData.bajo);
+        const porVigilar = aplica(_invAnaData.porVigilar);
 
         loading.classList.add('hidden');
         result.classList.remove('hidden');
@@ -1234,32 +1394,42 @@
             </div>`;
         };
 
-        let html = '';
-        // AGOTADOS
-        html += `<div class="border border-red-200 rounded-lg overflow-hidden">
-            <div class="bg-red-100 px-3 py-2 flex items-center justify-between">
-                <span class="text-xs font-bold text-red-800 uppercase tracking-wide">🔴 Agotados que se vendían</span>
-                <span class="text-xs font-black text-red-700">${agotados.length}</span>
-            </div>
-            <div class="max-h-[30vh] overflow-y-auto">
-                ${agotados.length ? agotados.map(p => cardProducto(p, 'text-red-600')).join('') : '<p class="text-center text-gray-400 text-xs py-4">Ninguno — todo lo que se vende tiene existencia.</p>'}
-            </div>
-        </div>`;
+        // Secciones: cada una con su color, ícono y etiqueta de prioridad
+        const seccion = (titulo, items, cfg, vacio) => `
+            <div class="border ${cfg.border} rounded-lg overflow-hidden">
+                <div class="${cfg.headBg} px-3 py-2 flex items-center justify-between">
+                    <span class="text-xs font-bold ${cfg.headText} uppercase tracking-wide">${cfg.icon} ${titulo}</span>
+                    <span class="text-xs font-black ${cfg.countText}">${items.length}</span>
+                </div>
+                <div class="max-h-[26vh] overflow-y-auto">
+                    ${items.length ? items.map(p => cardProducto(p, cfg.itemText)).join('') : `<p class="text-center text-gray-400 text-xs py-4">${vacio}</p>`}
+                </div>
+            </div>`;
 
-        // BAJOS
-        html += `<div class="border border-amber-200 rounded-lg overflow-hidden">
-            <div class="bg-amber-100 px-3 py-2 flex items-center justify-between">
-                <span class="text-xs font-bold text-amber-800 uppercase tracking-wide">🟡 Inventario bajo (≤ 1 Cj/Paq)</span>
-                <span class="text-xs font-black text-amber-700">${bajos.length}</span>
-            </div>
-            <div class="max-h-[30vh] overflow-y-auto">
-                ${bajos.length ? bajos.map(p => cardProducto(p, 'text-amber-700')).join('') : '<p class="text-center text-gray-400 text-xs py-4">Ninguno con inventario bajo.</p>'}
-            </div>
-        </div>`;
+        let html = '';
+        html += seccion('Agotados que se vendían', agotados, {
+            icon: '🔴', border: 'border-red-200', headBg: 'bg-red-100', headText: 'text-red-800',
+            countText: 'text-red-700', itemText: 'text-red-600'
+        }, 'Ninguno — todo lo que se vende tiene existencia.');
+
+        html += seccion('Muy bajo (menos de 1 caja)', muyBajo, {
+            icon: '🟠', border: 'border-orange-200', headBg: 'bg-orange-100', headText: 'text-orange-800',
+            countText: 'text-orange-700', itemText: 'text-orange-600'
+        }, 'Ninguno en este nivel.');
+
+        html += seccion('Bajo (1 a 3 cajas)', bajo, {
+            icon: '🟡', border: 'border-amber-200', headBg: 'bg-amber-100', headText: 'text-amber-800',
+            countText: 'text-amber-700', itemText: 'text-amber-700'
+        }, 'Ninguno en este nivel.');
+
+        html += seccion('Por vigilar (3 a 5 cajas)', porVigilar, {
+            icon: '🔵', border: 'border-blue-200', headBg: 'bg-blue-100', headText: 'text-blue-800',
+            countText: 'text-blue-700', itemText: 'text-blue-600'
+        }, 'Ninguno en este nivel.');
 
         result.innerHTML = html;
     }
 
-
 })();
+
 
