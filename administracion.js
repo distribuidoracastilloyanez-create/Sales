@@ -51,12 +51,14 @@
 
     // Convierte unidades totales a "unidad mayor" (Cj / Paq) + resto Und
     function formatUnidadMayor(prod, unidades) {
-        const vp = prod.ventaPor || { und: true };
+        // La "unidad mayor" es la agrupación FÍSICA más grande del producto:
+        // caja si existe (unidadesPorCaja > 1), si no paquete (unidadesPorPaquete > 1),
+        // si no unidad. NO depende de ventaPor — un producto puede venderse por unidad
+        // pero venir físicamente en cajas (ej: cerveza 1/4 en cajas de 36).
         const uCj = prod.unidadesPorCaja || 0;
         const uPaq = prod.unidadesPorPaquete || 0;
 
-        // Elegir la unidad mayor disponible: caja > paquete > unidad
-        if (vp.cj && uCj > 1) {
+        if (uCj > 1) {
             const cajas = Math.floor(unidades / uCj);
             const resto = unidades % uCj;
             if (cajas === 0 && resto === 0) return '0 Cj';
@@ -65,7 +67,7 @@
             if (resto > 0) s += (s ? ' + ' : '') + `${resto} Und`;
             return s || '0 Cj';
         }
-        if (vp.paq && uPaq > 1) {
+        if (uPaq > 1) {
             const paqs = Math.floor(unidades / uPaq);
             const resto = unidades % uPaq;
             if (paqs === 0 && resto === 0) return '0 Paq';
@@ -1324,9 +1326,10 @@
                 const m = _masterCache[id] || {};
                 if (!m.presentacion && !m.marca) return;
                 const existencia = inv[id] || 0;
-                // Tamaño de 1 caja (o paquete si no maneja caja) en unidades
-                const uCaja = (m.ventaPor?.cj && m.unidadesPorCaja > 1) ? m.unidadesPorCaja
-                            : (m.ventaPor?.paq && m.unidadesPorPaquete > 1) ? m.unidadesPorPaquete : 1;
+                // Tamaño de 1 unidad mayor física (caja, o paquete si no hay caja) en unidades.
+                // No depende de ventaPor: la agrupación física es la que manda.
+                const uCaja = (m.unidadesPorCaja > 1) ? m.unidadesPorCaja
+                            : (m.unidadesPorPaquete > 1) ? m.unidadesPorPaquete : 1;
                 const item = { id, ...m, existencia, vendido: vendidos[id] };
                 if (existencia <= 0) { agotados.push(item); return; }
                 const cajas = existencia / uCaja;
@@ -1431,5 +1434,6 @@
     }
 
 })();
+
 
 
