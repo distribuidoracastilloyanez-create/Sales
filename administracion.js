@@ -186,6 +186,44 @@
         } catch (e) {}
     }
 
+    // ─── FILTROS EN CASCADA (dependientes) ──────────────────
+    // Puebla rubro/segmento/marca de forma que segmento solo muestre los del
+    // rubro elegido, y marca solo las del rubro+segmento elegidos. Conserva la
+    // selección actual si sigue siendo válida tras el cambio.
+    function poblarFiltrosCascada(data, ids) {
+        const { rubro: idR, segmento: idS, marca: idM } = ids;
+        const elR = document.getElementById(idR);
+        const elS = document.getElementById(idS);
+        const elM = document.getElementById(idM);
+        if (!elR || !elS || !elM) return;
+
+        const selR = elR.value || '';
+        let selS = elS.value || '';
+        let selM = elM.value || '';
+
+        // Rubros: siempre todos
+        const rubros = [...new Set(data.map(p => p.rubro).filter(Boolean))].sort();
+
+        // Segmentos: solo los del rubro elegido (o todos si no hay rubro)
+        const baseSeg = selR ? data.filter(p => p.rubro === selR) : data;
+        const segs = [...new Set(baseSeg.map(p => p.segmento).filter(Boolean))].sort();
+        if (selS && !segs.includes(selS)) selS = ''; // la selección ya no aplica
+
+        // Marcas: del rubro + segmento elegidos
+        let baseMarca = baseSeg;
+        if (selS) baseMarca = baseMarca.filter(p => p.segmento === selS);
+        const marcas = [...new Set(baseMarca.map(p => p.marca).filter(Boolean))].sort();
+        if (selM && !marcas.includes(selM)) selM = '';
+
+        const fill = (el, arr, label, sel) => {
+            el.innerHTML = `<option value="">${label}</option>` +
+                arr.map(v => `<option value="${v}" ${v === sel ? 'selected' : ''}>${v}</option>`).join('');
+        };
+        fill(elR, rubros, 'Rubro', selR);
+        fill(elS, segs, 'Segmento', selS);
+        fill(elM, marcas, 'Marca', selM);
+    }
+
     // ─── MENÚ PRINCIPAL ─────────────────────────────────────
     window.showAdministracionMenu = async function () {
         if (_floatingControls) _floatingControls.classList.add('hidden');
@@ -289,7 +327,12 @@
         document.getElementById('invVendConfig').addEventListener('click', abrirSelectorVendedores);
         document.getElementById('invExport').addEventListener('click', exportarInventarioExcel);
 
-        ['invFRubro','invFSeg','invFMarca','invOrden'].forEach(id =>
+        ['invFRubro','invFSeg'].forEach(id =>
+            document.getElementById(id).addEventListener('change', () => {
+                poblarFiltrosCascada(_invData, { rubro: 'invFRubro', segmento: 'invFSeg', marca: 'invFMarca' });
+                renderInvTable();
+            }));
+        ['invFMarca','invOrden'].forEach(id =>
             document.getElementById(id).addEventListener('change', renderInvTable));
         let deb = null;
         document.getElementById('invSearch').addEventListener('input', () => {
@@ -398,16 +441,7 @@
     }
 
     function poblarFiltrosInv() {
-        const rubros = [...new Set(_invData.map(p => p.rubro).filter(Boolean))].sort();
-        const segs   = [...new Set(_invData.map(p => p.segmento).filter(Boolean))].sort();
-        const marcas = [...new Set(_invData.map(p => p.marca).filter(Boolean))].sort();
-        const fill = (id, arr, label) => {
-            const el = document.getElementById(id);
-            if (el) el.innerHTML = `<option value="">${label}</option>` + arr.map(v => `<option value="${v}">${v}</option>`).join('');
-        };
-        fill('invFRubro', rubros, 'Rubro');
-        fill('invFSeg', segs, 'Segmento');
-        fill('invFMarca', marcas, 'Marca');
+        poblarFiltrosCascada(_invData, { rubro: 'invFRubro', segmento: 'invFSeg', marca: 'invFMarca' });
     }
 
     function getInvFiltered() {
@@ -645,7 +679,12 @@
             ejecutarAnalisis(true);
         });
         document.getElementById('anaExcluir').addEventListener('click', abrirSelectorExcluidos);
-        ['anaFRubro','anaFSeg','anaFMarca','anaOrden'].forEach(id =>
+        ['anaFRubro','anaFSeg'].forEach(id =>
+            document.getElementById(id).addEventListener('change', () => {
+                poblarFiltrosCascada(_anaData, { rubro: 'anaFRubro', segmento: 'anaFSeg', marca: 'anaFMarca' });
+                renderAnaTabla();
+            }));
+        ['anaFMarca','anaOrden'].forEach(id =>
             document.getElementById(id).addEventListener('change', renderAnaTabla));
         document.getElementById('anaPeriodo').addEventListener('change', renderPeriodoControl);
 
@@ -931,16 +970,7 @@
     }
 
     function poblarFiltrosAna() {
-        const rubros = [...new Set(_anaData.map(p => p.rubro).filter(Boolean))].sort();
-        const segs   = [...new Set(_anaData.map(p => p.segmento).filter(Boolean))].sort();
-        const marcas = [...new Set(_anaData.map(p => p.marca).filter(Boolean))].sort();
-        const fill = (id, arr, label) => {
-            const el = document.getElementById(id);
-            if (el) el.innerHTML = `<option value="">${label}</option>` + arr.map(v => `<option value="${v}">${v}</option>`).join('');
-        };
-        fill('anaFRubro', rubros, 'Rubro');
-        fill('anaFSeg', segs, 'Segmento');
-        fill('anaFMarca', marcas, 'Marca');
+        poblarFiltrosCascada(_anaData, { rubro: 'anaFRubro', segmento: 'anaFSeg', marca: 'anaFMarca' });
     }
 
     function getAnaFiltered() {
@@ -1203,8 +1233,12 @@
         document.getElementById('exclSearch').addEventListener('input', () => {
             clearTimeout(deb); deb = setTimeout(renderExcl, 180);
         });
-        ['exclFRubro','exclFSeg','exclFMarca'].forEach(id =>
-            document.getElementById(id).addEventListener('change', renderExcl));
+        document.getElementById('exclFMarca').addEventListener('change', renderExcl);
+        ['exclFRubro','exclFSeg'].forEach(id =>
+            document.getElementById(id).addEventListener('change', () => {
+                poblarFiltrosCascada(productos, { rubro: 'exclFRubro', segmento: 'exclFSeg', marca: 'exclFMarca' });
+                renderExcl();
+            }));
         document.getElementById('exclCancel').addEventListener('click', () => ov.remove());
         document.getElementById('exclSave').addEventListener('click', async () => {
             _admConfig.analistaExcluidos = Array.from(excl);
@@ -1259,8 +1293,13 @@
 
         document.getElementById('invAnaBack').addEventListener('click', window.showAdministracionMenu);
         document.getElementById('invAnaRun').addEventListener('click', ejecutarAnalisisInventario);
-        ['invAnaFRubro','invAnaFSeg','invAnaFMarca'].forEach(id =>
-            document.getElementById(id).addEventListener('change', renderInvAnaResult));
+        ['invAnaFRubro','invAnaFSeg'].forEach(id =>
+            document.getElementById(id).addEventListener('change', () => {
+                const all = [..._invAnaData.agotados, ..._invAnaData.muyBajo, ..._invAnaData.bajo, ..._invAnaData.porVigilar];
+                poblarFiltrosCascada(all, { rubro: 'invAnaFRubro', segmento: 'invAnaFSeg', marca: 'invAnaFMarca' });
+                renderInvAnaResult();
+            }));
+        document.getElementById('invAnaFMarca').addEventListener('change', renderInvAnaResult);
 
         // Mostrar los vendedores configurados (los del inventario consolidado)
         const vends = _admConfig.inventarioVendedores.map(uid => {
@@ -1352,16 +1391,7 @@
 
     function poblarFiltrosInvAna() {
         const all = [..._invAnaData.agotados, ..._invAnaData.muyBajo, ..._invAnaData.bajo, ..._invAnaData.porVigilar];
-        const rubros = [...new Set(all.map(p => p.rubro).filter(Boolean))].sort();
-        const segs   = [...new Set(all.map(p => p.segmento).filter(Boolean))].sort();
-        const marcas = [...new Set(all.map(p => p.marca).filter(Boolean))].sort();
-        const fill = (id, arr, label) => {
-            const el = document.getElementById(id);
-            if (el) el.innerHTML = `<option value="">${label}</option>` + arr.map(v => `<option value="${v}">${v}</option>`).join('');
-        };
-        fill('invAnaFRubro', rubros, 'Rubro');
-        fill('invAnaFSeg', segs, 'Segmento');
-        fill('invAnaFMarca', marcas, 'Marca');
+        poblarFiltrosCascada(all, { rubro: 'invAnaFRubro', segmento: 'invAnaFSeg', marca: 'invAnaFMarca' });
     }
 
     function renderInvAnaResult() {
@@ -1435,4 +1465,5 @@
 
 })();
 // redeploy trigger 1783190804
+
 
