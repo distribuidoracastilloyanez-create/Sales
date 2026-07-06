@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v20'; // v20: Hoja fija de Alimentos (Factura Serie A)
+const CACHE_NAME = 'ventas-app-cache-v21'; // v21: Filtros en cascada en Administracion
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
@@ -179,6 +179,7 @@ self.addEventListener('fetch', event => {
             })
     );
 });
+
 
 
 
