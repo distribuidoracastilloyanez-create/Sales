@@ -1072,7 +1072,7 @@
 
         const html = (_tipoFacturacion === 'cerveceria')
             ? buildFacturaCerveceriaHtml(datosFactura)
-            : buildFacturaHtml(datosFactura);
+            : buildFacturaAlimentosHtml(datosFactura);
 
         abrirFacturaFullscreen(html);
 
@@ -1422,6 +1422,148 @@
             target.unidad    = l.unidadMedida;
             target.precioBs  = l.precioUnitarioBs;
             target.montoBs  += l.totalBs;
+        });
+        return fmt;
+    }
+
+
+    // ═════════════════════════════════════════════════════════════
+    // FORMATO FIJO DE LA HOJA DE ALIMENTOS (FACTURA SERIE "A")
+    // Filas preimpresas: MALTIN, REFRESCOS RETORNABLES, REFRESCOS PET
+    // + filas vacías para otros productos escritos a mano.
+    // ═════════════════════════════════════════════════════════════
+    const FORMATO_ALIMENTOS = [
+        { marca: 'MALTIN', key: 'maltin', filas: [
+            { desc: '1/4',  unidades: '36', lts: '0,222 Lts' },
+            { desc: 'N/R',  unidades: '12', lts: '0,250 Lts' },
+            { desc: '1.5',  unidades: '6',  lts: '1,500 Lts' },
+            { desc: 'LATA', unidades: '24', lts: '0,250 Lts' },
+            { desc: 'LATA', unidades: '24', lts: '0,355 Lts' }
+        ]},
+        { marca: 'REFRESCOS<br>RETORNABLES', key: 'refrescos_ret', filas: [
+            { desc: 'RETORNABLE', unidades: '24', lts: '0,350 Lts' },
+            { desc: 'RETORNABLE', unidades: '6',  lts: '1,250 Lts' },
+            {}
+        ]},
+        { marca: 'REFRESCOS<br>PET', key: 'refrescos_pet', filas: [
+            { desc: 'PET', unidades: '6', lts: '1,000 Lts' },
+            { desc: 'PET', unidades: '6', lts: '1,500 Lts' },
+            { desc: 'PET', unidades: '6', lts: '2,000 Lts' }
+        ]},
+        { marca: 'OTROS<br>PRODUCTOS', key: 'otros_alim', filas: [
+            {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}
+        ]}
+    ];
+
+    // ¿A qué sección de la hoja de alimentos pertenece el producto?
+    function matchSeccionAlimentos(texto) {
+        const s = _nrm(texto);
+        if (s.includes('maltin') || s.includes('malta')) return 0;
+        // Refrescos: distinguir PET vs retornable
+        const esRefresco = s.includes('refresco') || s.includes('pepsi') || s.includes('cola') ||
+                           s.includes('golden') || s.includes('hit') || s.includes('chinotto') ||
+                           s.includes('7up') || s.includes('seven') || s.includes('teem') ||
+                           s.includes('gaseosa') || s.includes('soda') || s.includes('frescolita') ||
+                           s.includes('uva') || s.includes('naranja') || s.includes('manzana');
+        if (esRefresco) {
+            if (s.includes('pet') || /\b(1|1[.,]5|2|1[.,]0|2[.,]0)\s*(lt|l)\b/.test(s) || s.includes('desechable')) return 2;
+            if (s.includes('retornable') || s.includes('ret') || s.includes('vidrio')) return 1;
+            // Por defecto, refresco sin especificar → retornable
+            return 1;
+        }
+        return 3; // OTROS PRODUCTOS (alimentos varios)
+    }
+
+    // Mapea la presentación del inventario a la fila fija correspondiente.
+    function matchFilaAlimentos(sec, texto) {
+        const t = _nrm(texto);
+        if (sec.key === 'maltin') {
+            const es14  = /\b1\s*\/\s*4\b/.test(t) || t.includes('1 4');
+            const esNR  = /\bn\s*\/?\s*r\b/.test(t) || /\b1\s*\/\s*3\b/.test(t) || t.includes('nr');
+            const es15  = /1[.,]5/.test(t) || t.includes('1 5');
+            const esLata = t.includes('lata') || /\blta\b/.test(t) || t.includes('lat');
+            const c355  = /355/.test(t);
+            let best = -1;
+            sec.filas.forEach((f, i) => {
+                if (!f.desc) return;
+                const fd = _nrm(f.desc);
+                if (esLata && fd.includes('lata')) {
+                    if (c355 && (f.lts || '').includes('355')) best = i;
+                    else if (!c355 && (f.lts || '').includes('250')) best = i;
+                    else if (best < 0) best = i;
+                } else if (es14 && fd === '1/4') best = i;
+                else if (esNR && fd === 'n/r') best = i;
+                else if (es15 && fd === '1.5') best = i;
+            });
+            return best;
+        }
+        if (sec.key === 'refrescos_ret') {
+            // 0,350 vs 1,250 (litraje)
+            const c125 = /1[.,]25|1250/.test(t);
+            let best = -1;
+            sec.filas.forEach((f, i) => {
+                if (!f.desc) return;
+                if (c125 && (f.lts || '').includes('1,250')) best = i;
+                else if (!c125 && (f.lts || '').includes('0,350')) best = i;
+                else if (best < 0) best = i;
+            });
+            return best;
+        }
+        if (sec.key === 'refrescos_pet') {
+            // 1L, 1.5L, 2L
+            const c2  = /\b2\s*(lt|l)\b|2[.,]0|2000/.test(t);
+            const c15 = /1[.,]5|1500/.test(t);
+            let best = -1;
+            sec.filas.forEach((f, i) => {
+                if (!f.desc) return;
+                if (c2 && (f.lts || '').includes('2,000')) best = i;
+                else if (c15 && (f.lts || '').includes('1,500')) best = i;
+                else if (!c2 && !c15 && (f.lts || '').includes('1,000')) best = i;
+                else if (best < 0) best = i;
+            });
+            return best;
+        }
+        return -1;
+    }
+
+    function llenarFormatoAlimentos(lineas) {
+        const fmt = FORMATO_ALIMENTOS.map(sec => ({
+            marca: sec.marca, key: sec.key,
+            filas: sec.filas.map(f => ({
+                desc: f.desc || '', unidades: f.unidades || '', lts: f.lts || '',
+                cantidad: 0, precioBs: 0, montoBs: 0, exento: false, alicuota: '', descOverride: ''
+            }))
+        }));
+        const otros = fmt[fmt.length - 1];
+
+        lineas.forEach(l => {
+            const texto = [l.marca, l.segmento, l.presentacion, l.descripcion].filter(Boolean).join(' ');
+            const secIdx = matchSeccionAlimentos(texto);
+            const sec = fmt[secIdx];
+
+            let target = null;
+            if (secIdx < fmt.length - 1) {
+                const fIdx = matchFilaAlimentos(sec, texto);
+                if (fIdx >= 0) {
+                    const f = sec.filas[fIdx];
+                    if (f.cantidad === 0 || f.descOverride === '') target = f;
+                }
+            }
+            // Si no cayó en fila fija, va a "otros productos" con descripción escrita
+            if (!target) {
+                target = otros.filas.find(f => f.cantidad === 0 && !f.desc && !f.descOverride);
+                if (!target) {
+                    otros.filas.push({ desc: '', unidades: '', lts: '', cantidad: 0, precioBs: 0, montoBs: 0, exento: false, alicuota: '', descOverride: '' });
+                    target = otros.filas[otros.filas.length - 1];
+                }
+                target.descOverride = (l.descripcion || l.presentacion || '').toUpperCase();
+                target.unidades = String(l.unidades || '');
+            }
+            target.cantidad += l.cantidad;
+            target.precioBs  = l.precioUnitarioBs;
+            target.montoBs  += l.totalBs;
+            target.exento    = l.exento;
+            target.alicuota  = l.alicuota;
         });
         return fmt;
     }
@@ -2198,6 +2340,260 @@
     }
 
 
+
+    // ═════════════════════════════════════════════════════════════
+    // PLANTILLA HTML — HOJA DE ALIMENTOS (FACTURA SERIE "A", formato fijo)
+    // ═════════════════════════════════════════════════════════════
+    function buildFacturaAlimentosHtml({
+        cliente, fechaISO, tasaBs, lineasPlanas,
+        subtotalBase, subtotalExento, ivaTotal,
+        totalOp, retencionUSD, totalPagar,
+        numFactura, numControl,
+        esMensual, nombreMes
+    }) {
+        const fBs  = n => (isFinite(n) ? n : 0)
+            .toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        const fUSD = n => (isFinite(n) ? n : 0).toFixed(2);
+        const [year, month, day] = (fechaISO || '2026-01-01').split('-');
+
+        const B  = 'border:1px solid #333;';
+        const th = `${B}padding:3px 3px;font-size:8px;font-weight:700;text-align:center;background:#e8e8e8;`;
+
+        const fmt = llenarFormatoAlimentos(lineasPlanas);
+
+        // ── Filas del formato fijo ──────────────────────────────────
+        let rows = '';
+        fmt.forEach(sec => {
+            sec.filas.forEach((f, i) => {
+                rows += '<tr>';
+                if (i === 0) {
+                    rows += `<td rowspan="${sec.filas.length}"
+                        style="${B}padding:4px 3px;vertical-align:middle;text-align:center;
+                                font-family:Arial,sans-serif;font-weight:900;font-size:11px;
+                                line-height:1.25;letter-spacing:0.3px;">${sec.marca}</td>`;
+                }
+                const desc = f.descOverride || f.desc;
+                const alicStr = f.montoBs > 0 ? (f.exento ? 'E' : (f.alicuota || '16') + '%') : '';
+                const eStr = (f.montoBs > 0 && f.exento) ? 'E' : '';
+                rows += `
+                    <td style="${B}padding:3px 5px;font-size:9.5px;font-weight:700;text-align:center;text-transform:uppercase;height:17px;">${desc}</td>
+                    <td style="${B}padding:3px 3px;font-size:9px;text-align:center;font-weight:700;">${f.unidades || ''}</td>
+                    <td style="${B}padding:3px 3px;font-size:9px;text-align:center;white-space:nowrap;font-weight:700;">${f.lts || ''}</td>
+                    <td style="${B}padding:3px 4px;font-size:10px;text-align:center;font-weight:900;">${f.cantidad > 0 ? f.cantidad.toLocaleString('es-VE') : ''}</td>
+                    <td style="${B}padding:3px 3px;font-size:8px;text-align:center;">${eStr}</td>
+                    <td style="${B}padding:3px 3px;font-size:8px;text-align:center;">${f.montoBs > 0 ? (f.exento ? '' : (f.alicuota || '16')) : ''}</td>
+                    <td style="${B}padding:3px 6px;font-size:10px;text-align:right;">${f.precioBs > 0 ? fBs(f.precioBs) : ''}</td>
+                    <td style="${B}padding:3px 6px;font-size:10px;text-align:right;font-weight:700;">${f.montoBs > 0 ? fBs(f.montoBs) : ''}</td>
+                `;
+                rows += '</tr>';
+            });
+        });
+
+        // ── Conversiones a Bs ───────────────────────────────────────
+        const exentoBs     = subtotalExento * tasaBs;
+        const baseBs       = subtotalBase   * tasaBs;
+        const ivaBs        = ivaTotal       * tasaBs;
+        const retBs        = retencionUSD   * tasaBs;
+        const totalVentaBs = totalOp        * tasaBs;
+        const totalPagarBs = totalPagar     * tasaBs;
+
+        const filaRetencion = cliente.aplicaRetencion ? `
+            <tr>
+                <td style="${B}font-size:8px;padding:3px 6px;color:#9b0000;font-weight:700;text-align:right;">RETENCIÓN I.V.A. (75%) &nbsp; Bs.</td>
+                <td style="${B}text-align:right;padding:3px 6px;font-weight:900;font-size:10px;color:#9b0000;">&minus;${fBs(retBs)}</td>
+            </tr>
+            <tr style="background:#e8e8e8;">
+                <td style="border:2px solid #1a1a1a;font-size:9.5px;padding:4px 6px;font-weight:900;text-align:right;letter-spacing:0.5px;">TOTAL A PAGAR &nbsp; Bs.</td>
+                <td style="border:2px solid #1a1a1a;text-align:right;padding:4px 6px;font-weight:900;font-size:12px;">${fBs(totalPagarBs)}</td>
+            </tr>` : '';
+
+        const mensualBadge = esMensual ? `
+            <div style="text-align:center;font-size:9px;font-weight:900;color:#1a3560;
+                        border:1.5px dashed #1a3560;padding:2px 6px;margin-top:4px;
+                        text-transform:uppercase;letter-spacing:1px;">
+                Consolidado Mensual · ${nombreMes}
+            </div>` : '';
+
+        return `
+<div style="font-family:'Courier New',Courier,monospace;font-size:10px;color:#111;
+            background:#fff;padding:14px 16px;position:relative;
+            min-width:900px;box-sizing:border-box;">
+
+  <!-- MARCA DE AGUA -->
+  <div style="position:absolute;inset:0;display:flex;align-items:center;
+              justify-content:center;pointer-events:none;overflow:hidden;z-index:0;">
+    <span style="font-size:120px;font-weight:900;font-family:Arial,sans-serif;
+                 color:rgba(0,0,0,0.028);transform:rotate(-38deg);
+                 letter-spacing:12px;white-space:nowrap;">SIMULADOR</span>
+  </div>
+
+  <div style="position:relative;z-index:1;">
+
+  <!-- ══ CABECERA: EMPRESA + RIF/FECHA + REGISTRO ══ -->
+  <table style="width:100%;border-collapse:collapse;border:2px solid #1a1a1a;">
+    <tr>
+      <td style="${B}padding:8px 12px;width:52%;vertical-align:top;">
+        <div style="font-size:17px;font-weight:900;font-family:Arial,sans-serif;letter-spacing:0.3px;text-align:center;">
+          Distribuidora Castillo Yañez, C.A.
+        </div>
+        <div style="font-size:7.5px;line-height:1.5;margin-top:4px;color:#222;text-align:center;">
+          Domicilio Fiscal: Calle Urbanización Santa Inés Local No. B-PB-3<br>
+          Conjunto Residencial El Alcázar Etapa A Torre B<br>
+          San Cristóbal Estado Táchira Zona Postal 5001
+        </div>
+        ${mensualBadge}
+      </td>
+      <td style="${B}padding:5px;width:26%;vertical-align:top;">
+        <div style="text-align:center;font-weight:900;font-size:10px;background:#1a1a1a;color:#fff;padding:2px 0;letter-spacing:0.5px;">
+          RIF: J-40214875-5
+        </div>
+        <div style="text-align:center;font-size:7px;font-weight:700;background:#d8d8d8;padding:2px 0;
+                    border:1px solid #666;border-top:0;letter-spacing:1px;">
+          FECHA DE EXPEDICIÓN
+        </div>
+        <table style="width:100%;border-collapse:collapse;border:1px solid #666;border-top:0;">
+          <tr>
+            <th style="border:1px solid #666;text-align:center;font-size:7px;padding:2px;background:#ebebeb;width:33%;">DÍA</th>
+            <th style="border:1px solid #666;text-align:center;font-size:7px;padding:2px;background:#ebebeb;width:34%;">MES</th>
+            <th style="border:1px solid #666;text-align:center;font-size:7px;padding:2px;background:#ebebeb;width:33%;">AÑO</th>
+          </tr>
+          <tr>
+            <td style="border:1px solid #666;text-align:center;font-size:16px;font-weight:900;padding:2px;">${day}</td>
+            <td style="border:1px solid #666;text-align:center;font-size:16px;font-weight:900;padding:2px;">${month}</td>
+            <td style="border:1px solid #666;text-align:center;font-size:16px;font-weight:900;padding:2px;">${year}</td>
+          </tr>
+        </table>
+      </td>
+      <td style="${B}padding:6px;width:22%;vertical-align:top;text-align:center;">
+        <div style="font-size:9px;font-weight:900;">Registro</div>
+        <div style="font-size:10px;font-weight:900;color:#1a3560;">MY-DISTR-037</div>
+        <div style="font-size:7px;margin-top:2px;">de Fecha 18-07-2022</div>
+      </td>
+    </tr>
+  </table>
+
+  <!-- ══ CONTROL + FACTURA ══ -->
+  <table style="width:100%;border-collapse:collapse;border:2px solid #1a1a1a;border-top:0;">
+    <tr>
+      <td style="${B}padding:5px 12px;width:50%;vertical-align:middle;">
+        <span style="font-size:11px;font-weight:900;">CONTROL N° 00 &nbsp;</span>
+        <span style="font-size:14px;font-weight:900;color:#c00000;letter-spacing:1px;">${numControl}</span>
+      </td>
+      <td style="${B}padding:5px 12px;width:50%;vertical-align:middle;text-align:right;">
+        <span style="font-size:11px;font-weight:900;">FACTURA</span>
+        <span style="font-size:8px;font-weight:700;"> SERIE "A" &nbsp;</span>
+        <span style="font-size:15px;font-weight:900;color:#c00000;letter-spacing:1px;">N° ${numFactura}</span>
+      </td>
+    </tr>
+  </table>
+
+  <!-- ══ CLIENTE ══ -->
+  <table style="width:100%;border-collapse:collapse;border:2px solid #1a1a1a;border-top:0;">
+    <tr>
+      <td style="${B}padding:5px 8px;width:65%;">
+        <span style="font-size:7px;color:#555;text-transform:uppercase;">Nombre y Apellido o Razón Social:&nbsp;</span>
+        <span style="font-size:12px;font-weight:900;">${cliente.nombreComercial}</span>
+      </td>
+      <td style="${B}padding:5px 8px;width:35%;">
+        <span style="font-size:7px;color:#555;text-transform:uppercase;">N° RIF, Cédula o Pasaporte:&nbsp;</span>
+        <span style="font-size:11px;font-weight:900;">${cliente.rif || 'N/A'}</span>
+      </td>
+    </tr>
+    <tr>
+      <td style="${B}padding:5px 8px;">
+        <span style="font-size:7px;color:#555;text-transform:uppercase;">Domicilio Fiscal:&nbsp;</span>
+        <span style="font-size:10px;font-weight:700;">${cliente.sector || cliente.sectorNombre || cliente.domicilio || 'N/A'}</span>
+      </td>
+      <td style="${B}padding:5px 8px;">
+        <span style="font-size:7px;color:#555;text-transform:uppercase;">Condiciones de Pago:&nbsp;</span>
+        <span style="font-size:9px;font-weight:700;">${cliente.condicionesPago || 'CONTADO'}</span>
+      </td>
+    </tr>
+  </table>
+
+  <!-- ══ TABLA FIJA DE PRODUCTOS ══ -->
+  <table style="width:100%;border-collapse:collapse;border:2px solid #1a1a1a;border-top:0;">
+    <thead>
+      <tr>
+        <th style="${th}width:12%;"></th>
+        <th style="${th}width:14%;">DESCRIPCIÓN</th>
+        <th style="${th}width:8%;">UNIDADES</th>
+        <th style="${th}width:9%;">LITROS</th>
+        <th style="${th}width:9%;">CANTIDAD</th>
+        <th style="${th}width:4%;">(E)</th>
+        <th style="${th}width:9%;">ALÍCUOTA %</th>
+        <th style="${th}width:15%;">PRECIO UNITARIO</th>
+        <th style="${th}width:20%;">MONTO Bs.</th>
+      </tr>
+    </thead>
+    <tbody>${rows}</tbody>
+  </table>
+
+  <!-- ══ PIE: LEYENDA | TOTALES ══ -->
+  <table style="width:100%;border-collapse:collapse;border:2px solid #1a1a1a;border-top:0;">
+    <tr>
+      <td style="${B}padding:0;width:38%;vertical-align:top;">
+        <div style="padding:8px 6px;text-align:center;height:100%;">
+          <div style="font-size:8px;font-weight:900;letter-spacing:0.5px;border-bottom:1px solid #999;padding-bottom:6px;">
+            ESTA FACTURA VA SIN TACHADURA<br>NI ENMENDADURA
+          </div>
+          <div style="font-size:16px;font-weight:900;color:#c00000;letter-spacing:2px;margin-top:12px;">ORIGINAL</div>
+          <div style="margin-top:14px;font-size:7.5px;border-top:1px dashed #bbb;padding-top:6px;text-align:left;">
+            <div><span style="color:#555;">Tasa BCV:</span> <strong style="color:#1a3560;font-size:9px;">Bs. ${fBs(tasaBs)}</strong></div>
+            <div><span style="color:#555;">Ref. USD:</span> <strong style="color:#1a3560;font-size:9px;">$${fUSD(totalPagar)}</strong></div>
+          </div>
+        </div>
+      </td>
+      <td style="${B}padding:0;width:62%;vertical-align:top;">
+        <table style="width:100%;border-collapse:collapse;">
+          <tr>
+            <td style="${B}font-size:8px;padding:3px 6px;text-align:right;width:72%;">Monto Total de Bienes o Servicios Exentos o Exonerados del I.V.A. &nbsp; Bs.</td>
+            <td style="${B}text-align:right;padding:3px 6px;font-weight:700;font-size:10px;">${fBs(exentoBs)}</td>
+          </tr>
+          <tr>
+            <td style="${B}font-size:8px;padding:3px 6px;color:#555;text-align:right;">Adiciones al precio por concepto de: &nbsp; Bs.</td>
+            <td style="${B}padding:3px 6px;"></td>
+          </tr>
+          <tr>
+            <td style="${B}font-size:8px;padding:3px 6px;color:#555;text-align:right;">Valor de los descuentos, bonificaciones, anulaciones al precio &nbsp; Bs.</td>
+            <td style="${B}padding:3px 6px;"></td>
+          </tr>
+          <tr>
+            <td style="${B}font-size:8px;padding:3px 6px;text-align:right;">Monto Total de La Base Imponible del I.V.A. según Alícuota <strong>16</strong>% &nbsp; Bs.</td>
+            <td style="${B}text-align:right;padding:3px 6px;font-weight:700;font-size:10px;">${fBs(baseBs)}</td>
+          </tr>
+          <tr>
+            <td style="${B}font-size:8px;padding:3px 6px;text-align:right;">Monto Total del Impuesto al Valor Agregado según Alícuota <strong>16</strong>% &nbsp; Bs.</td>
+            <td style="${B}text-align:right;padding:3px 6px;font-weight:700;font-size:10px;">${fBs(ivaBs)}</td>
+          </tr>
+          <tr style="${cliente.aplicaRetencion ? '' : 'background:#e8e8e8;'}">
+            <td style="border:2px solid #1a1a1a;font-size:9.5px;padding:4px 6px;font-weight:900;text-align:right;letter-spacing:0.5px;">Valor Total de la Venta de Los Bienes &nbsp; Bs.</td>
+            <td style="border:2px solid #1a1a1a;text-align:right;padding:4px 6px;font-weight:900;font-size:12px;">${fBs(totalVentaBs)}</td>
+          </tr>
+          ${filaRetencion}
+        </table>
+      </td>
+    </tr>
+  </table>
+
+  <!-- Imprenta -->
+  <div style="font-size:7px;color:#777;margin-top:6px;text-align:center;
+              border-top:1px solid #ddd;padding-top:4px;line-height:1.5;">
+    LITOANDES, S.A. Av. Carabobo Esq. Carrera 20 · Sector La Romera · Telefax: (0276) 356.19.55
+    San Cristóbal, Edo. Táchira &nbsp;/&nbsp; RIF: J-30406057-2
+    &nbsp;·&nbsp; N° PROVIDENCIA SENIAT 05/00579 de 14/03/2008 &nbsp;·&nbsp; Región Los Andes
+  </div>
+
+  <div style="text-align:center;margin-top:4px;font-size:7.5px;font-weight:700;
+              color:#cc0000;letter-spacing:1px;">
+    *** DOCUMENTO SIMULADO SIN VALIDEZ FISCAL — DIST. CASTILLO YAÑEZ APP ***
+  </div>
+
+  </div>
+</div>`;
+    }
+
 })();
 // redeploy trigger 1783027831
+
 
