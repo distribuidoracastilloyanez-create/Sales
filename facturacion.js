@@ -1459,16 +1459,22 @@
     function matchSeccionAlimentos(texto) {
         const s = _nrm(texto);
         if (s.includes('maltin') || s.includes('malta')) return 0;
-        // Refrescos: distinguir PET vs retornable
-        const esRefresco = s.includes('refresco') || s.includes('pepsi') || s.includes('cola') ||
-                           s.includes('golden') || s.includes('hit') || s.includes('chinotto') ||
+        // Refrescos: segmento "refresco(s)" o marcas conocidas
+        const esRefresco = s.includes('refresco') || s.includes('pepsi') || s.includes('golden') ||
+                           s.includes('cola') || s.includes('hit') || s.includes('chinotto') ||
                            s.includes('7up') || s.includes('seven') || s.includes('teem') ||
                            s.includes('gaseosa') || s.includes('soda') || s.includes('frescolita') ||
                            s.includes('uva') || s.includes('naranja') || s.includes('manzana');
         if (esRefresco) {
-            if (s.includes('pet') || /\b(1|1[.,]5|2|1[.,]0|2[.,]0)\s*(lt|l)\b/.test(s) || s.includes('desechable')) return 2;
-            if (s.includes('retornable') || s.includes('ret') || s.includes('vidrio')) return 1;
-            // Por defecto, refresco sin especificar → retornable
+            // PET = presentaciones 1 LTS, 1.5 LTS, 2 LTS (o si dice PET/desechable)
+            const esPet = s.includes('pet') || s.includes('desechable') ||
+                          /\b1\s*lts?\b/.test(s) || /\b1[.,]5\s*lts?\b/.test(s) || /\b2\s*lts?\b/.test(s) ||
+                          /\b1000\b/.test(s) || /\b1500\b/.test(s) || /\b2000\b/.test(s);
+            if (esPet) return 2;
+            // Retornable = RET 350ML u otras retornables/vidrio
+            if (s.includes('ret') || s.includes('retornable') || s.includes('vidrio') ||
+                /\b350\s*ml\b/.test(s) || /\b1[.,]25\b/.test(s)) return 1;
+            // Refresco sin especificar → retornable por defecto
             return 1;
         }
         return 3; // OTROS PRODUCTOS (alimentos varios)
@@ -1498,27 +1504,30 @@
             return best;
         }
         if (sec.key === 'refrescos_ret') {
-            // 0,350 vs 1,250 (litraje)
+            // RET 350ML → fila 24u/0,350 ; 1,25L → fila 6u/1,250
             const c125 = /1[.,]25|1250/.test(t);
+            const c350 = /350\s*ml/.test(t) || /0[.,]?350/.test(t);
             let best = -1;
             sec.filas.forEach((f, i) => {
                 if (!f.desc) return;
                 if (c125 && (f.lts || '').includes('1,250')) best = i;
-                else if (!c125 && (f.lts || '').includes('0,350')) best = i;
+                else if ((c350 || !c125) && (f.lts || '').includes('0,350')) best = i;
                 else if (best < 0) best = i;
             });
             return best;
         }
         if (sec.key === 'refrescos_pet') {
-            // 1L, 1.5L, 2L
-            const c2  = /\b2\s*(lt|l)\b|2[.,]0|2000/.test(t);
-            const c15 = /1[.,]5|1500/.test(t);
+            // Presentaciones exactas del inventario: 1 LTS, 1.5 LTS, 2 LTS
+            // (con tolerancia a 1000/1500/2000 ml y variantes L/LT)
+            const c15 = /1[.,]5\s*lts?/.test(t) || /1500/.test(t) || /1[.,]5\s*l\b/.test(t);
+            const c2  = /\b2\s*lts?/.test(t) || /2000/.test(t) || /\b2\s*l\b/.test(t) || /2[.,]0/.test(t);
             let best = -1;
             sec.filas.forEach((f, i) => {
                 if (!f.desc) return;
-                if (c2 && (f.lts || '').includes('2,000')) best = i;
-                else if (c15 && (f.lts || '').includes('1,500')) best = i;
-                else if (!c2 && !c15 && (f.lts || '').includes('1,000')) best = i;
+                // Prioridad: 1.5 y 2 son específicas; 1 LTS es el caso base
+                if (c15 && (f.lts || '').includes('1,500')) best = i;
+                else if (c2 && (f.lts || '').includes('2,000')) best = i;
+                else if (!c15 && !c2 && (f.lts || '').includes('1,000')) best = i;
                 else if (best < 0) best = i;
             });
             return best;
@@ -2595,5 +2604,6 @@
 
 })();
 // redeploy trigger 1783027831
+
 
 
