@@ -120,6 +120,73 @@
         return `${u.nombre || ''} ${u.apellido || ''}`.trim() || u.email || u.id;
     }
 
+    // ─── DATOS PARA ANALISTA DE CLIENTES ────────────────────
+    let _clientesCache = null;   // [{id, nombreComercial, nombrePersonal, ...}]
+    let _cxcCache      = null;   // [{name, amount, transactions[]}]
+    let _adcSet        = null;   // Set de clienteId que poseen ADC
+    let _indiceNombres = null;   // Map nombreNormalizado -> clienteId
+
+    // Normaliza nombres para hacer match entre CXC (por nombre) y clientes (por id)
+    function normNombre(s) {
+        return (s || '')
+            .toString()
+            .normalize('NFD').replace(/[\u0300-\u036f]/g, '')  // sin acentos
+            .replace(/\u00A0/g, ' ')                            // NBSP → espacio
+            .replace(/\s+/g, ' ')                               // espacios múltiples
+            .trim()
+            .toUpperCase();
+    }
+
+    async function loadClientes() {
+        if (_clientesCache) return _clientesCache;
+        try {
+            const snap = await _getDocs(_collection(_db, `artifacts/${getPublicDataId()}/public/data/clientes`));
+            _clientesCache = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        } catch (e) { console.warn('No se pudieron cargar clientes:', e); _clientesCache = []; }
+        // Índice nombre normalizado -> id (comercial y personal)
+        _indiceNombres = new Map();
+        _clientesCache.forEach(cl => {
+            const nc = normNombre(cl.nombreComercial);
+            const np = normNombre(cl.nombrePersonal);
+            if (nc) _indiceNombres.set(nc, cl.id);
+            if (np && !_indiceNombres.has(np)) _indiceNombres.set(np, cl.id);
+        });
+        return _clientesCache;
+    }
+
+    async function loadCXC() {
+        if (_cxcCache) return _cxcCache;
+        try {
+            const snap = await _getDoc(_doc(_db, `artifacts/${getPublicDataId()}/public/data/cxc`, 'list'));
+            _cxcCache = snap.exists() ? (snap.data().clients || []) : [];
+        } catch (e) { console.warn('No se pudo cargar CXC:', e); _cxcCache = []; }
+        return _cxcCache;
+    }
+
+    async function loadADC() {
+        if (_adcSet) return _adcSet;
+        _adcSet = new Set();
+        try {
+            const archivosRef = _collection(_db, `artifacts/${getPublicDataId()}/public/data/archivos_clientes`);
+            const q = _query(archivosRef, _where('categoria', '==', 'adc'));
+            const snap = await _getDocs(q);
+            snap.forEach(d => { const x = d.data(); if (x.clienteId) _adcSet.add(x.clienteId); });
+        } catch (e) { console.warn('No se pudo cargar ADC:', e); }
+        return _adcSet;
+    }
+
+    // Resuelve el clienteId a partir de un nombre CXC (o null si no hay match)
+    function idDesdeNombreCXC(nombreCXC) {
+        if (!_indiceNombres) return null;
+        const n = normNombre(nombreCXC);
+        if (_indiceNombres.has(n)) return _indiceNombres.get(n);
+        // Búsqueda tolerante: por inclusión (nombre CXC contiene o está contenido)
+        for (const [nom, id] of _indiceNombres.entries()) {
+            if (nom.includes(n) || n.includes(nom)) return id;
+        }
+        return null;
+    }
+
     // ─── CACHÉ DE CIERRES (localStorage) ────────────────────
     // Los cierres de días ANTERIORES a hoy son inmutables, así que se cachean
     // para no releerlos de Firebase. Las ventas del día actual siempre se leen frescas.
@@ -261,6 +328,14 @@
                                 <span class="block text-xs text-gray-500 mt-0.5">Productos que se vendían y están agotados o bajos</span>
                             </span>
                         </button>
+
+                        <button id="admCliBtn" class="w-full text-left px-4 py-4 bg-purple-50 border border-purple-200 rounded-lg hover:bg-purple-100 transition flex items-center gap-3">
+                            <span class="w-11 h-11 bg-purple-600 text-white rounded-lg flex items-center justify-center text-xl shrink-0">👥</span>
+                            <span>
+                                <span class="block font-bold text-gray-800">Analista de Clientes</span>
+                                <span class="block text-xs text-gray-500 mt-0.5">Ranking por compra y calificación de pago (CXC)</span>
+                            </span>
+                        </button>
                     </div>
                 </div>
             </div>`;
@@ -269,6 +344,7 @@
         document.getElementById('admInvBtn').addEventListener('click', showInventarioConsolidado);
         document.getElementById('admAnaBtn').addEventListener('click', showAnalistaDatos);
         document.getElementById('admInvAnaBtn').addEventListener('click', showAnalistaInventario);
+        document.getElementById('admCliBtn').addEventListener('click', showAnalistaClientes);
 
         // Precargar datos base
         await Promise.all([loadUsers(), loadMaster(), loadConfig(), getSortFn()]);
@@ -1463,7 +1539,660 @@
         result.innerHTML = html;
     }
 
+
+    // ════════════════════════════════════════════════════════
+    // ANALISTA DE CLIENTES
+    // ════════════════════════════════════════════════════════
+    let _cliVolData = [];   // ranking por volumen
+    let _cliPagoData = [];  // calificación de pago
+    let _cliModo = 'volumen';
+
+    // ── Parseo de fecha CXC (formatos dd/mm/yyyy o yyyy-mm-dd) ──
+    function parseFechaCXC(raw) {
+        if (!raw) return null;
+        const s = raw.toString().trim();
+        let m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+        if (m) {
+            let [_, d, mo, y] = m;
+            if (y.length === 2) y = '20' + y;
+            return new Date(Number(y), Number(mo) - 1, Number(d));
+        }
+        m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+        if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+        const d = new Date(s);
+        return isNaN(d.getTime()) ? null : d;
+    }
+
+    const UMBRAL_COMPROMISO = 0.80; // pagado ≥ 80% del despacho = compromiso cumplido
+
+    // ── Calificación de estructura de pago de un cliente ──
+    // Empareja despachos (F) con abonos posteriores (T/E) en orden cronológico,
+    // midiendo días hasta que lo pagado alcanza el 80% de cada despacho.
+    function calificarPagoCliente(client) {
+        const txs = (client.transactions || [])
+            .map(t => ({ ...t, fecha: parseFechaCXC(t.date) }))
+            .filter(t => t.fecha)
+            .sort((a, b) => a.fecha - b.fecha);
+
+        // Cola de despachos pendientes (FIFO)
+        const despachos = []; // {fecha, monto, pagado, saldadoFecha}
+        const facturas = [];  // despachos cerrados con su calificación
+
+        const hoy = new Date();
+
+        txs.forEach(t => {
+            const tipo = (t.type || '').toUpperCase();
+            const monto = Math.abs(t.amount || 0);
+            if (tipo === 'F') {
+                if (monto > 0) despachos.push({ fecha: t.fecha, monto, pagado: 0, saldadoFecha: null });
+            } else if (tipo === 'T' || tipo === 'E' || tipo === '%') {
+                // Abono: aplicar FIFO a los despachos más antiguos no saldados
+                let restante = monto;
+                for (const d of despachos) {
+                    if (d.saldadoFecha) continue;
+                    if (restante <= 0) break;
+                    const falta = d.monto * UMBRAL_COMPROMISO - d.pagado;
+                    d.pagado += restante;
+                    // ¿Alcanzó el umbral de compromiso (80%)?
+                    if (d.pagado >= d.monto * UMBRAL_COMPROMISO && !d.saldadoFecha) {
+                        d.saldadoFecha = t.fecha;
+                        const dias = Math.round((t.fecha - d.fecha) / 86400000);
+                        facturas.push({ fecha: d.fecha, monto: d.monto, dias, saldado: true,
+                                        pendientePct: Math.max(0, 1 - d.pagado / d.monto) });
+                    }
+                    restante -= (falta > 0 ? falta : 0);
+                }
+            }
+            // R (retención) y C (consignación) no cuentan como abono de pago aquí
+        });
+
+        // Despachos aún no saldados: días transcurridos hasta hoy
+        despachos.forEach(d => {
+            if (!d.saldadoFecha) {
+                const dias = Math.round((hoy - d.fecha) / 86400000);
+                facturas.push({ fecha: d.fecha, monto: d.monto, dias, saldado: false,
+                                pendientePct: Math.max(0, 1 - d.pagado / d.monto) });
+            }
+        });
+
+        if (!facturas.length) return null;
+
+        // Clasificar cada factura por días
+        const clasif = { excelente: 0, buena: 0, regular: 0, mala: 0 };
+        let sumaDias = 0;
+        facturas.forEach(f => {
+            sumaDias += f.dias;
+            if (f.dias < 7) clasif.excelente++;
+            else if (f.dias < 15) clasif.buena++;
+            else if (f.dias < 21) clasif.regular++;
+            else clasif.mala++;
+        });
+        const diasProm = sumaDias / facturas.length;
+
+        // Calificación global por promedio de días (recomendación del proyecto)
+        let calif, califColor, califIcon;
+        if (diasProm < 7)       { calif = 'Excelente'; califColor = 'green';  califIcon = '🟢'; }
+        else if (diasProm < 15) { calif = 'Buena';     califColor = 'blue';   califIcon = '🔵'; }
+        else if (diasProm < 21) { calif = 'Regular';   califColor = 'amber';  califIcon = '🟡'; }
+        else                    { calif = 'Mala';      califColor = 'red';    califIcon = '🔴'; }
+
+        const totalFacturado = facturas.reduce((s, f) => s + f.monto, 0);
+        const pendientePromedio = facturas.reduce((s, f) => s + f.pendientePct, 0) / facturas.length;
+
+        return {
+            calif, califColor, califIcon, diasProm,
+            numFacturas: facturas.length, clasif,
+            totalFacturado, pendientePromedio,
+            facturas: facturas.sort((a, b) => b.fecha - a.fecha)
+        };
+    }
+
+
+    // ── VISTA PRINCIPAL ──
+    async function showAnalistaClientes() {
+        _mainContent.innerHTML = `
+            <div class="p-2 sm:p-3 pt-6 w-full max-w-3xl mx-auto">
+                <div class="bg-white/95 backdrop-blur-sm p-3 sm:p-4 rounded-lg shadow-xl">
+                    <div class="flex items-center justify-between mb-3">
+                        <h2 class="text-lg font-bold text-gray-800 flex items-center gap-2">👥 Analista de Clientes</h2>
+                        <button id="cliBack" class="px-3 py-1.5 bg-gray-400 text-white text-xs rounded hover:bg-gray-500 font-bold transition">Volver</button>
+                    </div>
+
+                    <!-- Modo -->
+                    <div class="grid grid-cols-2 gap-2 mb-3">
+                        <button id="cliModoVol" class="py-2 rounded text-xs font-bold border transition bg-purple-600 text-white border-purple-600">🏆 Volumen de compra</button>
+                        <button id="cliModoPago" class="py-2 rounded text-xs font-bold border transition bg-white text-purple-700 border-purple-300">💳 Estructura de pago</button>
+                    </div>
+
+                    <!-- Controles comunes -->
+                    <div class="bg-purple-50 border border-purple-200 rounded-lg p-3 mb-3 space-y-2">
+                        <label class="flex items-center gap-2 cursor-pointer">
+                            <input type="checkbox" id="cliADC" class="w-4 h-4 accent-purple-600">
+                            <span class="text-xs font-bold text-purple-800">Solo clientes con ADC</span>
+                        </label>
+
+                        <!-- Bloque volumen: periodo + alcance -->
+                        <div id="cliVolControls" class="space-y-2">
+                            <div>
+                                <label class="block text-[10px] font-bold text-purple-800 uppercase mb-1">Periodo</label>
+                                <select id="cliPeriodo" class="w-full text-xs border border-purple-300 rounded p-1.5 bg-white outline-none mb-1.5">
+                                    <option value="dia">Día específico</option>
+                                    <option value="semana">Semana específica</option>
+                                    <option value="semanaAnterior">Semana anterior</option>
+                                    <option value="mes" selected>Mes específico</option>
+                                    <option value="mesAnterior">Mes anterior</option>
+                                    <option value="anioCurso">Año en curso</option>
+                                    <option value="anioEspecifico">Año específico</option>
+                                </select>
+                                <div id="cliPeriodoControl"></div>
+                            </div>
+                            <div class="grid grid-cols-2 gap-2">
+                                <div>
+                                    <label class="block text-[10px] font-bold text-purple-800 uppercase mb-1">Alcance</label>
+                                    <select id="cliAlcanceTipo" class="w-full text-xs border border-purple-300 rounded p-1.5 bg-white outline-none">
+                                        <option value="todo">Todo</option>
+                                        <option value="rubro">Por rubro</option>
+                                        <option value="segmento">Por segmento</option>
+                                        <option value="marca">Por marca</option>
+                                        <option value="producto">Producto individual</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-[10px] font-bold text-purple-800 uppercase mb-1">Medir por</label>
+                                    <select id="cliMedir" class="w-full text-xs border border-purple-300 rounded p-1.5 bg-white outline-none">
+                                        <option value="unidades">Unidades</option>
+                                        <option value="monto">Monto $</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div id="cliAlcanceValorWrap"></div>
+                        </div>
+
+                        <button id="cliRun" class="w-full py-2 bg-purple-600 text-white font-bold rounded text-sm hover:bg-purple-700 transition">📈 Analizar</button>
+                        <p id="cliInfo" class="text-[10px] text-gray-400 text-center"></p>
+                    </div>
+
+                    <div id="cliLoading" class="text-center py-10 text-gray-400 text-sm">Elige el modo y toca «Analizar».</div>
+                    <div id="cliRiesgo" class="hidden mb-3"></div>
+                    <div id="cliEstrella" class="hidden mb-3"></div>
+                    <div id="cliChart" class="hidden mb-3"></div>
+                    <div id="cliTableWrap" class="hidden overflow-x-auto max-h-[45vh] overflow-y-auto rounded border border-gray-200"></div>
+                    <div id="cliResumen" class="hidden text-xs text-gray-500 mt-2 text-center"></div>
+                </div>
+            </div>`;
+
+        document.getElementById('cliBack').addEventListener('click', window.showAdministracionMenu);
+        document.getElementById('cliModoVol').addEventListener('click', () => setCliModo('volumen'));
+        document.getElementById('cliModoPago').addEventListener('click', () => setCliModo('pago'));
+        document.getElementById('cliRun').addEventListener('click', ejecutarAnalisisClientes);
+        document.getElementById('cliPeriodo').addEventListener('change', renderCliPeriodoControl);
+        document.getElementById('cliAlcanceTipo').addEventListener('change', renderCliAlcanceValor);
+
+        // Cargar datos base necesarios
+        document.getElementById('cliLoading').innerHTML = '<svg class="animate-spin h-6 w-6 mx-auto mb-2 text-purple-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path></svg>Cargando datos...';
+        await Promise.all([loadMaster(), loadUsers(), loadClientes(), loadCXC(), loadADC(), getSortFn()]);
+        document.getElementById('cliLoading').textContent = 'Elige el modo y toca «Analizar».';
+
+        renderCliPeriodoControl();
+        renderCliAlcanceValor();
+        setCliModo('volumen');
+    }
+
+    function setCliModo(modo) {
+        _cliModo = modo;
+        const bVol = document.getElementById('cliModoVol');
+        const bPago = document.getElementById('cliModoPago');
+        const volCtrls = document.getElementById('cliVolControls');
+        if (modo === 'volumen') {
+            bVol.className = 'py-2 rounded text-xs font-bold border transition bg-purple-600 text-white border-purple-600';
+            bPago.className = 'py-2 rounded text-xs font-bold border transition bg-white text-purple-700 border-purple-300';
+            volCtrls.classList.remove('hidden');
+        } else {
+            bPago.className = 'py-2 rounded text-xs font-bold border transition bg-purple-600 text-white border-purple-600';
+            bVol.className = 'py-2 rounded text-xs font-bold border transition bg-white text-purple-700 border-purple-300';
+            volCtrls.classList.add('hidden');
+        }
+        // Limpiar resultados al cambiar de modo
+        ['cliRiesgo','cliEstrella','cliChart','cliTableWrap','cliResumen'].forEach(id =>
+            document.getElementById(id)?.classList.add('hidden'));
+        document.getElementById('cliLoading').classList.remove('hidden');
+        document.getElementById('cliLoading').textContent = 'Toca «Analizar».';
+    }
+
+    function renderCliPeriodoControl() {
+        const tipo = document.getElementById('cliPeriodo').value;
+        const cont = document.getElementById('cliPeriodoControl');
+        if (!cont) return;
+        const cls = 'w-full text-xs border border-purple-300 rounded p-1.5 bg-white outline-none';
+        const anioActual = new Date().getFullYear();
+        if (tipo === 'dia') cont.innerHTML = `<input type="date" id="cliFecha" value="${hoyISO()}" class="${cls}">`;
+        else if (tipo === 'semana') cont.innerHTML = `<input type="week" id="cliSemana" class="${cls}">`;
+        else if (tipo === 'mes') cont.innerHTML = `<input type="month" id="cliMes" value="${mesActualISO()}" class="${cls}">`;
+        else if (tipo === 'anioEspecifico') {
+            let opts = '';
+            for (let y = anioActual; y >= anioActual - 6; y--) opts += `<option value="${y}">${y}</option>`;
+            cont.innerHTML = `<select id="cliAnio" class="${cls}">${opts}</select>`;
+        } else cont.innerHTML = '';
+    }
+
+    function renderCliAlcanceValor() {
+        const tipo = document.getElementById('cliAlcanceTipo').value;
+        const wrap = document.getElementById('cliAlcanceValorWrap');
+        if (!wrap) return;
+        const cls = 'w-full text-xs border border-purple-300 rounded p-1.5 bg-white outline-none';
+        const prods = Object.values(_masterCache).filter(p => p.presentacion || p.marca);
+        let opts = '<option value="">— seleccionar —</option>';
+        if (tipo === 'todo') { wrap.innerHTML = ''; return; }
+        if (tipo === 'rubro') {
+            [...new Set(prods.map(p => p.rubro).filter(Boolean))].sort().forEach(v => opts += `<option value="${v}">${v}</option>`);
+        } else if (tipo === 'segmento') {
+            [...new Set(prods.map(p => p.segmento).filter(Boolean))].sort().forEach(v => opts += `<option value="${v}">${v}</option>`);
+        } else if (tipo === 'marca') {
+            [...new Set(prods.map(p => p.marca).filter(Boolean))].sort().forEach(v => opts += `<option value="${v}">${v}</option>`);
+        } else if (tipo === 'producto') {
+            prods.sort(_sortFn).forEach(p => opts += `<option value="${p.id}">${p.presentacion || 'Producto'} · ${p.marca || ''}</option>`);
+        }
+        wrap.innerHTML = `<select id="cliAlcanceValor" class="${cls}">${opts}</select>`;
+    }
+
+    function calcularRangoCli() {
+        // Reusa la lógica de periodo del analista, leyendo de los ids "cli*"
+        const tipo = document.getElementById('cliPeriodo').value;
+        const hoy = new Date();
+        const y = hoy.getFullYear(), mo = hoy.getMonth();
+        const iso = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+        if (tipo === 'dia') { const v = document.getElementById('cliFecha')?.value; return v ? { inicio:v, fin:v, label:`Día ${v}` } : null; }
+        if (tipo === 'semana') {
+            const v = document.getElementById('cliSemana')?.value; if (!v) return null;
+            const [yy, ww] = v.split('-W').map(Number);
+            const simple = new Date(yy, 0, 1 + (ww-1)*7); const dow = simple.getDay();
+            const lunes = new Date(simple); lunes.setDate(simple.getDate() - ((dow+6)%7));
+            const dom = new Date(lunes); dom.setDate(lunes.getDate()+6);
+            return { inicio: iso(lunes), fin: iso(dom), label: `Semana ${ww}/${yy}` };
+        }
+        if (tipo === 'semanaAnterior') {
+            const dow = hoy.getDay(); const lunesEsta = new Date(hoy); lunesEsta.setDate(hoy.getDate()-((dow+6)%7));
+            const lunesAnt = new Date(lunesEsta); lunesAnt.setDate(lunesEsta.getDate()-7);
+            const domAnt = new Date(lunesAnt); domAnt.setDate(lunesAnt.getDate()+6);
+            return { inicio: iso(lunesAnt), fin: iso(domAnt), label: 'Semana anterior' };
+        }
+        if (tipo === 'mes') { const v = document.getElementById('cliMes')?.value; if (!v) return null;
+            const [yy,mm]=v.split('-').map(Number); return { inicio: iso(new Date(yy,mm-1,1)), fin: iso(new Date(yy,mm,0)), label: v }; }
+        if (tipo === 'mesAnterior') return { inicio: iso(new Date(y,mo-1,1)), fin: iso(new Date(y,mo,0)), label: 'Mes anterior' };
+        if (tipo === 'anioCurso') return { inicio: `${y}-01-01`, fin: iso(hoy), label: `Año ${y}` };
+        if (tipo === 'anioEspecifico') { const yy = Number(document.getElementById('cliAnio')?.value || y); return { inicio: `${yy}-01-01`, fin: `${yy}-12-31`, label: `Año ${yy}` }; }
+        return null;
+    }
+
+
+    // ── Análisis de volumen de compra por cliente ──
+    // Lee ventas/cierres de todos los vendedores una vez, agrupa por cliente,
+    // filtrando por rango de fechas y por alcance (todo/rubro/segmento/marca/producto).
+    async function analizarVolumenClientes(rango, alcance) {
+        const dentroRango = (diaISO) => diaISO >= rango.inicio && diaISO <= rango.fin;
+
+        const pasaAlcance = (prodId) => {
+            if (alcance.tipo === 'todo') return true;
+            const m = _masterCache[prodId] || {};
+            if (alcance.tipo === 'rubro')    return m.rubro === alcance.valor;
+            if (alcance.tipo === 'segmento') return m.segmento === alcance.valor;
+            if (alcance.tipo === 'marca')    return m.marca === alcance.valor;
+            if (alcance.tipo === 'producto') return prodId === alcance.valor;
+            return true;
+        };
+
+        // clienteId -> { id, nombre, unidades, monto }
+        const porCliente = {};
+        const todosVendedores = _usersCache.map(u => u.id);
+
+        for (const uid of todosVendedores) {
+            const ventasSnap = await _getDocs(_collection(_db, `artifacts/${_appId}/users/${uid}/ventas`));
+            const cierresSnap = await _getDocs(_collection(_db, `artifacts/${_appId}/users/${uid}/cierres`));
+
+            const procesar = (v) => {
+                const f = v.fecha?.toDate ? v.fecha.toDate() : new Date(v.fecha);
+                if (!f) return;
+                const diaISO = `${f.getFullYear()}-${String(f.getMonth()+1).padStart(2,'0')}-${String(f.getDate()).padStart(2,'0')}`;
+                if (!dentroRango(diaISO)) return;
+                const cid = v.clienteId || ('nombre:' + normNombre(v.clienteNombre));
+                const cnombre = v.clienteNombre || 'Sin nombre';
+                (v.productos || []).forEach(p => {
+                    if (!p.id || !pasaAlcance(p.id)) return;
+                    const m = _masterCache[p.id] || {};
+                    const uCj = m.unidadesPorCaja || 1, uPaq = m.unidadesPorPaquete || 1;
+                    const cv = p.cantidadVendida || {};
+                    const unidades = (cv.cj||0)*uCj + (cv.paq||0)*uPaq + (cv.und||0);
+                    const monto = (p.precios?.cj||0)*(cv.cj||0) + (p.precios?.paq||0)*(cv.paq||0) + (p.precios?.und||0)*(cv.und||0);
+                    if (!porCliente[cid]) porCliente[cid] = { id: cid, nombre: cnombre, unidades: 0, monto: 0 };
+                    porCliente[cid].unidades += unidades;
+                    porCliente[cid].monto += monto;
+                });
+            };
+            ventasSnap.docs.forEach(d => procesar(d.data()));
+            cierresSnap.docs.forEach(dc => (dc.data().ventas || []).forEach(procesar));
+        }
+        return Object.values(porCliente);
+    }
+
+
+    async function ejecutarAnalisisClientes() {
+        const loading = document.getElementById('cliLoading');
+        const soloADC = document.getElementById('cliADC').checked;
+        loading.classList.remove('hidden');
+        loading.innerHTML = '<svg class="animate-spin h-6 w-6 mx-auto mb-2 text-purple-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path></svg>Analizando...';
+        ['cliRiesgo','cliEstrella','cliChart','cliTableWrap','cliResumen'].forEach(id => document.getElementById(id).classList.add('hidden'));
+
+        try {
+            if (_cliModo === 'volumen') {
+                await ejecutarVolumen(soloADC);
+            } else {
+                await ejecutarPago(soloADC);
+            }
+        } catch (e) {
+            console.error('Error en análisis de clientes:', e);
+            loading.textContent = 'Error al analizar.';
+        }
+    }
+
+    // Helper: ¿el cliente (por id) tiene ADC?
+    function clienteTieneADC(cid) { return _adcSet && _adcSet.has(cid); }
+
+    // Une datos de volumen + calificación de pago por cliente (para badges cruzados)
+    function calificacionDe(cid, nombre) {
+        // Busca el cliente CXC que corresponde a este id/nombre
+        const cxc = _cxcCache.find(c => {
+            const idc = idDesdeNombreCXC(c.name);
+            if (cid && idc === cid) return true;
+            return normNombre(c.name) === normNombre(nombre);
+        });
+        if (!cxc) return null;
+        return calificarPagoCliente(cxc);
+    }
+
+    // ═══ MODO VOLUMEN ═══
+    async function ejecutarVolumen(soloADC) {
+        const rango = calcularRangoCli();
+        if (!rango) { _showModal('Aviso', 'Selecciona un periodo válido.'); document.getElementById('cliLoading').textContent = 'Toca «Analizar».'; return; }
+        const tipoAlc = document.getElementById('cliAlcanceTipo').value;
+        const valorAlc = document.getElementById('cliAlcanceValor')?.value || '';
+        if (tipoAlc !== 'todo' && !valorAlc) { _showModal('Aviso', 'Selecciona el valor del alcance (rubro, segmento, marca o producto).'); document.getElementById('cliLoading').textContent = 'Toca «Analizar».'; return; }
+        const medir = document.getElementById('cliMedir').value;
+
+        let lista = await analizarVolumenClientes(rango, { tipo: tipoAlc, valor: valorAlc });
+
+        // Resolver id real y ADC; adjuntar calificación de pago
+        lista.forEach(c => {
+            const realId = (c.id && !c.id.startsWith('nombre:')) ? c.id : idDesdeNombreCXC(c.nombre);
+            c.realId = realId;
+            c.tieneADC = realId ? clienteTieneADC(realId) : false;
+            c.pago = calificacionDe(realId, c.nombre);
+        });
+        if (soloADC) lista = lista.filter(c => c.tieneADC);
+
+        // Ordenar por la métrica elegida
+        lista.sort((a, b) => (medir === 'monto' ? b.monto - a.monto : b.unidades - a.unidades));
+        _cliVolData = lista;
+
+        renderVolumen(lista, medir, rango);
+    }
+
+    function renderVolumen(lista, medir, rango) {
+        const loading = document.getElementById('cliLoading');
+        const chart = document.getElementById('cliChart');
+        const wrap = document.getElementById('cliTableWrap');
+        const resumen = document.getElementById('cliResumen');
+        const riesgo = document.getElementById('cliRiesgo');
+        const estrella = document.getElementById('cliEstrella');
+        loading.classList.add('hidden');
+
+        if (!lista.length) {
+            wrap.classList.remove('hidden');
+            wrap.innerHTML = '<p class="text-center text-gray-400 py-6 text-sm">Sin compras para estos filtros.</p>';
+            return;
+        }
+
+        const valorDe = (c) => medir === 'monto' ? c.monto : c.unidades;
+        const fmtValor = (c) => medir === 'monto' ? '$' + c.monto.toFixed(2) : c.unidades.toLocaleString('es-VE') + ' und';
+
+        // M3 — Cliente estrella: alto volumen + Excelente pago (top 25% volumen y calif Excelente)
+        const umbralAlto = lista.length > 3 ? valorDe(lista[Math.floor(lista.length * 0.25)]) : 0;
+        const estrellas = lista.filter(c => valorDe(c) >= umbralAlto && c.pago && c.pago.calif === 'Excelente').slice(0, 5);
+        if (estrellas.length) {
+            estrella.classList.remove('hidden');
+            estrella.innerHTML = `
+                <div class="bg-gradient-to-r from-yellow-50 to-amber-50 border border-amber-300 rounded-lg p-3">
+                    <p class="text-[10px] font-bold text-amber-800 uppercase mb-2">⭐ Clientes estrella (alto volumen + excelente pago)</p>
+                    ${estrellas.map(c => `<div class="flex justify-between items-center py-1 text-xs">
+                        <span class="font-medium text-gray-800">${c.nombre}${c.tieneADC ? ' <span class="text-[8px] bg-purple-200 text-purple-700 px-1 rounded">ADC</span>' : ''}</span>
+                        <span class="font-bold text-amber-700">${fmtValor(c)}</span>
+                    </div>`).join('')}
+                </div>`;
+        }
+
+        // M1 — Clientes en riesgo: alto volumen + pago Malo
+        const riesgos = lista.filter(c => valorDe(c) >= umbralAlto && c.pago && c.pago.calif === 'Mala').slice(0, 5);
+        if (riesgos.length) {
+            riesgo.classList.remove('hidden');
+            riesgo.innerHTML = `
+                <div class="bg-red-50 border border-red-300 rounded-lg p-3">
+                    <p class="text-[10px] font-bold text-red-800 uppercase mb-2">⚠️ Clientes en riesgo (te compran mucho pero pagan mal)</p>
+                    ${riesgos.map(c => `<div class="flex justify-between items-center py-1 text-xs">
+                        <span class="font-medium text-gray-800">${c.nombre}</span>
+                        <span class="text-right"><span class="font-bold text-red-700">${fmtValor(c)}</span> <span class="text-[9px] text-gray-500">· ${c.pago.diasProm.toFixed(0)}d</span></span>
+                    </div>`).join('')}
+                </div>`;
+        }
+
+        // Gráfico Top 10
+        const top = lista.slice(0, 10);
+        const maxV = Math.max(...top.map(valorDe), 1);
+        chart.classList.remove('hidden');
+        chart.innerHTML = `
+            <div class="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                <p class="text-[10px] font-bold text-gray-500 uppercase mb-2">Top ${top.length} clientes · ${rango.label}</p>
+                <div class="space-y-1.5">
+                    ${top.map((c, i) => {
+                        const pct = (valorDe(c) / maxV) * 100;
+                        const nombre = c.nombre.length > 22 ? c.nombre.slice(0, 22) + '…' : c.nombre;
+                        return `<div class="flex items-center gap-2">
+                            <span class="text-[10px] text-gray-400 w-4 text-right">${i+1}</span>
+                            <div class="flex-1 min-w-0">
+                                <div class="flex justify-between items-center mb-0.5">
+                                    <span class="text-[10px] text-gray-700 truncate">${nombre}</span>
+                                    <span class="text-[10px] font-bold text-purple-700 shrink-0 ml-1">${fmtValor(c)}</span>
+                                </div>
+                                <div class="w-full bg-gray-200 rounded-full h-2"><div class="bg-purple-500 h-2 rounded-full" style="width:${pct}%"></div></div>
+                            </div>
+                        </div>`;
+                    }).join('')}
+                </div>
+            </div>`;
+
+        // Tabla completa
+        const badge = (p) => p ? `<span class="text-[9px] px-1.5 py-0.5 rounded bg-${p.califColor}-100 text-${p.califColor}-700 font-bold">${p.califIcon}</span>` : '<span class="text-[9px] text-gray-300">—</span>';
+        wrap.classList.remove('hidden');
+        let html = `<table class="min-w-full text-sm"><thead class="bg-gray-200 sticky top-0"><tr class="text-xs uppercase text-gray-600">
+            <th class="py-2 px-2 text-left">#</th><th class="py-2 px-2 text-left">Cliente</th>
+            <th class="py-2 px-2 text-center">Volumen</th><th class="py-2 px-2 text-center">Pago</th></tr></thead><tbody>`;
+        lista.forEach((c, i) => {
+            html += `<tr class="border-b border-gray-100 hover:bg-purple-50">
+                <td class="py-2 px-2 text-gray-400 font-bold text-xs">${i+1}</td>
+                <td class="py-2 px-2"><div class="font-medium text-gray-800 text-xs">${c.nombre}${c.tieneADC ? ' <span class="text-[8px] bg-purple-200 text-purple-700 px-1 rounded">ADC</span>' : ''}</div></td>
+                <td class="py-2 px-2 text-center font-bold text-purple-700 text-xs">${fmtValor(c)}</td>
+                <td class="py-2 px-2 text-center">${badge(c.pago)}</td>
+            </tr>`;
+        });
+        html += '</tbody></table>';
+        wrap.innerHTML = html;
+
+        resumen.classList.remove('hidden');
+        resumen.innerHTML = `${lista.length} cliente(s) · <button id="cliExportVol" class="text-purple-600 font-bold hover:underline">⬇️ Exportar Excel</button>`;
+        document.getElementById('cliExportVol').addEventListener('click', () => exportarClientesExcel(lista, medir, 'volumen'));
+    }
+
+
+    // ═══ MODO CALIFICACIÓN DE PAGO ═══
+    async function ejecutarPago(soloADC) {
+        // Calificar todos los clientes CXC
+        let lista = [];
+        _cxcCache.forEach(cxc => {
+            const cal = calificarPagoCliente(cxc);
+            if (!cal) return;
+            const realId = idDesdeNombreCXC(cxc.name);
+            const tieneADC = realId ? clienteTieneADC(realId) : false;
+            lista.push({ nombre: cxc.name, realId, tieneADC, ...cal });
+        });
+        if (soloADC) lista = lista.filter(c => c.tieneADC);
+
+        // Ordenar: mejores primero (menos días promedio)
+        lista.sort((a, b) => a.diasProm - b.diasProm);
+        _cliPagoData = lista;
+
+        renderPago(lista);
+    }
+
+    function renderPago(lista) {
+        const loading = document.getElementById('cliLoading');
+        const chart = document.getElementById('cliChart');
+        const wrap = document.getElementById('cliTableWrap');
+        const resumen = document.getElementById('cliResumen');
+        const riesgo = document.getElementById('cliRiesgo');
+        loading.classList.add('hidden');
+
+        if (!lista.length) {
+            wrap.classList.remove('hidden');
+            wrap.innerHTML = '<p class="text-center text-gray-400 py-6 text-sm">Sin historial CXC para calificar.</p>';
+            return;
+        }
+
+        // Distribución de calificaciones (gráfico resumen)
+        const dist = { Excelente: 0, Buena: 0, Regular: 0, Mala: 0 };
+        lista.forEach(c => dist[c.calif]++);
+        const totalC = lista.length;
+        const colores = { Excelente: 'green', Buena: 'blue', Regular: 'amber', Mala: 'red' };
+        const iconos = { Excelente: '🟢', Buena: '🔵', Regular: '🟡', Mala: '🔴' };
+        chart.classList.remove('hidden');
+        chart.innerHTML = `
+            <div class="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                <p class="text-[10px] font-bold text-gray-500 uppercase mb-2">Distribución de calificaciones</p>
+                <div class="space-y-1.5">
+                    ${Object.keys(dist).map(k => {
+                        const pct = totalC ? (dist[k] / totalC) * 100 : 0;
+                        return `<div class="flex items-center gap-2">
+                            <span class="text-[10px] w-16 text-gray-700">${iconos[k]} ${k}</span>
+                            <div class="flex-1 bg-gray-200 rounded-full h-2.5"><div class="bg-${colores[k]}-500 h-2.5 rounded-full" style="width:${pct}%"></div></div>
+                            <span class="text-[10px] font-bold text-gray-600 w-8 text-right">${dist[k]}</span>
+                        </div>`;
+                    }).join('')}
+                </div>
+            </div>`;
+
+        // Tabla de clientes calificados
+        wrap.classList.remove('hidden');
+        let html = `<table class="min-w-full text-sm"><thead class="bg-gray-200 sticky top-0"><tr class="text-xs uppercase text-gray-600">
+            <th class="py-2 px-2 text-left">#</th><th class="py-2 px-2 text-left">Cliente</th>
+            <th class="py-2 px-2 text-center">Calif.</th><th class="py-2 px-2 text-center">Días prom.</th>
+            <th class="py-2 px-2 text-center">Facturas</th></tr></thead><tbody>`;
+        lista.forEach((c, i) => {
+            html += `<tr class="border-b border-gray-100 hover:bg-purple-50 cursor-pointer" data-idx="${i}">
+                <td class="py-2 px-2 text-gray-400 font-bold text-xs">${i+1}</td>
+                <td class="py-2 px-2"><div class="font-medium text-gray-800 text-xs">${c.nombre}${c.tieneADC ? ' <span class="text-[8px] bg-purple-200 text-purple-700 px-1 rounded">ADC</span>' : ''}</div></td>
+                <td class="py-2 px-2 text-center"><span class="text-[10px] px-1.5 py-0.5 rounded bg-${c.califColor}-100 text-${c.califColor}-700 font-bold">${c.califIcon} ${c.calif}</span></td>
+                <td class="py-2 px-2 text-center font-bold text-gray-700 text-xs">${c.diasProm.toFixed(1)}d</td>
+                <td class="py-2 px-2 text-center text-[10px] text-gray-500">${c.numFacturas} <span class="text-gray-400">(${c.clasif.excelente}E/${c.clasif.buena}B/${c.clasif.regular}R/${c.clasif.mala}M)</span></td>
+            </tr>`;
+        });
+        html += '</tbody></table>';
+        wrap.innerHTML = html;
+        wrap.querySelectorAll('tr[data-idx]').forEach(tr =>
+            tr.addEventListener('click', () => mostrarDetallePago(lista[Number(tr.dataset.idx)])));
+
+        resumen.classList.remove('hidden');
+        resumen.innerHTML = `${lista.length} cliente(s) calificados · <button id="cliExportPago" class="text-purple-600 font-bold hover:underline">⬇️ Exportar Excel</button>`;
+        document.getElementById('cliExportPago').addEventListener('click', () => exportarClientesExcel(lista, null, 'pago'));
+    }
+
+    // M4 — Detalle con evolución del pago en el tiempo
+    function mostrarDetallePago(c) {
+        document.getElementById('cliDetalleOverlay')?.remove();
+        const ov = document.createElement('div');
+        ov.id = 'cliDetalleOverlay';
+        ov.className = 'fixed inset-0 z-[9998] bg-black/50 flex items-center justify-center p-4';
+
+        // Evolución: comparar días de pago de la primera mitad vs segunda mitad de facturas
+        const fs = [...c.facturas].sort((a, b) => a.fecha - b.fecha);
+        let tendencia = '';
+        if (fs.length >= 4) {
+            const mitad = Math.floor(fs.length / 2);
+            const prom1 = fs.slice(0, mitad).reduce((s, f) => s + f.dias, 0) / mitad;
+            const prom2 = fs.slice(mitad).reduce((s, f) => s + f.dias, 0) / (fs.length - mitad);
+            if (prom2 < prom1 - 1) tendencia = `<span class="text-green-600 font-bold">📈 Mejorando</span> (de ${prom1.toFixed(0)}d a ${prom2.toFixed(0)}d)`;
+            else if (prom2 > prom1 + 1) tendencia = `<span class="text-red-600 font-bold">📉 Empeorando</span> (de ${prom1.toFixed(0)}d a ${prom2.toFixed(0)}d)`;
+            else tendencia = `<span class="text-gray-600 font-bold">➡️ Estable</span> (~${prom2.toFixed(0)}d)`;
+        } else tendencia = '<span class="text-gray-400">Pocas facturas para evaluar tendencia</span>';
+
+        const maxD = Math.max(...fs.map(f => f.dias), 1);
+        const barras = fs.map(f => {
+            const h = (f.dias / maxD) * 100;
+            const col = f.dias < 7 ? 'green' : f.dias < 15 ? 'blue' : f.dias < 21 ? 'amber' : 'red';
+            const fecha = f.fecha.toLocaleDateString('es-VE', { day: '2-digit', month: '2-digit' });
+            return `<div class="flex flex-col items-center justify-end h-full" style="flex:1;min-width:12px">
+                <div class="w-full bg-${col}-500 rounded-t hover:opacity-75" style="height:${h}%" title="${fecha}: ${f.dias}d${f.saldado ? '' : ' (pendiente)'}"></div>
+            </div>`;
+        }).join('');
+
+        ov.innerHTML = `
+            <div class="bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden max-h-[85vh] flex flex-col">
+                <div class="bg-purple-600 text-white px-4 py-3 shrink-0">
+                    <div class="font-bold text-sm">${c.nombre}</div>
+                    <div class="text-xs opacity-80">${c.califIcon} ${c.calif} · ${c.diasProm.toFixed(1)} días promedio</div>
+                </div>
+                <div class="p-4 overflow-y-auto">
+                    <div class="grid grid-cols-2 gap-2 mb-3 text-center">
+                        <div class="bg-gray-50 rounded p-2"><div class="text-lg font-black text-gray-800">${c.numFacturas}</div><div class="text-[9px] text-gray-500 uppercase">Facturas</div></div>
+                        <div class="bg-gray-50 rounded p-2"><div class="text-lg font-black text-gray-800">$${c.totalFacturado.toFixed(0)}</div><div class="text-[9px] text-gray-500 uppercase">Facturado</div></div>
+                    </div>
+                    <div class="mb-3 text-xs text-center bg-gray-50 rounded p-2">Tendencia de pago: ${tendencia}</div>
+                    <p class="text-[10px] font-bold text-gray-500 uppercase mb-1">Días de pago por factura (cronológico)</p>
+                    <div class="flex items-end gap-0.5 h-28 mb-2">${barras}</div>
+                    <div class="text-[9px] text-gray-400 text-center">Verde &lt;7d · Azul &lt;15d · Ámbar &lt;21d · Rojo ≥21d</div>
+                    <p class="text-[10px] text-gray-500 mt-2">Pendiente promedio: <strong>${(c.pendientePromedio*100).toFixed(1)}%</strong> de la factura</p>
+                </div>
+                <div class="p-3 border-t shrink-0"><button id="cliDetCerrar" class="w-full py-2 bg-gray-100 text-gray-600 rounded font-bold text-sm">Cerrar</button></div>
+            </div>`;
+        document.body.appendChild(ov);
+        ov.addEventListener('click', e => { if (e.target === ov) ov.remove(); });
+        document.getElementById('cliDetCerrar').addEventListener('click', () => ov.remove());
+    }
+
+    // M2 — Exportar a Excel
+    function exportarClientesExcel(lista, medir, modo) {
+        try {
+            let rows;
+            if (modo === 'volumen') {
+                rows = [['#', 'Cliente', 'ADC', medir === 'monto' ? 'Monto $' : 'Unidades', 'Calificación pago', 'Días prom.']];
+                lista.forEach((c, i) => rows.push([i+1, c.nombre, c.tieneADC ? 'Sí' : 'No',
+                    medir === 'monto' ? c.monto.toFixed(2) : c.unidades,
+                    c.pago ? c.pago.calif : '—', c.pago ? c.pago.diasProm.toFixed(1) : '—']));
+            } else {
+                rows = [['#', 'Cliente', 'ADC', 'Calificación', 'Días prom.', 'Facturas', 'Excelente', 'Buena', 'Regular', 'Mala', 'Facturado $', 'Pendiente %']];
+                lista.forEach((c, i) => rows.push([i+1, c.nombre, c.tieneADC ? 'Sí' : 'No', c.calif, c.diasProm.toFixed(1),
+                    c.numFacturas, c.clasif.excelente, c.clasif.buena, c.clasif.regular, c.clasif.mala,
+                    c.totalFacturado.toFixed(2), (c.pendientePromedio*100).toFixed(1)]));
+            }
+            const ws = XLSX.utils.aoa_to_sheet(rows);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, modo === 'volumen' ? 'Volumen' : 'Pago');
+            const fecha = new Date();
+            XLSX.writeFile(wb, `Clientes_${modo}_${fecha.getFullYear()}-${String(fecha.getMonth()+1).padStart(2,'0')}-${String(fecha.getDate()).padStart(2,'0')}.xlsx`);
+        } catch (e) {
+            console.error('Error exportando:', e);
+            _showModal('Error', 'No se pudo generar el Excel.');
+        }
+    }
+
 })();
 // redeploy trigger 1783190804
+
 
 
