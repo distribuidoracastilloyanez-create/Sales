@@ -1857,11 +1857,13 @@
                                 <option value="monto">Monto $</option>
                             </select>
                         </div>
+                        <select id="cliVolZona" class="w-full text-xs border border-indigo-300 rounded p-1.5 bg-white outline-none">
+                            <option value="">Todas las zonas</option>
+                        </select>
                     </div>
 
                     <div id="cliFiltros" class="hidden flex gap-2 mb-2">
-                        <input type="text" id="cliBuscar" placeholder="Buscar cliente..." class="flex-1 text-xs border border-gray-300 rounded p-1.5 outline-none focus:ring-2 focus:ring-purple-400">
-                        <select id="cliFiltroCalif" class="text-xs border border-gray-300 rounded p-1.5 bg-white outline-none hidden">
+                        <select id="cliFiltroCalif" class="flex-1 text-xs border border-gray-300 rounded p-1.5 bg-white outline-none hidden">
                             <option value="">Todas</option>
                             <option value="Excelente">🟢 Excelente</option>
                             <option value="Buena">🔵 Buena</option>
@@ -1888,11 +1890,8 @@
         document.getElementById('cliTipoCalif').addEventListener('change', () => { if (_cliPagoData.length) renderPago(_cliPagoData); });
         document.getElementById('cliVolAlcanceTipo').addEventListener('change', () => { renderCliVolAlcanceValor(); aplicarFiltrosVolumen(); });
         document.getElementById('cliVolMedir2').addEventListener('change', aplicarFiltrosVolumen);
+        document.getElementById('cliVolZona').addEventListener('change', aplicarFiltrosVolumen);
 
-        let debB = null;
-        document.getElementById('cliBuscar').addEventListener('input', () => {
-            clearTimeout(debB); debB = setTimeout(aplicarFiltroClientes, 180);
-        });
         document.getElementById('cliFiltroCalif').addEventListener('change', aplicarFiltroClientes);
 
         document.getElementById('cliLoading').innerHTML = '<svg class="animate-spin h-6 w-6 mx-auto mb-2 text-purple-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path></svg>Cargando datos...';
@@ -2036,6 +2035,18 @@
     // Helper: ¿el cliente (por id) tiene ADC?
     function clienteTieneADC(cid) { return _adcSet && _adcSet.has(cid); }
 
+    // Devuelve la zona/sector de un cliente (por id o por nombre normalizado)
+    function zonaDeCliente(cid, nombre) {
+        if (!_clientesCache) return '';
+        let cl = null;
+        if (cid) cl = _clientesCache.find(x => x.id === cid);
+        if (!cl && nombre) {
+            const n = normNombre(nombre);
+            cl = _clientesCache.find(x => normNombre(x.nombreComercial) === n || normNombre(x.nombrePersonal) === n);
+        }
+        return cl && cl.sector ? cl.sector : '';
+    }
+
     // Une datos de volumen + calificación de pago por cliente (para badges cruzados)
     function calificacionDe(cid, nombre) {
         // Busca el cliente CXC que corresponde a este id/nombre
@@ -2073,31 +2084,45 @@
             return;
         }
 
-        // Resolver id real y ADC; adjuntar calificación de pago
+        // Resolver id real, ADC, zona/sector; adjuntar calificación de pago
         lista.forEach(c => {
             const realId = (c.id && !c.id.startsWith('nombre:')) ? c.id : idDesdeNombreCXC(c.nombre);
             c.realId = realId;
             c.tieneADC = realId ? clienteTieneADC(realId) : false;
             c.pago = calificacionDe(realId, c.nombre);
+            c.zona = zonaDeCliente(realId, c.nombre);
         });
         if (soloADC) lista = lista.filter(c => c.tieneADC);
 
         _cliVolData = lista;   // datos crudos con desglose completo por producto
         _cliVolRango = rango;
 
-        // Mostrar los controles post-análisis (alcance + métrica) y aplicar
+        // Mostrar los controles post-análisis (alcance + métrica + zona) y aplicar
         document.getElementById('cliFiltros').classList.remove('hidden');
         document.getElementById('cliVolPostFiltros').classList.remove('hidden');
-        document.getElementById('cliBuscar').value = '';
+        poblarZonasVolumen();
         aplicarFiltrosVolumen();
+    }
+
+    // Puebla el selector de zonas con las zonas presentes en los clientes analizados
+    function poblarZonasVolumen() {
+        const sel = document.getElementById('cliVolZona');
+        if (!sel) return;
+        const zonas = [...new Set(_cliVolData.map(c => c.zona).filter(Boolean))].sort();
+        sel.innerHTML = '<option value="">Todas las zonas</option>' +
+            zonas.map(z => `<option value="${z}">${z}</option>`).join('');
     }
 
     // Recalcula el ranking según alcance + métrica elegidos (en memoria, sin releer)
     function aplicarFiltrosVolumen() {
-        const tipoAlc = document.getElementById('cliVolAlcanceTipo')?.value || 'todo';
+        let tipoAlc = document.getElementById('cliVolAlcanceTipo')?.value || 'todo';
         const valorAlc = document.getElementById('cliVolAlcanceValor')?.value || '';
         const medir = document.getElementById('cliVolMedir2')?.value || 'unidades';
         _cliVolMedir = medir;
+
+        // Si se eligió un tipo de alcance pero aún no un valor, mostrar TODO
+        // (no filtrar a vacío). El filtro real aplica cuando se elige el valor.
+        if (tipoAlc !== 'todo' && !valorAlc) tipoAlc = 'todo';
 
         const pasaAlcance = (prodId) => {
             if (tipoAlc === 'todo') return true;
@@ -2109,14 +2134,19 @@
             return true;
         };
 
+        const zonaFiltro = document.getElementById('cliVolZona')?.value || '';
+
         // Recalcular volumen de cada cliente según el alcance, desde su desglose
-        const recalculada = _cliVolData.map(c => {
+        let recalculada = _cliVolData.map(c => {
             let unidades = 0, monto = 0;
             Object.entries(c.productos || {}).forEach(([pid, d]) => {
                 if (pasaAlcance(pid)) { unidades += d.unidades; monto += d.monto; }
             });
             return { ...c, unidades, monto };
         }).filter(c => (tipoAlc === 'todo') || c.unidades > 0 || c.monto > 0);
+
+        // Filtro por zona
+        if (zonaFiltro) recalculada = recalculada.filter(c => c.zona === zonaFiltro);
 
         recalculada.sort((a, b) => (medir === 'monto' ? b.monto - a.monto : b.unidades - a.unidades));
         _cliVolFiltrada = recalculada;
@@ -2133,7 +2163,7 @@
         loading.classList.add('hidden');
 
         // Aplicar buscador
-        const term = (document.getElementById('cliBuscar')?.value || '').toLowerCase().trim();
+        const term = '';  // buscador eliminado (el selector de cliente previo lo reemplaza)
         const lista = term ? listaFull.filter(c => (c.nombre || '').toLowerCase().includes(term)) : listaFull;
 
         if (!listaFull.length) {
@@ -2260,7 +2290,6 @@
         _cliPagoData = lista;
 
         document.getElementById('cliFiltros').classList.remove('hidden');
-        document.getElementById('cliBuscar').value = '';
         document.getElementById('cliFiltroCalif').value = '';
         renderPago(lista);
     }
@@ -2286,7 +2315,7 @@
         const tipoCalif = document.getElementById('cliTipoCalif')?.value || 'compromiso';
 
         // Filtros: búsqueda + calificación
-        const term = (document.getElementById('cliBuscar')?.value || '').toLowerCase().trim();
+        const term = '';  // buscador eliminado (el selector de cliente previo lo reemplaza)
         const filtroCalif = document.getElementById('cliFiltroCalif')?.value || '';
         let lista = listaFull;
         if (term) lista = lista.filter(c => (c.nombre || '').toLowerCase().includes(term));
@@ -2437,6 +2466,7 @@
 
 })();
 // redeploy trigger 1783190804
+
 
 
 
