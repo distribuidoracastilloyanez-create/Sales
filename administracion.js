@@ -1599,6 +1599,7 @@
         // Cola FIFO de ventas (despachos) con su saldo pendiente
         const ventas = [];   // {fecha, monto, pagado, canceladaFecha}
         const ventasCerradas = []; // ventas pagadas 100% con sus días
+        let ultimoAbonoFecha = null; // fecha del abono/pago más reciente
 
         txs.forEach(t => {
             const tipo = (t.type || '').toUpperCase();
@@ -1610,6 +1611,8 @@
                 // Venta / despacho: sube el saldo
                 ventas.push({ fecha: t.fecha, monto: monto, pagado: 0, canceladaFecha: null });
             } else if (monto < 0) {
+                // Registrar la fecha del abono más reciente
+                if (!ultimoAbonoFecha || t.fecha > ultimoAbonoFecha) ultimoAbonoFecha = t.fecha;
                 // Abono / pago: baja el saldo, FIFO sobre las ventas más viejas
                 let restante = -monto;
                 for (const v of ventas) {
@@ -1693,7 +1696,9 @@
             // Compromiso de pago (calificación 1)
             compromiso: {
                 calif: califCompromiso.calif, califColor: califCompromiso.califColor, califIcon: califCompromiso.califIcon,
-                saldoPendiente, pendientePct, diasCompromiso, despachadoActivo
+                saldoPendiente, pendientePct, diasCompromiso, despachadoActivo,
+                ultimoAbonoFecha,
+                diasDesdeUltimoAbono: ultimoAbonoFecha ? Math.max(0, Math.round((hoy - ultimoAbonoFecha) / 86400000)) : null
             },
             pendientePromedio: pendientePct,
             facturas: todasParaPromedio.sort((a, b) => b.fecha - a.fecha)
@@ -1857,9 +1862,16 @@
                                 <option value="monto">Monto $</option>
                             </select>
                         </div>
-                        <select id="cliVolZona" class="w-full text-xs border border-indigo-300 rounded p-1.5 bg-white outline-none">
-                            <option value="">Todas las zonas</option>
-                        </select>
+                        <div class="grid grid-cols-2 gap-1.5">
+                            <select id="cliVolZona" class="text-xs border border-indigo-300 rounded p-1.5 bg-white outline-none">
+                                <option value="">Todas las zonas</option>
+                            </select>
+                            <select id="cliVolOrden" class="text-xs border border-indigo-300 rounded p-1.5 bg-white outline-none">
+                                <option value="desc">Mayor a menor</option>
+                                <option value="asc">Menor a mayor</option>
+                                <option value="pago">Por calificación de pago</option>
+                            </select>
+                        </div>
                     </div>
 
                     <div id="cliFiltros" class="hidden flex gap-2 mb-2">
@@ -1891,6 +1903,7 @@
         document.getElementById('cliVolAlcanceTipo').addEventListener('change', () => { renderCliVolAlcanceValor(); aplicarFiltrosVolumen(); });
         document.getElementById('cliVolMedir2').addEventListener('change', aplicarFiltrosVolumen);
         document.getElementById('cliVolZona').addEventListener('change', aplicarFiltrosVolumen);
+        document.getElementById('cliVolOrden').addEventListener('change', aplicarFiltrosVolumen);
 
         document.getElementById('cliFiltroCalif').addEventListener('change', aplicarFiltroClientes);
 
@@ -2148,7 +2161,23 @@
         // Filtro por zona
         if (zonaFiltro) recalculada = recalculada.filter(c => c.zona === zonaFiltro);
 
-        recalculada.sort((a, b) => (medir === 'monto' ? b.monto - a.monto : b.unidades - a.unidades));
+        // Orden elegido: mayor→menor, menor→mayor, o por calificación de pago
+        const orden = document.getElementById('cliVolOrden')?.value || 'desc';
+        const val = (c) => medir === 'monto' ? c.monto : c.unidades;
+        if (orden === 'pago') {
+            // Ranking de pago: mejor primero (menos días promedio); sin pago va al final
+            const rank = { 'Al día': 0, 'Excelente': 1, 'Buena': 2, 'Regular': 3, 'Mala': 4 };
+            recalculada.sort((a, b) => {
+                const ra = a.pago ? (rank[a.pago.calif] ?? 5) : 6;
+                const rb = b.pago ? (rank[b.pago.calif] ?? 5) : 6;
+                if (ra !== rb) return ra - rb;
+                return val(b) - val(a); // desempate por volumen
+            });
+        } else if (orden === 'asc') {
+            recalculada.sort((a, b) => val(a) - val(b));
+        } else {
+            recalculada.sort((a, b) => val(b) - val(a));
+        }
         _cliVolFiltrada = recalculada;
         renderVolumen(recalculada, medir, _cliVolRango);
     }
@@ -2351,15 +2380,27 @@
         if (!lista.length) {
             wrap.innerHTML = '<p class="text-center text-gray-400 py-6 text-sm">Ningún cliente coincide con el filtro.</p>';
         } else {
-            const colTitulo = tipoCalif === 'compromiso' ? 'Pendiente' : 'Días prom.';
-            let html = `<table class="min-w-full text-sm"><thead class="bg-gray-200 sticky top-0"><tr class="text-xs uppercase text-gray-600"><th class="py-2 px-2 text-left">#</th><th class="py-2 px-2 text-left">Cliente</th><th class="py-2 px-2 text-center">Calif.</th><th class="py-2 px-2 text-center">${colTitulo}</th><th class="py-2 px-2 text-center">Ventas</th></tr></thead><tbody>`;
+            const esCompromiso = tipoCalif === 'compromiso';
+            const colTitulo = esCompromiso ? 'Pendiente' : 'Días prom.';
+            // En compromiso se agrega una columna con los días desde el último pago
+            const colExtra = esCompromiso ? '<th class="py-2 px-2 text-center">Últ. pago</th>' : '';
+            let html = `<table class="min-w-full text-sm"><thead class="bg-gray-200 sticky top-0"><tr class="text-xs uppercase text-gray-600"><th class="py-2 px-2 text-left">#</th><th class="py-2 px-2 text-left">Cliente</th><th class="py-2 px-2 text-center">Calif.</th><th class="py-2 px-2 text-center">${colTitulo}</th>${colExtra}<th class="py-2 px-2 text-center">Ventas</th></tr></thead><tbody>`;
             lista.forEach((c, i) => {
                 const idx = listaFull.indexOf(c);
                 const ca = califActiva(c);
-                const dato = tipoCalif === 'compromiso'
+                const dato = esCompromiso
                     ? (c.compromiso ? (c.compromiso.saldoPendiente <= 0.01 ? '$0' : '$' + c.compromiso.saldoPendiente.toFixed(0) + ' (' + (c.compromiso.pendientePct*100).toFixed(0) + '%)') : '—')
                     : c.diasProm.toFixed(1) + 'd';
-                html += `<tr class="border-b border-gray-100 hover:bg-purple-50 cursor-pointer" data-idx="${idx}"><td class="py-2 px-2 text-gray-400 font-bold text-xs">${i+1}</td><td class="py-2 px-2"><div class="font-medium text-gray-800 text-xs">${c.nombre}${c.tieneADC ? ' <span class="text-[8px] bg-purple-200 text-purple-700 px-1 rounded">ADC</span>' : ''}</div></td><td class="py-2 px-2 text-center"><span class="text-[10px] px-1.5 py-0.5 rounded bg-${ca.color}-100 text-${ca.color}-700 font-bold whitespace-nowrap">${ca.icon} ${ca.calif}</span></td><td class="py-2 px-2 text-center font-bold text-gray-700 text-xs">${dato}</td><td class="py-2 px-2 text-center text-[10px] text-gray-500">${c.numFacturas}</td></tr>`;
+                // Días desde el último abono (solo modo compromiso)
+                let celdaUltPago = '';
+                if (esCompromiso) {
+                    const d = c.compromiso ? c.compromiso.diasDesdeUltimoAbono : null;
+                    const txt = (d === null || d === undefined) ? 'sin pagos' : d + 'd';
+                    const col = (d === null || d === undefined) ? 'text-gray-400'
+                              : d <= 8 ? 'text-green-600' : d <= 21 ? 'text-amber-600' : 'text-red-600';
+                    celdaUltPago = `<td class="py-2 px-2 text-center font-bold text-xs ${col}">${txt}</td>`;
+                }
+                html += `<tr class="border-b border-gray-100 hover:bg-purple-50 cursor-pointer" data-idx="${idx}"><td class="py-2 px-2 text-gray-400 font-bold text-xs">${i+1}</td><td class="py-2 px-2"><div class="font-medium text-gray-800 text-xs">${c.nombre}${c.tieneADC ? ' <span class="text-[8px] bg-purple-200 text-purple-700 px-1 rounded">ADC</span>' : ''}</div></td><td class="py-2 px-2 text-center"><span class="text-[10px] px-1.5 py-0.5 rounded bg-${ca.color}-100 text-${ca.color}-700 font-bold whitespace-nowrap">${ca.icon} ${ca.calif}</span></td><td class="py-2 px-2 text-center font-bold text-gray-700 text-xs">${dato}</td>${celdaUltPago}<td class="py-2 px-2 text-center text-[10px] text-gray-500">${c.numFacturas}</td></tr>`;
             });
             html += '</tbody></table>';
             wrap.innerHTML = html;
@@ -2417,6 +2458,7 @@
                     <div class="flex items-end gap-0.5 h-28 mb-2">${barras}</div>
                     <div class="text-[9px] text-gray-400 text-center">Verde ≤8d · Azul ≤15d · Ámbar ≤21d · Rojo &gt;21d</div>
                     <p class="text-[10px] text-gray-500 mt-2">Pendiente actual: <strong>${c.compromiso ? (c.compromiso.pendientePct*100).toFixed(1) : 0}%</strong> de lo despachado en el ciclo activo</p>
+                    <p class="text-[10px] text-gray-500 mt-1">Último pago: <strong>${c.compromiso && c.compromiso.diasDesdeUltimoAbono !== null && c.compromiso.diasDesdeUltimoAbono !== undefined ? 'hace ' + c.compromiso.diasDesdeUltimoAbono + ' día(s)' : 'sin abonos registrados'}</strong></p>
                 </div>
                 <div class="p-3 border-t shrink-0 flex gap-2">
                     <button id="cliDetCXC" class="flex-1 py-2 bg-teal-600 text-white rounded font-bold text-sm hover:bg-teal-700 transition">📄 Ver en CXC</button>
@@ -2466,6 +2508,7 @@
 
 })();
 // redeploy trigger 1783190804
+
 
 
 
