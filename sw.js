@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v29'; // v29: tasa BCV de hoy en menu y CXC + calendario solo lectura + 4 decimales
+const CACHE_NAME = 'ventas-app-cache-v30'; // v30: tasa BCV mas grande y gris oscuro
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
@@ -179,6 +179,7 @@ self.addEventListener('fetch', event => {
             })
     );
 });
+
 
 
 
