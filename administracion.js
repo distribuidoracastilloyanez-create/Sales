@@ -1546,6 +1546,8 @@
     let _cliVolData = [];   // ranking por volumen
     let _cliPagoData = [];  // calificación de pago
     let _cliModo = 'volumen';
+    let _cliVolMedir = 'unidades';
+    let _cliVolRango = null;
 
     // ── Parseo de fecha CXC (formatos dd/mm/yyyy o yyyy-mm-dd) ──
     function parseFechaCXC(raw) {
@@ -1563,267 +1565,139 @@
         return isNaN(d.getTime()) ? null : d;
     }
 
-    const UMBRAL_COMPROMISO = 0.80; // pagado ≥ 80% del despacho = compromiso cumplido
+    const UMBRAL_COMPROMISO = 0.80; // se considera "cumplido" si el pendiente es ≤ 20%
 
-    // ── Calificación de estructura de pago de un cliente ──
-    // Empareja despachos (F) con abonos posteriores (T/E) en orden cronológico,
-    // midiendo días hasta que lo pagado alcanza el 80% de cada despacho.
+    // Rangos de días (ajustados): Excelente ≤8, Buena ≤15, Regular ≤21, Mala >21
+    function clasificarPorDias(dias) {
+        if (dias <= 8)  return { calif: 'Excelente', califColor: 'green', califIcon: '🟢' };
+        if (dias <= 15) return { calif: 'Buena',     califColor: 'blue',  califIcon: '🔵' };
+        if (dias <= 21) return { calif: 'Regular',   califColor: 'amber', califIcon: '🟡' };
+        return              { calif: 'Mala',      califColor: 'red',   califIcon: '🔴' };
+    }
+
+    // ── Calificación de estructura de pago (MODELO CUENTA CORRIENTE) ──
+    // El signo del monto en la columna deuda/abonos manda:
+    //   monto > 0  → venta/despacho (sube el saldo)
+    //   monto < 0  → abono/pago      (baja el saldo, FIFO sobre las ventas)
+    // Las letras (F/T/E) se usan solo como referencia secundaria.
+    // Retención (R) y consignación (C) NO afectan el saldo de deuda.
+    //
+    // Produce DOS calificaciones:
+    //   1) Compromiso de pago (estado ACTUAL): saldo pendiente hoy vs lo despachado.
+    //      La venta más reciente aún activa se evalúa con el umbral del 80%.
+    //   2) Tiempo promedio de pago: días que tardó cada venta en cancelarse al 100%
+    //      (FIFO). Ventas viejas sin saldar cuentan días hasta HOY (penaliza).
     function calificarPagoCliente(client) {
         const txs = (client.transactions || [])
             .map(t => ({ ...t, fecha: parseFechaCXC(t.date) }))
             .filter(t => t.fecha)
             .sort((a, b) => a.fecha - b.fecha);
 
-        // Cola de despachos pendientes (FIFO)
-        const despachos = []; // {fecha, monto, pagado, saldadoFecha}
-        const facturas = [];  // despachos cerrados con su calificación
-
         const hoy = new Date();
+
+        // Cola FIFO de ventas (despachos) con su saldo pendiente
+        const ventas = [];   // {fecha, monto, pagado, canceladaFecha}
+        const ventasCerradas = []; // ventas pagadas 100% con sus días
 
         txs.forEach(t => {
             const tipo = (t.type || '').toUpperCase();
-            const monto = Math.abs(t.amount || 0);
-            if (tipo === 'F') {
-                if (monto > 0) despachos.push({ fecha: t.fecha, monto, pagado: 0, saldadoFecha: null });
-            } else if (tipo === 'T' || tipo === 'E' || tipo === '%') {
-                // Abono: aplicar FIFO a los despachos más antiguos no saldados
-                let restante = monto;
-                for (const d of despachos) {
-                    if (d.saldadoFecha) continue;
+            const monto = t.amount || 0;
+            // Ignorar retención y consignación (no son deuda/abono real)
+            if (tipo === 'R' || tipo === 'C') return;
+
+            if (monto > 0) {
+                // Venta / despacho: sube el saldo
+                ventas.push({ fecha: t.fecha, monto: monto, pagado: 0, canceladaFecha: null });
+            } else if (monto < 0) {
+                // Abono / pago: baja el saldo, FIFO sobre las ventas más viejas
+                let restante = -monto;
+                for (const v of ventas) {
+                    if (v.canceladaFecha) continue;
                     if (restante <= 0) break;
-                    const falta = d.monto * UMBRAL_COMPROMISO - d.pagado;
-                    d.pagado += restante;
-                    // ¿Alcanzó el umbral de compromiso (80%)?
-                    if (d.pagado >= d.monto * UMBRAL_COMPROMISO && !d.saldadoFecha) {
-                        d.saldadoFecha = t.fecha;
-                        const dias = Math.round((t.fecha - d.fecha) / 86400000);
-                        facturas.push({ fecha: d.fecha, monto: d.monto, dias, saldado: true,
-                                        pendientePct: Math.max(0, 1 - d.pagado / d.monto) });
+                    const falta = v.monto - v.pagado;      // lo que falta para el 100%
+                    const aplica = Math.min(restante, falta);
+                    v.pagado += aplica;
+                    restante -= aplica;
+                    // Cancelada al 100% (con pequeña tolerancia por redondeo)
+                    if (v.pagado >= v.monto - 0.01) {
+                        v.canceladaFecha = t.fecha;
+                        const dias = Math.max(0, Math.round((t.fecha - v.fecha) / 86400000));
+                        ventasCerradas.push({ fecha: v.fecha, monto: v.monto, dias, cancelada: true });
                     }
-                    restante -= (falta > 0 ? falta : 0);
                 }
-            }
-            // R (retención) y C (consignación) no cuentan como abono de pago aquí
-        });
-
-        // Despachos aún no saldados: días transcurridos hasta hoy
-        despachos.forEach(d => {
-            if (!d.saldadoFecha) {
-                const dias = Math.round((hoy - d.fecha) / 86400000);
-                facturas.push({ fecha: d.fecha, monto: d.monto, dias, saldado: false,
-                                pendientePct: Math.max(0, 1 - d.pagado / d.monto) });
+                // Si sobra abono (pagó de más), se ignora el excedente
             }
         });
 
-        if (!facturas.length) return null;
+        // ── Calificación 2: TIEMPO PROMEDIO DE PAGO ──
+        // Ventas cerradas (100%) + ventas activas que ya "vencieron" cuentan días hasta hoy.
+        const todasParaPromedio = [...ventasCerradas];
+        ventas.forEach(v => {
+            if (!v.canceladaFecha) {
+                const dias = Math.max(0, Math.round((hoy - v.fecha) / 86400000));
+                todasParaPromedio.push({ fecha: v.fecha, monto: v.monto, dias, cancelada: false });
+            }
+        });
 
-        // Clasificar cada factura por días
+        if (!todasParaPromedio.length) return null;
+
         const clasif = { excelente: 0, buena: 0, regular: 0, mala: 0 };
         let sumaDias = 0;
-        facturas.forEach(f => {
+        todasParaPromedio.forEach(f => {
             sumaDias += f.dias;
-            if (f.dias < 7) clasif.excelente++;
-            else if (f.dias < 15) clasif.buena++;
-            else if (f.dias < 21) clasif.regular++;
+            const cl = clasificarPorDias(f.dias);
+            if (cl.calif === 'Excelente') clasif.excelente++;
+            else if (cl.calif === 'Buena') clasif.buena++;
+            else if (cl.calif === 'Regular') clasif.regular++;
             else clasif.mala++;
         });
-        const diasProm = sumaDias / facturas.length;
+        const diasProm = sumaDias / todasParaPromedio.length;
+        const califTiempo = clasificarPorDias(diasProm);
 
-        // Calificación global por promedio de días (recomendación del proyecto)
-        let calif, califColor, califIcon;
-        if (diasProm < 7)       { calif = 'Excelente'; califColor = 'green';  califIcon = '🟢'; }
-        else if (diasProm < 15) { calif = 'Buena';     califColor = 'blue';   califIcon = '🔵'; }
-        else if (diasProm < 21) { calif = 'Regular';   califColor = 'amber';  califIcon = '🟡'; }
-        else                    { calif = 'Mala';      califColor = 'red';    califIcon = '🔴'; }
+        // ── Calificación 1: COMPROMISO DE PAGO (estado actual) ──
+        // Saldo pendiente hoy y desde cuándo (la venta activa más antigua no saldada).
+        const ventasActivas = ventas.filter(v => !v.canceladaFecha);
+        const saldoPendiente = ventasActivas.reduce((s, v) => s + (v.monto - v.pagado), 0);
+        const totalVentas = ventas.reduce((s, v) => s + v.monto, 0);
 
-        const totalFacturado = facturas.reduce((s, f) => s + f.monto, 0);
-        const pendientePromedio = facturas.reduce((s, f) => s + f.pendientePct, 0) / facturas.length;
+        // % pendiente respecto a lo despachado en el ciclo activo
+        const despachadoActivo = ventasActivas.reduce((s, v) => s + v.monto, 0);
+        const pendientePct = despachadoActivo > 0 ? (saldoPendiente / despachadoActivo) : 0;
+
+        // Días desde la venta activa más antigua (la que arrastra la deuda)
+        let diasCompromiso = 0;
+        if (ventasActivas.length) {
+            const masVieja = ventasActivas.reduce((a, b) => (a.fecha < b.fecha ? a : b));
+            diasCompromiso = Math.max(0, Math.round((hoy - masVieja.fecha) / 86400000));
+        }
+
+        // Si el pendiente es ≤ 20%, el compromiso está cumplido (no penaliza).
+        // Se usa una pequeña tolerancia para que el 20% EXACTO cuente como cumplido
+        // (evita el problema de punto flotante de 1 - 0.80 = 0.1999...).
+        const MAX_PENDIENTE = 0.20 + 0.0001;
+        let califCompromiso;
+        if (saldoPendiente <= 0.01 || pendientePct <= MAX_PENDIENTE) {
+            califCompromiso = { calif: 'Al día', califColor: 'green', califIcon: '🟢' };
+        } else {
+            // Debe más del 20%: califica según cuántos días lleva arrastrando
+            califCompromiso = clasificarPorDias(diasCompromiso);
+        }
+
+        const totalFacturado = ventas.reduce((s, v) => s + v.monto, 0);
 
         return {
-            calif, califColor, califIcon, diasProm,
-            numFacturas: facturas.length, clasif,
-            totalFacturado, pendientePromedio,
-            facturas: facturas.sort((a, b) => b.fecha - a.fecha)
+            // Tiempo promedio de pago (calificación 2)
+            calif: califTiempo.calif, califColor: califTiempo.califColor, califIcon: califTiempo.califIcon,
+            diasProm, numFacturas: todasParaPromedio.length, clasif, totalFacturado,
+            // Compromiso de pago (calificación 1)
+            compromiso: {
+                calif: califCompromiso.calif, califColor: califCompromiso.califColor, califIcon: califCompromiso.califIcon,
+                saldoPendiente, pendientePct, diasCompromiso, despachadoActivo
+            },
+            pendientePromedio: pendientePct,
+            facturas: todasParaPromedio.sort((a, b) => b.fecha - a.fecha)
         };
     }
-
-
-    // ── VISTA PRINCIPAL ──
-    async function showAnalistaClientes() {
-        _mainContent.innerHTML = `
-            <div class="p-2 sm:p-3 pt-6 w-full max-w-3xl mx-auto">
-                <div class="bg-white/95 backdrop-blur-sm p-3 sm:p-4 rounded-lg shadow-xl">
-                    <div class="flex items-center justify-between mb-3">
-                        <h2 class="text-lg font-bold text-gray-800 flex items-center gap-2">👥 Analista de Clientes</h2>
-                        <button id="cliBack" class="px-3 py-1.5 bg-gray-400 text-white text-xs rounded hover:bg-gray-500 font-bold transition">Volver</button>
-                    </div>
-
-                    <!-- Modo -->
-                    <div class="grid grid-cols-2 gap-2 mb-3">
-                        <button id="cliModoVol" class="py-2 rounded text-xs font-bold border transition bg-purple-600 text-white border-purple-600">🏆 Volumen de compra</button>
-                        <button id="cliModoPago" class="py-2 rounded text-xs font-bold border transition bg-white text-purple-700 border-purple-300">💳 Estructura de pago</button>
-                    </div>
-
-                    <!-- Controles comunes -->
-                    <div class="bg-purple-50 border border-purple-200 rounded-lg p-3 mb-3 space-y-2">
-                        <label class="flex items-center gap-2 cursor-pointer">
-                            <input type="checkbox" id="cliADC" class="w-4 h-4 accent-purple-600">
-                            <span class="text-xs font-bold text-purple-800">Solo clientes con ADC</span>
-                        </label>
-
-                        <!-- Bloque volumen: periodo + alcance -->
-                        <div id="cliVolControls" class="space-y-2">
-                            <div>
-                                <label class="block text-[10px] font-bold text-purple-800 uppercase mb-1">Periodo</label>
-                                <select id="cliPeriodo" class="w-full text-xs border border-purple-300 rounded p-1.5 bg-white outline-none mb-1.5">
-                                    <option value="dia">Día específico</option>
-                                    <option value="semana">Semana específica</option>
-                                    <option value="semanaAnterior">Semana anterior</option>
-                                    <option value="mes" selected>Mes específico</option>
-                                    <option value="mesAnterior">Mes anterior</option>
-                                    <option value="anioCurso">Año en curso</option>
-                                    <option value="anioEspecifico">Año específico</option>
-                                </select>
-                                <div id="cliPeriodoControl"></div>
-                            </div>
-                            <div class="grid grid-cols-2 gap-2">
-                                <div>
-                                    <label class="block text-[10px] font-bold text-purple-800 uppercase mb-1">Alcance</label>
-                                    <select id="cliAlcanceTipo" class="w-full text-xs border border-purple-300 rounded p-1.5 bg-white outline-none">
-                                        <option value="todo">Todo</option>
-                                        <option value="rubro">Por rubro</option>
-                                        <option value="segmento">Por segmento</option>
-                                        <option value="marca">Por marca</option>
-                                        <option value="producto">Producto individual</option>
-                                    </select>
-                                </div>
-                                <div>
-                                    <label class="block text-[10px] font-bold text-purple-800 uppercase mb-1">Medir por</label>
-                                    <select id="cliMedir" class="w-full text-xs border border-purple-300 rounded p-1.5 bg-white outline-none">
-                                        <option value="unidades">Unidades</option>
-                                        <option value="monto">Monto $</option>
-                                    </select>
-                                </div>
-                            </div>
-                            <div id="cliAlcanceValorWrap"></div>
-                        </div>
-
-                        <button id="cliRun" class="w-full py-2 bg-purple-600 text-white font-bold rounded text-sm hover:bg-purple-700 transition">📈 Analizar</button>
-                        <p id="cliInfo" class="text-[10px] text-gray-400 text-center"></p>
-                    </div>
-
-                    <div id="cliLoading" class="text-center py-10 text-gray-400 text-sm">Elige el modo y toca «Analizar».</div>
-                    <div id="cliRiesgo" class="hidden mb-3"></div>
-                    <div id="cliEstrella" class="hidden mb-3"></div>
-                    <div id="cliChart" class="hidden mb-3"></div>
-                    <div id="cliTableWrap" class="hidden overflow-x-auto max-h-[45vh] overflow-y-auto rounded border border-gray-200"></div>
-                    <div id="cliResumen" class="hidden text-xs text-gray-500 mt-2 text-center"></div>
-                </div>
-            </div>`;
-
-        document.getElementById('cliBack').addEventListener('click', window.showAdministracionMenu);
-        document.getElementById('cliModoVol').addEventListener('click', () => setCliModo('volumen'));
-        document.getElementById('cliModoPago').addEventListener('click', () => setCliModo('pago'));
-        document.getElementById('cliRun').addEventListener('click', ejecutarAnalisisClientes);
-        document.getElementById('cliPeriodo').addEventListener('change', renderCliPeriodoControl);
-        document.getElementById('cliAlcanceTipo').addEventListener('change', renderCliAlcanceValor);
-
-        // Cargar datos base necesarios
-        document.getElementById('cliLoading').innerHTML = '<svg class="animate-spin h-6 w-6 mx-auto mb-2 text-purple-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path></svg>Cargando datos...';
-        await Promise.all([loadMaster(), loadUsers(), loadClientes(), loadCXC(), loadADC(), getSortFn()]);
-        document.getElementById('cliLoading').textContent = 'Elige el modo y toca «Analizar».';
-
-        renderCliPeriodoControl();
-        renderCliAlcanceValor();
-        setCliModo('volumen');
-    }
-
-    function setCliModo(modo) {
-        _cliModo = modo;
-        const bVol = document.getElementById('cliModoVol');
-        const bPago = document.getElementById('cliModoPago');
-        const volCtrls = document.getElementById('cliVolControls');
-        if (modo === 'volumen') {
-            bVol.className = 'py-2 rounded text-xs font-bold border transition bg-purple-600 text-white border-purple-600';
-            bPago.className = 'py-2 rounded text-xs font-bold border transition bg-white text-purple-700 border-purple-300';
-            volCtrls.classList.remove('hidden');
-        } else {
-            bPago.className = 'py-2 rounded text-xs font-bold border transition bg-purple-600 text-white border-purple-600';
-            bVol.className = 'py-2 rounded text-xs font-bold border transition bg-white text-purple-700 border-purple-300';
-            volCtrls.classList.add('hidden');
-        }
-        // Limpiar resultados al cambiar de modo
-        ['cliRiesgo','cliEstrella','cliChart','cliTableWrap','cliResumen'].forEach(id =>
-            document.getElementById(id)?.classList.add('hidden'));
-        document.getElementById('cliLoading').classList.remove('hidden');
-        document.getElementById('cliLoading').textContent = 'Toca «Analizar».';
-    }
-
-    function renderCliPeriodoControl() {
-        const tipo = document.getElementById('cliPeriodo').value;
-        const cont = document.getElementById('cliPeriodoControl');
-        if (!cont) return;
-        const cls = 'w-full text-xs border border-purple-300 rounded p-1.5 bg-white outline-none';
-        const anioActual = new Date().getFullYear();
-        if (tipo === 'dia') cont.innerHTML = `<input type="date" id="cliFecha" value="${hoyISO()}" class="${cls}">`;
-        else if (tipo === 'semana') cont.innerHTML = `<input type="week" id="cliSemana" class="${cls}">`;
-        else if (tipo === 'mes') cont.innerHTML = `<input type="month" id="cliMes" value="${mesActualISO()}" class="${cls}">`;
-        else if (tipo === 'anioEspecifico') {
-            let opts = '';
-            for (let y = anioActual; y >= anioActual - 6; y--) opts += `<option value="${y}">${y}</option>`;
-            cont.innerHTML = `<select id="cliAnio" class="${cls}">${opts}</select>`;
-        } else cont.innerHTML = '';
-    }
-
-    function renderCliAlcanceValor() {
-        const tipo = document.getElementById('cliAlcanceTipo').value;
-        const wrap = document.getElementById('cliAlcanceValorWrap');
-        if (!wrap) return;
-        const cls = 'w-full text-xs border border-purple-300 rounded p-1.5 bg-white outline-none';
-        const prods = Object.values(_masterCache).filter(p => p.presentacion || p.marca);
-        let opts = '<option value="">— seleccionar —</option>';
-        if (tipo === 'todo') { wrap.innerHTML = ''; return; }
-        if (tipo === 'rubro') {
-            [...new Set(prods.map(p => p.rubro).filter(Boolean))].sort().forEach(v => opts += `<option value="${v}">${v}</option>`);
-        } else if (tipo === 'segmento') {
-            [...new Set(prods.map(p => p.segmento).filter(Boolean))].sort().forEach(v => opts += `<option value="${v}">${v}</option>`);
-        } else if (tipo === 'marca') {
-            [...new Set(prods.map(p => p.marca).filter(Boolean))].sort().forEach(v => opts += `<option value="${v}">${v}</option>`);
-        } else if (tipo === 'producto') {
-            prods.sort(_sortFn).forEach(p => opts += `<option value="${p.id}">${p.presentacion || 'Producto'} · ${p.marca || ''}</option>`);
-        }
-        wrap.innerHTML = `<select id="cliAlcanceValor" class="${cls}">${opts}</select>`;
-    }
-
-    function calcularRangoCli() {
-        // Reusa la lógica de periodo del analista, leyendo de los ids "cli*"
-        const tipo = document.getElementById('cliPeriodo').value;
-        const hoy = new Date();
-        const y = hoy.getFullYear(), mo = hoy.getMonth();
-        const iso = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-        if (tipo === 'dia') { const v = document.getElementById('cliFecha')?.value; return v ? { inicio:v, fin:v, label:`Día ${v}` } : null; }
-        if (tipo === 'semana') {
-            const v = document.getElementById('cliSemana')?.value; if (!v) return null;
-            const [yy, ww] = v.split('-W').map(Number);
-            const simple = new Date(yy, 0, 1 + (ww-1)*7); const dow = simple.getDay();
-            const lunes = new Date(simple); lunes.setDate(simple.getDate() - ((dow+6)%7));
-            const dom = new Date(lunes); dom.setDate(lunes.getDate()+6);
-            return { inicio: iso(lunes), fin: iso(dom), label: `Semana ${ww}/${yy}` };
-        }
-        if (tipo === 'semanaAnterior') {
-            const dow = hoy.getDay(); const lunesEsta = new Date(hoy); lunesEsta.setDate(hoy.getDate()-((dow+6)%7));
-            const lunesAnt = new Date(lunesEsta); lunesAnt.setDate(lunesEsta.getDate()-7);
-            const domAnt = new Date(lunesAnt); domAnt.setDate(lunesAnt.getDate()+6);
-            return { inicio: iso(lunesAnt), fin: iso(domAnt), label: 'Semana anterior' };
-        }
-        if (tipo === 'mes') { const v = document.getElementById('cliMes')?.value; if (!v) return null;
-            const [yy,mm]=v.split('-').map(Number); return { inicio: iso(new Date(yy,mm-1,1)), fin: iso(new Date(yy,mm,0)), label: v }; }
-        if (tipo === 'mesAnterior') return { inicio: iso(new Date(y,mo-1,1)), fin: iso(new Date(y,mo,0)), label: 'Mes anterior' };
-        if (tipo === 'anioCurso') return { inicio: `${y}-01-01`, fin: iso(hoy), label: `Año ${y}` };
-        if (tipo === 'anioEspecifico') { const yy = Number(document.getElementById('cliAnio')?.value || y); return { inicio: `${yy}-01-01`, fin: `${yy}-12-31`, label: `Año ${yy}` }; }
-        return null;
-    }
-
 
     // ── Análisis de volumen de compra por cliente ──
     // Lee ventas/cierres de todos los vendedores una vez, agrupa por cliente,
@@ -1863,9 +1737,13 @@
                     const cv = p.cantidadVendida || {};
                     const unidades = (cv.cj||0)*uCj + (cv.paq||0)*uPaq + (cv.und||0);
                     const monto = (p.precios?.cj||0)*(cv.cj||0) + (p.precios?.paq||0)*(cv.paq||0) + (p.precios?.und||0)*(cv.und||0);
-                    if (!porCliente[cid]) porCliente[cid] = { id: cid, nombre: cnombre, unidades: 0, monto: 0 };
+                    if (!porCliente[cid]) porCliente[cid] = { id: cid, nombre: cnombre, unidades: 0, monto: 0, productos: {} };
                     porCliente[cid].unidades += unidades;
                     porCliente[cid].monto += monto;
+                    // Desglose por producto (para ver qué compra el cliente)
+                    if (!porCliente[cid].productos[p.id]) porCliente[cid].productos[p.id] = { unidades: 0, monto: 0 };
+                    porCliente[cid].productos[p.id].unidades += unidades;
+                    porCliente[cid].productos[p.id].monto += monto;
                 });
             };
             ventasSnap.docs.forEach(d => procesar(d.data()));
@@ -1874,6 +1752,208 @@
         return Object.values(porCliente);
     }
 
+
+
+    // ── VISTA PRINCIPAL ──
+    async function showAnalistaClientes() {
+        _mainContent.innerHTML = `
+            <div class="p-2 sm:p-3 pt-6 w-full max-w-3xl mx-auto">
+                <div class="bg-white/95 backdrop-blur-sm p-3 sm:p-4 rounded-lg shadow-xl">
+                    <div class="flex items-center justify-between mb-3">
+                        <h2 class="text-lg font-bold text-gray-800 flex items-center gap-2">👥 Analista de Clientes</h2>
+                        <button id="cliBack" class="px-3 py-1.5 bg-gray-400 text-white text-xs rounded hover:bg-gray-500 font-bold transition">Volver</button>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-2 mb-3">
+                        <button id="cliModoVol" class="py-2 rounded text-xs font-bold border transition bg-purple-600 text-white border-purple-600">🏆 Volumen de compra</button>
+                        <button id="cliModoPago" class="py-2 rounded text-xs font-bold border transition bg-white text-purple-700 border-purple-300">💳 Estructura de pago</button>
+                    </div>
+
+                    <div class="bg-purple-50 border border-purple-200 rounded-lg p-3 mb-3 space-y-2">
+                        <label class="flex items-center gap-2 cursor-pointer">
+                            <input type="checkbox" id="cliADC" class="w-4 h-4 accent-purple-600">
+                            <span class="text-xs font-bold text-purple-800">Solo clientes con ADC</span>
+                        </label>
+
+                        <!-- Controles VOLUMEN -->
+                        <div id="cliVolControls" class="space-y-2">
+                            <div>
+                                <label class="block text-[10px] font-bold text-purple-800 uppercase mb-1">Periodo</label>
+                                <select id="cliPeriodo" class="w-full text-xs border border-purple-300 rounded p-1.5 bg-white outline-none mb-1.5">
+                                    <option value="dia">Día específico</option>
+                                    <option value="semana">Semana específica</option>
+                                    <option value="semanaAnterior">Semana anterior</option>
+                                    <option value="mes" selected>Mes específico</option>
+                                    <option value="mesAnterior">Mes anterior</option>
+                                    <option value="anioCurso">Año en curso</option>
+                                    <option value="anioEspecifico">Año específico</option>
+                                </select>
+                                <div id="cliPeriodoControl"></div>
+                            </div>
+                            <div class="grid grid-cols-2 gap-2">
+                                <div>
+                                    <label class="block text-[10px] font-bold text-purple-800 uppercase mb-1">Alcance</label>
+                                    <select id="cliAlcanceTipo" class="w-full text-xs border border-purple-300 rounded p-1.5 bg-white outline-none">
+                                        <option value="todo">Todo</option>
+                                        <option value="rubro">Por rubro</option>
+                                        <option value="segmento">Por segmento</option>
+                                        <option value="marca">Por marca</option>
+                                        <option value="producto">Producto individual</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-[10px] font-bold text-purple-800 uppercase mb-1">Medir por</label>
+                                    <select id="cliMedir" class="w-full text-xs border border-purple-300 rounded p-1.5 bg-white outline-none">
+                                        <option value="unidades">Unidades</option>
+                                        <option value="monto">Monto $</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div id="cliAlcanceValorWrap"></div>
+                        </div>
+
+                        <!-- Controles PAGO -->
+                        <div id="cliPagoControls" class="space-y-2 hidden">
+                            <div>
+                                <label class="block text-[10px] font-bold text-purple-800 uppercase mb-1">Calificación a mostrar</label>
+                                <select id="cliTipoCalif" class="w-full text-xs border border-purple-300 rounded p-1.5 bg-white outline-none">
+                                    <option value="compromiso">Compromiso de pago (estado actual)</option>
+                                    <option value="tiempo">Tiempo promedio de pago (histórico)</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <button id="cliRun" class="w-full py-2 bg-purple-600 text-white font-bold rounded text-sm hover:bg-purple-700 transition">📈 Analizar</button>
+                        <p id="cliInfo" class="text-[10px] text-gray-400 text-center"></p>
+                    </div>
+
+                    <!-- Buscador + filtro (aparecen tras analizar) -->
+                    <div id="cliFiltros" class="hidden flex gap-2 mb-2">
+                        <input type="text" id="cliBuscar" placeholder="Buscar cliente..." class="flex-1 text-xs border border-gray-300 rounded p-1.5 outline-none focus:ring-2 focus:ring-purple-400">
+                        <select id="cliFiltroCalif" class="text-xs border border-gray-300 rounded p-1.5 bg-white outline-none hidden">
+                            <option value="">Todas</option>
+                            <option value="Excelente">🟢 Excelente</option>
+                            <option value="Buena">🔵 Buena</option>
+                            <option value="Regular">🟡 Regular</option>
+                            <option value="Mala">🔴 Mala</option>
+                            <option value="Al día">🟢 Al día</option>
+                        </select>
+                    </div>
+
+                    <div id="cliLoading" class="text-center py-10 text-gray-400 text-sm">Elige el modo y toca «Analizar».</div>
+                    <div id="cliRiesgo" class="hidden mb-3"></div>
+                    <div id="cliEstrella" class="hidden mb-3"></div>
+                    <div id="cliChart" class="hidden mb-3"></div>
+                    <div id="cliTableWrap" class="hidden overflow-x-auto max-h-[45vh] overflow-y-auto rounded border border-gray-200"></div>
+                    <div id="cliResumen" class="hidden text-xs text-gray-500 mt-2 text-center"></div>
+                </div>
+            </div>`;
+
+        document.getElementById('cliBack').addEventListener('click', window.showAdministracionMenu);
+        document.getElementById('cliModoVol').addEventListener('click', () => setCliModo('volumen'));
+        document.getElementById('cliModoPago').addEventListener('click', () => setCliModo('pago'));
+        document.getElementById('cliRun').addEventListener('click', ejecutarAnalisisClientes);
+        document.getElementById('cliPeriodo').addEventListener('change', renderCliPeriodoControl);
+        document.getElementById('cliAlcanceTipo').addEventListener('change', renderCliAlcanceValor);
+        document.getElementById('cliTipoCalif').addEventListener('change', () => { if (_cliPagoData.length) renderPago(_cliPagoData); });
+
+        let debB = null;
+        document.getElementById('cliBuscar').addEventListener('input', () => {
+            clearTimeout(debB); debB = setTimeout(aplicarFiltroClientes, 180);
+        });
+        document.getElementById('cliFiltroCalif').addEventListener('change', aplicarFiltroClientes);
+
+        document.getElementById('cliLoading').innerHTML = '<svg class="animate-spin h-6 w-6 mx-auto mb-2 text-purple-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path></svg>Cargando datos...';
+        await Promise.all([loadMaster(), loadUsers(), loadClientes(), loadCXC(), loadADC(), getSortFn()]);
+        document.getElementById('cliLoading').textContent = 'Elige el modo y toca «Analizar».';
+
+        renderCliPeriodoControl();
+        renderCliAlcanceValor();
+        setCliModo('volumen');
+    }
+
+    function setCliModo(modo) {
+        _cliModo = modo;
+        const bVol = document.getElementById('cliModoVol');
+        const bPago = document.getElementById('cliModoPago');
+        const on = 'py-2 rounded text-xs font-bold border transition bg-purple-600 text-white border-purple-600';
+        const off = 'py-2 rounded text-xs font-bold border transition bg-white text-purple-700 border-purple-300';
+        document.getElementById('cliVolControls').classList.toggle('hidden', modo !== 'volumen');
+        document.getElementById('cliPagoControls').classList.toggle('hidden', modo !== 'pago');
+        document.getElementById('cliFiltroCalif').classList.toggle('hidden', modo !== 'pago');
+        bVol.className = modo === 'volumen' ? on : off;
+        bPago.className = modo === 'pago' ? on : off;
+
+        ['cliRiesgo','cliEstrella','cliChart','cliTableWrap','cliResumen','cliFiltros'].forEach(id =>
+            document.getElementById(id)?.classList.add('hidden'));
+        document.getElementById('cliLoading').classList.remove('hidden');
+        document.getElementById('cliLoading').textContent = 'Toca «Analizar».';
+    }
+
+    function renderCliPeriodoControl() {
+        const tipo = document.getElementById('cliPeriodo').value;
+        const cont = document.getElementById('cliPeriodoControl');
+        if (!cont) return;
+        const cls = 'w-full text-xs border border-purple-300 rounded p-1.5 bg-white outline-none';
+        const anioActual = new Date().getFullYear();
+        if (tipo === 'dia') cont.innerHTML = `<input type="date" id="cliFecha" value="${hoyISO()}" class="${cls}">`;
+        else if (tipo === 'semana') cont.innerHTML = `<input type="week" id="cliSemana" class="${cls}">`;
+        else if (tipo === 'mes') cont.innerHTML = `<input type="month" id="cliMes" value="${mesActualISO()}" class="${cls}">`;
+        else if (tipo === 'anioEspecifico') {
+            let opts = '';
+            for (let y = anioActual; y >= anioActual - 6; y--) opts += `<option value="${y}">${y}</option>`;
+            cont.innerHTML = `<select id="cliAnio" class="${cls}">${opts}</select>`;
+        } else cont.innerHTML = '';
+    }
+
+    function renderCliAlcanceValor() {
+        const tipo = document.getElementById('cliAlcanceTipo').value;
+        const wrap = document.getElementById('cliAlcanceValorWrap');
+        if (!wrap) return;
+        const cls = 'w-full text-xs border border-purple-300 rounded p-1.5 bg-white outline-none';
+        const prods = Object.values(_masterCache).filter(p => p.presentacion || p.marca);
+        let opts = '<option value="">— seleccionar —</option>';
+        if (tipo === 'todo') { wrap.innerHTML = ''; return; }
+        if (tipo === 'rubro') [...new Set(prods.map(p => p.rubro).filter(Boolean))].sort().forEach(v => opts += `<option value="${v}">${v}</option>`);
+        else if (tipo === 'segmento') [...new Set(prods.map(p => p.segmento).filter(Boolean))].sort().forEach(v => opts += `<option value="${v}">${v}</option>`);
+        else if (tipo === 'marca') [...new Set(prods.map(p => p.marca).filter(Boolean))].sort().forEach(v => opts += `<option value="${v}">${v}</option>`);
+        else if (tipo === 'producto') prods.sort(_sortFn).forEach(p => opts += `<option value="${p.id}">${p.presentacion || 'Producto'} · ${p.marca || ''}</option>`);
+        wrap.innerHTML = `<select id="cliAlcanceValor" class="${cls}">${opts}</select>`;
+    }
+
+    function calcularRangoCli() {
+        const tipo = document.getElementById('cliPeriodo').value;
+        const hoy = new Date();
+        const y = hoy.getFullYear(), mo = hoy.getMonth();
+        const iso = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+        if (tipo === 'dia') { const v = document.getElementById('cliFecha')?.value; return v ? { inicio:v, fin:v, label:`Día ${v}` } : null; }
+        if (tipo === 'semana') {
+            const v = document.getElementById('cliSemana')?.value; if (!v) return null;
+            const [yy, ww] = v.split('-W').map(Number);
+            const simple = new Date(yy, 0, 1 + (ww-1)*7); const dow = simple.getDay();
+            const lunes = new Date(simple); lunes.setDate(simple.getDate() - ((dow+6)%7));
+            const dom = new Date(lunes); dom.setDate(lunes.getDate()+6);
+            return { inicio: iso(lunes), fin: iso(dom), label: `Semana ${ww}/${yy}` };
+        }
+        if (tipo === 'semanaAnterior') {
+            const dow = hoy.getDay(); const lunesEsta = new Date(hoy); lunesEsta.setDate(hoy.getDate()-((dow+6)%7));
+            const lunesAnt = new Date(lunesEsta); lunesAnt.setDate(lunesEsta.getDate()-7);
+            const domAnt = new Date(lunesAnt); domAnt.setDate(lunesAnt.getDate()+6);
+            return { inicio: iso(lunesAnt), fin: iso(domAnt), label: 'Semana anterior' };
+        }
+        if (tipo === 'mes') { const v = document.getElementById('cliMes')?.value; if (!v) return null;
+            const [yy,mm]=v.split('-').map(Number); return { inicio: iso(new Date(yy,mm-1,1)), fin: iso(new Date(yy,mm,0)), label: v }; }
+        if (tipo === 'mesAnterior') return { inicio: iso(new Date(y,mo-1,1)), fin: iso(new Date(y,mo,0)), label: 'Mes anterior' };
+        if (tipo === 'anioCurso') return { inicio: `${y}-01-01`, fin: iso(hoy), label: `Año ${y}` };
+        if (tipo === 'anioEspecifico') { const yy = Number(document.getElementById('cliAnio')?.value || y); return { inicio: `${yy}-01-01`, fin: `${yy}-12-31`, label: `Año ${yy}` }; }
+        return null;
+    }
+
+    // Filtro de búsqueda + calificación (re-renderiza la tabla del modo activo)
+    function aplicarFiltroClientes() {
+        if (_cliModo === 'volumen') renderVolumen(_cliVolData, _cliVolMedir, _cliVolRango);
+        else renderPago(_cliPagoData);
+    }
 
     async function ejecutarAnalisisClientes() {
         const loading = document.getElementById('cliLoading');
@@ -1932,11 +2012,15 @@
         // Ordenar por la métrica elegida
         lista.sort((a, b) => (medir === 'monto' ? b.monto - a.monto : b.unidades - a.unidades));
         _cliVolData = lista;
+        _cliVolMedir = medir;
+        _cliVolRango = rango;
 
+        document.getElementById('cliFiltros').classList.remove('hidden');
+        document.getElementById('cliBuscar').value = '';
         renderVolumen(lista, medir, rango);
     }
 
-    function renderVolumen(lista, medir, rango) {
+    function renderVolumen(listaFull, medir, rango) {
         const loading = document.getElementById('cliLoading');
         const chart = document.getElementById('cliChart');
         const wrap = document.getElementById('cliTableWrap');
@@ -1945,93 +2029,104 @@
         const estrella = document.getElementById('cliEstrella');
         loading.classList.add('hidden');
 
-        if (!lista.length) {
+        // Aplicar buscador
+        const term = (document.getElementById('cliBuscar')?.value || '').toLowerCase().trim();
+        const lista = term ? listaFull.filter(c => (c.nombre || '').toLowerCase().includes(term)) : listaFull;
+
+        if (!listaFull.length) {
             wrap.classList.remove('hidden');
             wrap.innerHTML = '<p class="text-center text-gray-400 py-6 text-sm">Sin compras para estos filtros.</p>';
+            chart.classList.add('hidden'); riesgo.classList.add('hidden'); estrella.classList.add('hidden');
+            resumen.classList.add('hidden');
             return;
         }
 
         const valorDe = (c) => medir === 'monto' ? c.monto : c.unidades;
         const fmtValor = (c) => medir === 'monto' ? '$' + c.monto.toFixed(2) : c.unidades.toLocaleString('es-VE') + ' und';
 
-        // M3 — Cliente estrella: alto volumen + Excelente pago (top 25% volumen y calif Excelente)
-        const umbralAlto = lista.length > 3 ? valorDe(lista[Math.floor(lista.length * 0.25)]) : 0;
-        const estrellas = lista.filter(c => valorDe(c) >= umbralAlto && c.pago && c.pago.calif === 'Excelente').slice(0, 5);
-        if (estrellas.length) {
+        // M3/M1 usan la lista completa (no filtrada por búsqueda)
+        const umbralAlto = listaFull.length > 3 ? valorDe(listaFull[Math.floor(listaFull.length * 0.25)]) : 0;
+        const estrellas = listaFull.filter(c => valorDe(c) >= umbralAlto && c.pago && c.pago.calif === 'Excelente').slice(0, 5);
+        if (estrellas.length && !term) {
             estrella.classList.remove('hidden');
-            estrella.innerHTML = `
-                <div class="bg-gradient-to-r from-yellow-50 to-amber-50 border border-amber-300 rounded-lg p-3">
-                    <p class="text-[10px] font-bold text-amber-800 uppercase mb-2">⭐ Clientes estrella (alto volumen + excelente pago)</p>
-                    ${estrellas.map(c => `<div class="flex justify-between items-center py-1 text-xs">
-                        <span class="font-medium text-gray-800">${c.nombre}${c.tieneADC ? ' <span class="text-[8px] bg-purple-200 text-purple-700 px-1 rounded">ADC</span>' : ''}</span>
-                        <span class="font-bold text-amber-700">${fmtValor(c)}</span>
-                    </div>`).join('')}
-                </div>`;
-        }
-
-        // M1 — Clientes en riesgo: alto volumen + pago Malo
-        const riesgos = lista.filter(c => valorDe(c) >= umbralAlto && c.pago && c.pago.calif === 'Mala').slice(0, 5);
-        if (riesgos.length) {
-            riesgo.classList.remove('hidden');
-            riesgo.innerHTML = `
-                <div class="bg-red-50 border border-red-300 rounded-lg p-3">
-                    <p class="text-[10px] font-bold text-red-800 uppercase mb-2">⚠️ Clientes en riesgo (te compran mucho pero pagan mal)</p>
-                    ${riesgos.map(c => `<div class="flex justify-between items-center py-1 text-xs">
-                        <span class="font-medium text-gray-800">${c.nombre}</span>
-                        <span class="text-right"><span class="font-bold text-red-700">${fmtValor(c)}</span> <span class="text-[9px] text-gray-500">· ${c.pago.diasProm.toFixed(0)}d</span></span>
-                    </div>`).join('')}
-                </div>`;
-        }
-
-        // Gráfico Top 10
-        const top = lista.slice(0, 10);
-        const maxV = Math.max(...top.map(valorDe), 1);
-        chart.classList.remove('hidden');
-        chart.innerHTML = `
-            <div class="bg-gray-50 border border-gray-200 rounded-lg p-3">
-                <p class="text-[10px] font-bold text-gray-500 uppercase mb-2">Top ${top.length} clientes · ${rango.label}</p>
-                <div class="space-y-1.5">
-                    ${top.map((c, i) => {
-                        const pct = (valorDe(c) / maxV) * 100;
-                        const nombre = c.nombre.length > 22 ? c.nombre.slice(0, 22) + '…' : c.nombre;
-                        return `<div class="flex items-center gap-2">
-                            <span class="text-[10px] text-gray-400 w-4 text-right">${i+1}</span>
-                            <div class="flex-1 min-w-0">
-                                <div class="flex justify-between items-center mb-0.5">
-                                    <span class="text-[10px] text-gray-700 truncate">${nombre}</span>
-                                    <span class="text-[10px] font-bold text-purple-700 shrink-0 ml-1">${fmtValor(c)}</span>
-                                </div>
-                                <div class="w-full bg-gray-200 rounded-full h-2"><div class="bg-purple-500 h-2 rounded-full" style="width:${pct}%"></div></div>
-                            </div>
-                        </div>`;
-                    }).join('')}
-                </div>
+            estrella.innerHTML = `<div class="bg-gradient-to-r from-yellow-50 to-amber-50 border border-amber-300 rounded-lg p-3">
+                <p class="text-[10px] font-bold text-amber-800 uppercase mb-2">⭐ Clientes estrella (alto volumen + excelente pago)</p>
+                ${estrellas.map(c => `<div class="flex justify-between items-center py-1 text-xs"><span class="font-medium text-gray-800">${c.nombre}${c.tieneADC ? ' <span class="text-[8px] bg-purple-200 text-purple-700 px-1 rounded">ADC</span>' : ''}</span><span class="font-bold text-amber-700">${fmtValor(c)}</span></div>`).join('')}
             </div>`;
+        } else estrella.classList.add('hidden');
 
-        // Tabla completa
+        const riesgos = listaFull.filter(c => valorDe(c) >= umbralAlto && c.pago && c.pago.calif === 'Mala').slice(0, 5);
+        if (riesgos.length && !term) {
+            riesgo.classList.remove('hidden');
+            riesgo.innerHTML = `<div class="bg-red-50 border border-red-300 rounded-lg p-3">
+                <p class="text-[10px] font-bold text-red-800 uppercase mb-2">⚠️ Clientes en riesgo (te compran mucho pero pagan mal)</p>
+                ${riesgos.map(c => `<div class="flex justify-between items-center py-1 text-xs"><span class="font-medium text-gray-800">${c.nombre}</span><span class="text-right"><span class="font-bold text-red-700">${fmtValor(c)}</span> <span class="text-[9px] text-gray-500">· ${c.pago.diasProm.toFixed(0)}d</span></span></div>`).join('')}
+            </div>`;
+        } else riesgo.classList.add('hidden');
+
+        // Gráfico Top 10 (de la lista visible)
+        const top = lista.slice(0, 10);
+        if (top.length && !term) {
+            const maxV = Math.max(...top.map(valorDe), 1);
+            chart.classList.remove('hidden');
+            chart.innerHTML = `<div class="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                <p class="text-[10px] font-bold text-gray-500 uppercase mb-2">Top ${top.length} clientes · ${rango.label}</p>
+                <div class="space-y-1.5">${top.map((c, i) => {
+                    const pct = (valorDe(c) / maxV) * 100;
+                    const nombre = c.nombre.length > 22 ? c.nombre.slice(0, 22) + '…' : c.nombre;
+                    return `<div class="flex items-center gap-2"><span class="text-[10px] text-gray-400 w-4 text-right">${i+1}</span><div class="flex-1 min-w-0"><div class="flex justify-between items-center mb-0.5"><span class="text-[10px] text-gray-700 truncate">${nombre}</span><span class="text-[10px] font-bold text-purple-700 shrink-0 ml-1">${fmtValor(c)}</span></div><div class="w-full bg-gray-200 rounded-full h-2"><div class="bg-purple-500 h-2 rounded-full" style="width:${pct}%"></div></div></div></div>`;
+                }).join('')}</div></div>`;
+        } else chart.classList.add('hidden');
+
+        // Tabla (clic para ver productos del cliente)
         const badge = (p) => p ? `<span class="text-[9px] px-1.5 py-0.5 rounded bg-${p.califColor}-100 text-${p.califColor}-700 font-bold">${p.califIcon}</span>` : '<span class="text-[9px] text-gray-300">—</span>';
         wrap.classList.remove('hidden');
-        let html = `<table class="min-w-full text-sm"><thead class="bg-gray-200 sticky top-0"><tr class="text-xs uppercase text-gray-600">
-            <th class="py-2 px-2 text-left">#</th><th class="py-2 px-2 text-left">Cliente</th>
-            <th class="py-2 px-2 text-center">Volumen</th><th class="py-2 px-2 text-center">Pago</th></tr></thead><tbody>`;
-        lista.forEach((c, i) => {
-            html += `<tr class="border-b border-gray-100 hover:bg-purple-50">
-                <td class="py-2 px-2 text-gray-400 font-bold text-xs">${i+1}</td>
-                <td class="py-2 px-2"><div class="font-medium text-gray-800 text-xs">${c.nombre}${c.tieneADC ? ' <span class="text-[8px] bg-purple-200 text-purple-700 px-1 rounded">ADC</span>' : ''}</div></td>
-                <td class="py-2 px-2 text-center font-bold text-purple-700 text-xs">${fmtValor(c)}</td>
-                <td class="py-2 px-2 text-center">${badge(c.pago)}</td>
-            </tr>`;
-        });
-        html += '</tbody></table>';
-        wrap.innerHTML = html;
+        if (!lista.length) {
+            wrap.innerHTML = '<p class="text-center text-gray-400 py-6 text-sm">Ningún cliente coincide con la búsqueda.</p>';
+        } else {
+            let html = `<table class="min-w-full text-sm"><thead class="bg-gray-200 sticky top-0"><tr class="text-xs uppercase text-gray-600"><th class="py-2 px-2 text-left">#</th><th class="py-2 px-2 text-left">Cliente</th><th class="py-2 px-2 text-center">Volumen</th><th class="py-2 px-2 text-center">Pago</th></tr></thead><tbody>`;
+            lista.forEach((c, i) => {
+                const idx = listaFull.indexOf(c);
+                html += `<tr class="border-b border-gray-100 hover:bg-purple-50 cursor-pointer" data-idx="${idx}"><td class="py-2 px-2 text-gray-400 font-bold text-xs">${i+1}</td><td class="py-2 px-2"><div class="font-medium text-gray-800 text-xs">${c.nombre}${c.tieneADC ? ' <span class="text-[8px] bg-purple-200 text-purple-700 px-1 rounded">ADC</span>' : ''}</div><div class="text-[9px] text-purple-400">toca para ver productos</div></td><td class="py-2 px-2 text-center font-bold text-purple-700 text-xs">${fmtValor(c)}</td><td class="py-2 px-2 text-center">${badge(c.pago)}</td></tr>`;
+            });
+            html += '</tbody></table>';
+            wrap.innerHTML = html;
+            wrap.querySelectorAll('tr[data-idx]').forEach(tr =>
+                tr.addEventListener('click', () => mostrarProductosCliente(listaFull[Number(tr.dataset.idx)], medir)));
+        }
 
         resumen.classList.remove('hidden');
-        resumen.innerHTML = `${lista.length} cliente(s) · <button id="cliExportVol" class="text-purple-600 font-bold hover:underline">⬇️ Exportar Excel</button>`;
-        document.getElementById('cliExportVol').addEventListener('click', () => exportarClientesExcel(lista, medir, 'volumen'));
+        resumen.innerHTML = `${lista.length}${term ? ' de ' + listaFull.length : ''} cliente(s) · <button id="cliExportVol" class="text-purple-600 font-bold hover:underline">⬇️ Exportar Excel</button>`;
+        document.getElementById('cliExportVol').addEventListener('click', () => exportarClientesExcel(listaFull, medir, 'volumen'));
     }
 
+    // Ver los productos que compra un cliente y sus cantidades
+    function mostrarProductosCliente(c, medir) {
+        if (!c || !c.productos) return;
+        const prods = Object.entries(c.productos).map(([id, d]) => {
+            const m = _masterCache[id] || {};
+            return { id, ...m, unidades: d.unidades, monto: d.monto };
+        }).sort((a, b) => (medir === 'monto' ? b.monto - a.monto : b.unidades - a.unidades));
 
-    // ═══ MODO CALIFICACIÓN DE PAGO ═══
+        document.getElementById('cliProdOverlay')?.remove();
+        const ov = document.createElement('div');
+        ov.id = 'cliProdOverlay';
+        ov.className = 'fixed inset-0 z-[9998] bg-black/50 flex items-center justify-center p-4';
+        const filas = prods.map(p => `
+            <div class="flex items-center justify-between py-2 px-2 border-b border-gray-100">
+                <div class="min-w-0"><div class="font-medium text-gray-800 text-xs truncate">${p.presentacion || 'Producto'}</div><div class="text-[10px] text-gray-400">${p.marca || ''}${p.segmento ? ' · ' + p.segmento : ''}</div></div>
+                <div class="text-right shrink-0 ml-2"><div class="text-xs font-bold text-purple-700">${formatUnidadMayor(p, p.unidades)}</div><div class="text-[9px] text-gray-400">$${p.monto.toFixed(2)} · ${p.unidades.toLocaleString('es-VE')} und</div></div>
+            </div>`).join('');
+        ov.innerHTML = `<div class="bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden max-h-[85vh] flex flex-col">
+            <div class="bg-purple-600 text-white px-4 py-3 shrink-0"><div class="font-bold text-sm">${c.nombre}</div><div class="text-xs opacity-80">Productos que compra · ${prods.length} distintos</div></div>
+            <div class="overflow-y-auto flex-1">${filas || '<p class="text-center text-gray-400 text-xs py-6">Sin detalle de productos.</p>'}</div>
+            <div class="p-3 border-t shrink-0"><button id="cliProdCerrar" class="w-full py-2 bg-gray-100 text-gray-600 rounded font-bold text-sm">Cerrar</button></div>
+        </div>`;
+        document.body.appendChild(ov);
+        ov.addEventListener('click', e => { if (e.target === ov) ov.remove(); });
+        document.getElementById('cliProdCerrar').addEventListener('click', () => ov.remove());
+    }
+
     async function ejecutarPago(soloADC) {
         // Calificar todos los clientes CXC
         let lista = [];
@@ -2048,71 +2143,90 @@
         lista.sort((a, b) => a.diasProm - b.diasProm);
         _cliPagoData = lista;
 
+        document.getElementById('cliFiltros').classList.remove('hidden');
+        document.getElementById('cliBuscar').value = '';
+        document.getElementById('cliFiltroCalif').value = '';
         renderPago(lista);
     }
 
-    function renderPago(lista) {
+    // Devuelve la calificación activa (compromiso o tiempo) de un cliente
+    function califActiva(c) {
+        const tipo = document.getElementById('cliTipoCalif')?.value || 'compromiso';
+        if (tipo === 'compromiso' && c.compromiso) {
+            return { calif: c.compromiso.calif, color: c.compromiso.califColor, icon: c.compromiso.califIcon };
+        }
+        return { calif: c.calif, color: c.califColor, icon: c.califIcon };
+    }
+
+    function renderPago(listaFull) {
         const loading = document.getElementById('cliLoading');
         const chart = document.getElementById('cliChart');
         const wrap = document.getElementById('cliTableWrap');
         const resumen = document.getElementById('cliResumen');
-        const riesgo = document.getElementById('cliRiesgo');
         loading.classList.add('hidden');
+        document.getElementById('cliRiesgo')?.classList.add('hidden');
+        document.getElementById('cliEstrella')?.classList.add('hidden');
 
-        if (!lista.length) {
+        const tipoCalif = document.getElementById('cliTipoCalif')?.value || 'compromiso';
+
+        // Filtros: búsqueda + calificación
+        const term = (document.getElementById('cliBuscar')?.value || '').toLowerCase().trim();
+        const filtroCalif = document.getElementById('cliFiltroCalif')?.value || '';
+        let lista = listaFull;
+        if (term) lista = lista.filter(c => (c.nombre || '').toLowerCase().includes(term));
+        if (filtroCalif) lista = lista.filter(c => califActiva(c).calif === filtroCalif);
+
+        if (!listaFull.length) {
             wrap.classList.remove('hidden');
             wrap.innerHTML = '<p class="text-center text-gray-400 py-6 text-sm">Sin historial CXC para calificar.</p>';
+            chart.classList.add('hidden'); resumen.classList.add('hidden');
             return;
         }
 
-        // Distribución de calificaciones (gráfico resumen)
-        const dist = { Excelente: 0, Buena: 0, Regular: 0, Mala: 0 };
-        lista.forEach(c => dist[c.calif]++);
-        const totalC = lista.length;
-        const colores = { Excelente: 'green', Buena: 'blue', Regular: 'amber', Mala: 'red' };
-        const iconos = { Excelente: '🟢', Buena: '🔵', Regular: '🟡', Mala: '🔴' };
-        chart.classList.remove('hidden');
-        chart.innerHTML = `
-            <div class="bg-gray-50 border border-gray-200 rounded-lg p-3">
-                <p class="text-[10px] font-bold text-gray-500 uppercase mb-2">Distribución de calificaciones</p>
-                <div class="space-y-1.5">
-                    ${Object.keys(dist).map(k => {
-                        const pct = totalC ? (dist[k] / totalC) * 100 : 0;
-                        return `<div class="flex items-center gap-2">
-                            <span class="text-[10px] w-16 text-gray-700">${iconos[k]} ${k}</span>
-                            <div class="flex-1 bg-gray-200 rounded-full h-2.5"><div class="bg-${colores[k]}-500 h-2.5 rounded-full" style="width:${pct}%"></div></div>
-                            <span class="text-[10px] font-bold text-gray-600 w-8 text-right">${dist[k]}</span>
-                        </div>`;
-                    }).join('')}
-                </div>
-            </div>`;
+        // Distribución de calificaciones (según tipo activo), solo sin búsqueda
+        if (!term && !filtroCalif) {
+            const dist = {};
+            listaFull.forEach(c => { const k = califActiva(c).calif; dist[k] = (dist[k] || 0) + 1; });
+            const orden = ['Al día', 'Excelente', 'Buena', 'Regular', 'Mala'];
+            const colores = { 'Al día': 'green', Excelente: 'green', Buena: 'blue', Regular: 'amber', Mala: 'red' };
+            const iconos = { 'Al día': '🟢', Excelente: '🟢', Buena: '🔵', Regular: '🟡', Mala: '🔴' };
+            const totalC = listaFull.length;
+            const claves = orden.filter(k => dist[k]);
+            chart.classList.remove('hidden');
+            chart.innerHTML = `<div class="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                <p class="text-[10px] font-bold text-gray-500 uppercase mb-2">Distribución · ${tipoCalif === 'compromiso' ? 'Compromiso de pago' : 'Tiempo promedio'}</p>
+                <div class="space-y-1.5">${claves.map(k => {
+                    const pct = totalC ? (dist[k] / totalC) * 100 : 0;
+                    return `<div class="flex items-center gap-2"><span class="text-[10px] w-16 text-gray-700">${iconos[k]} ${k}</span><div class="flex-1 bg-gray-200 rounded-full h-2.5"><div class="bg-${colores[k]}-500 h-2.5 rounded-full" style="width:${pct}%"></div></div><span class="text-[10px] font-bold text-gray-600 w-8 text-right">${dist[k]}</span></div>`;
+                }).join('')}</div></div>`;
+        } else chart.classList.add('hidden');
 
-        // Tabla de clientes calificados
+        // Tabla
         wrap.classList.remove('hidden');
-        let html = `<table class="min-w-full text-sm"><thead class="bg-gray-200 sticky top-0"><tr class="text-xs uppercase text-gray-600">
-            <th class="py-2 px-2 text-left">#</th><th class="py-2 px-2 text-left">Cliente</th>
-            <th class="py-2 px-2 text-center">Calif.</th><th class="py-2 px-2 text-center">Días prom.</th>
-            <th class="py-2 px-2 text-center">Facturas</th></tr></thead><tbody>`;
-        lista.forEach((c, i) => {
-            html += `<tr class="border-b border-gray-100 hover:bg-purple-50 cursor-pointer" data-idx="${i}">
-                <td class="py-2 px-2 text-gray-400 font-bold text-xs">${i+1}</td>
-                <td class="py-2 px-2"><div class="font-medium text-gray-800 text-xs">${c.nombre}${c.tieneADC ? ' <span class="text-[8px] bg-purple-200 text-purple-700 px-1 rounded">ADC</span>' : ''}</div></td>
-                <td class="py-2 px-2 text-center"><span class="text-[10px] px-1.5 py-0.5 rounded bg-${c.califColor}-100 text-${c.califColor}-700 font-bold">${c.califIcon} ${c.calif}</span></td>
-                <td class="py-2 px-2 text-center font-bold text-gray-700 text-xs">${c.diasProm.toFixed(1)}d</td>
-                <td class="py-2 px-2 text-center text-[10px] text-gray-500">${c.numFacturas} <span class="text-gray-400">(${c.clasif.excelente}E/${c.clasif.buena}B/${c.clasif.regular}R/${c.clasif.mala}M)</span></td>
-            </tr>`;
-        });
-        html += '</tbody></table>';
-        wrap.innerHTML = html;
-        wrap.querySelectorAll('tr[data-idx]').forEach(tr =>
-            tr.addEventListener('click', () => mostrarDetallePago(lista[Number(tr.dataset.idx)])));
+        if (!lista.length) {
+            wrap.innerHTML = '<p class="text-center text-gray-400 py-6 text-sm">Ningún cliente coincide con el filtro.</p>';
+        } else {
+            const colTitulo = tipoCalif === 'compromiso' ? 'Pendiente' : 'Días prom.';
+            let html = `<table class="min-w-full text-sm"><thead class="bg-gray-200 sticky top-0"><tr class="text-xs uppercase text-gray-600"><th class="py-2 px-2 text-left">#</th><th class="py-2 px-2 text-left">Cliente</th><th class="py-2 px-2 text-center">Calif.</th><th class="py-2 px-2 text-center">${colTitulo}</th><th class="py-2 px-2 text-center">Ventas</th></tr></thead><tbody>`;
+            lista.forEach((c, i) => {
+                const idx = listaFull.indexOf(c);
+                const ca = califActiva(c);
+                const dato = tipoCalif === 'compromiso'
+                    ? (c.compromiso ? (c.compromiso.saldoPendiente <= 0.01 ? '$0' : '$' + c.compromiso.saldoPendiente.toFixed(0) + ' (' + (c.compromiso.pendientePct*100).toFixed(0) + '%)') : '—')
+                    : c.diasProm.toFixed(1) + 'd';
+                html += `<tr class="border-b border-gray-100 hover:bg-purple-50 cursor-pointer" data-idx="${idx}"><td class="py-2 px-2 text-gray-400 font-bold text-xs">${i+1}</td><td class="py-2 px-2"><div class="font-medium text-gray-800 text-xs">${c.nombre}${c.tieneADC ? ' <span class="text-[8px] bg-purple-200 text-purple-700 px-1 rounded">ADC</span>' : ''}</div></td><td class="py-2 px-2 text-center"><span class="text-[10px] px-1.5 py-0.5 rounded bg-${ca.color}-100 text-${ca.color}-700 font-bold whitespace-nowrap">${ca.icon} ${ca.calif}</span></td><td class="py-2 px-2 text-center font-bold text-gray-700 text-xs">${dato}</td><td class="py-2 px-2 text-center text-[10px] text-gray-500">${c.numFacturas}</td></tr>`;
+            });
+            html += '</tbody></table>';
+            wrap.innerHTML = html;
+            wrap.querySelectorAll('tr[data-idx]').forEach(tr =>
+                tr.addEventListener('click', () => mostrarDetallePago(listaFull[Number(tr.dataset.idx)])));
+        }
 
         resumen.classList.remove('hidden');
-        resumen.innerHTML = `${lista.length} cliente(s) calificados · <button id="cliExportPago" class="text-purple-600 font-bold hover:underline">⬇️ Exportar Excel</button>`;
-        document.getElementById('cliExportPago').addEventListener('click', () => exportarClientesExcel(lista, null, 'pago'));
+        resumen.innerHTML = `${lista.length}${(term||filtroCalif) ? ' de ' + listaFull.length : ''} cliente(s) · <button id="cliExportPago" class="text-purple-600 font-bold hover:underline">⬇️ Exportar Excel</button>`;
+        document.getElementById('cliExportPago').addEventListener('click', () => exportarClientesExcel(listaFull, null, 'pago'));
     }
 
-    // M4 — Detalle con evolución del pago en el tiempo
     function mostrarDetallePago(c) {
         document.getElementById('cliDetalleOverlay')?.remove();
         const ov = document.createElement('div');
@@ -2134,29 +2248,30 @@
         const maxD = Math.max(...fs.map(f => f.dias), 1);
         const barras = fs.map(f => {
             const h = (f.dias / maxD) * 100;
-            const col = f.dias < 7 ? 'green' : f.dias < 15 ? 'blue' : f.dias < 21 ? 'amber' : 'red';
+            const col = f.dias <= 8 ? 'green' : f.dias <= 15 ? 'blue' : f.dias <= 21 ? 'amber' : 'red';
             const fecha = f.fecha.toLocaleDateString('es-VE', { day: '2-digit', month: '2-digit' });
             return `<div class="flex flex-col items-center justify-end h-full" style="flex:1;min-width:12px">
-                <div class="w-full bg-${col}-500 rounded-t hover:opacity-75" style="height:${h}%" title="${fecha}: ${f.dias}d${f.saldado ? '' : ' (pendiente)'}"></div>
+                <div class="w-full bg-${col}-500 rounded-t hover:opacity-75" style="height:${h}%" title="${fecha}: ${f.dias}d${f.cancelada ? '' : ' (activa)'}"></div>
             </div>`;
         }).join('');
 
         ov.innerHTML = `
             <div class="bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden max-h-[85vh] flex flex-col">
                 <div class="bg-purple-600 text-white px-4 py-3 shrink-0">
-                    <div class="font-bold text-sm">${c.nombre}</div>
-                    <div class="text-xs opacity-80">${c.califIcon} ${c.calif} · ${c.diasProm.toFixed(1)} días promedio</div>
+                    <div class="font-bold text-sm">${c.nombre}${c.tieneADC ? ' <span class="text-[8px] bg-white/30 px-1 rounded align-middle">ADC</span>' : ''}</div>
+                    <div class="text-xs opacity-80">Tiempo prom.: ${c.califIcon} ${c.calif} (${c.diasProm.toFixed(1)}d) · Compromiso: ${c.compromiso ? c.compromiso.califIcon + ' ' + c.compromiso.calif : '—'}</div>
                 </div>
                 <div class="p-4 overflow-y-auto">
-                    <div class="grid grid-cols-2 gap-2 mb-3 text-center">
-                        <div class="bg-gray-50 rounded p-2"><div class="text-lg font-black text-gray-800">${c.numFacturas}</div><div class="text-[9px] text-gray-500 uppercase">Facturas</div></div>
-                        <div class="bg-gray-50 rounded p-2"><div class="text-lg font-black text-gray-800">$${c.totalFacturado.toFixed(0)}</div><div class="text-[9px] text-gray-500 uppercase">Facturado</div></div>
+                    <div class="grid grid-cols-3 gap-2 mb-3 text-center">
+                        <div class="bg-gray-50 rounded p-2"><div class="text-base font-black text-gray-800">${c.numFacturas}</div><div class="text-[9px] text-gray-500 uppercase">Ventas</div></div>
+                        <div class="bg-gray-50 rounded p-2"><div class="text-base font-black text-gray-800">$${c.totalFacturado.toFixed(0)}</div><div class="text-[9px] text-gray-500 uppercase">Facturado</div></div>
+                        <div class="bg-gray-50 rounded p-2"><div class="text-base font-black text-${c.compromiso && c.compromiso.saldoPendiente > 0.01 ? 'red' : 'green'}-700">$${c.compromiso ? c.compromiso.saldoPendiente.toFixed(0) : '0'}</div><div class="text-[9px] text-gray-500 uppercase">Debe hoy</div></div>
                     </div>
                     <div class="mb-3 text-xs text-center bg-gray-50 rounded p-2">Tendencia de pago: ${tendencia}</div>
                     <p class="text-[10px] font-bold text-gray-500 uppercase mb-1">Días de pago por factura (cronológico)</p>
                     <div class="flex items-end gap-0.5 h-28 mb-2">${barras}</div>
-                    <div class="text-[9px] text-gray-400 text-center">Verde &lt;7d · Azul &lt;15d · Ámbar &lt;21d · Rojo ≥21d</div>
-                    <p class="text-[10px] text-gray-500 mt-2">Pendiente promedio: <strong>${(c.pendientePromedio*100).toFixed(1)}%</strong> de la factura</p>
+                    <div class="text-[9px] text-gray-400 text-center">Verde ≤8d · Azul ≤15d · Ámbar ≤21d · Rojo &gt;21d</div>
+                    <p class="text-[10px] text-gray-500 mt-2">Pendiente actual: <strong>${c.compromiso ? (c.compromiso.pendientePct*100).toFixed(1) : 0}%</strong> de lo despachado en el ciclo activo</p>
                 </div>
                 <div class="p-3 border-t shrink-0"><button id="cliDetCerrar" class="w-full py-2 bg-gray-100 text-gray-600 rounded font-bold text-sm">Cerrar</button></div>
             </div>`;
@@ -2175,10 +2290,15 @@
                     medir === 'monto' ? c.monto.toFixed(2) : c.unidades,
                     c.pago ? c.pago.calif : '—', c.pago ? c.pago.diasProm.toFixed(1) : '—']));
             } else {
-                rows = [['#', 'Cliente', 'ADC', 'Calificación', 'Días prom.', 'Facturas', 'Excelente', 'Buena', 'Regular', 'Mala', 'Facturado $', 'Pendiente %']];
-                lista.forEach((c, i) => rows.push([i+1, c.nombre, c.tieneADC ? 'Sí' : 'No', c.calif, c.diasProm.toFixed(1),
-                    c.numFacturas, c.clasif.excelente, c.clasif.buena, c.clasif.regular, c.clasif.mala,
-                    c.totalFacturado.toFixed(2), (c.pendientePromedio*100).toFixed(1)]));
+                rows = [['#', 'Cliente', 'ADC', 'Compromiso (actual)', 'Debe hoy $', 'Pendiente %',
+                         'Tiempo prom. (calif)', 'Días prom.', 'Ventas', 'Excelente', 'Buena', 'Regular', 'Mala', 'Facturado $']];
+                lista.forEach((c, i) => rows.push([i+1, c.nombre, c.tieneADC ? 'Sí' : 'No',
+                    c.compromiso ? c.compromiso.calif : '—',
+                    c.compromiso ? c.compromiso.saldoPendiente.toFixed(2) : '0',
+                    c.compromiso ? (c.compromiso.pendientePct*100).toFixed(1) : '0',
+                    c.calif, c.diasProm.toFixed(1), c.numFacturas,
+                    c.clasif.excelente, c.clasif.buena, c.clasif.regular, c.clasif.mala,
+                    c.totalFacturado.toFixed(2)]));
             }
             const ws = XLSX.utils.aoa_to_sheet(rows);
             const wb = XLSX.utils.book_new();
@@ -2193,6 +2313,7 @@
 
 })();
 // redeploy trigger 1783190804
+
 
 
 
