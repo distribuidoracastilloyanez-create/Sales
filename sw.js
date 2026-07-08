@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v26'; // v26: filtro por zonas + fix filtro vacio + quitar buscador redundante
+const CACHE_NAME = 'ventas-app-cache-v27'; // v27: orden en volumen + dias ultimo pago + menu admin 2 columnas
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
@@ -179,6 +179,7 @@ self.addEventListener('fetch', event => {
             })
     );
 });
+
 
 
 
