@@ -94,7 +94,7 @@
                     <div class="flex flex-col md:flex-row justify-between items-center mb-4 gap-3">
                         <div>
                             <h1 class="text-2xl font-bold text-gray-800 tracking-tight">Cuentas por Cobrar</h1>
-                            <button id="cxcTasaBcvDisplay" class="text-xs font-bold text-purple-600 hover:text-purple-800 hover:underline transition mt-0.5 cursor-pointer">(BCV ----- --/--/--)</button>
+                            <button id="cxcTasaBcvDisplay" class="text-sm font-bold text-gray-700 hover:text-gray-900 hover:underline transition mt-0.5 cursor-pointer">(BCV ----- --/--/--)</button>
                         </div>
                         <div class="flex flex-col items-end text-right w-full md:w-auto space-y-2">
                             <div class="flex gap-2 w-full justify-end">
@@ -1512,6 +1512,7 @@
         }, 100);
     };
 })();
+
 
 
 
