@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v25'; // v25: filtros post-analisis en volumen + acceso directo a CXC
+const CACHE_NAME = 'ventas-app-cache-v26'; // v26: filtro por zonas + fix filtro vacio + quitar buscador redundante
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
@@ -179,6 +179,7 @@ self.addEventListener('fetch', event => {
             })
     );
 });
+
 
 
 
