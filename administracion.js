@@ -1548,6 +1548,7 @@
     let _cliModo = 'volumen';
     let _cliVolMedir = 'unidades';
     let _cliVolRango = null;
+    let _cliVolFiltrada = [];
 
     // ── Parseo de fecha CXC (formatos dd/mm/yyyy o yyyy-mm-dd) ──
     function parseFechaCXC(raw) {
@@ -1820,26 +1821,7 @@
                                 </select>
                                 <div id="cliPeriodoControl"></div>
                             </div>
-                            <div class="grid grid-cols-2 gap-2">
-                                <div>
-                                    <label class="block text-[10px] font-bold text-purple-800 uppercase mb-1">Alcance</label>
-                                    <select id="cliAlcanceTipo" class="w-full text-xs border border-purple-300 rounded p-1.5 bg-white outline-none">
-                                        <option value="todo">Todo</option>
-                                        <option value="rubro">Por rubro</option>
-                                        <option value="segmento">Por segmento</option>
-                                        <option value="marca">Por marca</option>
-                                        <option value="producto">Producto individual</option>
-                                    </select>
-                                </div>
-                                <div>
-                                    <label class="block text-[10px] font-bold text-purple-800 uppercase mb-1">Medir por</label>
-                                    <select id="cliMedir" class="w-full text-xs border border-purple-300 rounded p-1.5 bg-white outline-none">
-                                        <option value="unidades">Unidades</option>
-                                        <option value="monto">Monto $</option>
-                                    </select>
-                                </div>
-                            </div>
-                            <div id="cliAlcanceValorWrap"></div>
+                            <p class="text-[9px] text-gray-400">Tras analizar podrás filtrar por rubro, segmento, marca, producto o monto sin releer datos.</p>
                         </div>
 
                         <!-- Controles PAGO -->
@@ -1858,6 +1840,25 @@
                     </div>
 
                     <!-- Buscador + filtro (aparecen tras analizar) -->
+                    <!-- Filtros post-análisis del modo VOLUMEN (cambian sin releer) -->
+                    <div id="cliVolPostFiltros" class="hidden bg-indigo-50 border border-indigo-200 rounded-lg p-2 mb-2 space-y-1.5">
+                        <p class="text-[9px] font-bold text-indigo-700 uppercase">Filtrar el ranking (sin releer datos)</p>
+                        <div class="grid grid-cols-3 gap-1.5">
+                            <select id="cliVolAlcanceTipo" class="text-xs border border-indigo-300 rounded p-1.5 bg-white outline-none">
+                                <option value="todo">Todo</option>
+                                <option value="rubro">Por rubro</option>
+                                <option value="segmento">Por segmento</option>
+                                <option value="marca">Por marca</option>
+                                <option value="producto">Por producto</option>
+                            </select>
+                            <div id="cliVolAlcanceValorWrap" class="col-span-1"></div>
+                            <select id="cliVolMedir2" class="text-xs border border-indigo-300 rounded p-1.5 bg-white outline-none">
+                                <option value="unidades">Unidades</option>
+                                <option value="monto">Monto $</option>
+                            </select>
+                        </div>
+                    </div>
+
                     <div id="cliFiltros" class="hidden flex gap-2 mb-2">
                         <input type="text" id="cliBuscar" placeholder="Buscar cliente..." class="flex-1 text-xs border border-gray-300 rounded p-1.5 outline-none focus:ring-2 focus:ring-purple-400">
                         <select id="cliFiltroCalif" class="text-xs border border-gray-300 rounded p-1.5 bg-white outline-none hidden">
@@ -1884,8 +1885,9 @@
         document.getElementById('cliModoPago').addEventListener('click', () => setCliModo('pago'));
         document.getElementById('cliRun').addEventListener('click', ejecutarAnalisisClientes);
         document.getElementById('cliPeriodo').addEventListener('change', renderCliPeriodoControl);
-        document.getElementById('cliAlcanceTipo').addEventListener('change', renderCliAlcanceValor);
         document.getElementById('cliTipoCalif').addEventListener('change', () => { if (_cliPagoData.length) renderPago(_cliPagoData); });
+        document.getElementById('cliVolAlcanceTipo').addEventListener('change', () => { renderCliVolAlcanceValor(); aplicarFiltrosVolumen(); });
+        document.getElementById('cliVolMedir2').addEventListener('change', aplicarFiltrosVolumen);
 
         let debB = null;
         document.getElementById('cliBuscar').addEventListener('input', () => {
@@ -1901,7 +1903,6 @@
         poblarDatalistClientes();
 
         renderCliPeriodoControl();
-        renderCliAlcanceValor();
         setCliModo('volumen');
     }
 
@@ -1934,7 +1935,7 @@
         bVol.className = modo === 'volumen' ? on : off;
         bPago.className = modo === 'pago' ? on : off;
 
-        ['cliRiesgo','cliEstrella','cliChart','cliTableWrap','cliResumen','cliFiltros'].forEach(id =>
+        ['cliRiesgo','cliEstrella','cliChart','cliTableWrap','cliResumen','cliFiltros','cliVolPostFiltros'].forEach(id =>
             document.getElementById(id)?.classList.add('hidden'));
         document.getElementById('cliLoading').classList.remove('hidden');
         document.getElementById('cliLoading').textContent = 'Toca «Analizar».';
@@ -1956,19 +1957,27 @@
         } else cont.innerHTML = '';
     }
 
-    function renderCliAlcanceValor() {
-        const tipo = document.getElementById('cliAlcanceTipo').value;
-        const wrap = document.getElementById('cliAlcanceValorWrap');
+
+    // Rellena el selector de valor del alcance POST-análisis (rubro/segmento/marca/producto)
+    function renderCliVolAlcanceValor() {
+        const tipo = document.getElementById('cliVolAlcanceTipo').value;
+        const wrap = document.getElementById('cliVolAlcanceValorWrap');
         if (!wrap) return;
-        const cls = 'w-full text-xs border border-purple-300 rounded p-1.5 bg-white outline-none';
-        const prods = Object.values(_masterCache).filter(p => p.presentacion || p.marca);
-        let opts = '<option value="">— seleccionar —</option>';
+        const cls = 'w-full text-xs border border-indigo-300 rounded p-1.5 bg-white outline-none';
         if (tipo === 'todo') { wrap.innerHTML = ''; return; }
+        // Solo mostrar valores que EXISTEN en los datos analizados (productos comprados)
+        const idsComprados = new Set();
+        _cliVolData.forEach(c => Object.keys(c.productos || {}).forEach(pid => idsComprados.add(pid)));
+        const prods = [...idsComprados].map(pid => _masterCache[pid]).filter(Boolean);
+        let opts = '<option value="">— elegir —</option>';
         if (tipo === 'rubro') [...new Set(prods.map(p => p.rubro).filter(Boolean))].sort().forEach(v => opts += `<option value="${v}">${v}</option>`);
         else if (tipo === 'segmento') [...new Set(prods.map(p => p.segmento).filter(Boolean))].sort().forEach(v => opts += `<option value="${v}">${v}</option>`);
         else if (tipo === 'marca') [...new Set(prods.map(p => p.marca).filter(Boolean))].sort().forEach(v => opts += `<option value="${v}">${v}</option>`);
         else if (tipo === 'producto') prods.sort(_sortFn).forEach(p => opts += `<option value="${p.id}">${p.presentacion || 'Producto'} · ${p.marca || ''}</option>`);
-        wrap.innerHTML = `<select id="cliAlcanceValor" class="${cls}">${opts}</select>`;
+        wrap.innerHTML = `<select id="cliVolAlcanceValor" class="${cls}" onchange="void 0">${opts}</select>`;
+        // El listener del valor se delega porque el elemento se recrea
+        const sel = document.getElementById('cliVolAlcanceValor');
+        if (sel) sel.addEventListener('change', aplicarFiltrosVolumen);
     }
 
     function calcularRangoCli() {
@@ -2001,7 +2010,7 @@
 
     // Filtro de búsqueda + calificación (re-renderiza la tabla del modo activo)
     function aplicarFiltroClientes() {
-        if (_cliModo === 'volumen') renderVolumen(_cliVolData, _cliVolMedir, _cliVolRango);
+        if (_cliModo === 'volumen') renderVolumen(_cliVolFiltrada, _cliVolMedir, _cliVolRango);
         else renderPago(_cliPagoData);
     }
 
@@ -2043,25 +2052,23 @@
     async function ejecutarVolumen(soloADC) {
         const rango = calcularRangoCli();
         if (!rango) { _showModal('Aviso', 'Selecciona un periodo válido.'); document.getElementById('cliLoading').textContent = 'Toca «Analizar».'; return; }
-        const tipoAlc = document.getElementById('cliAlcanceTipo').value;
-        const valorAlc = document.getElementById('cliAlcanceValor')?.value || '';
-        if (tipoAlc !== 'todo' && !valorAlc) { _showModal('Aviso', 'Selecciona el valor del alcance (rubro, segmento, marca o producto).'); document.getElementById('cliLoading').textContent = 'Toca «Analizar».'; return; }
-        const medir = document.getElementById('cliMedir').value;
 
         // ¿Cliente específico elegido en el selector previo?
         const elegido = clienteElegidoPrevio();
         let clienteFiltro = null;
         if (elegido) {
-            // Resolver su id desde la lista de clientes (por nombre normalizado)
             const nEleg = normNombre(elegido);
             const cl = (_clientesCache || []).find(x =>
                 normNombre(x.nombreComercial) === nEleg || normNombre(x.nombrePersonal) === nEleg);
             clienteFiltro = { id: cl ? cl.id : null, nombre: elegido };
         }
 
-        let lista = await analizarVolumenClientes(rango, { tipo: tipoAlc, valor: valorAlc }, clienteFiltro);
+        // Se lee SIN filtro de alcance (alcance 'todo'), guardando el desglose completo
+        // por producto de cada cliente. El filtro por rubro/segmento/marca/producto se
+        // aplica DESPUÉS en memoria, para poder cambiarlo sin releer datos.
+        let lista = await analizarVolumenClientes(rango, { tipo: 'todo', valor: '' }, clienteFiltro);
         if (elegido && !lista.length) {
-            _showModal('Aviso', 'Ese cliente no tiene compras en el periodo/alcance elegido.');
+            _showModal('Aviso', 'Ese cliente no tiene compras en el periodo elegido.');
             document.getElementById('cliLoading').textContent = 'Toca «Analizar».';
             return;
         }
@@ -2075,15 +2082,45 @@
         });
         if (soloADC) lista = lista.filter(c => c.tieneADC);
 
-        // Ordenar por la métrica elegida
-        lista.sort((a, b) => (medir === 'monto' ? b.monto - a.monto : b.unidades - a.unidades));
-        _cliVolData = lista;
-        _cliVolMedir = medir;
+        _cliVolData = lista;   // datos crudos con desglose completo por producto
         _cliVolRango = rango;
 
+        // Mostrar los controles post-análisis (alcance + métrica) y aplicar
         document.getElementById('cliFiltros').classList.remove('hidden');
+        document.getElementById('cliVolPostFiltros').classList.remove('hidden');
         document.getElementById('cliBuscar').value = '';
-        renderVolumen(lista, medir, rango);
+        aplicarFiltrosVolumen();
+    }
+
+    // Recalcula el ranking según alcance + métrica elegidos (en memoria, sin releer)
+    function aplicarFiltrosVolumen() {
+        const tipoAlc = document.getElementById('cliVolAlcanceTipo')?.value || 'todo';
+        const valorAlc = document.getElementById('cliVolAlcanceValor')?.value || '';
+        const medir = document.getElementById('cliVolMedir2')?.value || 'unidades';
+        _cliVolMedir = medir;
+
+        const pasaAlcance = (prodId) => {
+            if (tipoAlc === 'todo') return true;
+            const m = _masterCache[prodId] || {};
+            if (tipoAlc === 'rubro')    return m.rubro === valorAlc;
+            if (tipoAlc === 'segmento') return m.segmento === valorAlc;
+            if (tipoAlc === 'marca')    return m.marca === valorAlc;
+            if (tipoAlc === 'producto') return prodId === valorAlc;
+            return true;
+        };
+
+        // Recalcular volumen de cada cliente según el alcance, desde su desglose
+        const recalculada = _cliVolData.map(c => {
+            let unidades = 0, monto = 0;
+            Object.entries(c.productos || {}).forEach(([pid, d]) => {
+                if (pasaAlcance(pid)) { unidades += d.unidades; monto += d.monto; }
+            });
+            return { ...c, unidades, monto };
+        }).filter(c => (tipoAlc === 'todo') || c.unidades > 0 || c.monto > 0);
+
+        recalculada.sort((a, b) => (medir === 'monto' ? b.monto - a.monto : b.unidades - a.unidades));
+        _cliVolFiltrada = recalculada;
+        renderVolumen(recalculada, medir, _cliVolRango);
     }
 
     function renderVolumen(listaFull, medir, rango) {
@@ -2352,11 +2389,19 @@
                     <div class="text-[9px] text-gray-400 text-center">Verde ≤8d · Azul ≤15d · Ámbar ≤21d · Rojo &gt;21d</div>
                     <p class="text-[10px] text-gray-500 mt-2">Pendiente actual: <strong>${c.compromiso ? (c.compromiso.pendientePct*100).toFixed(1) : 0}%</strong> de lo despachado en el ciclo activo</p>
                 </div>
-                <div class="p-3 border-t shrink-0"><button id="cliDetCerrar" class="w-full py-2 bg-gray-100 text-gray-600 rounded font-bold text-sm">Cerrar</button></div>
+                <div class="p-3 border-t shrink-0 flex gap-2">
+                    <button id="cliDetCXC" class="flex-1 py-2 bg-teal-600 text-white rounded font-bold text-sm hover:bg-teal-700 transition">📄 Ver en CXC</button>
+                    <button id="cliDetCerrar" class="flex-1 py-2 bg-gray-100 text-gray-600 rounded font-bold text-sm">Cerrar</button>
+                </div>
             </div>`;
         document.body.appendChild(ov);
         ov.addEventListener('click', e => { if (e.target === ov) ov.remove(); });
         document.getElementById('cliDetCerrar').addEventListener('click', () => ov.remove());
+        document.getElementById('cliDetCXC').addEventListener('click', () => {
+            ov.remove();
+            if (window.abrirCXCCliente) window.abrirCXCCliente(c.nombre);
+            else _showModal('Aviso', 'No se pudo abrir el CXC.');
+        });
     }
 
     // M2 — Exportar a Excel
@@ -2392,6 +2437,7 @@
 
 })();
 // redeploy trigger 1783190804
+
 
 
 
