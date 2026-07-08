@@ -92,7 +92,10 @@
             <div class="p-2 sm:p-4 pt-6 w-full max-w-4xl mx-auto">
                 <div class="bg-white/90 backdrop-blur-sm p-4 rounded-lg shadow-xl min-h-[80vh] flex flex-col">
                     <div class="flex flex-col md:flex-row justify-between items-center mb-4 gap-3">
-                        <h1 class="text-2xl font-bold text-gray-800 tracking-tight">Cuentas por Cobrar</h1>
+                        <div>
+                            <h1 class="text-2xl font-bold text-gray-800 tracking-tight">Cuentas por Cobrar</h1>
+                            <button id="cxcTasaBcvDisplay" class="text-xs font-bold text-purple-600 hover:text-purple-800 hover:underline transition mt-0.5 cursor-pointer">(BCV ----- --/--/--)</button>
+                        </div>
                         <div class="flex flex-col items-end text-right w-full md:w-auto space-y-2">
                             <div class="flex gap-2 w-full justify-end">
                                 <button id="backToMenuBtn" class="px-4 py-1.5 bg-gray-400 text-white rounded shadow hover:bg-gray-500 text-sm font-semibold transition">Volver</button>
@@ -127,6 +130,17 @@
         `;
 
         document.getElementById('backToMenuBtn').addEventListener('click', _showMainMenu);
+
+        // Mostrar la tasa BCV de hoy bajo el título + clic abre el calendario (solo lectura)
+        (async () => {
+            const disp = document.getElementById('cxcTasaBcvDisplay');
+            if (disp && window.textoTasaHoyBCV) {
+                disp.textContent = await window.textoTasaHoyBCV();
+                disp.addEventListener('click', () => {
+                    if (window.abrirCalendarioTasas) window.abrirCalendarioTasas(() => window.showCXCView());
+                });
+            }
+        })();
         
         if (_userRole === 'admin') {
             document.getElementById('manageTasasBtn').addEventListener('click', showTasasBCVManagementView);
@@ -164,20 +178,34 @@
     // TASAS BCV — Vista tipo CALENDARIO
     // ═══════════════════════════════════════════════════════════
     let _calYear, _calMonth; // mes/año actualmente visible en el calendario
+    let _calSoloLectura = false; // true = vista de solo lectura (no admin)
+    let _calVolverFn = null;     // función de "Volver" personalizada
 
-    async function showTasasBCVManagementView() {
+    async function showTasasBCVManagementView(opciones) {
+        opciones = opciones || {};
+        _calSoloLectura = !!opciones.soloLectura;
+        _calVolverFn = opciones.volver || null;
         const hoy = new Date();
         _calYear  = hoy.getFullYear();
         _calMonth = hoy.getMonth(); // 0-11
+
+        // Asegurar que las tasas estén cargadas (si se abre sin pasar por CXC)
+        if (!_tasasCache || Object.keys(_tasasCache).length === 0) {
+            try { await loadTasasBCV(); } catch (e) {}
+        }
+
+        const btnVolver = _calSoloLectura && _calVolverFn
+            ? `<button id="calVolverBtn" class="px-3 py-1.5 bg-gray-400 text-white text-sm rounded hover:bg-gray-500 font-bold transition">Volver</button>`
+            : `<button onclick="window.showCXCView()" class="px-3 py-1.5 bg-gray-400 text-white text-sm rounded hover:bg-gray-500 font-bold transition">Volver</button>`;
 
         _mainContent.innerHTML = `
             <div class="p-3 pt-8 w-full max-w-lg mx-auto">
                 <div class="bg-white/95 backdrop-blur-sm p-4 sm:p-6 rounded-lg shadow-xl">
                     <div class="flex items-center justify-between mb-4">
-                        <h2 class="text-xl font-bold text-gray-800 flex items-center gap-2">💵 Tasas BCV</h2>
-                        <button onclick="window.showCXCView()" class="px-3 py-1.5 bg-gray-400 text-white text-sm rounded hover:bg-gray-500 font-bold transition">Volver</button>
+                        <h2 class="text-xl font-bold text-gray-800 flex items-center gap-2">💵 Tasas BCV${_calSoloLectura ? ' <span class="text-[10px] bg-gray-200 text-gray-500 px-1.5 py-0.5 rounded font-bold uppercase">Solo lectura</span>' : ''}</h2>
+                        ${btnVolver}
                     </div>
-                    <p class="text-xs text-gray-500 mb-4">Toca un día para registrar o editar su tasa. Los días con tasa aparecen resaltados.</p>
+                    <p class="text-xs text-gray-500 mb-4">${_calSoloLectura ? 'Consulta los valores históricos de la tasa BCV. Los días con tasa aparecen resaltados.' : 'Toca un día para registrar o editar su tasa. Los días con tasa aparecen resaltados.'}</p>
 
                     <!-- Navegación de mes -->
                     <div class="flex items-center justify-between mb-3 bg-purple-50 rounded-lg p-2 border border-purple-100">
@@ -211,6 +239,8 @@
             _calYear = h.getFullYear(); _calMonth = h.getMonth();
             renderCalendario();
         });
+        const volverBtn = document.getElementById('calVolverBtn');
+        if (volverBtn && _calVolverFn) volverBtn.addEventListener('click', _calVolverFn);
 
         renderCalendario();
     }
@@ -259,7 +289,7 @@
                         ${esHoy && tiene ? 'ring-2 ring-yellow-300' : ''}">
                     <span class="text-sm font-bold leading-none">${d}</span>
                     ${tiene
-                        ? `<span class="text-[9px] font-semibold leading-none mt-0.5 opacity-90">${Number(tasa).toFixed(2)}</span>`
+                        ? `<span class="text-[8px] font-semibold leading-none mt-0.5 opacity-90">${Number(tasa).toFixed(4)}</span>`
                         : `<span class="text-[9px] leading-none mt-0.5 text-gray-300">—</span>`}
                 </button>`;
         }
@@ -287,6 +317,28 @@
         const overlay = document.createElement('div');
         overlay.id = 'tasaEditorOverlay';
         overlay.className = 'fixed inset-0 z-[9998] bg-black/50 flex items-center justify-center p-4';
+
+        // MODO SOLO LECTURA: solo muestra el valor, sin editar
+        if (_calSoloLectura) {
+            overlay.innerHTML = `
+                <div class="bg-white w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden">
+                    <div class="bg-purple-600 text-white px-4 py-3">
+                        <div class="text-xs opacity-80 uppercase tracking-wider">Tasa BCV</div>
+                        <div class="font-bold text-base capitalize">${fechaLegible}</div>
+                    </div>
+                    <div class="p-6 text-center">
+                        ${existente !== undefined && existente !== null
+                            ? `<div class="text-3xl font-black text-purple-800">${Number(existente).toFixed(4)}</div><div class="text-xs text-gray-500 mt-1">Bs / USD</div>`
+                            : `<div class="text-2xl font-black text-gray-300">-----</div><div class="text-xs text-gray-400 mt-1">Sin tasa registrada ese día</div>`}
+                    </div>
+                    <div class="p-3 border-t"><button id="tasaVerCerrar" class="w-full py-2.5 bg-gray-100 text-gray-600 font-bold rounded-lg hover:bg-gray-200 transition text-sm">Cerrar</button></div>
+                </div>`;
+            document.body.appendChild(overlay);
+            overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+            document.getElementById('tasaVerCerrar').addEventListener('click', () => overlay.remove());
+            return;
+        }
+
         overlay.innerHTML = `
             <div class="bg-white w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden">
                 <div class="bg-purple-600 text-white px-4 py-3">
@@ -1403,6 +1455,37 @@
 
     // Acceso directo desde otros módulos: abre la vista CXC y muestra el detalle
     // del cliente indicado (por nombre). Busca coincidencia tolerante si no es exacta.
+    // ═══════════════════════════════════════════════════════════
+    // API GLOBAL DE TASAS BCV (para menú principal y CXC header)
+    // ═══════════════════════════════════════════════════════════
+    // Devuelve { rate, fecha, iso } de la tasa de HOY, o null si no está cargada.
+    window.getTasaHoyBCV = async function() {
+        if (!_tasasCache || Object.keys(_tasasCache).length === 0) {
+            try { await loadTasasBCV(); } catch (e) {}
+        }
+        const h = new Date();
+        const iso = `${h.getFullYear()}-${String(h.getMonth()+1).padStart(2,'0')}-${String(h.getDate()).padStart(2,'0')}`;
+        const rate = _tasasCache ? _tasasCache[iso] : undefined;
+        if (rate === undefined || rate === null) return { rate: null, iso, fecha: h };
+        return { rate: Number(rate), iso, fecha: h };
+    };
+
+    // Abre el calendario de tasas en modo SOLO LECTURA. volverFn = a dónde regresar.
+    window.abrirCalendarioTasas = async function(volverFn) {
+        await showTasasBCVManagementView({ soloLectura: true, volver: volverFn });
+    };
+
+    // Formatea el texto "(BCV valor dd/mm/yy)" para hoy. Rayitas si no hay tasa.
+    window.textoTasaHoyBCV = async function() {
+        const t = await window.getTasaHoyBCV();
+        const h = t.fecha;
+        const dd = String(h.getDate()).padStart(2,'0');
+        const mm = String(h.getMonth()+1).padStart(2,'0');
+        const yy = String(h.getFullYear()).slice(-2);
+        const valor = (t.rate !== null && t.rate !== undefined) ? t.rate.toFixed(4) : '-----';
+        return `(BCV ${valor} ${dd}/${mm}/${yy})`;
+    };
+
     window.abrirCXCCliente = async function(nombre) {
         await window.showCXCView();
         // Esperar a que _cxcDataCache esté listo tras cargar la vista
@@ -1429,6 +1512,7 @@
         }, 100);
     };
 })();
+
 
 
 
