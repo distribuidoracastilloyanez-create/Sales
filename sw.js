@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v28'; // v28: fix padding botones vendedores (volver a tamano grande)
+const CACHE_NAME = 'ventas-app-cache-v29'; // v29: tasa BCV de hoy en menu y CXC + calendario solo lectura + 4 decimales
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
@@ -179,6 +179,7 @@ self.addEventListener('fetch', event => {
             })
     );
 });
+
 
 
 
