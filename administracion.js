@@ -1702,8 +1702,10 @@
     // ── Análisis de volumen de compra por cliente ──
     // Lee ventas/cierres de todos los vendedores una vez, agrupa por cliente,
     // filtrando por rango de fechas y por alcance (todo/rubro/segmento/marca/producto).
-    async function analizarVolumenClientes(rango, alcance) {
+    async function analizarVolumenClientes(rango, alcance, clienteFiltro) {
+        // clienteFiltro (opcional): { id, nombre } → solo ese cliente (ahorra lecturas)
         const dentroRango = (diaISO) => diaISO >= rango.inicio && diaISO <= rango.fin;
+        const nFiltroNombre = clienteFiltro ? normNombre(clienteFiltro.nombre) : '';
 
         const pasaAlcance = (prodId) => {
             if (alcance.tipo === 'todo') return true;
@@ -1715,15 +1717,35 @@
             return true;
         };
 
+        // ¿La venta pertenece al cliente filtrado? (por id o por nombre normalizado)
+        const esDelCliente = (v) => {
+            if (!clienteFiltro) return true;
+            if (clienteFiltro.id && v.clienteId === clienteFiltro.id) return true;
+            return normNombre(v.clienteNombre) === nFiltroNombre ||
+                   normNombre(v.clienteNombre).includes(nFiltroNombre) ||
+                   nFiltroNombre.includes(normNombre(v.clienteNombre));
+        };
+
         // clienteId -> { id, nombre, unidades, monto }
         const porCliente = {};
         const todosVendedores = _usersCache.map(u => u.id);
 
         for (const uid of todosVendedores) {
-            const ventasSnap = await _getDocs(_collection(_db, `artifacts/${_appId}/users/${uid}/ventas`));
+            // Ventas activas: si hay cliente con id, usar query filtrado (menos lecturas)
+            let ventasSnap;
+            if (clienteFiltro && clienteFiltro.id) {
+                ventasSnap = await _getDocs(_query(
+                    _collection(_db, `artifacts/${_appId}/users/${uid}/ventas`),
+                    _where('clienteId', '==', clienteFiltro.id)));
+            } else {
+                ventasSnap = await _getDocs(_collection(_db, `artifacts/${_appId}/users/${uid}/ventas`));
+            }
+            // Cierres: se leen completos (las ventas están dentro de un array, no se
+            // pueden filtrar por query); se filtra por cliente en memoria.
             const cierresSnap = await _getDocs(_collection(_db, `artifacts/${_appId}/users/${uid}/cierres`));
 
             const procesar = (v) => {
+                if (!esDelCliente(v)) return;
                 const f = v.fecha?.toDate ? v.fecha.toDate() : new Date(v.fecha);
                 if (!f) return;
                 const diaISO = `${f.getFullYear()}-${String(f.getMonth()+1).padStart(2,'0')}-${String(f.getDate()).padStart(2,'0')}`;
@@ -1774,6 +1796,14 @@
                             <input type="checkbox" id="cliADC" class="w-4 h-4 accent-purple-600">
                             <span class="text-xs font-bold text-purple-800">Solo clientes con ADC</span>
                         </label>
+
+                        <!-- Selector de cliente ANTES de analizar (ahorra lecturas) -->
+                        <div>
+                            <label class="block text-[10px] font-bold text-purple-800 uppercase mb-1">Cliente</label>
+                            <input type="text" id="cliPreBuscar" placeholder="Todos los clientes (escribe para elegir uno)" list="cliDatalist" class="w-full text-xs border border-purple-300 rounded p-1.5 bg-white outline-none">
+                            <datalist id="cliDatalist"></datalist>
+                            <p id="cliPreHint" class="text-[9px] text-gray-400 mt-0.5">Deja vacío para analizar todos. Elige uno para leer solo sus datos.</p>
+                        </div>
 
                         <!-- Controles VOLUMEN -->
                         <div id="cliVolControls" class="space-y-2">
@@ -1867,9 +1897,29 @@
         await Promise.all([loadMaster(), loadUsers(), loadClientes(), loadCXC(), loadADC(), getSortFn()]);
         document.getElementById('cliLoading').textContent = 'Elige el modo y toca «Analizar».';
 
+        // Poblar datalist con nombres de clientes (para el selector previo)
+        poblarDatalistClientes();
+
         renderCliPeriodoControl();
         renderCliAlcanceValor();
         setCliModo('volumen');
+    }
+
+    // Llena el datalist con nombres de clientes (comercial). Combina la lista de
+    // clientes registrados + los nombres del CXC (por si alguno no está en clientes).
+    function poblarDatalistClientes() {
+        const dl = document.getElementById('cliDatalist');
+        if (!dl) return;
+        const nombres = new Set();
+        (_clientesCache || []).forEach(cl => { if (cl.nombreComercial) nombres.add(cl.nombreComercial); });
+        (_cxcCache || []).forEach(cx => { if (cx.name) nombres.add(cx.name.trim()); });
+        const orden = [...nombres].sort((a, b) => a.localeCompare(b));
+        dl.innerHTML = orden.map(n => `<option value="${n.replace(/"/g, '&quot;')}"></option>`).join('');
+    }
+
+    // Devuelve el nombre del cliente elegido en el selector previo, o '' si es "todos"
+    function clienteElegidoPrevio() {
+        return (document.getElementById('cliPreBuscar')?.value || '').trim();
     }
 
     function setCliModo(modo) {
@@ -1998,7 +2048,23 @@
         if (tipoAlc !== 'todo' && !valorAlc) { _showModal('Aviso', 'Selecciona el valor del alcance (rubro, segmento, marca o producto).'); document.getElementById('cliLoading').textContent = 'Toca «Analizar».'; return; }
         const medir = document.getElementById('cliMedir').value;
 
-        let lista = await analizarVolumenClientes(rango, { tipo: tipoAlc, valor: valorAlc });
+        // ¿Cliente específico elegido en el selector previo?
+        const elegido = clienteElegidoPrevio();
+        let clienteFiltro = null;
+        if (elegido) {
+            // Resolver su id desde la lista de clientes (por nombre normalizado)
+            const nEleg = normNombre(elegido);
+            const cl = (_clientesCache || []).find(x =>
+                normNombre(x.nombreComercial) === nEleg || normNombre(x.nombrePersonal) === nEleg);
+            clienteFiltro = { id: cl ? cl.id : null, nombre: elegido };
+        }
+
+        let lista = await analizarVolumenClientes(rango, { tipo: tipoAlc, valor: valorAlc }, clienteFiltro);
+        if (elegido && !lista.length) {
+            _showModal('Aviso', 'Ese cliente no tiene compras en el periodo/alcance elegido.');
+            document.getElementById('cliLoading').textContent = 'Toca «Analizar».';
+            return;
+        }
 
         // Resolver id real y ADC; adjuntar calificación de pago
         lista.forEach(c => {
@@ -2128,9 +2194,22 @@
     }
 
     async function ejecutarPago(soloADC) {
-        // Calificar todos los clientes CXC
+        // Si hay un cliente elegido en el selector previo, solo se califica ese
+        const elegido = clienteElegidoPrevio();
+        const nElegido = elegido ? normNombre(elegido) : '';
+
+        let fuente = _cxcCache;
+        if (nElegido) {
+            fuente = _cxcCache.filter(cx => {
+                const n = normNombre(cx.name);
+                return n === nElegido || n.includes(nElegido) || nElegido.includes(n);
+            });
+            if (!fuente.length) { _showModal('Aviso', 'Ese cliente no tiene historial en el CXC.'); document.getElementById('cliLoading').textContent = 'Toca «Analizar».'; return; }
+        }
+
+        // Calificar los clientes CXC de la fuente
         let lista = [];
-        _cxcCache.forEach(cxc => {
+        fuente.forEach(cxc => {
             const cal = calificarPagoCliente(cxc);
             if (!cal) return;
             const realId = idDesdeNombreCXC(cxc.name);
@@ -2313,6 +2392,7 @@
 
 })();
 // redeploy trigger 1783190804
+
 
 
 
