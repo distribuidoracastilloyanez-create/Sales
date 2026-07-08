@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v24'; // v24: selector de cliente previo (ahorra lecturas) en Analista de Clientes
+const CACHE_NAME = 'ventas-app-cache-v25'; // v25: filtros post-analisis en volumen + acceso directo a CXC
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
@@ -179,6 +179,7 @@ self.addEventListener('fetch', event => {
             })
     );
 });
+
 
 
 
