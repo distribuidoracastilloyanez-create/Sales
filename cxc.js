@@ -1400,7 +1400,36 @@
         handleShareClientHistory,
         searchConsolidatedConsignments
     };
+
+    // Acceso directo desde otros módulos: abre la vista CXC y muestra el detalle
+    // del cliente indicado (por nombre). Busca coincidencia tolerante si no es exacta.
+    window.abrirCXCCliente = async function(nombre) {
+        await window.showCXCView();
+        // Esperar a que _cxcDataCache esté listo tras cargar la vista
+        const buscar = () => {
+            if (!_cxcDataCache || !_cxcDataCache.length) return null;
+            const norm = s => normalizeStr(s || '');
+            const n = norm(nombre);
+            // Exacto primero, luego tolerante
+            let cli = _cxcDataCache.find(c => c.name === nombre);
+            if (!cli) cli = _cxcDataCache.find(c => norm(c.name) === n);
+            if (!cli) cli = _cxcDataCache.find(c => norm(c.name).includes(n) || n.includes(norm(c.name)));
+            return cli;
+        };
+        let intentos = 0;
+        const timer = setInterval(() => {
+            intentos++;
+            const cli = buscar();
+            if (cli) {
+                clearInterval(timer);
+                showClientDetailsByName(cli.name);
+            } else if (intentos > 20) {
+                clearInterval(timer); // ~2s sin encontrar: dejar la vista CXC abierta
+            }
+        }, 100);
+    };
 })();
+
 
 
 
