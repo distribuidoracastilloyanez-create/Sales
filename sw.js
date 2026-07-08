@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v27'; // v27: orden en volumen + dias ultimo pago + menu admin 2 columnas
+const CACHE_NAME = 'ventas-app-cache-v28'; // v28: fix padding botones vendedores (volver a tamano grande)
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
@@ -179,6 +179,7 @@ self.addEventListener('fetch', event => {
             })
     );
 });
+
 
 
 
