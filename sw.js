@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v22'; // v22: Analista de Clientes (volumen + estructura de pago CXC)
+const CACHE_NAME = 'ventas-app-cache-v23'; // v23: Analista Clientes - modelo cuenta corriente + 2 calificaciones + buscadores
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
@@ -179,6 +179,7 @@ self.addEventListener('fetch', event => {
             })
     );
 });
+
 
 
 
