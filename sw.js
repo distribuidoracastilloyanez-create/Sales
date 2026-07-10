@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v31'; // v31: parser CXC detecta multiples clientes embutidos en una hoja
+const CACHE_NAME = 'ventas-app-cache-v32'; // v32: Analista de Clientes por Datos (estado, ultima compra, errores, compartir imagen)
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
@@ -179,6 +179,7 @@ self.addEventListener('fetch', event => {
             })
     );
 });
+
 
 
 
