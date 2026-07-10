@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v30'; // v30: tasa BCV mas grande y gris oscuro
+const CACHE_NAME = 'ventas-app-cache-v31'; // v31: parser CXC detecta multiples clientes embutidos en una hoja
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
@@ -179,6 +179,7 @@ self.addEventListener('fetch', event => {
             })
     );
 });
+
 
 
 
