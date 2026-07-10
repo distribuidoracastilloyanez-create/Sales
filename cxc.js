@@ -1342,6 +1342,47 @@
                         const row = rows[i];
                         if (!row || row.length < 2) continue;
 
+                        // ── NUEVA CABECERA DE CLIENTE EMBUTIDA EN LA MISMA HOJA ──
+                        // A veces la conversión PDF→Excel mete DOS o más clientes en una
+                        // sola hoja. Si aparece una fila "CLIENTE" a media hoja, se cierra
+                        // el cliente actual y se abre uno nuevo con esta cabecera.
+                        const col0 = (row[0] || '').toString().trim().toUpperCase();
+                        if (col0 === 'CLIENTE' || col0.startsWith('CLIENTE ')) {
+                            // Nombre del nuevo cliente (col[1] + posible col[2])
+                            const p1 = (row[1] || '').toString().trim();
+                            const p2 = (row[2] || '').toString().trim();
+                            const p2EsHeader = ['TOTALES','FECHA','NOMBRE','DEUDA'].some(h => p2.toUpperCase().startsWith(h));
+                            const nuevoNombre = (p1 + (p2 && !p2EsHeader ? p2 : '')).trim();
+                            if (nuevoNombre) {
+                                // Buscar el TOTALES de este nuevo cliente en las filas siguientes
+                                let nuevoTotal = 0;
+                                for (let j = i + 1; j < Math.min(i + 6, rows.length); j++) {
+                                    const rj = rows[j];
+                                    if (rj && rj[0] && rj[0].toString().toUpperCase() === 'TOTALES') {
+                                        const rawT = rj[2];
+                                        const rawTS = (rawT == null ? '' : rawT.toString()).trim();
+                                        const cero = rawTS === '' || rawTS === '-' || rawTS.replace(/[$\s]/g, '') === '-';
+                                        nuevoTotal = cero ? 0 : (parseFloat(rawTS.replace(/[^0-9.-]/g, '')) || 0);
+                                        break;
+                                    }
+                                }
+                                // Cerrar cliente actual, abrir el nuevo
+                                currentClientData = { name: nuevoNombre, amount: nuevoTotal, sheetName: sheetName, transactions: [] };
+                                allClients.push(currentClientData);
+                                // Saltar hasta después de la fila FECHA de este nuevo cliente
+                                let salto = i + 1;
+                                for (let j = i + 1; j < Math.min(i + 8, rows.length); j++) {
+                                    const rj = rows[j];
+                                    if (rj && rj[0] && rj[0].toString().toUpperCase().includes('FECHA')) { salto = j + 1; break; }
+                                    salto = j + 1;
+                                }
+                                i = salto - 1; // -1 porque el for hace i++
+                            }
+                            continue;
+                        }
+                        // Saltar filas de cabecera intermedias (NOMBRE, TOTALES, FECHA sueltas)
+                        if (['NOMBRE','TOTALES','FECHA','DEUDA'].some(h => col0.startsWith(h))) continue;
+
                         const dateRaw = row[0];
                         if (!dateRaw) continue;
 
@@ -1512,6 +1553,7 @@
         }, 100);
     };
 })();
+
 
 
 
