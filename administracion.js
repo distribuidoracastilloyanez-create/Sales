@@ -175,6 +175,54 @@
         return _adcSet;
     }
 
+    // ─── DATOS PARA ANALISTA POR DATOS ──────────────────────
+    let _docsSet = null;   // Set de clienteId con documentos
+    let _imgsSet = null;   // Set de clienteId con imágenes
+    let _ultimaCompraMap = null; // Map clienteId -> fecha última compra (Date)
+
+    // Carga los sets de clientes con documentos y con imágenes (una lectura por categoría)
+    async function loadArchivosCategorias() {
+        if (_docsSet && _imgsSet) return;
+        _docsSet = new Set();
+        _imgsSet = new Set();
+        try {
+            const archivosRef = _collection(_db, `artifacts/${getPublicDataId()}/public/data/archivos_clientes`);
+            const snap = await _getDocs(archivosRef);
+            snap.forEach(d => {
+                const x = d.data();
+                if (!x.clienteId) return;
+                if (x.categoria === 'documentos') _docsSet.add(x.clienteId);
+                else if (x.categoria === 'imagenes') _imgsSet.add(x.clienteId);
+            });
+        } catch (e) { console.warn('No se pudieron cargar categorías de archivos:', e); }
+    }
+
+    // Calcula la fecha de última compra por cliente (recorre ventas + cierres)
+    async function loadUltimaCompra(forzar) {
+        if (_ultimaCompraMap && !forzar) return _ultimaCompraMap;
+        _ultimaCompraMap = new Map();
+        const registrar = (cid, fecha) => {
+            if (!cid || !fecha) return;
+            const prev = _ultimaCompraMap.get(cid);
+            if (!prev || fecha > prev) _ultimaCompraMap.set(cid, fecha);
+        };
+        for (const u of _usersCache) {
+            try {
+                const [ventasSnap, cierresSnap] = await Promise.all([
+                    _getDocs(_collection(_db, `artifacts/${_appId}/users/${u.id}/ventas`)),
+                    _getDocs(_collection(_db, `artifacts/${_appId}/users/${u.id}/cierres`))
+                ]);
+                const proc = (v) => {
+                    const f = v.fecha?.toDate ? v.fecha.toDate() : (v.fecha ? new Date(v.fecha) : null);
+                    if (f && !isNaN(f.getTime())) registrar(v.clienteId, f);
+                };
+                ventasSnap.docs.forEach(d => proc(d.data()));
+                cierresSnap.docs.forEach(dc => (dc.data().ventas || []).forEach(proc));
+            } catch (e) { console.warn('Error leyendo ventas de', u.id, e); }
+        }
+        return _ultimaCompraMap;
+    }
+
     // Resuelve el clienteId a partir de un nombre CXC (o null si no hay match)
     function idDesdeNombreCXC(nombreCXC) {
         if (!_indiceNombres) return null;
@@ -332,8 +380,16 @@
                         <button id="admCliBtn" class="w-full text-left px-4 py-4 bg-purple-50 border border-purple-200 rounded-lg hover:bg-purple-100 transition flex items-center gap-3">
                             <span class="w-11 h-11 bg-purple-600 text-white rounded-lg flex items-center justify-center text-xl shrink-0">👥</span>
                             <span>
-                                <span class="block font-bold text-gray-800">Analista de Clientes</span>
+                                <span class="block font-bold text-gray-800">Analista de Clientes por Compras y Pagos</span>
                                 <span class="block text-xs text-gray-500 mt-0.5">Ranking por compra y calificación de pago (CXC)</span>
+                            </span>
+                        </button>
+
+                        <button id="admCliDatosBtn" class="w-full text-left px-4 py-4 bg-cyan-50 border border-cyan-200 rounded-lg hover:bg-cyan-100 transition flex items-center gap-3">
+                            <span class="w-11 h-11 bg-cyan-600 text-white rounded-lg flex items-center justify-center text-xl shrink-0">🗂️</span>
+                            <span>
+                                <span class="block font-bold text-gray-800">Analista de Clientes por Datos</span>
+                                <span class="block text-xs text-gray-500 mt-0.5">Estado de datos, documentos, última compra y errores</span>
                             </span>
                         </button>
                     </div>
@@ -345,6 +401,7 @@
         document.getElementById('admAnaBtn').addEventListener('click', showAnalistaDatos);
         document.getElementById('admInvAnaBtn').addEventListener('click', showAnalistaInventario);
         document.getElementById('admCliBtn').addEventListener('click', showAnalistaClientes);
+        document.getElementById('admCliDatosBtn').addEventListener('click', showAnalistaClientesDatos);
 
         // Precargar datos base
         await Promise.all([loadUsers(), loadMaster(), loadConfig(), getSortFn()]);
@@ -2506,8 +2563,624 @@
         }
     }
 
+
+    // ════════════════════════════════════════════════════════
+    // ANALISTA DE CLIENTES POR DATOS
+    // ════════════════════════════════════════════════════════
+    let _cliDatosData = [];   // clientes enriquecidos con estado de datos
+    let _cliDatosVista = 'estado'; // 'estado' | 'ultimaCompra' | 'errores'
+
+    // Construye el objeto de estado de datos de cada cliente
+    function construirDatosClientes() {
+        const hoy = new Date();
+        return (_clientesCache || []).map(cl => {
+            const cep = (cl.codigoCEP || '').toString().trim().toUpperCase();
+            const tieneCEP = cep && cep !== 'N/A' && cep !== '';
+            const coord = (cl.coordenadas || '').toString().trim();
+            const tieneGPS = coord && /-?\d+\.?\d*\s*,\s*-?\d+\.?\d*/.test(coord);
+            const tel = (cl.telefono || '').toString().trim();
+            const tieneTel = tel.length >= 7;
+            const ultimaCompra = _ultimaCompraMap ? _ultimaCompraMap.get(cl.id) : null;
+            const diasSinComprar = ultimaCompra ? Math.floor((hoy - ultimaCompra) / 86400000) : null;
+
+            const estados = {
+                cep: tieneCEP,
+                gps: tieneGPS,
+                adc: _adcSet ? _adcSet.has(cl.id) : false,
+                doc: _docsSet ? _docsSet.has(cl.id) : false,
+                foto: _imgsSet ? _imgsSet.has(cl.id) : false,
+                tel: tieneTel,
+                retencion: !!cl.aplicaRetencion
+            };
+            // Completitud: cuántos de los 5 datos "importantes" tiene (cep, gps, doc, foto, tel)
+            const importantes = ['cep', 'gps', 'doc', 'foto', 'tel'];
+            const completos = importantes.filter(k => estados[k]).length;
+            const completitud = Math.round((completos / importantes.length) * 100);
+
+            return {
+                id: cl.id,
+                nombreComercial: cl.nombreComercial || '(sin nombre)',
+                nombrePersonal: cl.nombrePersonal || '',
+                zona: cl.sector || '',
+                telefono: tel,
+                codigoCEP: tieneCEP ? cep : '',
+                coordenadas: coord,
+                aplicaRetencion: !!cl.aplicaRetencion,
+                saldoVacios: cl.saldoVacios || {},
+                estados, completitud,
+                ultimaCompra, diasSinComprar,
+                _raw: cl
+            };
+        });
+    }
+
+    // ── DETECCIÓN DE ERRORES / COINCIDENCIAS ──
+    // Distancia de Levenshtein normalizada para nombres muy parecidos
+    function similitud(a, b) {
+        a = normNombre(a); b = normNombre(b);
+        if (!a || !b) return 0;
+        if (a === b) return 1;
+        const m = a.length, n = b.length;
+        const dp = Array.from({ length: m + 1 }, (_, i) => [i, ...Array(n).fill(0)]);
+        for (let j = 0; j <= n; j++) dp[0][j] = j;
+        for (let i = 1; i <= m; i++)
+            for (let j = 1; j <= n; j++)
+                dp[i][j] = Math.min(
+                    dp[i-1][j] + 1, dp[i][j-1] + 1,
+                    dp[i-1][j-1] + (a[i-1] === b[j-1] ? 0 : 1));
+        const dist = dp[m][n];
+        return 1 - dist / Math.max(m, n);
+    }
+
+    function detectarErroresClientes() {
+        const data = _cliDatosData;
+        const problemas = [];
+
+        // 1. Nombres comerciales EXACTAMENTE duplicados
+        const porNombre = {};
+        data.forEach(c => {
+            const n = normNombre(c.nombreComercial);
+            if (!n) return;
+            (porNombre[n] = porNombre[n] || []).push(c);
+        });
+        Object.entries(porNombre).forEach(([n, arr]) => {
+            if (arr.length > 1) problemas.push({
+                tipo: 'duplicado_exacto',
+                icono: '👯',
+                titulo: 'Nombre comercial duplicado',
+                detalle: `"${arr[0].nombreComercial}" aparece ${arr.length} veces`,
+                clientes: arr
+            });
+        });
+
+        // 2. Códigos CEP duplicados (dos clientes con el mismo CEP)
+        const porCEP = {};
+        data.forEach(c => {
+            if (!c.codigoCEP) return;
+            (porCEP[c.codigoCEP] = porCEP[c.codigoCEP] || []).push(c);
+        });
+        Object.entries(porCEP).forEach(([cep, arr]) => {
+            if (arr.length > 1) problemas.push({
+                tipo: 'cep_duplicado',
+                icono: '🔢',
+                titulo: 'Código CEP repetido',
+                detalle: `El CEP "${cep}" lo tienen ${arr.length} clientes`,
+                clientes: arr
+            });
+        });
+
+        // 3. Teléfonos duplicados
+        const porTel = {};
+        data.forEach(c => {
+            const t = (c.telefono || '').replace(/\D/g, '');
+            if (t.length < 7) return;
+            (porTel[t] = porTel[t] || []).push(c);
+        });
+        Object.entries(porTel).forEach(([tel, arr]) => {
+            if (arr.length > 1) problemas.push({
+                tipo: 'tel_duplicado',
+                icono: '📞',
+                titulo: 'Teléfono repetido',
+                detalle: `El teléfono "${tel}" lo tienen ${arr.length} clientes`,
+                clientes: arr
+            });
+        });
+
+        // 4. Coordenadas GPS idénticas (posible error de copiado)
+        const porCoord = {};
+        data.forEach(c => {
+            if (!c.estados.gps) return;
+            const key = c.coordenadas.replace(/\s/g, '');
+            (porCoord[key] = porCoord[key] || []).push(c);
+        });
+        Object.entries(porCoord).forEach(([co, arr]) => {
+            if (arr.length > 1) problemas.push({
+                tipo: 'gps_duplicado',
+                icono: '📍',
+                titulo: 'Coordenadas GPS idénticas',
+                detalle: `${arr.length} clientes comparten la misma ubicación`,
+                clientes: arr
+            });
+        });
+
+        // 5. Nombres MUY parecidos (posible mismo cliente escrito distinto)
+        const yaReportados = new Set();
+        for (let i = 0; i < data.length; i++) {
+            for (let j = i + 1; j < data.length; j++) {
+                const a = data[i], b = data[j];
+                const na = normNombre(a.nombreComercial), nb = normNombre(b.nombreComercial);
+                if (na === nb) continue; // ya cubierto por duplicado exacto
+                const sim = similitud(a.nombreComercial, b.nombreComercial);
+                if (sim >= 0.82) {
+                    const key = [a.id, b.id].sort().join('|');
+                    if (yaReportados.has(key)) continue;
+                    yaReportados.add(key);
+                    problemas.push({
+                        tipo: 'nombre_parecido',
+                        icono: '🔍',
+                        titulo: 'Nombres muy parecidos',
+                        detalle: `"${a.nombreComercial}" vs "${b.nombreComercial}" (${Math.round(sim*100)}% similar)`,
+                        clientes: [a, b]
+                    });
+                }
+            }
+        }
+
+        // 6. Cliente donde el nombre comercial y personal están invertidos o iguales
+        data.forEach(c => {
+            if (c.nombrePersonal && normNombre(c.nombreComercial) === normNombre(c.nombrePersonal)) {
+                problemas.push({
+                    tipo: 'nombre_igual',
+                    icono: '⚠️',
+                    titulo: 'Nombre comercial = personal',
+                    detalle: `"${c.nombreComercial}" tiene el mismo nombre comercial y personal`,
+                    clientes: [c]
+                });
+            }
+        });
+
+        return problemas;
+    }
+
+
+    // ── VISTA PRINCIPAL: ANALISTA DE CLIENTES POR DATOS ──
+    async function showAnalistaClientesDatos() {
+        _mainContent.innerHTML = `
+            <div class="p-2 sm:p-3 pt-6 w-full max-w-3xl mx-auto">
+                <div class="bg-white/95 backdrop-blur-sm p-3 sm:p-4 rounded-lg shadow-xl">
+                    <div class="flex items-center justify-between mb-3">
+                        <h2 class="text-lg font-bold text-gray-800 flex items-center gap-2">🗂️ Clientes por Datos</h2>
+                        <button id="cdBack" class="px-3 py-1.5 bg-gray-400 text-white text-xs rounded hover:bg-gray-500 font-bold transition">Volver</button>
+                    </div>
+
+                    <!-- Sub-vistas -->
+                    <div class="grid grid-cols-3 gap-1.5 mb-3">
+                        <button id="cdVistaEstado" class="py-2 rounded text-[11px] font-bold border transition bg-cyan-600 text-white border-cyan-600">📊 Estado de datos</button>
+                        <button id="cdVistaCompra" class="py-2 rounded text-[11px] font-bold border transition bg-white text-cyan-700 border-cyan-300">📅 Última compra</button>
+                        <button id="cdVistaErrores" class="py-2 rounded text-[11px] font-bold border transition bg-white text-cyan-700 border-cyan-300">🔍 Errores</button>
+                    </div>
+
+                    <div id="cdLoading" class="text-center py-10 text-gray-400 text-sm">Cargando datos...</div>
+
+                    <!-- FILTROS (estado de datos) -->
+                    <div id="cdFiltrosEstado" class="hidden bg-cyan-50 border border-cyan-200 rounded-lg p-2 mb-3 space-y-2">
+                        <input type="text" id="cdBuscar" placeholder="Buscar cliente..." class="w-full text-xs border border-cyan-300 rounded p-1.5 outline-none">
+                        <div class="grid grid-cols-2 gap-1.5">
+                            <select id="cdZona" class="text-xs border border-cyan-300 rounded p-1.5 bg-white outline-none">
+                                <option value="">Todas las zonas</option>
+                            </select>
+                            <select id="cdFaltante" class="text-xs border border-cyan-300 rounded p-1.5 bg-white outline-none">
+                                <option value="">Todos</option>
+                                <option value="incompletos">⚠️ Datos incompletos</option>
+                                <option value="sinCep">Sin CEP</option>
+                                <option value="sinGps">Sin GPS</option>
+                                <option value="sinDoc">Sin documentos</option>
+                                <option value="sinFoto">Sin fotos</option>
+                                <option value="sinTel">Sin teléfono</option>
+                                <option value="sinAdc">Sin ADC</option>
+                                <option value="conAdc">Con ADC</option>
+                                <option value="conRet">Aplica retención</option>
+                            </select>
+                        </div>
+                        <div class="grid grid-cols-2 gap-1.5">
+                            <select id="cdOrden" class="text-xs border border-cyan-300 rounded p-1.5 bg-white outline-none">
+                                <option value="nombre">Orden: nombre</option>
+                                <option value="completitud">Menos completos primero</option>
+                                <option value="zona">Por zona</option>
+                            </select>
+                            <button id="cdCompartir" class="text-xs bg-cyan-600 text-white rounded p-1.5 font-bold hover:bg-cyan-700 transition">📤 Compartir imagen</button>
+                        </div>
+                    </div>
+
+                    <!-- FILTROS (última compra) -->
+                    <div id="cdFiltrosCompra" class="hidden bg-cyan-50 border border-cyan-200 rounded-lg p-2 mb-3 space-y-2">
+                        <select id="cdRangoCompra" class="w-full text-xs border border-cyan-300 rounded p-1.5 bg-white outline-none">
+                            <option value="7">Sin compra en los últimos 7 días</option>
+                            <option value="15">Sin compra en los últimos 15 días</option>
+                            <option value="21">Sin compra en los últimos 21 días</option>
+                            <option value="mas21">Sin compra en más de 21 días</option>
+                            <option value="nunca">Nunca han comprado</option>
+                        </select>
+                        <div class="grid grid-cols-2 gap-1.5">
+                            <select id="cdZonaCompra" class="text-xs border border-cyan-300 rounded p-1.5 bg-white outline-none">
+                                <option value="">Todas las zonas</option>
+                            </select>
+                            <button id="cdCompartirCompra" class="text-xs bg-cyan-600 text-white rounded p-1.5 font-bold hover:bg-cyan-700 transition">📤 Compartir imagen</button>
+                        </div>
+                    </div>
+
+                    <!-- Resumen -->
+                    <div id="cdResumen" class="hidden text-[11px] text-gray-600 mb-2 bg-gray-50 rounded p-2 border border-gray-200"></div>
+
+                    <!-- Contenido -->
+                    <div id="cdContenido" class="hidden"></div>
+                </div>
+            </div>`;
+
+        document.getElementById('cdBack').addEventListener('click', window.showAdministracionMenu);
+        document.getElementById('cdVistaEstado').addEventListener('click', () => setCdVista('estado'));
+        document.getElementById('cdVistaCompra').addEventListener('click', () => setCdVista('ultimaCompra'));
+        document.getElementById('cdVistaErrores').addEventListener('click', () => setCdVista('errores'));
+
+        // Cargar todos los datos necesarios
+        document.getElementById('cdLoading').innerHTML = '<svg class="animate-spin h-6 w-6 mx-auto mb-2 text-cyan-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path></svg>Cargando clientes, documentos y compras...';
+        await Promise.all([loadClientes(), loadUsers(), loadADC(), loadArchivosCategorias()]);
+        await loadUltimaCompra();
+        _cliDatosData = construirDatosClientes();
+
+        // Poblar selectores de zona
+        const zonas = [...new Set(_cliDatosData.map(c => c.zona).filter(Boolean))].sort();
+        ['cdZona', 'cdZonaCompra'].forEach(id => {
+            const sel = document.getElementById(id);
+            if (sel) sel.innerHTML = '<option value="">Todas las zonas</option>' + zonas.map(z => `<option value="${z}">${z}</option>`).join('');
+        });
+
+        // Listeners de filtros
+        let deb = null;
+        document.getElementById('cdBuscar').addEventListener('input', () => { clearTimeout(deb); deb = setTimeout(renderCdEstado, 180); });
+        ['cdZona', 'cdFaltante', 'cdOrden'].forEach(id => document.getElementById(id).addEventListener('change', renderCdEstado));
+        ['cdRangoCompra', 'cdZonaCompra'].forEach(id => document.getElementById(id).addEventListener('change', renderCdCompra));
+        document.getElementById('cdCompartir').addEventListener('click', () => compartirImagenDatos('estado'));
+        document.getElementById('cdCompartirCompra').addEventListener('click', () => compartirImagenDatos('compra'));
+
+        setCdVista('estado');
+    }
+
+    function setCdVista(vista) {
+        _cliDatosVista = vista;
+        document.getElementById('cdLoading').classList.add('hidden');
+        const on = 'py-2 rounded text-[11px] font-bold border transition bg-cyan-600 text-white border-cyan-600';
+        const off = 'py-2 rounded text-[11px] font-bold border transition bg-white text-cyan-700 border-cyan-300';
+        document.getElementById('cdVistaEstado').className = vista === 'estado' ? on : off;
+        document.getElementById('cdVistaCompra').className = vista === 'ultimaCompra' ? on : off;
+        document.getElementById('cdVistaErrores').className = vista === 'errores' ? on : off;
+
+        document.getElementById('cdFiltrosEstado').classList.toggle('hidden', vista !== 'estado');
+        document.getElementById('cdFiltrosCompra').classList.toggle('hidden', vista !== 'ultimaCompra');
+
+        if (vista === 'estado') renderCdEstado();
+        else if (vista === 'ultimaCompra') renderCdCompra();
+        else renderCdErrores();
+    }
+
+
+    // Chip de estado ✅/❌
+    function chipEstado(ok, label) {
+        return `<span class="inline-flex items-center gap-0.5 text-[9px] px-1 py-0.5 rounded ${ok ? 'bg-green-100 text-green-700' : 'bg-red-50 text-red-400'}">${ok ? '✅' : '❌'} ${label}</span>`;
+    }
+
+    function filtrarEstado() {
+        const term = (document.getElementById('cdBuscar')?.value || '').toLowerCase().trim();
+        const zona = document.getElementById('cdZona')?.value || '';
+        const falt = document.getElementById('cdFaltante')?.value || '';
+        const orden = document.getElementById('cdOrden')?.value || 'nombre';
+
+        let lista = _cliDatosData.slice();
+        if (term) lista = lista.filter(c => c.nombreComercial.toLowerCase().includes(term) || (c.nombrePersonal || '').toLowerCase().includes(term));
+        if (zona) lista = lista.filter(c => c.zona === zona);
+        if (falt === 'incompletos') lista = lista.filter(c => c.completitud < 100);
+        else if (falt === 'sinCep') lista = lista.filter(c => !c.estados.cep);
+        else if (falt === 'sinGps') lista = lista.filter(c => !c.estados.gps);
+        else if (falt === 'sinDoc') lista = lista.filter(c => !c.estados.doc);
+        else if (falt === 'sinFoto') lista = lista.filter(c => !c.estados.foto);
+        else if (falt === 'sinTel') lista = lista.filter(c => !c.estados.tel);
+        else if (falt === 'sinAdc') lista = lista.filter(c => !c.estados.adc);
+        else if (falt === 'conAdc') lista = lista.filter(c => c.estados.adc);
+        else if (falt === 'conRet') lista = lista.filter(c => c.aplicaRetencion);
+
+        if (orden === 'completitud') lista.sort((a, b) => a.completitud - b.completitud || a.nombreComercial.localeCompare(b.nombreComercial));
+        else if (orden === 'zona') lista.sort((a, b) => (a.zona || '').localeCompare(b.zona || '') || a.nombreComercial.localeCompare(b.nombreComercial));
+        else lista.sort((a, b) => a.nombreComercial.localeCompare(b.nombreComercial));
+        return lista;
+    }
+
+    function renderCdEstado() {
+        const cont = document.getElementById('cdContenido');
+        const resumen = document.getElementById('cdResumen');
+        cont.classList.remove('hidden');
+        resumen.classList.remove('hidden');
+
+        const lista = filtrarEstado();
+        const total = _cliDatosData.length;
+        const sinCep = _cliDatosData.filter(c => !c.estados.cep).length;
+        const sinGps = _cliDatosData.filter(c => !c.estados.gps).length;
+        const sinFoto = _cliDatosData.filter(c => !c.estados.foto).length;
+        const sinDoc = _cliDatosData.filter(c => !c.estados.doc).length;
+        const conAdc = _cliDatosData.filter(c => c.estados.adc).length;
+        resumen.innerHTML = `<strong>${total}</strong> clientes · ${sinCep} sin CEP · ${sinGps} sin GPS · ${sinFoto} sin fotos · ${sinDoc} sin docs · ${conAdc} con ADC`;
+
+        if (!lista.length) { cont.innerHTML = '<p class="text-center text-gray-400 py-6 text-sm">Ningún cliente coincide.</p>'; return; }
+
+        cont.innerHTML = `<p class="text-[10px] text-gray-400 mb-1">${lista.length} cliente(s) · toca para ver la ficha</p>
+            <div id="cdCards" class="space-y-1.5 max-h-[52vh] overflow-y-auto">
+            ${lista.map(c => `
+                <div class="border border-gray-200 rounded-lg p-2 hover:bg-cyan-50 cursor-pointer cd-card" data-id="${c.id}">
+                    <div class="flex items-center justify-between gap-2">
+                        <div class="min-w-0">
+                            <div class="font-bold text-gray-800 text-xs truncate">${c.nombreComercial}</div>
+                            <div class="text-[10px] text-gray-400 truncate">${c.nombrePersonal || '—'}${c.zona ? ' · ' + c.zona : ''}</div>
+                        </div>
+                        <div class="shrink-0 text-right">
+                            <div class="text-[10px] font-bold ${c.completitud === 100 ? 'text-green-600' : c.completitud >= 60 ? 'text-amber-600' : 'text-red-500'}">${c.completitud}%</div>
+                        </div>
+                    </div>
+                    <div class="flex flex-wrap gap-1 mt-1.5">
+                        ${chipEstado(c.estados.cep, 'CEP')}${chipEstado(c.estados.gps, 'GPS')}${chipEstado(c.estados.adc, 'ADC')}${chipEstado(c.estados.doc, 'Doc')}${chipEstado(c.estados.foto, 'Foto')}${chipEstado(c.estados.tel, 'Tel')}${c.aplicaRetencion ? '<span class="inline-flex items-center text-[9px] px-1 py-0.5 rounded bg-blue-100 text-blue-700">Ret</span>' : ''}
+                    </div>
+                </div>`).join('')}
+            </div>`;
+        cont.querySelectorAll('.cd-card').forEach(el =>
+            el.addEventListener('click', () => mostrarFichaCliente(el.dataset.id)));
+    }
+
+    function renderCdCompra() {
+        const cont = document.getElementById('cdContenido');
+        const resumen = document.getElementById('cdResumen');
+        cont.classList.remove('hidden');
+        resumen.classList.remove('hidden');
+
+        const rango = document.getElementById('cdRangoCompra')?.value || '7';
+        const zona = document.getElementById('cdZonaCompra')?.value || '';
+
+        let lista = _cliDatosData.slice();
+        if (zona) lista = lista.filter(c => c.zona === zona);
+
+        // Filtrar por rango de días sin comprar
+        lista = lista.filter(c => {
+            if (rango === 'nunca') return c.diasSinComprar === null;
+            if (c.diasSinComprar === null) return rango === 'mas21'; // nunca compró = más de 21
+            if (rango === '7') return c.diasSinComprar >= 7;
+            if (rango === '15') return c.diasSinComprar >= 15;
+            if (rango === '21') return c.diasSinComprar >= 21;
+            if (rango === 'mas21') return c.diasSinComprar > 21;
+            return true;
+        });
+        lista.sort((a, b) => (b.diasSinComprar || 99999) - (a.diasSinComprar || 99999));
+
+        resumen.innerHTML = `<strong>${lista.length}</strong> cliente(s) coinciden con el filtro de última compra`;
+
+        if (!lista.length) { cont.innerHTML = '<p class="text-center text-gray-400 py-6 text-sm">Ningún cliente en este rango.</p>'; return; }
+
+        cont.innerHTML = `<p class="text-[10px] text-gray-400 mb-1">${lista.length} cliente(s)</p>
+            <div id="cdCards" class="space-y-1.5 max-h-[52vh] overflow-y-auto">
+            ${lista.map(c => {
+                const dias = c.diasSinComprar;
+                const txt = dias === null ? 'Nunca ha comprado' : `Hace ${dias} día(s)`;
+                const col = dias === null ? 'text-gray-400' : dias > 21 ? 'text-red-600' : dias >= 15 ? 'text-amber-600' : 'text-gray-600';
+                const fecha = c.ultimaCompra ? c.ultimaCompra.toLocaleDateString('es-VE', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—';
+                return `<div class="border border-gray-200 rounded-lg p-2 hover:bg-cyan-50 cursor-pointer cd-card" data-id="${c.id}">
+                    <div class="flex items-center justify-between gap-2">
+                        <div class="min-w-0">
+                            <div class="font-bold text-gray-800 text-xs truncate">${c.nombreComercial}</div>
+                            <div class="text-[10px] text-gray-400 truncate">${c.zona || '—'}${c.telefono ? ' · ' + c.telefono : ''}</div>
+                        </div>
+                        <div class="shrink-0 text-right">
+                            <div class="text-[11px] font-bold ${col}">${txt}</div>
+                            <div class="text-[9px] text-gray-400">últ: ${fecha}</div>
+                        </div>
+                    </div>
+                </div>`;
+            }).join('')}
+            </div>`;
+        cont.querySelectorAll('.cd-card').forEach(el =>
+            el.addEventListener('click', () => mostrarFichaCliente(el.dataset.id)));
+    }
+
+    function renderCdErrores() {
+        const cont = document.getElementById('cdContenido');
+        const resumen = document.getElementById('cdResumen');
+        cont.classList.remove('hidden');
+        resumen.classList.remove('hidden');
+
+        const problemas = detectarErroresClientes();
+        resumen.innerHTML = problemas.length
+            ? `Se encontraron <strong>${problemas.length}</strong> posible(s) coincidencia(s) o error(es)`
+            : '✅ No se encontraron errores ni coincidencias sospechosas';
+
+        if (!problemas.length) { cont.innerHTML = '<p class="text-center text-green-600 py-6 text-sm">✅ Todo en orden. Sin duplicados ni errores detectados.</p>'; return; }
+
+        // Agrupar por tipo
+        cont.innerHTML = `<div class="space-y-2 max-h-[55vh] overflow-y-auto">
+            ${problemas.map(p => `
+                <div class="border border-amber-200 bg-amber-50 rounded-lg p-2">
+                    <div class="flex items-center gap-1.5 mb-1">
+                        <span>${p.icono}</span>
+                        <span class="font-bold text-xs text-amber-800">${p.titulo}</span>
+                    </div>
+                    <div class="text-[11px] text-gray-600 mb-1.5">${p.detalle}</div>
+                    <div class="flex flex-wrap gap-1">
+                        ${p.clientes.map(c => `<button class="text-[10px] bg-white border border-amber-300 rounded px-1.5 py-0.5 hover:bg-amber-100 cd-err-cli" data-id="${c.id}">${c.nombreComercial}${c.zona ? ' · ' + c.zona : ''}</button>`).join('')}
+                    </div>
+                </div>`).join('')}
+            </div>`;
+        cont.querySelectorAll('.cd-err-cli').forEach(el =>
+            el.addEventListener('click', () => mostrarFichaCliente(el.dataset.id)));
+    }
+
+
+    // ── FICHA PROFESIONAL DEL CLIENTE ──
+    function mostrarFichaCliente(id) {
+        const c = _cliDatosData.find(x => x.id === id);
+        if (!c) return;
+        document.getElementById('cdFichaOverlay')?.remove();
+        const ov = document.createElement('div');
+        ov.id = 'cdFichaOverlay';
+        ov.className = 'fixed inset-0 z-[9998] bg-black/50 flex items-center justify-center p-4';
+
+        const fila = (label, valor, ok) => `
+            <div class="flex items-center justify-between py-1.5 border-b border-gray-100">
+                <span class="text-[11px] text-gray-500">${label}</span>
+                <span class="text-xs font-semibold ${ok === false ? 'text-red-400' : 'text-gray-800'} text-right">${valor}</span>
+            </div>`;
+
+        const fecha = c.ultimaCompra ? c.ultimaCompra.toLocaleDateString('es-VE', { day: '2-digit', month: 'long', year: 'numeric' }) : 'Sin registro';
+        const diasTxt = c.diasSinComprar === null ? '—' : `hace ${c.diasSinComprar} día(s)`;
+
+        // Saldo de vacíos (si tiene)
+        const vaciosArr = Object.entries(c.saldoVacios || {}).filter(([k, v]) => v && v !== 0);
+        const vaciosTxt = vaciosArr.length ? vaciosArr.map(([k, v]) => `${k}: ${v}`).join(', ') : 'Sin deuda de envases';
+
+        ov.innerHTML = `
+            <div class="bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden max-h-[88vh] flex flex-col">
+                <div id="cdFichaCapturable" class="overflow-y-auto">
+                    <div class="bg-gradient-to-r from-cyan-600 to-cyan-700 text-white px-4 py-3">
+                        <div class="font-bold text-base">${c.nombreComercial}</div>
+                        <div class="text-xs opacity-90">${c.nombrePersonal || 'Sin nombre personal'}</div>
+                        <div class="mt-1.5 inline-flex items-center gap-1 text-[10px] bg-white/20 px-2 py-0.5 rounded-full">
+                            Completitud de datos: <strong>${c.completitud}%</strong>
+                        </div>
+                    </div>
+                    <div class="p-4">
+                        <div class="grid grid-cols-2 gap-1.5 mb-3">
+                            ${chipEstadoGrande(c.estados.cep, 'CEP')}
+                            ${chipEstadoGrande(c.estados.gps, 'GPS')}
+                            ${chipEstadoGrande(c.estados.adc, 'ADC')}
+                            ${chipEstadoGrande(c.estados.doc, 'Documentos')}
+                            ${chipEstadoGrande(c.estados.foto, 'Fotos')}
+                            ${chipEstadoGrande(c.estados.tel, 'Teléfono')}
+                        </div>
+                        <div class="bg-gray-50 rounded-lg p-3">
+                            ${fila('Zona / Sector', c.zona || 'No asignada', !!c.zona)}
+                            ${fila('Teléfono', c.telefono || 'Sin teléfono', c.estados.tel)}
+                            ${fila('Código CEP', c.codigoCEP || 'No registrado', c.estados.cep)}
+                            ${fila('Coordenadas', c.estados.gps ? c.coordenadas : 'Sin GPS', c.estados.gps)}
+                            ${fila('Aplica retención', c.aplicaRetencion ? 'Sí' : 'No', true)}
+                            ${fila('Envases (vacíos)', vaciosTxt, true)}
+                            ${fila('Última compra', fecha + ' (' + diasTxt + ')', c.diasSinComprar === null ? false : true)}
+                        </div>
+                    </div>
+                </div>
+                <div class="p-3 border-t shrink-0 flex gap-2">
+                    <button id="cdFichaImg" class="flex-1 py-2 bg-cyan-600 text-white rounded font-bold text-sm hover:bg-cyan-700 transition">📤 Compartir</button>
+                    <button id="cdFichaCerrar" class="flex-1 py-2 bg-gray-100 text-gray-600 rounded font-bold text-sm">Cerrar</button>
+                </div>
+            </div>`;
+        document.body.appendChild(ov);
+        ov.addEventListener('click', e => { if (e.target === ov) ov.remove(); });
+        document.getElementById('cdFichaCerrar').addEventListener('click', () => ov.remove());
+        document.getElementById('cdFichaImg').addEventListener('click', () => capturarYCompartir(document.getElementById('cdFichaCapturable'), `Ficha_${c.nombreComercial.replace(/[\s/]/g,'_')}`));
+    }
+
+    function chipEstadoGrande(ok, label) {
+        return `<div class="flex items-center gap-1.5 p-1.5 rounded ${ok ? 'bg-green-50' : 'bg-red-50'}">
+            <span>${ok ? '✅' : '❌'}</span>
+            <span class="text-[11px] font-semibold ${ok ? 'text-green-700' : 'text-red-500'}">${label}</span>
+        </div>`;
+    }
+
+    // ── COMPARTIR IMAGEN DE LA LISTA (por zona/filtro) ──
+    async function compartirImagenDatos(modo) {
+        let lista, titulo;
+        if (modo === 'estado') {
+            lista = filtrarEstado();
+            const zona = document.getElementById('cdZona')?.value || 'Todas las zonas';
+            const falt = document.getElementById('cdFaltante');
+            const faltTxt = falt && falt.selectedIndex > 0 ? falt.options[falt.selectedIndex].text : 'Todos';
+            titulo = `Clientes · ${zona} · ${faltTxt}`;
+        } else {
+            lista = _cliDatosData.slice();
+            const zona = document.getElementById('cdZonaCompra')?.value || '';
+            const rangoSel = document.getElementById('cdRangoCompra');
+            if (zona) lista = lista.filter(c => c.zona === zona);
+            const rango = rangoSel?.value || '7';
+            lista = lista.filter(c => {
+                if (rango === 'nunca') return c.diasSinComprar === null;
+                if (c.diasSinComprar === null) return rango === 'mas21';
+                if (rango === '7') return c.diasSinComprar >= 7;
+                if (rango === '15') return c.diasSinComprar >= 15;
+                if (rango === '21') return c.diasSinComprar >= 21;
+                if (rango === 'mas21') return c.diasSinComprar > 21;
+                return true;
+            });
+            lista.sort((a, b) => (b.diasSinComprar || 99999) - (a.diasSinComprar || 99999));
+            titulo = `${rangoSel.options[rangoSel.selectedIndex].text}${zona ? ' · ' + zona : ''}`;
+        }
+
+        if (!lista.length) { _showModal('Aviso', 'No hay clientes para compartir con este filtro.'); return; }
+
+        // Construir tarjeta temporal para capturar
+        const temp = document.createElement('div');
+        temp.style.cssText = 'position:fixed;left:-9999px;top:0;width:420px;background:#fff;padding:16px;font-family:system-ui,sans-serif;';
+        const hoy = new Date().toLocaleDateString('es-VE');
+        temp.innerHTML = `
+            <div style="border-bottom:2px solid #0891b2;padding-bottom:8px;margin-bottom:10px;">
+                <div style="font-size:16px;font-weight:800;color:#0e7490;">Distribuidora Castillo Yañez</div>
+                <div style="font-size:12px;font-weight:700;color:#374151;">${titulo}</div>
+                <div style="font-size:10px;color:#9ca3af;">${hoy} · ${lista.length} cliente(s)</div>
+            </div>
+            ${lista.slice(0, 60).map((c, i) => {
+                if (modo === 'estado') {
+                    const falta = [];
+                    if (!c.estados.cep) falta.push('CEP');
+                    if (!c.estados.gps) falta.push('GPS');
+                    if (!c.estados.doc) falta.push('Doc');
+                    if (!c.estados.foto) falta.push('Foto');
+                    if (!c.estados.tel) falta.push('Tel');
+                    return `<div style="padding:5px 0;border-bottom:1px solid #f3f4f6;">
+                        <div style="font-size:12px;font-weight:700;color:#1f2937;">${i+1}. ${c.nombreComercial}</div>
+                        <div style="font-size:10px;color:#6b7280;">${c.zona || '—'}${c.telefono ? ' · ' + c.telefono : ''}</div>
+                        <div style="font-size:10px;color:${falta.length ? '#dc2626' : '#16a34a'};">${falta.length ? 'Falta: ' + falta.join(', ') : '✓ Datos completos'}</div>
+                    </div>`;
+                } else {
+                    const dias = c.diasSinComprar === null ? 'Nunca' : `${c.diasSinComprar}d`;
+                    return `<div style="padding:5px 0;border-bottom:1px solid #f3f4f6;">
+                        <div style="font-size:12px;font-weight:700;color:#1f2937;">${i+1}. ${c.nombreComercial}</div>
+                        <div style="font-size:10px;color:#6b7280;">${c.zona || '—'}${c.telefono ? ' · ' + c.telefono : ''} · <span style="color:#dc2626;font-weight:700;">sin comprar ${dias}</span></div>
+                    </div>`;
+                }
+            }).join('')}
+            ${lista.length > 60 ? `<div style="font-size:10px;color:#9ca3af;padding-top:6px;">...y ${lista.length - 60} más</div>` : ''}`;
+        document.body.appendChild(temp);
+        await capturarYCompartir(temp, `Clientes_${titulo.replace(/[\s/·]+/g,'_')}`);
+        temp.remove();
+    }
+
+    // Captura un elemento y lo comparte/descarga como PNG
+    async function capturarYCompartir(elemento, nombreArchivo) {
+        try {
+            const canvas = await html2canvas(elemento, { scale: 2, backgroundColor: '#ffffff' });
+            canvas.toBlob(async (blob) => {
+                if (!blob) return;
+                const file = new File([blob], `${nombreArchivo}.png`, { type: 'image/png' });
+                if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+                    try { await navigator.share({ files: [file], title: nombreArchivo }); return; } catch (e) {}
+                }
+                // Fallback: descargar
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url; a.download = `${nombreArchivo}.png`;
+                a.click();
+                URL.revokeObjectURL(url);
+            }, 'image/png');
+        } catch (e) {
+            console.error('Error al capturar imagen:', e);
+            _showModal('Error', 'No se pudo generar la imagen.');
+        }
+    }
+
 })();
 // redeploy trigger 1783190804
+
 
 
 
