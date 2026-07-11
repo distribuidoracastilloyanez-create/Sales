@@ -2569,6 +2569,17 @@
     // ════════════════════════════════════════════════════════
     let _cliDatosData = [];   // clientes enriquecidos con estado de datos
     let _cliDatosVista = 'estado'; // 'estado' | 'ultimaCompra' | 'errores'
+    // Estado de cada chip-filtro: 0=apagado, 1=con (✓), 2=sin (✗)
+    const CD_CHIPS = [
+        { key: 'cep',  label: 'CEP' },
+        { key: 'gps',  label: 'GPS' },
+        { key: 'adc',  label: 'ADC' },
+        { key: 'doc',  label: 'Doc' },
+        { key: 'foto', label: 'Foto' },
+        { key: 'tel',  label: 'Tel' },
+        { key: 'retencion', label: 'Ret' }
+    ];
+    let _cdChipEstados = {}; // key -> 0|1|2
 
     // Construye el objeto de estado de datos de cada cliente
     function construirDatosClientes() {
@@ -2765,22 +2776,16 @@
                     <!-- FILTROS (estado de datos) -->
                     <div id="cdFiltrosEstado" class="hidden bg-cyan-50 border border-cyan-200 rounded-lg p-2 mb-3 space-y-2">
                         <input type="text" id="cdBuscar" placeholder="Buscar cliente..." class="w-full text-xs border border-cyan-300 rounded p-1.5 outline-none">
-                        <div class="grid grid-cols-2 gap-1.5">
-                            <select id="cdZona" class="text-xs border border-cyan-300 rounded p-1.5 bg-white outline-none">
-                                <option value="">Todas las zonas</option>
-                            </select>
-                            <select id="cdFaltante" class="text-xs border border-cyan-300 rounded p-1.5 bg-white outline-none">
-                                <option value="">Todos</option>
-                                <option value="incompletos">⚠️ Datos incompletos</option>
-                                <option value="sinCep">Sin CEP</option>
-                                <option value="sinGps">Sin GPS</option>
-                                <option value="sinDoc">Sin documentos</option>
-                                <option value="sinFoto">Sin fotos</option>
-                                <option value="sinTel">Sin teléfono</option>
-                                <option value="sinAdc">Sin ADC</option>
-                                <option value="conAdc">Con ADC</option>
-                                <option value="conRet">Aplica retención</option>
-                            </select>
+                        <select id="cdZona" class="w-full text-xs border border-cyan-300 rounded p-1.5 bg-white outline-none">
+                            <option value="">Todas las zonas</option>
+                        </select>
+                        <!-- Barra de chips marcables (3 estados: neutro / con / sin) -->
+                        <div>
+                            <div class="flex items-center justify-between mb-1">
+                                <span class="text-[9px] font-bold text-cyan-700 uppercase">Filtros (toca: con ✓ / sin ✗ / apagado)</span>
+                                <button id="cdChipsReset" class="text-[9px] text-gray-400 hover:text-gray-600 underline">Limpiar</button>
+                            </div>
+                            <div id="cdChips" class="flex flex-wrap gap-1"></div>
                         </div>
                         <div class="grid grid-cols-2 gap-1.5">
                             <select id="cdOrden" class="text-xs border border-cyan-300 rounded p-1.5 bg-white outline-none">
@@ -2838,7 +2843,11 @@
         // Listeners de filtros
         let deb = null;
         document.getElementById('cdBuscar').addEventListener('input', () => { clearTimeout(deb); deb = setTimeout(renderCdEstado, 180); });
-        ['cdZona', 'cdFaltante', 'cdOrden'].forEach(id => document.getElementById(id).addEventListener('change', renderCdEstado));
+        renderCdChips();
+        document.getElementById('cdChipsReset').addEventListener('click', () => {
+            _cdChipEstados = {}; renderCdChips(); renderCdEstado();
+        });
+        ['cdZona', 'cdOrden'].forEach(id => document.getElementById(id).addEventListener('change', renderCdEstado));
         ['cdRangoCompra', 'cdZonaCompra'].forEach(id => document.getElementById(id).addEventListener('change', renderCdCompra));
         document.getElementById('cdCompartir').addEventListener('click', () => compartirImagenDatos('estado'));
         document.getElementById('cdCompartirCompra').addEventListener('click', () => compartirImagenDatos('compra'));
@@ -2869,24 +2878,45 @@
         return `<span class="inline-flex items-center gap-0.5 text-[9px] px-1 py-0.5 rounded ${ok ? 'bg-green-100 text-green-700' : 'bg-red-50 text-red-400'}">${ok ? '✅' : '❌'} ${label}</span>`;
     }
 
+    // Dibuja los chips-filtro con color según su estado (0 apagado, 1 con ✓, 2 sin ✗)
+    function renderCdChips() {
+        const cont = document.getElementById('cdChips');
+        if (!cont) return;
+        cont.innerHTML = CD_CHIPS.map(ch => {
+            const est = _cdChipEstados[ch.key] || 0;
+            let cls, txt;
+            if (est === 1) { cls = 'bg-green-600 text-white border-green-600'; txt = '✓ ' + ch.label; }
+            else if (est === 2) { cls = 'bg-red-500 text-white border-red-500'; txt = '✗ ' + ch.label; }
+            else { cls = 'bg-white text-gray-500 border-gray-300'; txt = ch.label; }
+            return `<button class="cd-chip text-[11px] font-bold px-2 py-1 rounded-full border transition ${cls}" data-key="${ch.key}">${txt}</button>`;
+        }).join('');
+        cont.querySelectorAll('.cd-chip').forEach(el => el.addEventListener('click', () => {
+            const k = el.dataset.key;
+            _cdChipEstados[k] = ((_cdChipEstados[k] || 0) + 1) % 3; // 0→1→2→0
+            renderCdChips();
+            renderCdEstado();
+        }));
+    }
+
     function filtrarEstado() {
         const term = (document.getElementById('cdBuscar')?.value || '').toLowerCase().trim();
         const zona = document.getElementById('cdZona')?.value || '';
-        const falt = document.getElementById('cdFaltante')?.value || '';
         const orden = document.getElementById('cdOrden')?.value || 'nombre';
 
         let lista = _cliDatosData.slice();
         if (term) lista = lista.filter(c => c.nombreComercial.toLowerCase().includes(term) || (c.nombrePersonal || '').toLowerCase().includes(term));
         if (zona) lista = lista.filter(c => c.zona === zona);
-        if (falt === 'incompletos') lista = lista.filter(c => c.completitud < 100);
-        else if (falt === 'sinCep') lista = lista.filter(c => !c.estados.cep);
-        else if (falt === 'sinGps') lista = lista.filter(c => !c.estados.gps);
-        else if (falt === 'sinDoc') lista = lista.filter(c => !c.estados.doc);
-        else if (falt === 'sinFoto') lista = lista.filter(c => !c.estados.foto);
-        else if (falt === 'sinTel') lista = lista.filter(c => !c.estados.tel);
-        else if (falt === 'sinAdc') lista = lista.filter(c => !c.estados.adc);
-        else if (falt === 'conAdc') lista = lista.filter(c => c.estados.adc);
-        else if (falt === 'conRet') lista = lista.filter(c => c.aplicaRetencion);
+
+        // Aplicar chips marcables (se combinan todos con AND)
+        CD_CHIPS.forEach(ch => {
+            const est = _cdChipEstados[ch.key] || 0;
+            if (est === 0) return;
+            const quiereCon = est === 1;
+            lista = lista.filter(c => {
+                const tiene = ch.key === 'retencion' ? c.aplicaRetencion : c.estados[ch.key];
+                return quiereCon ? tiene : !tiene;
+            });
+        });
 
         if (orden === 'completitud') lista.sort((a, b) => a.completitud - b.completitud || a.nombreComercial.localeCompare(b.nombreComercial));
         else if (orden === 'zona') lista.sort((a, b) => (a.zona || '').localeCompare(b.zona || '') || a.nombreComercial.localeCompare(b.nombreComercial));
@@ -3094,8 +3124,10 @@
         if (modo === 'estado') {
             lista = filtrarEstado();
             const zona = document.getElementById('cdZona')?.value || 'Todas las zonas';
-            const falt = document.getElementById('cdFaltante');
-            const faltTxt = falt && falt.selectedIndex > 0 ? falt.options[falt.selectedIndex].text : 'Todos';
+            // Describir los chips activos
+            const activos = CD_CHIPS.filter(ch => (_cdChipEstados[ch.key] || 0) !== 0)
+                .map(ch => (_cdChipEstados[ch.key] === 1 ? 'con ' : 'sin ') + ch.label);
+            const faltTxt = activos.length ? activos.join(', ') : 'Todos';
             titulo = `Clientes · ${zona} · ${faltTxt}`;
         } else {
             lista = _cliDatosData.slice();
@@ -3180,6 +3212,7 @@
 
 })();
 // redeploy trigger 1783190804
+
 
 
 
