@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v33'; // v33: chips marcables multi-filtro en Analista por Datos
+const CACHE_NAME = 'ventas-app-cache-v34'; // v34: zonas marcables + exportar Excel en Analista por Datos
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
@@ -179,6 +179,7 @@ self.addEventListener('fetch', event => {
             })
     );
 });
+
 
 
 
