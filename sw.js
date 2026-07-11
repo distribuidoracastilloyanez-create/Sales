@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v32'; // v32: Analista de Clientes por Datos (estado, ultima compra, errores, compartir imagen)
+const CACHE_NAME = 'ventas-app-cache-v33'; // v33: chips marcables multi-filtro en Analista por Datos
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
@@ -179,6 +179,7 @@ self.addEventListener('fetch', event => {
             })
     );
 });
+
 
 
 
