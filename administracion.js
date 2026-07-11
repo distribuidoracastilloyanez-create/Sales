@@ -2580,6 +2580,9 @@
         { key: 'retencion', label: 'Ret' }
     ];
     let _cdChipEstados = {}; // key -> 0|1|2
+    let _cdZonasDisponibles = [];
+    let _cdZonasSel = new Set();        // zonas marcadas (vista estado)
+    let _cdZonasCompraSel = new Set();  // zonas marcadas (vista última compra)
 
     // Construye el objeto de estado de datos de cada cliente
     function construirDatosClientes() {
@@ -2776,13 +2779,18 @@
                     <!-- FILTROS (estado de datos) -->
                     <div id="cdFiltrosEstado" class="hidden bg-cyan-50 border border-cyan-200 rounded-lg p-2 mb-3 space-y-2">
                         <input type="text" id="cdBuscar" placeholder="Buscar cliente..." class="w-full text-xs border border-cyan-300 rounded p-1.5 outline-none">
-                        <select id="cdZona" class="w-full text-xs border border-cyan-300 rounded p-1.5 bg-white outline-none">
-                            <option value="">Todas las zonas</option>
-                        </select>
-                        <!-- Barra de chips marcables (3 estados: neutro / con / sin) -->
+                        <!-- Chips de ZONA (multi-selección) -->
                         <div>
                             <div class="flex items-center justify-between mb-1">
-                                <span class="text-[9px] font-bold text-cyan-700 uppercase">Filtros (toca: con ✓ / sin ✗ / apagado)</span>
+                                <span class="text-[9px] font-bold text-cyan-700 uppercase">Zonas (toca para marcar varias)</span>
+                                <button id="cdZonasReset" class="text-[9px] text-gray-400 hover:text-gray-600 underline">Todas</button>
+                            </div>
+                            <div id="cdZonaChips" class="flex flex-wrap gap-1 max-h-24 overflow-y-auto"></div>
+                        </div>
+                        <!-- Barra de chips de datos (3 estados: neutro / con / sin) -->
+                        <div>
+                            <div class="flex items-center justify-between mb-1">
+                                <span class="text-[9px] font-bold text-cyan-700 uppercase">Datos (toca: con ✓ / sin ✗ / apagado)</span>
                                 <button id="cdChipsReset" class="text-[9px] text-gray-400 hover:text-gray-600 underline">Limpiar</button>
                             </div>
                             <div id="cdChips" class="flex flex-wrap gap-1"></div>
@@ -2793,7 +2801,7 @@
                                 <option value="completitud">Menos completos primero</option>
                                 <option value="zona">Por zona</option>
                             </select>
-                            <button id="cdCompartir" class="text-xs bg-cyan-600 text-white rounded p-1.5 font-bold hover:bg-cyan-700 transition">📤 Compartir imagen</button>
+                            <button id="cdCompartir" class="text-xs bg-green-600 text-white rounded p-1.5 font-bold hover:bg-green-700 transition">📊 Exportar Excel</button>
                         </div>
                     </div>
 
@@ -2806,12 +2814,14 @@
                             <option value="mas21">Sin compra en más de 21 días</option>
                             <option value="nunca">Nunca han comprado</option>
                         </select>
-                        <div class="grid grid-cols-2 gap-1.5">
-                            <select id="cdZonaCompra" class="text-xs border border-cyan-300 rounded p-1.5 bg-white outline-none">
-                                <option value="">Todas las zonas</option>
-                            </select>
-                            <button id="cdCompartirCompra" class="text-xs bg-cyan-600 text-white rounded p-1.5 font-bold hover:bg-cyan-700 transition">📤 Compartir imagen</button>
+                        <div>
+                            <div class="flex items-center justify-between mb-1">
+                                <span class="text-[9px] font-bold text-cyan-700 uppercase">Zonas (toca para marcar varias)</span>
+                                <button id="cdZonasCompraReset" class="text-[9px] text-gray-400 hover:text-gray-600 underline">Todas</button>
+                            </div>
+                            <div id="cdZonaCompraChips" class="flex flex-wrap gap-1 max-h-24 overflow-y-auto"></div>
                         </div>
+                        <button id="cdCompartirCompra" class="w-full text-xs bg-green-600 text-white rounded p-1.5 font-bold hover:bg-green-700 transition">📊 Exportar Excel</button>
                     </div>
 
                     <!-- Resumen -->
@@ -2833,24 +2843,30 @@
         await loadUltimaCompra();
         _cliDatosData = construirDatosClientes();
 
-        // Poblar selectores de zona
-        const zonas = [...new Set(_cliDatosData.map(c => c.zona).filter(Boolean))].sort();
-        ['cdZona', 'cdZonaCompra'].forEach(id => {
-            const sel = document.getElementById(id);
-            if (sel) sel.innerHTML = '<option value="">Todas las zonas</option>' + zonas.map(z => `<option value="${z}">${z}</option>`).join('');
-        });
+        // Zonas disponibles (para los chips de zona)
+        _cdZonasDisponibles = [...new Set(_cliDatosData.map(c => c.zona).filter(Boolean))].sort();
+        _cdZonasSel = new Set();        // vista estado
+        _cdZonasCompraSel = new Set();  // vista última compra
 
         // Listeners de filtros
         let deb = null;
         document.getElementById('cdBuscar').addEventListener('input', () => { clearTimeout(deb); deb = setTimeout(renderCdEstado, 180); });
         renderCdChips();
+        renderCdZonaChips('estado');
+        renderCdZonaChips('compra');
         document.getElementById('cdChipsReset').addEventListener('click', () => {
             _cdChipEstados = {}; renderCdChips(); renderCdEstado();
         });
-        ['cdZona', 'cdOrden'].forEach(id => document.getElementById(id).addEventListener('change', renderCdEstado));
-        ['cdRangoCompra', 'cdZonaCompra'].forEach(id => document.getElementById(id).addEventListener('change', renderCdCompra));
-        document.getElementById('cdCompartir').addEventListener('click', () => compartirImagenDatos('estado'));
-        document.getElementById('cdCompartirCompra').addEventListener('click', () => compartirImagenDatos('compra'));
+        document.getElementById('cdZonasReset').addEventListener('click', () => {
+            _cdZonasSel.clear(); renderCdZonaChips('estado'); renderCdEstado();
+        });
+        document.getElementById('cdZonasCompraReset').addEventListener('click', () => {
+            _cdZonasCompraSel.clear(); renderCdZonaChips('compra'); renderCdCompra();
+        });
+        document.getElementById('cdOrden').addEventListener('change', renderCdEstado);
+        document.getElementById('cdRangoCompra').addEventListener('change', renderCdCompra);
+        document.getElementById('cdCompartir').addEventListener('click', () => exportarExcelDatos('estado'));
+        document.getElementById('cdCompartirCompra').addEventListener('click', () => exportarExcelDatos('compra'));
 
         setCdVista('estado');
     }
@@ -2878,6 +2894,25 @@
         return `<span class="inline-flex items-center gap-0.5 text-[9px] px-1 py-0.5 rounded ${ok ? 'bg-green-100 text-green-700' : 'bg-red-50 text-red-400'}">${ok ? '✅' : '❌'} ${label}</span>`;
     }
 
+    // Dibuja los chips de ZONA (multi-selección). destino: 'estado' | 'compra'
+    function renderCdZonaChips(destino) {
+        const contId = destino === 'compra' ? 'cdZonaCompraChips' : 'cdZonaChips';
+        const cont = document.getElementById(contId);
+        if (!cont) return;
+        const sel = destino === 'compra' ? _cdZonasCompraSel : _cdZonasSel;
+        cont.innerHTML = _cdZonasDisponibles.map(z => {
+            const on = sel.has(z);
+            const cls = on ? 'bg-cyan-600 text-white border-cyan-600' : 'bg-white text-gray-500 border-gray-300';
+            return `<button class="cd-zona-chip text-[10px] font-bold px-2 py-1 rounded-full border transition ${cls}" data-zona="${z.replace(/"/g,'&quot;')}">${z}</button>`;
+        }).join('') || '<span class="text-[10px] text-gray-400">Sin zonas</span>';
+        cont.querySelectorAll('.cd-zona-chip').forEach(el => el.addEventListener('click', () => {
+            const z = el.dataset.zona;
+            if (sel.has(z)) sel.delete(z); else sel.add(z);
+            renderCdZonaChips(destino);
+            if (destino === 'compra') renderCdCompra(); else renderCdEstado();
+        }));
+    }
+
     // Dibuja los chips-filtro con color según su estado (0 apagado, 1 con ✓, 2 sin ✗)
     function renderCdChips() {
         const cont = document.getElementById('cdChips');
@@ -2900,12 +2935,11 @@
 
     function filtrarEstado() {
         const term = (document.getElementById('cdBuscar')?.value || '').toLowerCase().trim();
-        const zona = document.getElementById('cdZona')?.value || '';
         const orden = document.getElementById('cdOrden')?.value || 'nombre';
 
         let lista = _cliDatosData.slice();
         if (term) lista = lista.filter(c => c.nombreComercial.toLowerCase().includes(term) || (c.nombrePersonal || '').toLowerCase().includes(term));
-        if (zona) lista = lista.filter(c => c.zona === zona);
+        if (_cdZonasSel.size) lista = lista.filter(c => _cdZonasSel.has(c.zona));
 
         // Aplicar chips marcables (se combinan todos con AND)
         CD_CHIPS.forEach(ch => {
@@ -2970,10 +3004,9 @@
         resumen.classList.remove('hidden');
 
         const rango = document.getElementById('cdRangoCompra')?.value || '7';
-        const zona = document.getElementById('cdZonaCompra')?.value || '';
 
         let lista = _cliDatosData.slice();
-        if (zona) lista = lista.filter(c => c.zona === zona);
+        if (_cdZonasCompraSel.size) lista = lista.filter(c => _cdZonasCompraSel.has(c.zona));
 
         // Filtrar por rango de días sin comprar
         lista = lista.filter(c => {
@@ -3119,22 +3152,29 @@
     }
 
     // ── COMPARTIR IMAGEN DE LA LISTA (por zona/filtro) ──
-    async function compartirImagenDatos(modo) {
-        let lista, titulo;
+    // Exporta la lista filtrada a Excel bien estructurado
+    function exportarExcelDatos(modo) {
+        let lista, hojaNombre, headers, filas;
+        const fmtFecha = (d) => d ? d.toLocaleDateString('es-VE', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '';
+        const si = (b) => b ? 'Sí' : 'No';
+
         if (modo === 'estado') {
             lista = filtrarEstado();
-            const zona = document.getElementById('cdZona')?.value || 'Todas las zonas';
-            // Describir los chips activos
-            const activos = CD_CHIPS.filter(ch => (_cdChipEstados[ch.key] || 0) !== 0)
-                .map(ch => (_cdChipEstados[ch.key] === 1 ? 'con ' : 'sin ') + ch.label);
-            const faltTxt = activos.length ? activos.join(', ') : 'Todos';
-            titulo = `Clientes · ${zona} · ${faltTxt}`;
+            hojaNombre = 'Estado de datos';
+            headers = ['#', 'Nombre Comercial', 'Nombre Personal', 'Zona', 'Teléfono', 'CEP',
+                       'GPS', 'ADC', 'Documentos', 'Fotos', 'Retención', 'Coordenadas', 'Completitud %', 'Última compra'];
+            filas = lista.map((c, i) => [
+                i + 1, c.nombreComercial, c.nombrePersonal || '', c.zona || '', c.telefono || '',
+                c.estados.cep ? c.codigoCEP : 'FALTA',
+                si(c.estados.gps), si(c.estados.adc), si(c.estados.doc), si(c.estados.foto),
+                si(c.aplicaRetencion), c.coordenadas || '', c.completitud,
+                fmtFecha(c.ultimaCompra)
+            ]);
         } else {
-            lista = _cliDatosData.slice();
-            const zona = document.getElementById('cdZonaCompra')?.value || '';
             const rangoSel = document.getElementById('cdRangoCompra');
-            if (zona) lista = lista.filter(c => c.zona === zona);
             const rango = rangoSel?.value || '7';
+            lista = _cliDatosData.slice();
+            if (_cdZonasCompraSel.size) lista = lista.filter(c => _cdZonasCompraSel.has(c.zona));
             lista = lista.filter(c => {
                 if (rango === 'nunca') return c.diasSinComprar === null;
                 if (c.diasSinComprar === null) return rango === 'mas21';
@@ -3145,46 +3185,55 @@
                 return true;
             });
             lista.sort((a, b) => (b.diasSinComprar || 99999) - (a.diasSinComprar || 99999));
-            titulo = `${rangoSel.options[rangoSel.selectedIndex].text}${zona ? ' · ' + zona : ''}`;
+            hojaNombre = 'Ultima compra';
+            headers = ['#', 'Nombre Comercial', 'Nombre Personal', 'Zona', 'Teléfono',
+                       'Última compra', 'Días sin comprar'];
+            filas = lista.map((c, i) => [
+                i + 1, c.nombreComercial, c.nombrePersonal || '', c.zona || '', c.telefono || '',
+                c.ultimaCompra ? fmtFecha(c.ultimaCompra) : 'Nunca',
+                c.diasSinComprar === null ? 'Nunca compró' : c.diasSinComprar
+            ]);
         }
 
-        if (!lista.length) { _showModal('Aviso', 'No hay clientes para compartir con este filtro.'); return; }
+        if (!lista.length) { _showModal('Aviso', 'No hay clientes para exportar con este filtro.'); return; }
 
-        // Construir tarjeta temporal para capturar
-        const temp = document.createElement('div');
-        temp.style.cssText = 'position:fixed;left:-9999px;top:0;width:420px;background:#fff;padding:16px;font-family:system-ui,sans-serif;';
-        const hoy = new Date().toLocaleDateString('es-VE');
-        temp.innerHTML = `
-            <div style="border-bottom:2px solid #0891b2;padding-bottom:8px;margin-bottom:10px;">
-                <div style="font-size:16px;font-weight:800;color:#0e7490;">Distribuidora Castillo Yañez</div>
-                <div style="font-size:12px;font-weight:700;color:#374151;">${titulo}</div>
-                <div style="font-size:10px;color:#9ca3af;">${hoy} · ${lista.length} cliente(s)</div>
-            </div>
-            ${lista.slice(0, 60).map((c, i) => {
-                if (modo === 'estado') {
-                    const falta = [];
-                    if (!c.estados.cep) falta.push('CEP');
-                    if (!c.estados.gps) falta.push('GPS');
-                    if (!c.estados.doc) falta.push('Doc');
-                    if (!c.estados.foto) falta.push('Foto');
-                    if (!c.estados.tel) falta.push('Tel');
-                    return `<div style="padding:5px 0;border-bottom:1px solid #f3f4f6;">
-                        <div style="font-size:12px;font-weight:700;color:#1f2937;">${i+1}. ${c.nombreComercial}</div>
-                        <div style="font-size:10px;color:#6b7280;">${c.zona || '—'}${c.telefono ? ' · ' + c.telefono : ''}</div>
-                        <div style="font-size:10px;color:${falta.length ? '#dc2626' : '#16a34a'};">${falta.length ? 'Falta: ' + falta.join(', ') : '✓ Datos completos'}</div>
-                    </div>`;
-                } else {
-                    const dias = c.diasSinComprar === null ? 'Nunca' : `${c.diasSinComprar}d`;
-                    return `<div style="padding:5px 0;border-bottom:1px solid #f3f4f6;">
-                        <div style="font-size:12px;font-weight:700;color:#1f2937;">${i+1}. ${c.nombreComercial}</div>
-                        <div style="font-size:10px;color:#6b7280;">${c.zona || '—'}${c.telefono ? ' · ' + c.telefono : ''} · <span style="color:#dc2626;font-weight:700;">sin comprar ${dias}</span></div>
-                    </div>`;
-                }
-            }).join('')}
-            ${lista.length > 60 ? `<div style="font-size:10px;color:#9ca3af;padding-top:6px;">...y ${lista.length - 60} más</div>` : ''}`;
-        document.body.appendChild(temp);
-        await capturarYCompartir(temp, `Clientes_${titulo.replace(/[\s/·]+/g,'_')}`);
-        temp.remove();
+        try {
+            const hoy = new Date();
+            const fechaStr = `${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,'0')}-${String(hoy.getDate()).padStart(2,'0')}`;
+
+            // Encabezado con título antes de la tabla
+            const zonasTxt = (modo === 'estado' ? _cdZonasSel : _cdZonasCompraSel).size
+                ? [...(modo === 'estado' ? _cdZonasSel : _cdZonasCompraSel)].join(', ')
+                : 'Todas las zonas';
+            const aoa = [
+                ['DISTRIBUIDORA CASTILLO YAÑEZ - ' + hojaNombre.toUpperCase()],
+                ['Fecha: ' + hoy.toLocaleDateString('es-VE'), 'Zonas: ' + zonasTxt, 'Total: ' + lista.length + ' clientes'],
+                [],
+                headers,
+                ...filas
+            ];
+            const ws = XLSX.utils.aoa_to_sheet(aoa);
+
+            // Anchos de columna
+            const anchos = headers.map((h, idx) => {
+                if (idx === 0) return { wch: 4 };
+                if (idx === 1) return { wch: 32 };
+                if (idx === 2) return { wch: 22 };
+                if (h === 'Coordenadas') return { wch: 24 };
+                return { wch: 14 };
+            });
+            ws['!cols'] = anchos;
+
+            // Combinar el título en la primera fila
+            ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: headers.length - 1 } }];
+
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, hojaNombre.slice(0, 31));
+            XLSX.writeFile(wb, `Clientes_${hojaNombre.replace(/\s/g,'_')}_${fechaStr}.xlsx`);
+        } catch (e) {
+            console.error('Error exportando Excel:', e);
+            _showModal('Error', 'No se pudo generar el Excel.');
+        }
     }
 
     // Captura un elemento y lo comparte/descarga como PNG
@@ -3212,6 +3261,7 @@
 
 })();
 // redeploy trigger 1783190804
+
 
 
 
