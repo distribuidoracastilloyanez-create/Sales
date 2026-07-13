@@ -687,6 +687,24 @@
                         ` : ''}
                     </div>
                 </div>
+
+                <!-- SIMULADOR DE ABONO -->
+                <div class="bg-emerald-50 border border-emerald-200 p-3 rounded-lg mb-4 shadow-sm">
+                    <div class="flex items-center justify-between mb-2">
+                        <p class="text-[11px] text-emerald-800 uppercase tracking-wider font-bold">🧮 Simular Abono</p>
+                        <span class="text-[9px] text-gray-400">solo cálculo, no modifica el CXC</span>
+                    </div>
+                    <div class="flex gap-2 items-stretch">
+                        <div class="flex-1">
+                            <input type="number" id="simAbonoBs" inputmode="decimal" placeholder="Monto en Bs."
+                                   oninput="window.cxcModule.simularAbono(${deudaTotal})"
+                                   class="w-full text-sm border border-emerald-300 rounded p-2 outline-none focus:ring-2 focus:ring-emerald-400">
+                        </div>
+                        <button onclick="document.getElementById('simAbonoBs').value='';window.cxcModule.simularAbono(${deudaTotal})"
+                                class="px-3 bg-gray-100 text-gray-500 rounded text-xs font-bold hover:bg-gray-200 transition">Limpiar</button>
+                    </div>
+                    <div id="simAbonoResultado" class="mt-2 text-xs text-gray-500">Ingresa el monto en bolívares del abono para ver cómo quedaría la deuda.</div>
+                </div>
                 
                 <h3 class="font-bold text-gray-700 mb-1 px-1 text-xs uppercase tracking-wider">Historial del Excel</h3>
                 <div class="overflow-y-auto max-h-[45vh] border rounded bg-white shadow-sm">
@@ -1487,11 +1505,72 @@
         }
     }
 
+    // ── SIMULADOR DE ABONO ──
+    // Calcula cómo quedaría la deuda ($) si el cliente abona X bolívares hoy,
+    // usando la tasa BCV del día. Es solo un cálculo; NO modifica el CXC.
+    function simularAbono(deudaTotal) {
+        const input = document.getElementById('simAbonoBs');
+        const out = document.getElementById('simAbonoResultado');
+        if (!input || !out) return;
+
+        // Obtener la tasa de HOY
+        const h = new Date();
+        const iso = `${h.getFullYear()}-${String(h.getMonth()+1).padStart(2,'0')}-${String(h.getDate()).padStart(2,'0')}`;
+        const tasaHoy = _tasasCache ? _tasasCache[iso] : undefined;
+
+        const bs = parseFloat((input.value || '').toString().replace(',', '.'));
+
+        // Sin tasa de hoy → pedir que la actualicen
+        if (tasaHoy === undefined || tasaHoy === null || !(tasaHoy > 0)) {
+            out.innerHTML = `<div class="bg-amber-100 border border-amber-300 rounded p-2 text-amber-800 text-[11px] font-semibold">
+                ⚠️ No hay tasa BCV registrada para hoy (${h.toLocaleDateString('es-VE')}).<br>
+                Actualiza la tasa del día para poder simular el abono.</div>`;
+            return;
+        }
+
+        if (!bs || bs <= 0) {
+            out.innerHTML = `Ingresa el monto en bolívares del abono para ver cómo quedaría la deuda. <span class="text-emerald-700 font-semibold">(Tasa hoy: Bs. ${Number(tasaHoy).toFixed(4)})</span>`;
+            return;
+        }
+
+        const abonoUSD = bs / tasaHoy;
+        const nuevaDeuda = deudaTotal - abonoUSD;
+        const fBs = (n) => n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        const fUSD = (n) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+        const quedaAFavor = nuevaDeuda < -0.001;
+        const saldada = Math.abs(nuevaDeuda) <= 0.001;
+
+        out.innerHTML = `
+            <div class="bg-white border border-emerald-200 rounded-lg p-2.5 space-y-1.5">
+                <div class="flex justify-between items-center text-[11px]">
+                    <span class="text-gray-500">Abono en Bs.</span>
+                    <span class="font-bold text-gray-700">Bs. ${fBs(bs)}</span>
+                </div>
+                <div class="flex justify-between items-center text-[11px]">
+                    <span class="text-gray-500">Equivale a (tasa Bs. ${Number(tasaHoy).toFixed(4)})</span>
+                    <span class="font-bold text-emerald-700">$${fUSD(abonoUSD)}</span>
+                </div>
+                <div class="flex justify-between items-center text-[11px]">
+                    <span class="text-gray-500">Deuda actual</span>
+                    <span class="font-semibold text-gray-600">$${fUSD(deudaTotal)}</span>
+                </div>
+                <div class="border-t border-gray-100 pt-1.5 flex justify-between items-center">
+                    <span class="text-xs font-bold text-gray-700">${saldada ? 'Deuda saldada' : (quedaAFavor ? 'Queda a favor del cliente' : 'Nueva deuda')}</span>
+                    <span class="font-black text-base ${saldada ? 'text-gray-600' : (quedaAFavor ? 'text-green-600' : (nuevaDeuda > 0 ? 'text-red-600' : 'text-green-600'))}">
+                        ${quedaAFavor ? '$' + fUSD(Math.abs(nuevaDeuda)) : '$' + fUSD(nuevaDeuda)}
+                    </span>
+                </div>
+                ${quedaAFavor ? '<p class="text-[10px] text-green-600">El abono supera la deuda; el excedente queda a favor.</p>' : ''}
+            </div>`;
+    }
+
     window.cxcModule = {
         showClientDetailsByName,
         searchSaleDetails,
         handleShareClientHistory,
-        searchConsolidatedConsignments
+        searchConsolidatedConsignments,
+        simularAbono
     };
 
     // Acceso directo desde otros módulos: abre la vista CXC y muestra el detalle
@@ -1553,6 +1632,7 @@
         }, 100);
     };
 })();
+
 
 
 
