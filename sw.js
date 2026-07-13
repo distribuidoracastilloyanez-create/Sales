@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v34'; // v34: zonas marcables + exportar Excel en Analista por Datos
+const CACHE_NAME = 'ventas-app-cache-v35'; // v35: simulador de abono en detalle de cliente CXC
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
@@ -179,6 +179,7 @@ self.addEventListener('fetch', event => {
             })
     );
 });
+
 
 
 
