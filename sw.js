@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v44'; // v44: preventa - Reportes (resumen, vendedor, zona, productos, aumento despacho, Excel)
+const CACHE_NAME = 'ventas-app-cache-v45'; // v45: preventa - vendedor automatico por login + orden productos igual a venta tradicional
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
@@ -180,6 +180,7 @@ self.addEventListener('fetch', event => {
             })
     );
 });
+
 
 
 
