@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v42'; // v42: preventa - ticket de galpon + editar pedido en despacho
+const CACHE_NAME = 'ventas-app-cache-v43'; // v43: preventa - Inventario por Ruta (control aislado, no toca inventario real)
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
@@ -180,6 +180,7 @@ self.addEventListener('fetch', event => {
             })
     );
 });
+
 
 
 
