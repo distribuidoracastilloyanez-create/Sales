@@ -17,6 +17,7 @@
     const pathSectores  = () => `artifacts/${getPublicDataId()}/public/data/sectores`;
     // Colección NUEVA y aislada para los pedidos de preventa:
     const pathPedidos   = () => `artifacts/${getPublicDataId()}/public/data/preventa_pedidos`;
+    const pathInvRuta   = () => `artifacts/${getPublicDataId()}/public/data/preventa_inventario_ruta`;
 
     // Caches locales
     let _pvUsuarios = [];
@@ -106,7 +107,7 @@
         };
         document.getElementById('pvPedidosBtn').addEventListener('click', () => showTomarPedido());
         document.getElementById('pvBandejaBtn').addEventListener('click', () => showBandejaDespacho());
-        document.getElementById('pvInventarioRutaBtn').addEventListener('click', () => enConstruccion('Inventario por Ruta'));
+        document.getElementById('pvInventarioRutaBtn').addEventListener('click', () => showInventarioRuta());
         document.getElementById('pvVendedoresBtn').addEventListener('click', () => showPreventaVendedores());
         document.getElementById('pvReportesBtn').addEventListener('click', () => enConstruccion('Reportes'));
         document.getElementById('pvConfigBtn').addEventListener('click', () => enConstruccion('Configuración'));
@@ -1091,7 +1092,164 @@
         }
     }
 
+
+    // ═══════════════════════════════════════════════════════════
+    // INVENTARIO POR RUTA — control lógico del stock partido por ruta
+    // Colección aislada preventa_inventario_ruta. NO toca el inventario
+    // real del sistema tradicional (users/{userId}/inventario).
+    // ═══════════════════════════════════════════════════════════
+    let _pvInvRutaActual = {};  // {productoId: cantCajas} de la ruta elegida
+    let _pvInvRutaVendedor = null;
+
+    async function showInventarioRuta() {
+        if (window.userRole !== 'admin') return;
+
+        _mainContent.innerHTML = `
+            <div class="p-2 sm:p-3 pt-5 w-full max-w-2xl mx-auto">
+                <div class="bg-white/95 backdrop-blur-sm p-3 sm:p-4 rounded-lg shadow-xl">
+                    <div class="flex items-center justify-between mb-3">
+                        <h2 class="text-lg font-bold text-gray-800">Inventario por Ruta</h2>
+                        <button id="pvInvBack" class="px-3 py-1.5 bg-gray-400 text-white text-xs rounded hover:bg-gray-500 font-bold transition">Volver</button>
+                    </div>
+                    <p class="text-[11px] text-gray-500 mb-3">Reparte el stock del galpón entre las rutas. Es un control lógico independiente; no afecta el inventario que usan los vendedores en la calle.</p>
+
+                    <div id="pvInvLoading" class="text-center py-8 text-gray-400 text-sm">
+                        <svg class="animate-spin h-6 w-6 mx-auto mb-2 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path></svg>
+                        Cargando...
+                    </div>
+
+                    <div id="pvInvForm" class="hidden">
+                        <div class="mb-2">
+                            <label class="text-[10px] font-bold text-blue-700 uppercase">Ruta / Vendedor</label>
+                            <select id="pvInvVendedor" class="w-full text-sm border border-blue-300 rounded p-2 bg-white outline-none">
+                                <option value="">— Elige la ruta —</option>
+                            </select>
+                        </div>
+                        <div class="mb-2">
+                            <input type="text" id="pvInvBuscar" placeholder="Buscar producto..." class="w-full text-xs border border-blue-300 rounded p-1.5 outline-none">
+                        </div>
+                        <div id="pvInvProductos" class="border border-gray-200 rounded max-h-[46vh] overflow-y-auto">
+                            <p class="text-center text-gray-400 text-xs py-6">Elige una ruta para ver/asignar su stock.</p>
+                        </div>
+                        <div class="sticky bottom-0 bg-white border-t pt-2 mt-2">
+                            <button id="pvInvGuardar" class="w-full py-2.5 bg-blue-600 text-white rounded-lg font-bold text-sm hover:bg-blue-700 transition disabled:opacity-40" disabled>Guardar inventario de la ruta</button>
+                        </div>
+                    </div>
+                </div>
+            </div>`;
+
+        document.getElementById('pvInvBack').addEventListener('click', () => window.showPreventaMenu());
+
+        // Cargar productos y vendedores
+        try {
+            const [prodSnap, usersSnap] = await Promise.all([
+                _pvProductos.length ? Promise.resolve(null) : _getDocs(_collection(_db, pathProductos())),
+                _pvUsuarios.length ? Promise.resolve(null) : _getDocs(_collection(_db, 'users'))
+            ]);
+            if (prodSnap) _pvProductos = prodSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+            if (usersSnap) _pvUsuarios = usersSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+        } catch (e) {
+            console.error('Error cargando inv ruta:', e);
+            document.getElementById('pvInvLoading').innerHTML = '<span class="text-red-500">Error al cargar.</span>';
+            return;
+        }
+
+        document.getElementById('pvInvLoading').classList.add('hidden');
+        document.getElementById('pvInvForm').classList.remove('hidden');
+
+        const vendedores = _pvUsuarios.filter(u => u.role === 'user');
+        const selV = document.getElementById('pvInvVendedor');
+        selV.innerHTML = '<option value="">— Elige la ruta —</option>' +
+            vendedores.map(u => `<option value="${u.id}">${_pvNombreVendedor(u)}${u.zonaPreventa ? ' · ' + u.zonaPreventa : ''}</option>`).join('');
+        selV.addEventListener('change', () => cargarInvDeRuta(selV.value));
+
+        document.getElementById('pvInvBuscar').addEventListener('input', renderInvProductos);
+        document.getElementById('pvInvGuardar').addEventListener('click', guardarInvRuta);
+    }
+
+    async function cargarInvDeRuta(vendedorId) {
+        _pvInvRutaActual = {};
+        _pvInvRutaVendedor = _pvUsuarios.find(u => u.id === vendedorId) || null;
+        const guardar = document.getElementById('pvInvGuardar');
+        if (!vendedorId) {
+            document.getElementById('pvInvProductos').innerHTML = '<p class="text-center text-gray-400 text-xs py-6">Elige una ruta para ver/asignar su stock.</p>';
+            guardar.disabled = true;
+            return;
+        }
+        // Leer el doc de esa ruta si existe
+        try {
+            const ref = _doc(_db, pathInvRuta(), vendedorId);
+            const snap = await _getDoc(ref);
+            if (snap.exists()) {
+                const data = snap.data();
+                _pvInvRutaActual = data.productos || {};
+            }
+        } catch (e) { console.warn('Sin inventario previo para esta ruta:', e); }
+        guardar.disabled = false;
+        renderInvProductos();
+    }
+
+    function renderInvProductos() {
+        const cont = document.getElementById('pvInvProductos');
+        if (!cont || !_pvInvRutaVendedor) return;
+        const term = (document.getElementById('pvInvBuscar')?.value || '').toLowerCase().trim();
+        let lista = _pvProductos.slice();
+        if (term) lista = lista.filter(p => (p.presentacion || '').toLowerCase().includes(term) || (p.marca || '').toLowerCase().includes(term));
+        lista.sort((a, b) => (a.segmento || '').localeCompare(b.segmento || '') || (a.presentacion || '').localeCompare(b.presentacion || ''));
+
+        if (!lista.length) { cont.innerHTML = '<p class="text-center text-gray-400 text-xs py-6">Sin productos.</p>'; return; }
+
+        let html = '';
+        let lastSeg = null;
+        lista.forEach(prod => {
+            const seg = prod.segmento || 'Sin segmento';
+            if (seg !== lastSeg) { lastSeg = seg; html += `<div class="bg-gray-100 px-2 py-1 font-bold text-[11px] text-gray-600 sticky top-0">${seg}</div>`; }
+            const asignado = _pvInvRutaActual[prod.id]?.cantCajas || 0;
+            html += `<div class="flex items-center gap-2 py-1 px-2 border-b border-gray-50">
+                <input type="number" min="0" value="${asignado}" data-pid="${prod.id}"
+                       class="pv-inv-inp w-16 p-1 text-center border rounded text-sm font-bold focus:ring-2 focus:ring-blue-400">
+                <div class="flex-1 min-w-0">
+                    <div class="text-xs font-medium text-gray-700 truncate">${prod.presentacion}</div>
+                    <div class="text-[10px] text-gray-400">${prod.marca || 'S/M'} · cajas asignadas</div>
+                </div>
+            </div>`;
+        });
+        cont.innerHTML = html;
+        cont.querySelectorAll('.pv-inv-inp').forEach(inp => inp.addEventListener('input', () => {
+            const pid = inp.dataset.pid;
+            const val = parseInt(inp.value, 10) || 0;
+            if (val > 0) _pvInvRutaActual[pid] = { cantCajas: val };
+            else delete _pvInvRutaActual[pid];
+        }));
+    }
+
+    async function guardarInvRuta() {
+        if (!_pvInvRutaVendedor) return;
+        const btn = document.getElementById('pvInvGuardar');
+        btn.disabled = true; btn.textContent = 'Guardando...';
+        const v = _pvInvRutaVendedor;
+        try {
+            await _setDoc(_doc(_db, pathInvRuta(), v.id), {
+                vendedorId: v.id,
+                vendedorNombre: _pvNombreVendedor(v),
+                zona: v.zonaPreventa || '',
+                productos: _pvInvRutaActual,
+                actualizado: new Date().toISOString(),
+                actualizadoPor: _userId
+            }, { merge: true });
+            if (_showModal) _showModal('Inventario guardado', `El inventario de la ruta de <strong>${_pvNombreVendedor(v)}</strong> se guardó correctamente.`);
+            btn.textContent = 'Guardar inventario de la ruta';
+            btn.disabled = false;
+        } catch (e) {
+            console.error('Error guardando inv ruta:', e);
+            if (_showModal) _showModal('Error', 'No se pudo guardar el inventario.');
+            btn.textContent = 'Guardar inventario de la ruta';
+            btn.disabled = false;
+        }
+    }
+
 })();
+
 
 
 
