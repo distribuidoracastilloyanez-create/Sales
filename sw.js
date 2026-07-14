@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v43'; // v43: preventa - Inventario por Ruta (control aislado, no toca inventario real)
+const CACHE_NAME = 'ventas-app-cache-v44'; // v44: preventa - Reportes (resumen, vendedor, zona, productos, aumento despacho, Excel)
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
@@ -180,6 +180,7 @@ self.addEventListener('fetch', event => {
             })
     );
 });
+
 
 
 
