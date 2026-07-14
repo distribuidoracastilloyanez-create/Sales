@@ -7,7 +7,7 @@
 
     let _db, _userId, _userRole, _appId, _mainContent;
     let _showMainMenu, _showModal;
-    let _collection, _onSnapshot, _doc, _getDoc, _addDoc, _setDoc, _getDocs, _query, _where, _orderBy;
+    let _collection, _onSnapshot, _doc, _getDoc, _addDoc, _setDoc, _deleteDoc, _getDocs, _query, _where, _orderBy;
 
     // ── Configuración y rutas (aisladas del sistema tradicional) ──
     const getPublicDataId = () => window.AppConfig.PUBLIC_DATA_ID;
@@ -40,6 +40,7 @@
         _getDoc      = dependencies.getDoc;
         _addDoc      = dependencies.addDoc;
         _setDoc      = dependencies.setDoc;
+        _deleteDoc   = dependencies.deleteDoc;
         _getDocs     = dependencies.getDocs;
         _query       = dependencies.query;
         _where       = dependencies.where;
@@ -104,7 +105,7 @@
             if (_showModal) _showModal('En construcción', `La función "${nombre}" se construirá próximamente. Por ahora es solo la estructura del nuevo sistema.`);
         };
         document.getElementById('pvPedidosBtn').addEventListener('click', () => showTomarPedido());
-        document.getElementById('pvBandejaBtn').addEventListener('click', () => enConstruccion('Bandeja de Despacho'));
+        document.getElementById('pvBandejaBtn').addEventListener('click', () => showBandejaDespacho());
         document.getElementById('pvInventarioRutaBtn').addEventListener('click', () => enConstruccion('Inventario por Ruta'));
         document.getElementById('pvVendedoresBtn').addEventListener('click', () => showPreventaVendedores());
         document.getElementById('pvReportesBtn').addEventListener('click', () => enConstruccion('Reportes'));
@@ -525,7 +526,262 @@
         }
     }
 
+
+    // ═══════════════════════════════════════════════════════════
+    // BANDEJA DE DESPACHO — ver pedidos y moverlos por estados
+    // Lee de preventa_pedidos en tiempo real. Cambia estado con merge.
+    // Por ahora NO descuenta inventario (eso será una fase posterior).
+    // ═══════════════════════════════════════════════════════════
+    const PV_ESTADOS = [
+        { key: 'pendiente',    label: 'Pendiente',      color: 'gray',   icon: '🕓' },
+        { key: 'preparacion',  label: 'En preparación', color: 'amber',  icon: '📋' },
+        { key: 'cargado',      label: 'Cargado',        color: 'blue',   icon: '📦' },
+        { key: 'despachado',   label: 'Despachado',     color: 'indigo', icon: '🚚' },
+        { key: 'entregado',    label: 'Entregado',      color: 'green',  icon: '✅' },
+        { key: 'anulado',      label: 'Anulado',        color: 'red',    icon: '✖️' }
+    ];
+    function pvEstadoInfo(key) { return PV_ESTADOS.find(e => e.key === key) || PV_ESTADOS[0]; }
+
+    let _pvPedidos = [];          // pedidos en tiempo real
+    let _pvBandejaUnsub = null;   // listener a cancelar
+    let _pvFiltroEstado = '';     // '' = todos
+    let _pvFiltroVendedor = '';
+    let _pvFiltroHoy = false;
+
+    function showBandejaDespacho() {
+        if (window.userRole !== 'admin') return;
+
+        _mainContent.innerHTML = `
+            <div class="p-2 sm:p-3 pt-5 w-full max-w-2xl mx-auto">
+                <div class="bg-white/95 backdrop-blur-sm p-3 sm:p-4 rounded-lg shadow-xl">
+                    <div class="flex items-center justify-between mb-3">
+                        <h2 class="text-lg font-bold text-gray-800">Bandeja de Despacho</h2>
+                        <button id="pvBandBack" class="px-3 py-1.5 bg-gray-400 text-white text-xs rounded hover:bg-gray-500 font-bold transition">Volver</button>
+                    </div>
+
+                    <!-- Contadores por estado -->
+                    <div id="pvBandContadores" class="flex flex-wrap gap-1 mb-2"></div>
+
+                    <!-- Filtros -->
+                    <div class="grid grid-cols-2 gap-1.5 mb-2">
+                        <select id="pvBandEstado" class="text-xs border border-teal-300 rounded p-1.5 bg-white outline-none">
+                            <option value="">Todos los estados</option>
+                            ${PV_ESTADOS.map(e => `<option value="${e.key}">${e.icon} ${e.label}</option>`).join('')}
+                        </select>
+                        <select id="pvBandVendedor" class="text-xs border border-teal-300 rounded p-1.5 bg-white outline-none">
+                            <option value="">Todos los vendedores</option>
+                        </select>
+                    </div>
+                    <label class="flex items-center gap-1.5 text-[11px] text-gray-600 mb-2">
+                        <input type="checkbox" id="pvBandHoy" class="rounded"> Solo pedidos de hoy
+                    </label>
+
+                    <div id="pvBandLoading" class="text-center py-8 text-gray-400 text-sm">
+                        <svg class="animate-spin h-6 w-6 mx-auto mb-2 text-teal-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path></svg>
+                        Cargando pedidos...
+                    </div>
+                    <div id="pvBandLista" class="hidden space-y-2 max-h-[58vh] overflow-y-auto"></div>
+                </div>
+            </div>`;
+
+        document.getElementById('pvBandBack').addEventListener('click', () => {
+            if (_pvBandejaUnsub) { _pvBandejaUnsub(); _pvBandejaUnsub = null; }
+            window.showPreventaMenu();
+        });
+        document.getElementById('pvBandEstado').addEventListener('change', (e) => { _pvFiltroEstado = e.target.value; renderBandeja(); });
+        document.getElementById('pvBandVendedor').addEventListener('change', (e) => { _pvFiltroVendedor = e.target.value; renderBandeja(); });
+        document.getElementById('pvBandHoy').addEventListener('change', (e) => { _pvFiltroHoy = e.target.checked; renderBandeja(); });
+
+        // Escuchar pedidos en tiempo real
+        try {
+            const ref = _collection(_db, pathPedidos());
+            _pvBandejaUnsub = _onSnapshot(ref, snap => {
+                _pvPedidos = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+                // Poblar vendedores únicos
+                const sel = document.getElementById('pvBandVendedor');
+                if (sel) {
+                    const actual = sel.value;
+                    const vends = [...new Set(_pvPedidos.map(p => p.vendedorNombre).filter(Boolean))].sort();
+                    sel.innerHTML = '<option value="">Todos los vendedores</option>' +
+                        vends.map(v => `<option value="${v}" ${v === actual ? 'selected' : ''}>${v}</option>`).join('');
+                }
+                renderBandeja();
+            }, err => {
+                console.error('Error escuchando pedidos:', err);
+                const l = document.getElementById('pvBandLoading');
+                if (l) l.innerHTML = '<span class="text-red-500">Error al cargar los pedidos.</span>';
+            });
+        } catch (e) {
+            console.error('Error bandeja:', e);
+        }
+    }
+
+    function _pvEsHoy(iso) {
+        if (!iso) return false;
+        const d = new Date(iso);
+        const h = new Date();
+        return d.getFullYear() === h.getFullYear() && d.getMonth() === h.getMonth() && d.getDate() === h.getDate();
+    }
+
+    function renderBandeja() {
+        const loading = document.getElementById('pvBandLoading');
+        const cont = document.getElementById('pvBandLista');
+        const cont2 = document.getElementById('pvBandContadores');
+        if (!cont) return;
+        if (loading) loading.classList.add('hidden');
+        cont.classList.remove('hidden');
+
+        // Contadores por estado (sobre todos los pedidos, antes de filtrar)
+        if (cont2) {
+            cont2.innerHTML = PV_ESTADOS.filter(e => e.key !== 'anulado').map(e => {
+                const n = _pvPedidos.filter(p => (p.estado || 'pendiente') === e.key).length;
+                if (!n) return '';
+                return `<span class="text-[10px] px-1.5 py-0.5 rounded bg-${e.color}-100 text-${e.color}-700 font-bold">${e.icon} ${n} ${e.label}</span>`;
+            }).join('');
+        }
+
+        // Aplicar filtros
+        let lista = _pvPedidos.slice();
+        if (_pvFiltroEstado) lista = lista.filter(p => (p.estado || 'pendiente') === _pvFiltroEstado);
+        if (_pvFiltroVendedor) lista = lista.filter(p => p.vendedorNombre === _pvFiltroVendedor);
+        if (_pvFiltroHoy) lista = lista.filter(p => _pvEsHoy(p.fechaCreacion));
+
+        // Ordenar: más recientes primero
+        lista.sort((a, b) => (b.fechaCreacion || '').localeCompare(a.fechaCreacion || ''));
+
+        if (!lista.length) {
+            cont.innerHTML = '<p class="text-center text-gray-400 py-8 text-sm">No hay pedidos con estos filtros.</p>';
+            return;
+        }
+
+        cont.innerHTML = lista.map(p => {
+            const est = pvEstadoInfo(p.estado || 'pendiente');
+            const numProd = (p.productos || []).length;
+            const fecha = p.fechaCreacion ? new Date(p.fechaCreacion).toLocaleDateString('es-VE', { day: '2-digit', month: '2-digit' }) + ' ' + new Date(p.fechaCreacion).toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' }) : '';
+            return `<div class="border border-gray-200 rounded-lg p-2.5 hover:bg-teal-50 cursor-pointer pv-ped-card" data-id="${p.id}">
+                <div class="flex items-center justify-between gap-2 mb-1">
+                    <div class="min-w-0">
+                        <div class="font-bold text-gray-800 text-sm truncate">${p.clienteNombre || '(sin cliente)'}</div>
+                        <div class="text-[10px] text-gray-400 truncate">${p.zona || '—'} · ${p.vendedorNombre || '—'}</div>
+                    </div>
+                    <span class="text-[10px] px-1.5 py-0.5 rounded bg-${est.color}-100 text-${est.color}-700 font-bold shrink-0 whitespace-nowrap">${est.icon} ${est.label}</span>
+                </div>
+                <div class="flex items-center justify-between text-[11px]">
+                    <span class="text-gray-500">${numProd} producto(s) · ${fecha}</span>
+                    <span class="font-black text-indigo-700">${_pvFmtUSD(p.total)}</span>
+                </div>
+            </div>`;
+        }).join('');
+
+        cont.querySelectorAll('.pv-ped-card').forEach(el =>
+            el.addEventListener('click', () => mostrarDetallePedido(el.dataset.id)));
+    }
+
+
+    // Detalle del pedido con avance de estados
+    function mostrarDetallePedido(id) {
+        const p = _pvPedidos.find(x => x.id === id);
+        if (!p) return;
+        const est = pvEstadoInfo(p.estado || 'pendiente');
+
+        // Secuencia de avance (sin contar anulado)
+        const flujo = ['pendiente', 'preparacion', 'cargado', 'despachado', 'entregado'];
+        const idxActual = flujo.indexOf(p.estado || 'pendiente');
+        const siguiente = (idxActual >= 0 && idxActual < flujo.length - 1) ? flujo[idxActual + 1] : null;
+        const anterior = (idxActual > 0) ? flujo[idxActual - 1] : null;
+
+        document.getElementById('pvPedDetOverlay')?.remove();
+        const ov = document.createElement('div');
+        ov.id = 'pvPedDetOverlay';
+        ov.className = 'fixed inset-0 z-[9998] bg-black/50 flex items-center justify-center p-4';
+
+        const prodRows = (p.productos || []).map(pr => {
+            const partes = [];
+            if (pr.cantCj) partes.push(`${pr.cantCj} Cj`);
+            if (pr.cantPaq) partes.push(`${pr.cantPaq} Paq`);
+            if (pr.cantUnd) partes.push(`${pr.cantUnd} Und`);
+            return `<div class="flex items-center justify-between py-1 border-b border-gray-50 text-xs">
+                <div class="min-w-0"><div class="font-medium text-gray-700 truncate">${pr.presentacion}</div>
+                <div class="text-[10px] text-gray-400">${partes.join(' · ') || '—'}</div></div>
+                <span class="font-bold text-gray-700 shrink-0">${_pvFmtUSD(pr.subtotal)}</span>
+            </div>`;
+        }).join('');
+
+        // Historial de estados
+        const histRows = (p.historialEstados || []).map(h => {
+            const ei = pvEstadoInfo(h.estado);
+            const f = h.fecha ? new Date(h.fecha).toLocaleString('es-VE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
+            return `<div class="flex items-center gap-1.5 text-[10px] text-gray-500"><span>${ei.icon}</span> ${ei.label} · ${f}</div>`;
+        }).join('');
+
+        const btnSiguiente = siguiente ? (() => {
+            const s = pvEstadoInfo(siguiente);
+            return `<button id="pvAvanzar" class="flex-1 py-2.5 bg-${s.color}-600 text-white rounded-lg font-bold text-sm hover:bg-${s.color}-700 transition">${s.icon} Marcar como ${s.label}</button>`;
+        })() : '<div class="flex-1 text-center py-2.5 text-green-600 font-bold text-sm">✅ Pedido entregado</div>';
+
+        ov.innerHTML = `
+            <div class="bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
+                <div class="bg-gradient-to-r from-teal-600 to-teal-700 text-white px-4 py-3">
+                    <div class="font-bold text-base">${p.clienteNombre || '(sin cliente)'}</div>
+                    <div class="text-xs opacity-90">${p.clienteNombrePersonal || ''}${p.zona ? ' · ' + p.zona : ''}</div>
+                    <div class="mt-1.5 inline-flex items-center gap-1 text-[10px] bg-white/20 px-2 py-0.5 rounded-full">
+                        ${est.icon} ${est.label} · Ruta: ${p.vendedorNombre || '—'}
+                    </div>
+                </div>
+                <div class="overflow-y-auto p-4 flex-1">
+                    <div class="mb-3">
+                        <p class="text-[10px] font-bold text-gray-500 uppercase mb-1">Productos (${(p.productos || []).length})</p>
+                        ${prodRows || '<p class="text-xs text-gray-400">Sin productos</p>'}
+                        <div class="flex justify-between mt-2 pt-2 border-t font-bold text-sm">
+                            <span>Total</span><span class="text-indigo-700">${_pvFmtUSD(p.total)}</span>
+                        </div>
+                    </div>
+                    ${histRows ? `<div class="bg-gray-50 rounded-lg p-2 mb-2"><p class="text-[10px] font-bold text-gray-500 uppercase mb-1">Historial</p>${histRows}</div>` : ''}
+                </div>
+                <div class="p-3 border-t shrink-0 space-y-2">
+                    <div class="flex gap-2">
+                        ${anterior ? `<button id="pvRetroceder" class="px-3 py-2.5 bg-gray-100 text-gray-500 rounded-lg font-bold text-xs hover:bg-gray-200 transition">↩ Atrás</button>` : ''}
+                        ${btnSiguiente}
+                    </div>
+                    <div class="flex gap-2">
+                        ${(p.estado !== 'anulado' && p.estado !== 'entregado') ? `<button id="pvAnular" class="flex-1 py-2 bg-red-50 text-red-500 rounded-lg font-bold text-xs hover:bg-red-100 transition">Anular pedido</button>` : ''}
+                        <button id="pvPedDetCerrar" class="flex-1 py-2 bg-gray-100 text-gray-600 rounded-lg font-bold text-xs">Cerrar</button>
+                    </div>
+                </div>
+            </div>`;
+        document.body.appendChild(ov);
+        ov.addEventListener('click', e => { if (e.target === ov) ov.remove(); });
+        document.getElementById('pvPedDetCerrar').addEventListener('click', () => ov.remove());
+
+        if (siguiente) document.getElementById('pvAvanzar')?.addEventListener('click', () => cambiarEstadoPedido(p.id, siguiente));
+        if (anterior) document.getElementById('pvRetroceder')?.addEventListener('click', () => cambiarEstadoPedido(p.id, anterior));
+        document.getElementById('pvAnular')?.addEventListener('click', () => {
+            if (_showModal) {
+                _showModal('Anular pedido', `¿Anular el pedido de <strong>${p.clienteNombre}</strong>? El pedido quedará marcado como anulado.`,
+                    () => cambiarEstadoPedido(p.id, 'anulado'), 'Sí, anular', () => {});
+            }
+        });
+    }
+
+    async function cambiarEstadoPedido(id, nuevoEstado) {
+        const p = _pvPedidos.find(x => x.id === id);
+        if (!p) return;
+        const nuevoHist = (p.historialEstados || []).concat([{ estado: nuevoEstado, fecha: new Date().toISOString(), por: _userId }]);
+        try {
+            await _setDoc(_doc(_db, pathPedidos(), id), {
+                estado: nuevoEstado,
+                historialEstados: nuevoHist
+            }, { merge: true });
+            document.getElementById('pvPedDetOverlay')?.remove();
+            // El onSnapshot refresca la lista automáticamente
+        } catch (e) {
+            console.error('Error cambiando estado:', e);
+            if (_showModal) _showModal('Error', 'No se pudo actualizar el estado del pedido.');
+        }
+    }
+
 })();
+
 
 
 
