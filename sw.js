@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v37'; // v37: navegacion Venta Tradi/Pre-Venta (admin) + modulo preventa.js base
+const CACHE_NAME = 'ventas-app-cache-v38'; // v38: preventa - Vendedores/Zonas (asignar zona de referencia)
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
@@ -180,6 +180,7 @@ self.addEventListener('fetch', event => {
             })
     );
 });
+
 
 
 
