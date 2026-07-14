@@ -26,6 +26,7 @@
     let _pvProductos = [];        // cache del catálogo maestro (solo lectura)
     // Estado del pedido en construcción
     let _pedidoActual = { vendedor: null, cliente: null, productos: {} };
+    let _pvSortFn = null;  // función de orden global (misma que venta tradicional)
 
     window.initPreventa = function (dependencies) {
         _db          = dependencies.db;
@@ -260,13 +261,8 @@
                         Cargando clientes y catálogo...
                     </div>
                     <div id="pvPedForm" class="hidden space-y-3">
-                        <!-- Vendedor -->
-                        <div>
-                            <label class="text-[10px] font-bold text-indigo-700 uppercase">Vendedor (ruta)</label>
-                            <select id="pvPedVendedor" class="w-full text-sm border border-indigo-300 rounded p-2 bg-white outline-none">
-                                <option value="">— Elige el vendedor —</option>
-                            </select>
-                        </div>
+                        <!-- Vendedor (selector si es admin; automático si es vendedor) -->
+                        <div id="pvPedVendedorWrap"></div>
                         <!-- Cliente -->
                         <div>
                             <label class="text-[10px] font-bold text-indigo-700 uppercase">Cliente</label>
@@ -312,6 +308,10 @@
             _pvClientes = cliSnap.docs.map(d => ({ id: d.id, ...d.data() }));
             _pvProductos = prodSnap.docs.map(d => ({ id: d.id, ...d.data() }));
             if (usersSnap) _pvUsuarios = usersSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+            // Cargar la MISMA función de orden que usa la venta tradicional
+            if (window.getGlobalProductSortFunction) {
+                try { _pvSortFn = await window.getGlobalProductSortFunction(); } catch (e) { _pvSortFn = null; }
+            }
         } catch (e) {
             console.error('Error cargando datos de pedido:', e);
             document.getElementById('pvPedLoading').innerHTML = '<span class="text-red-500">Error al cargar los datos.</span>';
@@ -321,15 +321,30 @@
         document.getElementById('pvPedLoading').classList.add('hidden');
         document.getElementById('pvPedForm').classList.remove('hidden');
 
-        // Poblar vendedores (solo rol user)
-        const vendedores = _pvUsuarios.filter(u => u.role === 'user');
-        const selVend = document.getElementById('pvPedVendedor');
-        selVend.innerHTML = '<option value="">— Elige el vendedor —</option>' +
-            vendedores.map(u => `<option value="${u.id}">${_pvNombreVendedor(u)}${u.zonaPreventa ? ' · ' + u.zonaPreventa : ''}</option>`).join('');
-        selVend.addEventListener('change', () => {
-            _pedidoActual.vendedor = _pvUsuarios.find(u => u.id === selVend.value) || null;
-            actualizarBotonGuardar();
-        });
+        // Vendedor: si es admin, selector; si es vendedor, su propia cuenta automáticamente
+        const wrap = document.getElementById('pvPedVendedorWrap');
+        if (window.userRole === 'admin') {
+            const vendedores = _pvUsuarios.filter(u => u.role === 'user');
+            wrap.innerHTML = `
+                <label class="text-[10px] font-bold text-indigo-700 uppercase">Vendedor (ruta)</label>
+                <select id="pvPedVendedor" class="w-full text-sm border border-indigo-300 rounded p-2 bg-white outline-none">
+                    <option value="">— Elige el vendedor —</option>
+                    ${vendedores.map(u => `<option value="${u.id}">${_pvNombreVendedor(u)}${u.zonaPreventa ? ' · ' + u.zonaPreventa : ''}</option>`).join('')}
+                </select>`;
+            document.getElementById('pvPedVendedor').addEventListener('change', (e) => {
+                _pedidoActual.vendedor = _pvUsuarios.find(u => u.id === e.target.value) || null;
+                actualizarBotonGuardar();
+            });
+        } else {
+            // Vendedor logueado: se asigna automáticamente su propia cuenta
+            const yo = _pvUsuarios.find(u => u.id === _userId) || { id: _userId, nombre: 'Vendedor' };
+            _pedidoActual.vendedor = yo;
+            wrap.innerHTML = `
+                <label class="text-[10px] font-bold text-indigo-700 uppercase">Vendedor (ruta)</label>
+                <div class="w-full text-sm border border-indigo-200 rounded p-2 bg-indigo-50 text-indigo-800 font-semibold">
+                    ${_pvNombreVendedor(yo)}${yo.zonaPreventa ? ' · ' + yo.zonaPreventa : ''}
+                </div>`;
+        }
 
         // Poblar rubros
         const rubros = [...new Set(_pvProductos.map(p => p.rubro).filter(Boolean))].sort();
@@ -396,8 +411,9 @@
         const rubro = document.getElementById('pvPedRubro')?.value || '';
         let lista = _pvProductos.slice();
         if (rubro) lista = lista.filter(p => p.rubro === rubro);
-        // Ordenar por segmento y luego presentación
-        lista.sort((a, b) => (a.segmento || '').localeCompare(b.segmento || '') || (a.presentacion || '').localeCompare(b.presentacion || ''));
+        // Ordenar con la MISMA función que la venta tradicional (rubro→segmento→marca→producto)
+        if (_pvSortFn) lista.sort(_pvSortFn);
+        else lista.sort((a, b) => (a.segmento || '').localeCompare(b.segmento || '') || (a.presentacion || '').localeCompare(b.presentacion || ''));
 
         if (!lista.length) { cont.innerHTML = '<p class="text-center text-gray-400 text-xs py-6">No hay productos.</p>'; return; }
 
@@ -1451,6 +1467,7 @@
     }
 
 })();
+
 
 
 
