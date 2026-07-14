@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v41'; // v41: preventa - Bandeja de Despacho (estados en tiempo real)
+const CACHE_NAME = 'ventas-app-cache-v42'; // v42: preventa - ticket de galpon + editar pedido en despacho
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
@@ -180,6 +180,7 @@ self.addEventListener('fetch', event => {
             })
     );
 });
+
 
 
 
