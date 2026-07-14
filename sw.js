@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v40'; // v40: preventa - Tomar Pedido (guarda en preventa_pedidos, no toca inventario)
+const CACHE_NAME = 'ventas-app-cache-v41'; // v41: preventa - Bandeja de Despacho (estados en tiempo real)
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
@@ -180,6 +180,7 @@ self.addEventListener('fetch', event => {
             })
     );
 });
+
 
 
 
