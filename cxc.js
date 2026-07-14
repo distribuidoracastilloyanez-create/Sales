@@ -691,7 +691,7 @@
                 <!-- SIMULADOR DE ABONO -->
                 <div class="bg-emerald-50 border border-emerald-200 p-3 rounded-lg mb-4 shadow-sm">
                     <div class="flex items-center justify-between mb-2">
-                        <p class="text-[11px] text-emerald-800 uppercase tracking-wider font-bold">🧮 Simular Abono</p>
+                        <p class="text-[11px] text-emerald-800 uppercase tracking-wider font-bold">🧮 Simulador de Pago</p>
                         <span class="text-[9px] text-gray-400">solo cálculo, no modifica el CXC</span>
                     </div>
                     <div class="flex gap-2 items-stretch">
@@ -1632,6 +1632,7 @@
         }, 100);
     };
 })();
+
 
 
 
