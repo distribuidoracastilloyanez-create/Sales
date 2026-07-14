@@ -743,6 +743,8 @@
                         ${anterior ? `<button id="pvRetroceder" class="px-3 py-2.5 bg-gray-100 text-gray-500 rounded-lg font-bold text-xs hover:bg-gray-200 transition">↩ Atrás</button>` : ''}
                         ${btnSiguiente}
                     </div>
+                    ${(p.estado !== 'anulado' && p.estado !== 'entregado') ? `<button id="pvEditarPedido" class="w-full py-2 bg-amber-500 text-white rounded-lg font-bold text-xs hover:bg-amber-600 transition">✏️ Editar / Aumentar pedido</button>` : ''}
+                    <button id="pvTicketGalpon" class="w-full py-2 bg-slate-700 text-white rounded-lg font-bold text-xs hover:bg-slate-800 transition">🖨️ Ticket de Galpón (carga)</button>
                     <div class="flex gap-2">
                         ${(p.estado !== 'anulado' && p.estado !== 'entregado') ? `<button id="pvAnular" class="flex-1 py-2 bg-red-50 text-red-500 rounded-lg font-bold text-xs hover:bg-red-100 transition">Anular pedido</button>` : ''}
                         <button id="pvPedDetCerrar" class="flex-1 py-2 bg-gray-100 text-gray-600 rounded-lg font-bold text-xs">Cerrar</button>
@@ -752,6 +754,8 @@
         document.body.appendChild(ov);
         ov.addEventListener('click', e => { if (e.target === ov) ov.remove(); });
         document.getElementById('pvPedDetCerrar').addEventListener('click', () => ov.remove());
+        document.getElementById('pvTicketGalpon')?.addEventListener('click', () => generarTicketGalpon(p));
+        document.getElementById('pvEditarPedido')?.addEventListener('click', () => editarPedidoDespacho(p));
 
         if (siguiente) document.getElementById('pvAvanzar')?.addEventListener('click', () => cambiarEstadoPedido(p.id, siguiente));
         if (anterior) document.getElementById('pvRetroceder')?.addEventListener('click', () => cambiarEstadoPedido(p.id, anterior));
@@ -780,7 +784,315 @@
         }
     }
 
+
+    // ═══════════════════════════════════════════════════════════
+    // TICKET DE GALPÓN — orden de carga para almacenistas
+    // Documento interno (NO es factura). Lista productos con casillas
+    // para marcar lo cargado. Se puede compartir como imagen o imprimir texto.
+    // ═══════════════════════════════════════════════════════════
+    function generarTicketGalpon(p) {
+        document.getElementById('pvTicketOverlay')?.remove();
+        const ov = document.createElement('div');
+        ov.id = 'pvTicketOverlay';
+        ov.className = 'fixed inset-0 z-[9999] bg-black/60 flex items-center justify-center p-4';
+
+        const fecha = new Date().toLocaleDateString('es-VE');
+        const hora = new Date().toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' });
+
+        // Filas de productos con casilla de "cargado"
+        const filas = (p.productos || []).map((pr, i) => {
+            const partes = [];
+            if (pr.cantCj) partes.push(`${pr.cantCj} Caja(s)`);
+            if (pr.cantPaq) partes.push(`${pr.cantPaq} Paq`);
+            if (pr.cantUnd) partes.push(`${pr.cantUnd} Und`);
+            return `<tr style="border-bottom:1px solid #e5e7eb;">
+                <td style="padding:6px 4px;text-align:center;font-size:16px;">☐</td>
+                <td style="padding:6px 4px;font-size:12px;">
+                    <div style="font-weight:700;color:#1f2937;">${pr.presentacion}</div>
+                    <div style="font-size:10px;color:#6b7280;">${pr.marca || ''}</div>
+                </td>
+                <td style="padding:6px 4px;text-align:right;font-size:12px;font-weight:700;color:#111827;">${partes.join('<br>') || '—'}</td>
+            </tr>`;
+        }).join('');
+
+        ov.innerHTML = `
+            <div class="bg-white w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden max-h-[92vh] flex flex-col">
+                <div class="overflow-y-auto flex-1">
+                    <div id="pvTicketCapturable" style="background:#fff;padding:16px;font-family:system-ui,sans-serif;">
+                        <div style="text-align:center;border-bottom:2px solid #334155;padding-bottom:8px;margin-bottom:10px;">
+                            <div style="font-size:16px;font-weight:800;color:#1e293b;">DISTRIBUIDORA CASTILLO YAÑEZ</div>
+                            <div style="font-size:13px;font-weight:700;color:#334155;">ORDEN DE CARGA — GALPÓN</div>
+                            <div style="font-size:10px;color:#94a3b8;">Documento interno · no es factura</div>
+                        </div>
+                        <div style="font-size:11px;color:#374151;margin-bottom:8px;line-height:1.5;">
+                            <div><strong>Cliente:</strong> ${p.clienteNombre || '—'}</div>
+                            <div><strong>Zona:</strong> ${p.zona || '—'}</div>
+                            <div><strong>Vendedor/Ruta:</strong> ${p.vendedorNombre || '—'}</div>
+                            <div><strong>Fecha:</strong> ${fecha} ${hora}</div>
+                        </div>
+                        <table style="width:100%;border-collapse:collapse;border-top:1px solid #cbd5e1;">
+                            <thead>
+                                <tr style="background:#f1f5f9;">
+                                    <th style="padding:4px;font-size:9px;color:#64748b;text-align:center;width:28px;">✓</th>
+                                    <th style="padding:4px;font-size:9px;color:#64748b;text-align:left;">Producto</th>
+                                    <th style="padding:4px;font-size:9px;color:#64748b;text-align:right;">Cantidad</th>
+                                </tr>
+                            </thead>
+                            <tbody>${filas || '<tr><td colspan="3" style="padding:8px;text-align:center;color:#9ca3af;font-size:11px;">Sin productos</td></tr>'}</tbody>
+                        </table>
+                        <div style="margin-top:12px;padding-top:8px;border-top:1px dashed #cbd5e1;font-size:10px;color:#6b7280;">
+                            <div>Cargado por: ______________________</div>
+                            <div style="margin-top:6px;">Firma: ______________________</div>
+                        </div>
+                        <div style="margin-top:8px;font-size:9px;color:#94a3b8;text-align:center;">
+                            Marque cada casilla al cargar el producto. Este ticket es el respaldo de la carga.
+                        </div>
+                    </div>
+                </div>
+                <div class="p-3 border-t shrink-0 flex gap-2">
+                    <button id="pvTicketImg" class="flex-1 py-2.5 bg-slate-700 text-white rounded-lg font-bold text-sm hover:bg-slate-800 transition">📤 Compartir / Imprimir</button>
+                    <button id="pvTicketCerrar" class="px-4 py-2.5 bg-gray-100 text-gray-600 rounded-lg font-bold text-sm">Cerrar</button>
+                </div>
+            </div>`;
+        document.body.appendChild(ov);
+        ov.addEventListener('click', e => { if (e.target === ov) ov.remove(); });
+        document.getElementById('pvTicketCerrar').addEventListener('click', () => ov.remove());
+        document.getElementById('pvTicketImg').addEventListener('click', () =>
+            _pvCapturarCompartir(document.getElementById('pvTicketCapturable'), `Carga_${(p.clienteNombre || 'pedido').replace(/[\s/]/g, '_')}`));
+    }
+
+    // Captura un elemento como PNG y lo comparte (o descarga como fallback)
+    async function _pvCapturarCompartir(elemento, nombreArchivo) {
+        if (typeof html2canvas === 'undefined') {
+            if (_showModal) _showModal('Aviso', 'No se pudo generar la imagen en este dispositivo.');
+            return;
+        }
+        try {
+            const canvas = await html2canvas(elemento, { scale: 2, backgroundColor: '#ffffff' });
+            canvas.toBlob(async (blob) => {
+                if (!blob) return;
+                const file = new File([blob], `${nombreArchivo}.png`, { type: 'image/png' });
+                if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+                    try { await navigator.share({ files: [file], title: nombreArchivo }); return; } catch (e) {}
+                }
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url; a.download = `${nombreArchivo}.png`;
+                a.click();
+                URL.revokeObjectURL(url);
+            }, 'image/png');
+        } catch (e) {
+            console.error('Error al capturar:', e);
+            if (_showModal) _showModal('Error', 'No se pudo generar la imagen.');
+        }
+    }
+
+
+    // ═══════════════════════════════════════════════════════════
+    // EDITAR / AUMENTAR PEDIDO EN DESPACHO
+    // Permite a despacho ajustar cantidades y agregar productos (excedente).
+    // Guarda el pedido ORIGINAL la primera vez (para comparar pedido vs entregado).
+    // Escribe solo en preventa_pedidos.
+    // ═══════════════════════════════════════════════════════════
+    let _pvEditProductos = {}; // estado temporal de edición
+
+    async function editarPedidoDespacho(p) {
+        // Asegurar catálogo cargado (si entró directo a la bandeja)
+        if (!_pvProductos.length) {
+            try {
+                const snap = await _getDocs(_collection(_db, pathProductos()));
+                _pvProductos = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+            } catch (e) { console.error('Error cargando catálogo:', e); }
+        }
+
+        // Cargar los productos actuales del pedido al estado de edición
+        _pvEditProductos = {};
+        (p.productos || []).forEach(pr => {
+            _pvEditProductos[pr.id] = {
+                id: pr.id, presentacion: pr.presentacion, marca: pr.marca || null,
+                precios: pr.precios || {},
+                unidadesPorCaja: (_pvProductos.find(x => x.id === pr.id)?.unidadesPorCaja) || 1,
+                unidadesPorPaquete: (_pvProductos.find(x => x.id === pr.id)?.unidadesPorPaquete) || 1,
+                cantCj: pr.cantCj || 0, cantPaq: pr.cantPaq || 0, cantUnd: pr.cantUnd || 0
+            };
+        });
+
+        document.getElementById('pvEditOverlay')?.remove();
+        const ov = document.createElement('div');
+        ov.id = 'pvEditOverlay';
+        ov.className = 'fixed inset-0 z-[9999] bg-black/60 flex items-center justify-center p-4';
+        ov.innerHTML = `
+            <div class="bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden max-h-[92vh] flex flex-col">
+                <div class="bg-amber-500 text-white px-4 py-3 shrink-0">
+                    <div class="font-bold text-base">✏️ Editar pedido</div>
+                    <div class="text-xs opacity-90">${p.clienteNombre || ''} · ${p.vendedorNombre || ''}</div>
+                </div>
+                <div class="p-3 shrink-0 border-b">
+                    <input type="text" id="pvEditBuscarProd" placeholder="Buscar producto para agregar..." autocomplete="off"
+                           class="w-full text-sm border border-amber-300 rounded p-2 outline-none">
+                    <div id="pvEditProdDrop" class="hidden bg-white border border-gray-200 rounded shadow-lg max-h-40 overflow-y-auto mt-1"></div>
+                </div>
+                <div id="pvEditLista" class="overflow-y-auto p-3 flex-1"></div>
+                <div class="p-3 border-t shrink-0">
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="text-sm font-bold text-gray-600">Nuevo total:</span>
+                        <span id="pvEditTotal" class="text-xl font-black text-amber-600">$0.00</span>
+                    </div>
+                    <div class="flex gap-2">
+                        <button id="pvEditGuardar" class="flex-1 py-2.5 bg-amber-600 text-white rounded-lg font-bold text-sm hover:bg-amber-700 transition">Guardar cambios</button>
+                        <button id="pvEditCancelar" class="px-4 py-2.5 bg-gray-100 text-gray-600 rounded-lg font-bold text-sm">Cancelar</button>
+                    </div>
+                </div>
+            </div>`;
+        document.body.appendChild(ov);
+        ov.addEventListener('click', e => { if (e.target === ov) ov.remove(); });
+        document.getElementById('pvEditCancelar').addEventListener('click', () => ov.remove());
+
+        renderEditLista();
+
+        // Buscador de productos para agregar
+        const buscar = document.getElementById('pvEditBuscarProd');
+        let deb = null;
+        buscar.addEventListener('input', () => {
+            clearTimeout(deb);
+            deb = setTimeout(() => {
+                const term = buscar.value.toLowerCase().trim();
+                const drop = document.getElementById('pvEditProdDrop');
+                if (!term) { drop.classList.add('hidden'); return; }
+                const found = _pvProductos.filter(pr =>
+                    (pr.presentacion || '').toLowerCase().includes(term) ||
+                    (pr.marca || '').toLowerCase().includes(term)).slice(0, 20);
+                drop.innerHTML = found.length
+                    ? found.map(pr => `<div class="pv-edit-add px-2 py-1.5 text-xs hover:bg-amber-50 cursor-pointer border-b border-gray-100" data-id="${pr.id}">
+                        <span class="font-semibold text-gray-800">${pr.presentacion}</span> <span class="text-gray-400">${pr.marca || ''}</span></div>`).join('')
+                    : '<div class="px-2 py-2 text-xs text-gray-400">Sin coincidencias</div>';
+                drop.classList.remove('hidden');
+                drop.querySelectorAll('.pv-edit-add').forEach(el => el.addEventListener('click', () => {
+                    agregarProdEdit(el.dataset.id);
+                    buscar.value = ''; drop.classList.add('hidden');
+                }));
+            }, 200);
+        });
+
+        document.getElementById('pvEditGuardar').addEventListener('click', () => guardarEdicionPedido(p));
+    }
+
+    function agregarProdEdit(pid) {
+        if (_pvEditProductos[pid]) return; // ya está
+        const prod = _pvProductos.find(x => x.id === pid);
+        if (!prod) return;
+        _pvEditProductos[pid] = {
+            id: prod.id, presentacion: prod.presentacion, marca: prod.marca || null,
+            precios: prod.precios || { und: prod.precioPorUnidad || 0 },
+            unidadesPorCaja: prod.unidadesPorCaja || 1, unidadesPorPaquete: prod.unidadesPorPaquete || 1,
+            cantCj: 0, cantPaq: 0, cantUnd: 0
+        };
+        renderEditLista();
+    }
+
+    function renderEditLista() {
+        const cont = document.getElementById('pvEditLista');
+        if (!cont) return;
+        const items = Object.values(_pvEditProductos);
+        if (!items.length) {
+            cont.innerHTML = '<p class="text-center text-gray-400 text-xs py-6">Busca productos arriba para agregarlos.</p>';
+            actualizarTotalEdit();
+            return;
+        }
+        cont.innerHTML = items.map(pr => {
+            const prod = _pvProductos.find(x => x.id === pr.id) || {};
+            const vPor = prod.ventaPor || { cj: pr.cantCj > 0, paq: pr.cantPaq > 0, und: true };
+            const campo = (tipo, label, val) => `
+                <div class="flex items-center gap-1">
+                    <input type="number" min="0" value="${val || 0}" data-pid="${pr.id}" data-tipo="${tipo}"
+                           class="pv-edit-inp w-12 p-1 text-center border rounded text-xs font-bold">
+                    <span class="text-[9px] text-gray-400">${label}</span>
+                </div>`;
+            return `<div class="border border-gray-200 rounded-lg p-2 mb-1.5">
+                <div class="flex items-center justify-between mb-1">
+                    <div class="text-xs font-bold text-gray-700 truncate">${pr.presentacion}</div>
+                    <button class="pv-edit-del text-[10px] text-red-400 hover:underline shrink-0" data-id="${pr.id}">quitar</button>
+                </div>
+                <div class="flex gap-2">
+                    ${vPor.cj ? campo('cantCj', 'Cj', pr.cantCj) : ''}
+                    ${vPor.paq ? campo('cantPaq', 'Paq', pr.cantPaq) : ''}
+                    ${campo('cantUnd', 'Und', pr.cantUnd)}
+                </div>
+            </div>`;
+        }).join('');
+
+        cont.querySelectorAll('.pv-edit-inp').forEach(inp => inp.addEventListener('input', () => {
+            const pid = inp.dataset.pid, tipo = inp.dataset.tipo;
+            if (_pvEditProductos[pid]) _pvEditProductos[pid][tipo] = parseInt(inp.value, 10) || 0;
+            actualizarTotalEdit();
+        }));
+        cont.querySelectorAll('.pv-edit-del').forEach(btn => btn.addEventListener('click', () => {
+            delete _pvEditProductos[btn.dataset.id];
+            renderEditLista();
+        }));
+        actualizarTotalEdit();
+    }
+
+    function calcularTotalEdit() {
+        return Object.values(_pvEditProductos).reduce((s, p) => {
+            const pr = p.precios || {};
+            return s + (pr.cj || 0) * (p.cantCj || 0) + (pr.paq || 0) * (p.cantPaq || 0) + (pr.und || 0) * (p.cantUnd || 0);
+        }, 0);
+    }
+    function actualizarTotalEdit() {
+        const el = document.getElementById('pvEditTotal');
+        if (el) el.textContent = _pvFmtUSD(calcularTotalEdit());
+    }
+
+    async function guardarEdicionPedido(pedidoOriginal) {
+        // Filtrar productos con cantidad 0
+        const productos = Object.values(_pvEditProductos)
+            .filter(p => (p.cantCj || 0) > 0 || (p.cantPaq || 0) > 0 || (p.cantUnd || 0) > 0)
+            .map(p => ({
+                id: p.id, presentacion: p.presentacion, marca: p.marca || null,
+                cantCj: p.cantCj || 0, cantPaq: p.cantPaq || 0, cantUnd: p.cantUnd || 0,
+                precios: p.precios,
+                subtotal: (p.precios?.cj || 0) * (p.cantCj || 0) + (p.precios?.paq || 0) * (p.cantPaq || 0) + (p.precios?.und || 0) * (p.cantUnd || 0)
+            }));
+
+        if (!productos.length) {
+            if (_showModal) _showModal('Aviso', 'El pedido debe tener al menos un producto.');
+            return;
+        }
+        const total = productos.reduce((s, p) => s + p.subtotal, 0);
+
+        const btn = document.getElementById('pvEditGuardar');
+        btn.disabled = true; btn.textContent = 'Guardando...';
+
+        // Guardar el pedido ORIGINAL la primera vez que se edita
+        const cambios = {
+            productos: productos,
+            total: total,
+            editadoEnDespacho: true,
+            fechaEdicion: new Date().toISOString(),
+            editadoPor: _userId
+        };
+        if (!pedidoOriginal.pedidoOriginal) {
+            cambios.pedidoOriginal = {
+                productos: pedidoOriginal.productos || [],
+                total: pedidoOriginal.total || 0
+            };
+        }
+
+        try {
+            await _setDoc(_doc(_db, pathPedidos(), pedidoOriginal.id), cambios, { merge: true });
+            document.getElementById('pvEditOverlay')?.remove();
+            document.getElementById('pvPedDetOverlay')?.remove();
+            // onSnapshot refresca la bandeja
+        } catch (e) {
+            console.error('Error guardando edición:', e);
+            if (_showModal) _showModal('Error', 'No se pudo guardar la edición.');
+            btn.disabled = false; btn.textContent = 'Guardar cambios';
+        }
+    }
+
 })();
+
 
 
 
