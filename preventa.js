@@ -109,7 +109,7 @@
         document.getElementById('pvBandejaBtn').addEventListener('click', () => showBandejaDespacho());
         document.getElementById('pvInventarioRutaBtn').addEventListener('click', () => showInventarioRuta());
         document.getElementById('pvVendedoresBtn').addEventListener('click', () => showPreventaVendedores());
-        document.getElementById('pvReportesBtn').addEventListener('click', () => enConstruccion('Reportes'));
+        document.getElementById('pvReportesBtn').addEventListener('click', () => showReportesPreventa());
         document.getElementById('pvConfigBtn').addEventListener('click', () => enConstruccion('Configuración'));
     };
 
@@ -1248,7 +1248,210 @@
         }
     }
 
+
+    // ═══════════════════════════════════════════════════════════
+    // REPORTES DE PREVENTA — analítica sobre preventa_pedidos
+    // Solo lectura. No toca el sistema tradicional.
+    // ═══════════════════════════════════════════════════════════
+    let _pvRepPedidos = [];
+    let _pvRepRango = 'hoy';
+
+    async function showReportesPreventa() {
+        if (window.userRole !== 'admin') return;
+        _mainContent.innerHTML = `
+            <div class="p-2 sm:p-3 pt-5 w-full max-w-2xl mx-auto">
+                <div class="bg-white/95 backdrop-blur-sm p-3 sm:p-4 rounded-lg shadow-xl">
+                    <div class="flex items-center justify-between mb-3">
+                        <h2 class="text-lg font-bold text-gray-800">Reportes de Pre-Venta</h2>
+                        <button id="pvRepBack" class="px-3 py-1.5 bg-gray-400 text-white text-xs rounded hover:bg-gray-500 font-bold transition">Volver</button>
+                    </div>
+                    <div class="flex gap-1.5 mb-3">
+                        <select id="pvRepRango" class="flex-1 text-xs border border-slate-300 rounded p-1.5 bg-white outline-none">
+                            <option value="hoy">Hoy</option>
+                            <option value="semana">Últimos 7 días</option>
+                            <option value="mes">Últimos 30 días</option>
+                            <option value="todos">Todos</option>
+                        </select>
+                        <button id="pvRepExcel" class="text-xs bg-green-600 text-white rounded px-3 py-1.5 font-bold hover:bg-green-700 transition">📊 Excel</button>
+                    </div>
+                    <div id="pvRepLoading" class="text-center py-8 text-gray-400 text-sm">
+                        <svg class="animate-spin h-6 w-6 mx-auto mb-2 text-slate-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path></svg>
+                        Cargando pedidos...
+                    </div>
+                    <div id="pvRepContenido" class="hidden space-y-3"></div>
+                </div>
+            </div>`;
+        document.getElementById('pvRepBack').addEventListener('click', () => window.showPreventaMenu());
+        document.getElementById('pvRepRango').addEventListener('change', (e) => { _pvRepRango = e.target.value; renderReportes(); });
+        document.getElementById('pvRepExcel').addEventListener('click', exportarReporteExcel);
+
+        try {
+            const snap = await _getDocs(_collection(_db, pathPedidos()));
+            _pvRepPedidos = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        } catch (e) {
+            console.error('Error cargando reportes:', e);
+            document.getElementById('pvRepLoading').innerHTML = '<span class="text-red-500">Error al cargar.</span>';
+            return;
+        }
+        document.getElementById('pvRepLoading').classList.add('hidden');
+        document.getElementById('pvRepContenido').classList.remove('hidden');
+        renderReportes();
+    }
+
+    function _pvFiltrarPorRango(pedidos) {
+        if (_pvRepRango === 'todos') return pedidos;
+        const ahora = new Date();
+        let desde = new Date();
+        if (_pvRepRango === 'hoy') desde.setHours(0, 0, 0, 0);
+        else if (_pvRepRango === 'semana') desde.setDate(ahora.getDate() - 7);
+        else if (_pvRepRango === 'mes') desde.setDate(ahora.getDate() - 30);
+        return pedidos.filter(p => {
+            if (!p.fechaCreacion) return false;
+            return new Date(p.fechaCreacion) >= desde;
+        });
+    }
+
+    function renderReportes() {
+        const cont = document.getElementById('pvRepContenido');
+        if (!cont) return;
+        const pedidos = _pvFiltrarPorRango(_pvRepPedidos);
+        const activos = pedidos.filter(p => p.estado !== 'anulado');
+
+        if (!pedidos.length) {
+            cont.innerHTML = '<p class="text-center text-gray-400 py-8 text-sm">No hay pedidos en este período.</p>';
+            return;
+        }
+
+        // 1. Resumen general
+        const totalMonto = activos.reduce((s, p) => s + (p.total || 0), 0);
+        const ticketProm = activos.length ? totalMonto / activos.length : 0;
+        const porEstado = {};
+        PV_ESTADOS.forEach(e => porEstado[e.key] = pedidos.filter(p => (p.estado || 'pendiente') === e.key).length);
+
+        // 2. Por vendedor
+        const porVend = {};
+        activos.forEach(p => {
+            const k = p.vendedorNombre || '—';
+            if (!porVend[k]) porVend[k] = { pedidos: 0, monto: 0, entregados: 0 };
+            porVend[k].pedidos++;
+            porVend[k].monto += p.total || 0;
+            if (p.estado === 'entregado') porVend[k].entregados++;
+        });
+
+        // 3. Por zona
+        const porZona = {};
+        activos.forEach(p => {
+            const k = p.zona || '—';
+            if (!porZona[k]) porZona[k] = { pedidos: 0, monto: 0 };
+            porZona[k].pedidos++;
+            porZona[k].monto += p.total || 0;
+        });
+
+        // 4. Productos más pedidos (por unidades totales estimadas y monto)
+        const porProd = {};
+        activos.forEach(p => (p.productos || []).forEach(pr => {
+            if (!porProd[pr.presentacion]) porProd[pr.presentacion] = { cajas: 0, monto: 0 };
+            porProd[pr.presentacion].cajas += (pr.cantCj || 0);
+            porProd[pr.presentacion].monto += (pr.subtotal || 0);
+        }));
+        const topProd = Object.entries(porProd).sort((a, b) => b[1].monto - a[1].monto).slice(0, 10);
+
+        // 5. Aumento en despacho
+        const editados = activos.filter(p => p.editadoEnDespacho && p.pedidoOriginal);
+        const montoOriginal = editados.reduce((s, p) => s + (p.pedidoOriginal.total || 0), 0);
+        const montoFinal = editados.reduce((s, p) => s + (p.total || 0), 0);
+        const aumento = montoFinal - montoOriginal;
+
+        const card = (titulo, contenido) => `
+            <div class="border border-gray-200 rounded-lg p-3">
+                <p class="text-[10px] font-bold text-slate-500 uppercase mb-2">${titulo}</p>
+                ${contenido}
+            </div>`;
+
+        const filaKV = (k, v, extra = '') => `<div class="flex justify-between items-center py-1 border-b border-gray-50 text-xs">
+            <span class="text-gray-600 truncate">${k}</span><span class="font-bold text-gray-800 shrink-0">${v}${extra}</span></div>`;
+
+        let html = '';
+
+        // Resumen
+        html += card('Resumen general', `
+            <div class="grid grid-cols-2 gap-2 mb-2">
+                <div class="bg-slate-50 rounded p-2 text-center"><div class="text-lg font-black text-slate-700">${activos.length}</div><div class="text-[9px] text-gray-500 uppercase">Pedidos</div></div>
+                <div class="bg-indigo-50 rounded p-2 text-center"><div class="text-lg font-black text-indigo-700">${_pvFmtUSD(totalMonto)}</div><div class="text-[9px] text-gray-500 uppercase">Monto total</div></div>
+            </div>
+            <div class="flex flex-wrap gap-1 mb-2">
+                ${PV_ESTADOS.map(e => porEstado[e.key] ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-${e.color}-100 text-${e.color}-700 font-bold">${e.icon} ${porEstado[e.key]} ${e.label}</span>` : '').join('')}
+            </div>
+            ${filaKV('Ticket promedio', _pvFmtUSD(ticketProm))}`);
+
+        // Por vendedor
+        const vendRows = Object.entries(porVend).sort((a, b) => b[1].monto - a[1].monto)
+            .map(([k, v]) => filaKV(`${k} <span class="text-[9px] text-gray-400">(${v.entregados}/${v.pedidos} entreg.)</span>`, _pvFmtUSD(v.monto))).join('');
+        html += card('Por vendedor / ruta', vendRows || '<p class="text-xs text-gray-400">Sin datos</p>');
+
+        // Por zona
+        const zonaRows = Object.entries(porZona).sort((a, b) => b[1].monto - a[1].monto)
+            .map(([k, v]) => filaKV(`${k} <span class="text-[9px] text-gray-400">(${v.pedidos})</span>`, _pvFmtUSD(v.monto))).join('');
+        html += card('Por zona', zonaRows || '<p class="text-xs text-gray-400">Sin datos</p>');
+
+        // Top productos
+        const prodRows = topProd.map(([k, v], i) => filaKV(`${i + 1}. ${k}`, _pvFmtUSD(v.monto))).join('');
+        html += card('Productos más pedidos', prodRows || '<p class="text-xs text-gray-400">Sin datos</p>');
+
+        // Aumento en despacho
+        if (editados.length) {
+            html += card('Aumento en despacho', `
+                ${filaKV('Pedidos editados', editados.length)}
+                ${filaKV('Monto original', _pvFmtUSD(montoOriginal))}
+                ${filaKV('Monto final', _pvFmtUSD(montoFinal))}
+                <div class="flex justify-between items-center py-1 text-xs font-bold">
+                    <span class="text-green-700">Aumento en despacho</span>
+                    <span class="text-green-700">+${_pvFmtUSD(aumento)}</span>
+                </div>`);
+        }
+
+        cont.innerHTML = html;
+    }
+
+    function exportarReporteExcel() {
+        const pedidos = _pvFiltrarPorRango(_pvRepPedidos);
+        if (!pedidos.length) { if (_showModal) _showModal('Aviso', 'No hay pedidos para exportar en este período.'); return; }
+        if (typeof XLSX === 'undefined') { if (_showModal) _showModal('Error', 'No se pudo generar el Excel.'); return; }
+
+        const fmtFecha = (iso) => iso ? new Date(iso).toLocaleDateString('es-VE') + ' ' + new Date(iso).toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' }) : '';
+        const headers = ['#', 'Fecha', 'Cliente', 'Zona', 'Vendedor', 'Estado', 'Nº Productos', 'Total $', 'Editado', 'Total Original $'];
+        const filas = pedidos.map((p, i) => [
+            i + 1, fmtFecha(p.fechaCreacion), p.clienteNombre || '', p.zona || '', p.vendedorNombre || '',
+            (pvEstadoInfo(p.estado || 'pendiente').label), (p.productos || []).length, (p.total || 0),
+            p.editadoEnDespacho ? 'Sí' : 'No', p.pedidoOriginal ? (p.pedidoOriginal.total || 0) : ''
+        ]);
+
+        const hoy = new Date();
+        const fechaStr = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`;
+        const rangoTxt = { hoy: 'Hoy', semana: 'Ultimos 7 dias', mes: 'Ultimos 30 dias', todos: 'Todos' }[_pvRepRango];
+
+        const aoa = [
+            ['DISTRIBUIDORA CASTILLO YAÑEZ - REPORTE DE PRE-VENTA'],
+            [`Período: ${rangoTxt}`, `Fecha: ${hoy.toLocaleDateString('es-VE')}`, `Total: ${pedidos.length} pedidos`],
+            [],
+            headers,
+            ...filas
+        ];
+        try {
+            const ws = XLSX.utils.aoa_to_sheet(aoa);
+            ws['!cols'] = [{ wch: 4 }, { wch: 16 }, { wch: 28 }, { wch: 16 }, { wch: 20 }, { wch: 14 }, { wch: 10 }, { wch: 10 }, { wch: 8 }, { wch: 14 }];
+            ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: headers.length - 1 } }];
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, 'Pedidos');
+            XLSX.writeFile(wb, `Reporte_Preventa_${fechaStr}.xlsx`);
+        } catch (e) {
+            console.error('Error Excel:', e);
+            if (_showModal) _showModal('Error', 'No se pudo generar el Excel.');
+        }
+    }
+
 })();
+
 
 
 
