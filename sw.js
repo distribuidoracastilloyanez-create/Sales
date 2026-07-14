@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v38'; // v38: preventa - Vendedores/Zonas (asignar zona de referencia)
+const CACHE_NAME = 'ventas-app-cache-v39'; // v39: preventa - quitar emojis de botones del menu
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
@@ -180,6 +180,7 @@ self.addEventListener('fetch', event => {
             })
     );
 });
+
 
 
 
