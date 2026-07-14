@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v36'; // v36: renombrar a Simulador de Pago
+const CACHE_NAME = 'ventas-app-cache-v37'; // v37: navegacion Venta Tradi/Pre-Venta (admin) + modulo preventa.js base
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
@@ -20,6 +20,7 @@ const urlsToCache = [
     './supervision.js',
     './facturacion.js',
     './administracion.js',
+    './preventa.js',
     './archivos.js',
     './calculadora.js',
     // --- Librerías Externas ---
@@ -179,6 +180,7 @@ self.addEventListener('fetch', event => {
             })
     );
 });
+
 
 
 
