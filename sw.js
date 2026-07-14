@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v39'; // v39: preventa - quitar emojis de botones del menu
+const CACHE_NAME = 'ventas-app-cache-v40'; // v40: preventa - Tomar Pedido (guarda en preventa_pedidos, no toca inventario)
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
@@ -180,6 +180,7 @@ self.addEventListener('fetch', event => {
             })
     );
 });
+
 
 
 
