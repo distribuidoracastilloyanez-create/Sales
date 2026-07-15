@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v45'; // v45: preventa - vendedor automatico por login + orden productos igual a venta tradicional
+const CACHE_NAME = 'ventas-app-cache-v46'; // v46: preventa - ver stock de la ruta al tomar pedido (informativo)
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
@@ -180,6 +180,7 @@ self.addEventListener('fetch', event => {
             })
     );
 });
+
 
 
 
