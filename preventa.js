@@ -27,6 +27,7 @@
     // Estado del pedido en construcción
     let _pedidoActual = { vendedor: null, cliente: null, productos: {} };
     let _pvSortFn = null;  // función de orden global (misma que venta tradicional)
+    let _pvStockRuta = {};  // stock de la bolsa de la ruta del vendedor (informativo)
 
     window.initPreventa = function (dependencies) {
         _db          = dependencies.db;
@@ -245,6 +246,16 @@
         return n || u.email || u.id;
     }
 
+    // Carga el stock asignado a la bolsa de la ruta de un vendedor (solo informativo)
+    async function cargarStockRuta(vendedorId) {
+        _pvStockRuta = {};
+        if (!vendedorId) return;
+        try {
+            const snap = await _getDoc(_doc(_db, pathInvRuta(), vendedorId));
+            if (snap.exists()) _pvStockRuta = snap.data().productos || {};
+        } catch (e) { console.warn('Sin stock de ruta:', e); }
+    }
+
     async function showTomarPedido() {
         if (window.userRole !== 'admin') return;
         _pedidoActual = { vendedor: null, cliente: null, productos: {} };
@@ -285,6 +296,7 @@
                         </div>
                         <!-- Total + guardar -->
                         <div class="sticky bottom-0 bg-white border-t pt-2">
+                            <div id="pvPedAvisoStock" class="hidden text-[10px] bg-amber-50 border border-amber-200 text-amber-700 rounded p-1.5 mb-1.5"></div>
                             <div class="flex items-center justify-between mb-2">
                                 <span class="text-sm font-bold text-gray-600">Total del pedido:</span>
                                 <span id="pvPedTotal" class="text-xl font-black text-indigo-700">$0.00</span>
@@ -331,14 +343,17 @@
                     <option value="">— Elige el vendedor —</option>
                     ${vendedores.map(u => `<option value="${u.id}">${_pvNombreVendedor(u)}${u.zonaPreventa ? ' · ' + u.zonaPreventa : ''}</option>`).join('')}
                 </select>`;
-            document.getElementById('pvPedVendedor').addEventListener('change', (e) => {
+            document.getElementById('pvPedVendedor').addEventListener('change', async (e) => {
                 _pedidoActual.vendedor = _pvUsuarios.find(u => u.id === e.target.value) || null;
+                await cargarStockRuta(_pedidoActual.vendedor?.id);
+                renderPedidoProductos();
                 actualizarBotonGuardar();
             });
         } else {
             // Vendedor logueado: se asigna automáticamente su propia cuenta
             const yo = _pvUsuarios.find(u => u.id === _userId) || { id: _userId, nombre: 'Vendedor' };
             _pedidoActual.vendedor = yo;
+            await cargarStockRuta(yo.id);
             wrap.innerHTML = `
                 <label class="text-[10px] font-bold text-indigo-700 uppercase">Vendedor (ruta)</label>
                 <div class="w-full text-sm border border-indigo-200 rounded p-2 bg-indigo-50 text-indigo-800 font-semibold">
@@ -429,13 +444,25 @@
             const pa = _pedidoActual.productos[prod.id] || {};
             const precios = prod.precios || { und: prod.precioPorUnidad || 0 };
 
+            // Stock disponible en la bolsa de la ruta (informativo, no bloquea)
+            const dispCj = _pvStockRuta[prod.id]?.cantCajas ?? null;
+            const pedidoCj = pa.cantCj || 0;
+            let stockTxt = '';
+            if (dispCj !== null) {
+                const restante = dispCj - pedidoCj;
+                const col = restante < 0 ? 'text-red-500' : restante === 0 ? 'text-amber-600' : 'text-green-600';
+                stockTxt = `<span id="pvStk_${prod.id}" class="${col} font-bold"> · ruta: ${dispCj} cj${pedidoCj ? ` (quedan ${restante})` : ''}</span>`;
+            } else if (Object.keys(_pvStockRuta).length) {
+                stockTxt = '<span class="text-gray-300"> · ruta: 0</span>';
+            }
+
             const inputRow = (type, label, cant, precio) => `
                 <div class="flex items-center gap-2 py-1 px-2 border-b border-gray-50">
                     <input type="number" min="0" value="${cant || 0}" data-pid="${prod.id}" data-tipo="${type}"
                            class="pv-ped-input w-14 p-1 text-center border rounded text-sm font-bold focus:ring-2 focus:ring-indigo-400">
                     <div class="flex-1 min-w-0">
                         <div class="text-xs font-medium text-gray-700 truncate">${prod.presentacion} <span class="text-[10px] text-gray-400">${label}</span></div>
-                        <div class="text-[10px] text-gray-400">${prod.marca || 'S/M'}</div>
+                        <div class="text-[10px] text-gray-400">${prod.marca || 'S/M'}${type === 'cj' ? stockTxt : ''}</div>
                     </div>
                     <div class="text-xs font-bold text-gray-800 shrink-0">${_pvFmtUSD(precio)}</div>
                 </div>`;
@@ -473,6 +500,20 @@
         }
         actualizarTotalPedido();
         actualizarBotonGuardar();
+        actualizarStockVisual(pid);
+    }
+
+    // Actualiza el texto de stock restante de un producto sin re-renderizar todo
+    function actualizarStockVisual(pid) {
+        const span = document.getElementById(`pvStk_${pid}`);
+        if (!span) return;
+        const dispCj = _pvStockRuta[pid]?.cantCajas;
+        if (dispCj === undefined || dispCj === null) return;
+        const pedidoCj = _pedidoActual.productos[pid]?.cantCj || 0;
+        const restante = dispCj - pedidoCj;
+        const col = restante < 0 ? 'text-red-500' : restante === 0 ? 'text-amber-600' : 'text-green-600';
+        span.className = `${col} font-bold`;
+        span.textContent = ` · ruta: ${dispCj} cj${pedidoCj ? ` (quedan ${restante})` : ''}`;
     }
 
     function calcularTotalPedido() {
@@ -485,6 +526,22 @@
     function actualizarTotalPedido() {
         const el = document.getElementById('pvPedTotal');
         if (el) el.textContent = _pvFmtUSD(calcularTotalPedido());
+
+        // Aviso si alguna cantidad supera el stock de la bolsa de la ruta (informativo)
+        const aviso = document.getElementById('pvPedAvisoStock');
+        if (!aviso) return;
+        if (!Object.keys(_pvStockRuta).length) { aviso.classList.add('hidden'); return; }
+        const excedidos = Object.values(_pedidoActual.productos).filter(p => {
+            const disp = _pvStockRuta[p.id]?.cantCajas;
+            if (disp === undefined || disp === null) return (p.cantCj || 0) > 0;
+            return (p.cantCj || 0) > disp;
+        });
+        if (excedidos.length) {
+            aviso.classList.remove('hidden');
+            aviso.innerHTML = `⚠️ ${excedidos.length} producto(s) superan el stock asignado a esta ruta: <strong>${excedidos.slice(0, 3).map(p => p.presentacion).join(', ')}${excedidos.length > 3 ? '...' : ''}</strong>. Puedes guardar igual; despacho lo ajustará.`;
+        } else {
+            aviso.classList.add('hidden');
+        }
     }
 
     function actualizarBotonGuardar() {
@@ -1467,6 +1524,7 @@
     }
 
 })();
+
 
 
 
