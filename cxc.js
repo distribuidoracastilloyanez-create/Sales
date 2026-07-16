@@ -739,6 +739,30 @@
             .trim();
     }
 
+    // Puntaje de coincidencia entre el nombre del CXC y el de una venta.
+    // 0 = no coincide. Evita que clientes distintos que comparten la primera
+    // palabra (ej. "BODEGA DE ORO" vs "BODEGA GREYSI") se confundan entre sí.
+    function puntajeNombreCliente(nombreCXC, nombreVenta) {
+        const a = normalizeStr(nombreCXC);
+        const b = normalizeStr(nombreVenta);
+        if (!a || !b) return 0;
+        if (a === b) return 100;                       // coincidencia exacta
+        if (a.includes(b) || b.includes(a)) {
+            // Uno contiene al otro: solo vale si la parte común es sustancial
+            // ("bodega" suelto NO alcanza; "bodega greysi jauregui" sí).
+            const corto = a.length < b.length ? a : b;
+            return corto.length >= 8 ? 80 : 0;
+        }
+        // Comparar por palabras significativas (ignora "de", "la", "el"...)
+        const ta = a.split(' ').filter(t => t.length > 2);
+        const tb = b.split(' ').filter(t => t.length > 2);
+        if (!ta.length || !tb.length) return 0;
+        const comunes = ta.filter(t => tb.includes(t)).length;
+        const ratio = comunes / Math.max(ta.length, tb.length);
+        return ratio >= 0.7 ? Math.round(ratio * 70) : 0;
+    }
+    const PUNTAJE_MINIMO_NOMBRE = 60;
+
     async function searchConsolidatedConsignments(clientName) {
         _showModal('Buscando', 'Consolidando inventario en consignación...', null, '', null, false);
         try {
@@ -755,9 +779,6 @@
                 const usersSnap = await _getDocs(_collection(_db, "users"));
                 if (!usersSnap.empty) userIds = usersSnap.docs.map(d => d.id);
             } catch(e) {}
-
-            const normSearchName = normalizeStr(clientName);
-            const primaryToken = normalizeStr(clientName.split(' ')[0]);
 
             let allProducts = {};
             let aggregatedTotal = 0;
@@ -788,7 +809,7 @@
                             const cierre = doc.data();
                             const match = (cierre.ventas || []).find(v => {
                                 const isAmountMatch = Math.abs(Math.abs(v.total || 0) - Math.abs(tx.amount)) <= 1.0;
-                                const isNameMatch = normalizeStr(v.clienteNombre).includes(primaryToken) || normSearchName.includes(normalizeStr(v.clienteNombre));
+                                const isNameMatch = puntajeNombreCliente(clientName, v.clienteNombre) >= PUNTAJE_MINIMO_NOMBRE;
                                 return isAmountMatch && isNameMatch;
                             });
                             if (match) { foundVenta = match; break; }
@@ -804,7 +825,7 @@
                             for (const doc of ventasActivasSnap.docs) {
                                 const vData = doc.data();
                                 const isAmountMatch = Math.abs(Math.abs(vData.total || 0) - Math.abs(tx.amount)) <= 1.0;
-                                const isNameMatch = normalizeStr(vData.clienteNombre).includes(primaryToken) || normSearchName.includes(normalizeStr(vData.clienteNombre));
+                                const isNameMatch = puntajeNombreCliente(clientName, vData.clienteNombre) >= PUNTAJE_MINIMO_NOMBRE;
                                 if (isAmountMatch && isNameMatch) { foundVenta = vData; break; }
                             }
                         } catch(e){}
@@ -940,13 +961,12 @@
             const startRange = new Date(searchDate); startRange.setDate(startRange.getDate() - 2); startRange.setHours(0,0,0,0);
             const endRange = new Date(searchDate); endRange.setDate(endRange.getDate() + 2); endRange.setHours(23,59,59,999);
 
-            const normSearchName = normalizeStr(clientName);
-            const primaryToken = normalizeStr(clientName.split(' ')[0]);
-
             let foundVenta = null;
+            // Se recogen TODOS los candidatos y se elige el mejor (nombre y monto),
+            // en vez de quedarse con el primero que aparezca.
+            const candidatos = [];
 
             for (const uid of userIds) {
-                if (foundVenta) break;
                 try {
                     const cierresRef = _collection(_db, `artifacts/${_appId}/users/${uid}/cierres`);
                     const q = _query(cierresRef, _where("fecha", ">=", startRange), _where("fecha", "<=", endRange));
@@ -955,42 +975,50 @@
                     for (const doc of cierresSnap.docs) {
                         const cierre = doc.data();
                         const ventas = cierre.ventas || [];
-                        
-                        const match = ventas.find(v => {
-                            const isAmountMatch = Math.abs(Math.abs(v.total || 0) - Math.abs(amount)) <= 1.0;
-                            const vNameNorm = normalizeStr(v.clienteNombre);
-                            const isNameMatch = vNameNorm.includes(primaryToken) || normSearchName.includes(vNameNorm);
-                            
-                            return isAmountMatch && isNameMatch;
-                        });
 
-                        if (match) {
-                            foundVenta = { ...match, vendedorId: uid, cierreFecha: cierre.fecha };
-                            break; 
-                        }
+                        ventas.forEach(v => {
+                            const difMonto = Math.abs(Math.abs(v.total || 0) - Math.abs(amount));
+                            if (difMonto > 1.0) return;
+                            const puntaje = puntajeNombreCliente(clientName, v.clienteNombre);
+                            if (puntaje < PUNTAJE_MINIMO_NOMBRE) return;
+                            candidatos.push({
+                                venta: { ...v, vendedorId: uid, cierreFecha: cierre.fecha },
+                                puntaje, difMonto
+                            });
+                        });
                     }
                 } catch (err) { }
             }
 
+            if (candidatos.length) {
+                // Mejor nombre primero; si empatan, el monto más cercano
+                candidatos.sort((a, b) => (b.puntaje - a.puntaje) || (a.difMonto - b.difMonto));
+                foundVenta = candidatos[0].venta;
+            }
+
             if (!foundVenta) {
+                const candidatosActivas = [];
                 for (const uid of userIds) {
-                    if (foundVenta) break;
                     try {
                         const ventasActivasRef = _collection(_db, `artifacts/${_appId}/users/${uid}/ventas`);
                         const ventasActivasSnap = await _getDocs(ventasActivasRef);
-                        
+
                         for (const doc of ventasActivasSnap.docs) {
                              const vData = doc.data();
-                             const isAmountMatch = Math.abs(Math.abs(vData.total || 0) - Math.abs(amount)) <= 1.0;
-                             const vNameNorm = normalizeStr(vData.clienteNombre);
-                             const isNameMatch = vNameNorm.includes(primaryToken) || normSearchName.includes(vNameNorm);
-
-                             if (isAmountMatch && isNameMatch) {
-                                  foundVenta = { ...vData, id: doc.id, isActiva: true };
-                                  break;
-                             }
+                             const difMonto = Math.abs(Math.abs(vData.total || 0) - Math.abs(amount));
+                             if (difMonto > 1.0) continue;
+                             const puntaje = puntajeNombreCliente(clientName, vData.clienteNombre);
+                             if (puntaje < PUNTAJE_MINIMO_NOMBRE) continue;
+                             candidatosActivas.push({
+                                 venta: { ...vData, id: doc.id, isActiva: true },
+                                 puntaje, difMonto
+                             });
                         }
                     } catch (err) { }
+                }
+                if (candidatosActivas.length) {
+                    candidatosActivas.sort((a, b) => (b.puntaje - a.puntaje) || (a.difMonto - b.difMonto));
+                    foundVenta = candidatosActivas[0].venta;
                 }
             }
 
@@ -1111,7 +1139,7 @@
                     _showModal('Error', 'El módulo de interfaz de ventas no está cargado.');
                 }
             } else {
-                _showModal('Sin resultados', `No se encontró un ticket en la base de datos para el cliente <b>${primaryToken.toUpperCase()}</b> por <b>$${amount}</b> en las fechas cercanas a <b>${searchDate.toLocaleDateString()}</b>.<br><br>Revise que el monto y la fecha del Excel coincidan con la venta real.`);
+                _showModal('Sin resultados', `No se encontró un ticket en la base de datos para el cliente <b>${(clientName || '').toUpperCase()}</b> por <b>$${amount}</b> en las fechas cercanas a <b>${searchDate.toLocaleDateString()}</b>.<br><br>Revise que el monto y la fecha del Excel coincidan con la venta real.`);
             }
         } catch (error) {
             console.error("Search error:", error);
@@ -1632,6 +1660,7 @@
         }, 100);
     };
 })();
+
 
 
 
