@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v46'; // v46: preventa - ver stock de la ruta al tomar pedido (informativo)
+const CACHE_NAME = 'ventas-app-cache-v47'; // v47: fix CXC - recibo de otro cliente por match de nombre laxo
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
@@ -180,6 +180,7 @@ self.addEventListener('fetch', event => {
             })
     );
 });
+
 
 
 
