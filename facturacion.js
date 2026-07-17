@@ -456,14 +456,17 @@
             ? `MENSUAL · ${_ventaParaFacturar.nombreMes.toUpperCase()}`
             : 'VENTA INDIVIDUAL');
 
-        // Ordenar como inventario. Si es ALIMENTOS, los productos del rubro
-        // CERVECERIA Y VINOS se omiten de la factura y se listan aparte.
+        // Ordenar como inventario. Cada hoja muestra solo lo que le corresponde:
+        // ALIMENTOS omite el rubro CERVECERIA Y VINOS, y CERVECERIA solo muestra ese rubro.
         let todos = ordenarComoInventario((_ventaParaFacturar.productos || []).slice());
         let productosOmitidos = [];
         let productosDetalle = todos;
         if (_tipoFacturacion === 'alimentos') {
             productosDetalle   = todos.filter(p => !esProductoCerveceria(p));
             productosOmitidos  = todos.filter(p =>  esProductoCerveceria(p));
+        } else if (_tipoFacturacion === 'cerveceria') {
+            productosDetalle   = todos.filter(p =>  esProductoCerveceria(p));
+            productosOmitidos  = todos.filter(p => !esProductoCerveceria(p));
         }
 
         if (!productosDetalle.length && !productosOmitidos.length) {
@@ -527,7 +530,7 @@
             ${productosOmitidos.length ? `
             <div class="border-t-2 border-amber-300 bg-amber-50 px-3 py-3">
                 <p class="text-[11px] font-black text-amber-800 uppercase tracking-wider mb-2 flex items-center gap-1">
-                    ⚠️ Se omitirán al generar (Cervecería y Vinos) — ${productosOmitidos.length}
+                    ⚠️ Se omitirán al generar (${_tipoFacturacion === 'cerveceria' ? 'no son de Cervecería' : 'Cervecería y Vinos'}) — ${productosOmitidos.length}
                 </p>
                 <ul class="space-y-1">
                     ${productosOmitidos.map(p => {
@@ -537,7 +540,9 @@
                         </li>`;
                     }).join('')}
                 </ul>
-                <p class="text-[10px] text-amber-600 mt-2 italic">Estos productos son de Cervecería; use el tipo de facturación "Cervecería" para incluirlos.</p>
+                <p class="text-[10px] text-amber-600 mt-2 italic">${_tipoFacturacion === 'cerveceria'
+                    ? 'Estos productos no son de Cervecería y Vinos; use el tipo de facturación "Alimentos" para incluirlos.'
+                    : 'Estos productos son de Cervecería; use el tipo de facturación "Cervecería" para incluirlos.'}</p>
             </div>` : ''}`;
 
         panel.classList.remove('hidden');
@@ -958,13 +963,19 @@
             return;
         }
 
-        // Ordenar como inventario. Si es ALIMENTOS, se omiten los productos
-        // del rubro CERVECERIA Y VINOS (van solo en la hoja de Cervecería).
+        // Ordenar como inventario. Cada hoja lleva solo su rubro:
+        // ALIMENTOS omite CERVECERIA Y VINOS; CERVECERIA solo lleva ese rubro.
         let productosFactura = ordenarComoInventario((_ventaParaFacturar.productos || []).slice());
         if (_tipoFacturacion === 'alimentos') {
             productosFactura = productosFactura.filter(p => !esProductoCerveceria(p));
             if (!productosFactura.length) {
                 _showModal('Aviso', 'Todos los productos de esta venta son de Cervecería. Use el tipo de facturación "Cervecería".');
+                return;
+            }
+        } else if (_tipoFacturacion === 'cerveceria') {
+            productosFactura = productosFactura.filter(p => esProductoCerveceria(p));
+            if (!productosFactura.length) {
+                _showModal('Aviso', 'Esta venta no tiene productos de Cervecería y Vinos. Use el tipo de facturación "Alimentos".');
                 return;
             }
         }
@@ -1565,7 +1576,15 @@
                     otros.filas.push({ desc: '', unidades: '', lts: '', cantidad: 0, precioBs: 0, montoBs: 0, exento: false, alicuota: '', descOverride: '' });
                     target = otros.filas[otros.filas.length - 1];
                 }
-                target.descOverride = (l.descripcion || l.presentacion || '').toUpperCase();
+                // Se incluye la MARCA para distinguir productos iguales de marcas
+                // distintas (ej. dos margarinas de 500GR). No se repite si ya viene
+                // en el texto ni si la marca no es válida (S/M, sin marca...).
+                const descBase = (l.descripcion || l.presentacion || '').toUpperCase().trim();
+                const marcaTxt = (l.marca || '').toUpperCase().trim();
+                const marcaValida = marcaTxt && !['S/M', 'S/S', 'SIN MARCA', 'VARIOS', 'N/A'].includes(marcaTxt);
+                target.descOverride = (marcaValida && !descBase.includes(marcaTxt))
+                    ? `${descBase} ${marcaTxt}`.trim()
+                    : descBase;
                 target.unidades = String(l.unidades || '');
             }
             target.cantidad += l.cantidad;
@@ -2604,6 +2623,7 @@
 
 })();
 // redeploy trigger 1783027831
+
 
 
 
