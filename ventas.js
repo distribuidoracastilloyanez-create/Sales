@@ -14,6 +14,32 @@
     let _inventarioCache = []; // Esta será la FUSIÓN de Maestro + Stock
     let _ventasGlobal = [];
     let _ventaActual = { cliente: null, productos: {}, vaciosDevueltosPorTipo: {} };
+    // ── ACUERDO COMERCIAL ──
+    // Guarda el acuerdo del cliente seleccionado (o null si no tiene / no existe el módulo).
+    let _acuerdoCliente = null;
+
+    // Devuelve el producto con los precios del acuerdo aplicados.
+    // Si NO hay acuerdo para ese producto, devuelve el producto TAL CUAL:
+    // así, sin acuerdo, la venta se comporta exactamente igual que siempre.
+    function aplicarAcuerdo(prod) {
+        if (!prod || !_acuerdoCliente || !window.acAplicarDescuento) return prod;
+        try {
+            const r = window.acAplicarDescuento(_acuerdoCliente, prod.id, prod.precios);
+            if (!r || !r.aplicado || !r.aplicado.length) return prod;
+            return { ...prod, precios: r.precios, _acDescuento: r.aplicado, _acPreciosOriginales: prod.precios };
+        } catch (e) {
+            console.warn('AC: no se pudo aplicar el descuento, se usa el precio normal.', e);
+            return prod;
+        }
+    }
+
+    // Carga el acuerdo de un cliente. Ante cualquier fallo deja null (venta normal).
+    async function cargarAcuerdoCliente(clienteId) {
+        _acuerdoCliente = null;
+        if (!clienteId || !window.acGetAcuerdoCliente) return;
+        try { _acuerdoCliente = await window.acGetAcuerdoCliente(clienteId); }
+        catch (e) { console.warn('AC: no se pudo cargar el acuerdo.', e); _acuerdoCliente = null; }
+    }
     let _originalVentaForEdit = null;
     let _tasaCOP = 0;
     let _tasaBs = 0;
@@ -75,6 +101,7 @@
         _monedaActual = 'USD';
 
       _ventaActual = { cliente: null, productos: {}, vaciosDevueltosPorTipo: {} };
+      _acuerdoCliente = null;
 
       TIPOS_VACIO.forEach(tipo => _ventaActual.vaciosDevueltosPorTipo[tipo] = 0);
 
@@ -178,9 +205,13 @@
         filteredClients.forEach(cli => { const i = document.createElement('div'); i.className = 'autocomplete-item'; i.textContent = `${cli.nombreComercial} (${cli.nombrePersonal})`; i.addEventListener('click', () => selectCliente(cli)); cD.appendChild(i); });
     }
 
-  function selectCliente(cliente) {
+  async function selectCliente(cliente) {
       _ventaActual.cliente = cliente; 
-      
+
+      // Cargar el Acuerdo Comercial del cliente (si tiene). Si no, queda null
+      // y los precios se comportan igual que siempre.
+      await cargarAcuerdoCliente(cliente && cliente.id);
+
       const searchInput = document.getElementById('clienteSearch');
         if (searchInput) searchInput.blur();
 
@@ -216,7 +247,10 @@
             const sortFunc = await window.getGlobalProductSortFunction();
             filtInv.sort(sortFunc);
         }
-        
+
+        // Aplicar el Acuerdo Comercial del cliente (si tiene) para MOSTRAR el precio rebajado
+        if (_acuerdoCliente) filtInv = filtInv.map(aplicarAcuerdo);
+
         body.innerHTML = window.ventasUI.getInventoryTableRows(filtInv, _ventaActual.productos, _monedaActual, _tasaCOP, _tasaBs, 'segmento');
         
         updateVentaTotal();
@@ -233,7 +267,10 @@
             const sortFunc = await window.getGlobalProductSortFunction(); 
             invToShow.sort(sortFunc);
         }
-        
+
+        // Aplicar el Acuerdo Comercial del cliente (si tiene) también al editar
+        if (_acuerdoCliente) invToShow = invToShow.map(aplicarAcuerdo);
+
         const mappedInv = invToShow.map(p => {
              const copy = { ...p };
              const orig = _originalVentaForEdit.productos.find(op => op.id === p.id);
@@ -249,7 +286,10 @@
   }
 
   function handleQuantityChange(event) {
-      const inp=event.target, pId=inp.dataset.productId, tV=inp.dataset.tipoVenta, prod=_inventarioCache.find(p=>p.id===pId); if(!prod) return; if(!_ventaActual.productos[pId]) _ventaActual.productos[pId]={...prod, cantCj:0,cantPaq:0,cantUnd:0,totalUnidadesVendidas:0};
+      const inp=event.target, pId=inp.dataset.productId, tV=inp.dataset.tipoVenta, prodBase=_inventarioCache.find(p=>p.id===pId); if(!prodBase) return;
+      // El producto entra a la venta ya con el precio del Acuerdo Comercial (si aplica)
+      const prod = aplicarAcuerdo(prodBase);
+      if(!_ventaActual.productos[pId]) _ventaActual.productos[pId]={...prod, cantCj:0,cantPaq:0,cantUnd:0,totalUnidadesVendidas:0};
       const qty=parseInt(inp.value,10)||0; _ventaActual.productos[pId][`cant${tV[0].toUpperCase()+tV.slice(1)}`]=qty; const pV=_ventaActual.productos[pId], uCj=pV.unidadesPorCaja||1, uPaq=pV.unidadesPorPaquete||1;
       
       let stockU = prod.cantidadUnidades || 0;
@@ -410,7 +450,8 @@
                       precios: p.precios, ventaPor: p.ventaPor, unidadesPorPaquete: p.unidadesPorPaquete, unidadesPorCaja: p.unidadesPorCaja,
                       cantidadVendida: { cj: p.cantCj||0, paq: p.cantPaq||0, und: p.cantUnd||0 },
                       totalUnidadesVendidas: p.totalUnidadesVendidas,
-                      iva: p.iva??0, manejaVacios: p.manejaVacios||false, tipoVacio: p.tipoVacio||null
+                      iva: p.iva??0, manejaVacios: p.manejaVacios||false, tipoVacio: p.tipoVacio||null,
+                      descuentoAC: p._acDescuento || null, preciosOriginales: p._acPreciosOriginales || null
                   });
               }
           }
@@ -496,7 +537,8 @@
                                unidadesPorPaquete: p.unidadesPorPaquete, unidadesPorCaja: p.unidadesPorCaja,
                                cantidadVendida: { cj: p.cantCj||0, paq: p.cantPaq||0, und: p.cantUnd||0 },
                                totalUnidadesVendidas: p.totalUnidadesVendidas,
-                               iva: p.iva??0, manejaVacios: p.manejaVacios||false, tipoVacio: p.tipoVacio||null
+                               iva: p.iva??0, manejaVacios: p.manejaVacios||false, tipoVacio: p.tipoVacio||null,
+                               descuentoAC: p._acDescuento || null, preciosOriginales: p._acPreciosOriginales || null
                             });
                       }
                   });
@@ -1269,11 +1311,14 @@
 
       try {
           await ensureHybridCacheLoaded();
-          
+
+          // Cargar el Acuerdo Comercial del cliente para que la edición respete sus descuentos
+          await cargarAcuerdoCliente(venta.clienteId);
+
           _ventaActual = { 
               cliente: { id: venta.clienteId, nombreComercial: venta.clienteNombre, nombrePersonal: venta.clienteNombrePersonal }, 
               productos: (venta.productos||[]).reduce((acc,p)=>{
-                  const pComp=_inventarioCache.find(inv=>inv.id===p.id)||p; 
+                  const pComp=aplicarAcuerdo(_inventarioCache.find(inv=>inv.id===p.id)||p); 
                     const cant=p.cantidadVendida||{}; 
                     acc[p.id]={
                         ...pComp, 
@@ -1394,7 +1439,8 @@
                             precios: p.precios, ventaPor: p.ventaPor, unidadesPorPaquete: p.unidadesPorPaquete, unidadesPorCaja: p.unidadesPorCaja,
                             cantidadVendida: { cj: p.cantCj || 0, paq: p.cantPaq || 0, und: p.cantUnd || 0 },
                             totalUnidadesVendidas: (p.cantCj||0)*(p.unidadesPorCaja||1) + (p.cantPaq||0)*(p.unidadesPorPaquete||1) + (p.cantUnd||0), 
-                            iva: p.iva ?? 0, manejaVacios: p.manejaVacios || false, tipoVacio: p.tipoVacio || null
+                            iva: p.iva ?? 0, manejaVacios: p.manejaVacios || false, tipoVacio: p.tipoVacio || null,
+                            descuentoAC: p._acDescuento || null, preciosOriginales: p._acPreciosOriginales || null
                         };
                     });
                     
@@ -1421,5 +1467,6 @@
 
   window.ventasModule = { toggleMoneda, handleQuantityChange, handleTipoVacioChange, showPastSaleOptions, editVenta, deleteVenta, invalidateCache: () => { } };
 })();
+
 
 
