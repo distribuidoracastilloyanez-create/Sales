@@ -1329,6 +1329,33 @@
                         clientName = (part1 + (part2 && !isHeaderVal ? part2 : '')).trim();
                         isClientSheet = true;
                     }
+                    // A veces la conversión PDF→Excel corrompe la celda A1 (queda una fecha
+                    // tipo 1900-01-04, un fragmento como 'don', etc.) y la palabra "CLIENTE"
+                    // se pierde. Pero el NOMBRE COMERCIAL sigue estando en B1. Se detecta
+                    // por la estructura de la hoja (filas NOMBRE / TOTALES / FECHA).
+                    if (!clientName && rows[0] && rows[0][1]) {
+                        const b1 = rows[0][1].toString().trim();
+                        const esTipoTx = /^[FETRCP]$/i.test(b1);          // 'T', 'F', 'E'... = fila de datos
+                        const esNumero = /^[\d.,\s$-]+$/.test(b1);        // un monto = tabla de totales
+                        if (b1 && !esTipoTx && !esNumero) {
+                            let tieneNombre = false, tieneTotales = false, tieneFecha = false;
+                            for (let i = 1; i < Math.min(5, rows.length); i++) {
+                                const c0 = ((rows[i] && rows[i][0]) || '').toString().toUpperCase().trim();
+                                if (c0 === 'NOMBRE')     tieneNombre  = true;
+                                if (c0 === 'TOTALES')    tieneTotales = true;
+                                if (c0.includes('FECHA')) tieneFecha  = true;
+                            }
+                            if ((tieneNombre || tieneTotales) && tieneFecha) {
+                                const part2 = (rows[0][2] || '').toString().trim();
+                                const isHeaderVal = ['TOTALES','FECHA','NOMBRE','DEUDA'].some(h => part2.toUpperCase().startsWith(h));
+                                clientName = (b1 + (part2 && !isHeaderVal ? part2 : '')).trim();
+                                isClientSheet = true;
+                            }
+                        }
+                    }
+
+                    // Último recurso: usar la fila NOMBRE (nombre personal). Solo si no se
+                    // pudo obtener el nombre comercial por ninguna de las vías anteriores.
                     if (!clientName) {
                          const nameRowIndex = rows.findIndex(r => r[0] && r[0].toString().toUpperCase().includes('NOMBRE'));
                          if (nameRowIndex !== -1 && rows[nameRowIndex][1]) {
@@ -1660,6 +1687,7 @@
         }, 100);
     };
 })();
+
 
 
 
