@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v53'; // v53: Acuerdo Comercial aplicado en la venta (paso 4)
+const CACHE_NAME = 'ventas-app-cache-v54'; // v54: cierre - color de celda con descuento + observaciones col C (pasos 5-7)
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
@@ -181,6 +181,7 @@ self.addEventListener('fetch', event => {
             })
     );
 });
+
 
 
 
