@@ -139,8 +139,18 @@
                 const precios = prod.precios || { und: prod.precioPorUnidad || 0 };
                 const stockU = prod.cantidadUnidades || 0;
 
-                const createRow = (type, currentQty, maxQty, price, stockText, descText) => `
-                    <tr class="border-b hover:bg-gray-50">
+                const createRow = (type, currentQty, maxQty, price, stockText, descText) => {
+                    // ACUERDO COMERCIAL: si este precio tiene descuento, se marca de forma
+                    // visible (precio anterior tachado + insignia con el porcentaje).
+                    const dto = (prod._acDescuento || []).find(d => d.tipo === type);
+                    const badge = dto
+                        ? ` <span class="text-[9px] bg-amber-500 text-white px-1 py-0.5 rounded font-bold whitespace-nowrap align-middle">-${dto.porcentaje}%</span>`
+                        : '';
+                    const tachado = dto
+                        ? `<span class="block text-[10px] text-gray-400 line-through font-normal">${_formatCurrency(dto.original, currentCurrency, tasaCOP, tasaBs)}</span>`
+                        : '';
+                    return `
+                    <tr class="border-b hover:bg-gray-50${dto ? ' bg-amber-50/60' : ''}">
                         <td class="py-2 px-2 text-center align-middle"> 
                             <input type="number" min="0" max="${maxQty}" value="${currentQty}" 
                                    class="w-16 p-1 text-center border rounded-md font-bold text-gray-800 focus:ring-2 focus:ring-blue-500" 
@@ -149,13 +159,14 @@
                                    oninput="window.ventasModule.handleQuantityChange(event)"> 
                         </td> 
                         <td class="py-2 px-2 text-left align-middle font-medium text-gray-700"> 
-                            ${descText} <span class="text-xs text-gray-500">${prod.marca || 'S/M'}</span> 
+                            ${descText} <span class="text-xs text-gray-500">${prod.marca || 'S/M'}</span>${badge}
                         </td> 
-                        <td class="py-2 px-2 text-left align-middle font-bold text-gray-900 price-toggle" onclick="window.ventasModule.toggleMoneda()">
-                            ${_formatCurrency(price, currentCurrency, tasaCOP, tasaBs)}
+                        <td class="py-2 px-2 text-left align-middle font-bold ${dto ? 'text-amber-700' : 'text-gray-900'} price-toggle" onclick="window.ventasModule.toggleMoneda()">
+                            ${tachado}${_formatCurrency(price, currentCurrency, tasaCOP, tasaBs)}
                         </td> 
                         <td class="py-2 px-1 text-center align-middle text-xs font-semibold text-gray-500">${stockText}</td>
                     </tr>`;
+                };
 
                 if (vPor.cj) { 
                     const uCj = prod.unidadesPorCaja || 1; 
@@ -358,13 +369,21 @@
                         entregadosPorTipo[p.tipoVacio] = (entregadosPorTipo[p.tipoVacio] || 0) + cant.cj;
                     }
 
+                    // ACUERDO COMERCIAL: si el precio lleva descuento, se indica en el ticket
+                    const dtoDe = (tipo) => (p.descuentoAC || []).find(d => d.tipo === tipo);
+                    let dtoAplicado = null;
+
                     if (cant.cj > 0) {
                         subtotal = (precios.cj || 0) * cant.cj; qtyText = `${cant.cj} CJ`; priceText = `$${(precios.cj || 0).toFixed(2)}`;
+                        dtoAplicado = dtoDe('cj');
                     } else if (cant.paq > 0) {
                         subtotal = (precios.paq || 0) * cant.paq; qtyText = `${cant.paq} PQ`; priceText = `$${(precios.paq || 0).toFixed(2)}`;
+                        dtoAplicado = dtoDe('paq');
                     } else if (cant.und > 0) {
                         subtotal = (precios.und || 0) * cant.und; qtyText = `${cant.und} UN`; priceText = `$${(precios.und || 0).toFixed(2)}`;
+                        dtoAplicado = dtoDe('und');
                     } else { return; }
+                    if (dtoAplicado) desc += ` (-${dtoAplicado.porcentaje}%)`;
                     total += subtotal;
 
                     const wrappedDesc = wordWrap(desc, 25); 
@@ -626,3 +645,4 @@
         }
     };
 })();
+
