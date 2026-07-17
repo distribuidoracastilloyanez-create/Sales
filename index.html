@@ -189,6 +189,7 @@
     <script src="facturacion.js" defer></script> 
     <script src="administracion.js" defer></script>
     <script src="preventa.js" defer></script>
+    <script src="AC.js" defer></script>
     <script src="archivos.js" defer></script>
 
     <script type="module"> 
@@ -443,6 +444,7 @@
                             ${isAdmin ? `<button id="dataBtn" class="w-full ${bpad} bg-red-700 text-white rounded-lg shadow-md hover:bg-red-800 font-bold transition transform hover:-translate-y-1">Data</button>` : ''}
                             ${isAdmin ? `<button id="supervisionBtn" class="w-full ${bpad} bg-pink-600 text-white rounded-lg shadow-md hover:bg-pink-700 font-bold flex items-center justify-center gap-2 transition transform hover:-translate-y-1"><span class="${isAdmin ? 'text-base' : 'text-xl'}">🛡️</span> ${isAdmin ? 'Supervisión' : 'Supervisión y Auditoría'}</button>` : ''}
                             ${isAdmin ? `<button id="administracionBtn" class="w-full ${bpad} bg-indigo-600 text-white rounded-lg shadow-md hover:bg-indigo-700 font-bold flex items-center justify-center gap-2 transition transform hover:-translate-y-1"><span class="${isAdmin ? 'text-base' : 'text-xl'}">⚙️</span> Administración</button>` : ''}
+                            ${isAdmin ? `<button id="acuerdoComercialBtn" class="w-full ${bpad} bg-amber-600 text-white rounded-lg shadow-md hover:bg-amber-700 font-bold flex items-center justify-center gap-1 transition transform hover:-translate-y-1"><span class="${isAdmin ? 'text-base' : 'text-xl'}">🤝</span> Acuerdo Comercial</button>` : ''}
                         </div>
                         <div class="mt-8 pt-4 border-t flex items-center justify-center space-x-3">
                              <span id="offline-toggle-text" class="text-sm font-medium text-gray-700">Online (Manual)</span>
@@ -477,6 +479,7 @@
             document.getElementById('dataBtn')?.addEventListener('click',           () => safeNav(window.showDataView,               'Data'));
             document.getElementById('supervisionBtn')?.addEventListener('click',   () => safeNav(window.showSupervisionMenu,         'Supervisión'));
             document.getElementById('administracionBtn')?.addEventListener('click', () => safeNav(window.showAdministracionMenu,      'Administración'));
+            document.getElementById('acuerdoComercialBtn')?.addEventListener('click', () => safeNav(window.showAcuerdoComercial,   'Acuerdo Comercial'));
 
             // Navegación entre sistemas (solo admin): Venta Tradicional / Pre-Venta
             document.getElementById('navVentaTradiBtn')?.addEventListener('click', () => {
@@ -581,6 +584,7 @@
                     if (window.initCalculadora)   window.initCalculadora(deps);   else console.warn("Módulo Calculadora no encontrado");
                     if (window.initAdministracion) window.initAdministracion(deps); else console.warn("Módulo Administración no encontrado");
                     if (window.initPreventa)      window.initPreventa(deps);      else console.warn("Módulo Pre-Venta no encontrado");
+                    if (window.initAC)            window.initAC(deps);            else console.warn("Módulo Acuerdo Comercial no encontrado");
 
                     // ── Mostrar menú principal ────────────────────────────────
                     showMainMenu();
@@ -653,6 +657,7 @@
     </script>
 </body>
 </html>
+
 
 
 
