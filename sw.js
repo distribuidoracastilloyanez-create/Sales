@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v52'; // v52: menu sin iconos + paleta sobria (azules, verdes, ambar)
+const CACHE_NAME = 'ventas-app-cache-v53'; // v53: Acuerdo Comercial aplicado en la venta (paso 4)
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
@@ -181,6 +181,7 @@ self.addEventListener('fetch', event => {
             })
     );
 });
+
 
 
 
