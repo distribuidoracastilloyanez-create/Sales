@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v51'; // v51: modulo Acuerdo Comercial (AC.js) - paso 1 y 2
+const CACHE_NAME = 'ventas-app-cache-v52'; // v52: menu sin iconos + paleta sobria (azules, verdes, ambar)
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
@@ -181,6 +181,7 @@ self.addEventListener('fetch', event => {
             })
     );
 });
+
 
 
 
