@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v49'; // v49: fix CXC - clientes con A1 corrupto guardaban el nombre personal
+const CACHE_NAME = 'ventas-app-cache-v50'; // v50: CXC - sin nombre personal + aviso hojas no leidas + no arrastrar tablas de totales
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
@@ -180,6 +180,7 @@ self.addEventListener('fetch', event => {
             })
     );
 });
+
 
 
 
