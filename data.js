@@ -33,6 +33,7 @@
             rowDataClientsSale: { bold: false, fillColor: "#F3FDE8", fontColor: "#000000", border: true, fontSize: 10 },
             rowDataClientsObsequio: { bold: false, fillColor: "#E0F2FE", fontColor: "#000000", border: true, fontSize: 10 },
             rowDataClientsConsignacion: { bold: false, fillColor: "#FFEDD5", fontColor: "#000000", border: true, fontSize: 10 }, // Configurable ahora
+            rowDataClientsDescuento: { bold: true, fillColor: "#FEF3C7", fontColor: "#92400E", border: true, fontSize: 10 }, // Acuerdo Comercial
             rowCargaRestante: { bold: true, fillColor: "#FFFFFF", fontColor: "#000000", border: true, fontSize: 10 },
             rowTotals: { bold: true, fillColor: "#EFEFEF", fontColor: "#000000", border: true, fontSize: 10 },
             vaciosHeader: { bold: true, fillColor: "#EFEFEF", fontColor: "#000000", border: true, fontSize: 10 },
@@ -332,6 +333,7 @@
     async function _processSalesDataForModal(ventas, obsequios, cargaInicialInventario, userIdForInventario) {
         const clientData = {};
         const clientTotals = {}; 
+        const acDescuentosPorCliente = {}; // Acuerdo Comercial: descuentos aplicados por cliente
         let grandTotalValue = 0;
         const allProductsMap = new Map();
         const vaciosMovementsPorTipo = {};
@@ -458,6 +460,19 @@
                     if(p.id) dataByRubro[rubro].clients[rowClientName].products[p.id] = (dataByRubro[rubro].clients[rowClientName].products[p.id] || 0) + cantidadUnidades;
                     dataByRubro[rubro].clients[rowClientName].totalValue += subtotalProducto;
                     dataByRubro[rubro].totalValue += subtotalProducto;
+
+                    // ACUERDO COMERCIAL: registrar qué productos llevaron descuento,
+                    // para colorear su celda y para las observaciones del reporte.
+                    if (p.id && p.descuentoAC && p.descuentoAC.length) {
+                        const cli = dataByRubro[rubro].clients[rowClientName];
+                        cli.descuentos = cli.descuentos || {};
+                        cli.descuentos[p.id] = p.descuentoAC;
+                        acDescuentosPorCliente[baseClientName] = acDescuentosPorCliente[baseClientName] || {};
+                        acDescuentosPorCliente[baseClientName][p.id] = {
+                            nombre: [p.presentacion, p.marca].filter(Boolean).join(' '),
+                            detalle: p.descuentoAC
+                        };
+                    }
                 });
 
             } else if (item.tipo === 'obsequio') {
@@ -528,7 +543,7 @@
         const sortFunction = await getGlobalProductSortFunction();
         const finalProductOrder = Array.from(allProductsMap.values()).sort(sortFunction);
 
-        const finalData = { rubros: {}, vaciosMovementsPorTipo: vaciosMovementsPorTipo, clientTotals: clientTotals, grandTotalValue: grandTotalValue };
+        const finalData = { rubros: {}, vaciosMovementsPorTipo: vaciosMovementsPorTipo, clientTotals: clientTotals, grandTotalValue: grandTotalValue, acDescuentosPorCliente: acDescuentosPorCliente };
 
         for (const rubroName of Array.from(allRubros).sort()) {
             const rubroData = dataByRubro[rubroName];
@@ -570,7 +585,7 @@
             };
         }
 
-        return { clientData, clientTotals, grandTotalValue, sortedClients, finalProductOrder, vaciosMovementsPorTipo, finalData, userInfo };
+        return { clientData, clientTotals, grandTotalValue, sortedClients, finalProductOrder, vaciosMovementsPorTipo, finalData, userInfo, acDescuentosPorCliente };
     }
 
     async function showClosingDetail(closingId) {
@@ -907,9 +922,14 @@
                         const qU = clientSales.products[p.id] || 0;
                         const cell = clientRow.getCell(START_COL + index);
                         
+                        // ACUERDO COMERCIAL: si este producto llevó descuento para este
+                        // cliente, su celda se pinta distinto (color configurable en Diseño).
+                        const tieneDescuentoAC = !!(clientSales.descuentos && clientSales.descuentos[p.id]);
+
                         let cellStyleSettings = s.rowDataClients;
                         if (esSoloObsequio) cellStyleSettings = s.rowDataClientsObsequio;
                         else if (esSoloConsignacion && qU > 0) cellStyleSettings = s.rowDataClientsConsignacion; 
+                        else if (qU > 0 && tieneDescuentoAC && s.rowDataClientsDescuento) cellStyleSettings = s.rowDataClientsDescuento;
                         else if (qU > 0) cellStyleSettings = s.rowDataClientsSale;
 
                         const finalCellStyle = buildExcelJSStyle(
@@ -1045,12 +1065,14 @@
             }
 
             const { clientTotals, grandTotalValue } = finalData;
+            const acDescuentos = finalData.acDescuentosPorCliente || {};
             if (settings.showClienteTotalSheet) {
                 const wsClientes = workbook.addWorksheet('Total Por Cliente');
                 wsClientes.views = [{ state: 'frozen', xSplit: 1, ySplit: 1 }]; 
                 wsClientes.columns = [ 
                     { width: settings.columnWidths.totalCliente }, 
-                    { width: settings.columnWidths.totalClienteValor } 
+                    { width: settings.columnWidths.totalClienteValor },
+                    { width: 46 } // Columna C: Observaciones (Acuerdo Comercial)
                 ];
 
                 const totalesHeaderStyle = buildExcelJSStyle(s.totalesHeader, s.totalesHeader.border ? thinBorderStyle : null, null, 'left');
@@ -1067,13 +1089,35 @@
                 const totalesTotalRowPriceStyle = buildExcelJSStyle(s.totalesTotalRow, s.totalesTotalRow.border ? thinBorderStyle : null, "$#,##0.00", 'right');
                 
                 const headerRowTotales = wsClientes.getRow(1);
-                headerRowTotales.values = ['Cliente', 'Gasto Total'];
+                headerRowTotales.values = ['Cliente', 'Gasto Total', 'Observaciones'];
                 headerRowTotales.getCell(1).style = totalesHeaderStyle;
                 headerRowTotales.getCell(2).style = buildExcelJSStyle(s.totalesHeader, s.totalesHeader.border ? thinBorderStyle : null, null, 'right');
+                headerRowTotales.getCell(3).style = totalesHeaderStyle;
+
+                // Texto de observaciones: descuentos del Acuerdo Comercial de ese cliente
+                const obsDeCliente = (nombreCli) => {
+                    // El nombre puede venir con sufijos como "(OBSEQUIO)"; se usa la base
+                    const base = nombreCli.replace(/\s*\((OBSEQUIO|CONSIGNACIÓN|CONSIGNACION)\)\s*$/i, '').trim();
+                    const ds = acDescuentos[base] || acDescuentos[nombreCli];
+                    if (!ds) return '';
+                    return Object.values(ds).map(d => {
+                        const partes = (d.detalle || []).map(x => {
+                            const et = x.tipo === 'cj' ? 'Cj' : x.tipo === 'paq' ? 'Paq' : 'Und';
+                            return `${et} ${x.porcentaje}%`;
+                        });
+                        return `${d.nombre}: ${partes.join(', ')} dto`;
+                    }).join(' · ');
+                };
                 
                 const sortedClientTotals = Object.entries(clientTotals).sort((a, b) => a[0].localeCompare(b[0]));
+                const obsStyle = buildExcelJSStyle(
+                    s.rowDataClientsDescuento || s.totalesData,
+                    (s.rowDataClientsDescuento || s.totalesData).border ? thinBorderStyle : null,
+                    null, 'left');
+
                 sortedClientTotals.forEach(([clientName, totalValue]) => {
-                    const row = wsClientes.addRow([clientName, Number(totalValue.toFixed(2))]);
+                    const obs = obsDeCliente(clientName);
+                    const row = wsClientes.addRow([clientName, Number(totalValue.toFixed(2)), obs]);
                     const isObs = clientName.includes('(OBSEQUIO)');
                     const isConsig = clientName.includes('(CONSIGNACIÓN)'); 
                     
@@ -1087,11 +1131,14 @@
                         row.getCell(1).style = totalesDataStyle;
                         row.getCell(2).style = totalesDataPriceStyle;
                     }
+                    // La observación se resalta solo si el cliente tiene acuerdo
+                    row.getCell(3).style = obs ? obsStyle : totalesDataStyle;
                 });
                 
-                const totalRow = wsClientes.addRow(['GRAN TOTAL', Number(grandTotalValue.toFixed(2))]);
+                const totalRow = wsClientes.addRow(['GRAN TOTAL', Number(grandTotalValue.toFixed(2)), '']);
                 totalRow.getCell(1).style = totalesTotalRowStyle;
                 totalRow.getCell(2).style = totalesTotalRowPriceStyle;
+                totalRow.getCell(3).style = totalesTotalRowStyle;
             }
 
             const vendedor = closingData.vendedorInfo || {}; 
@@ -1916,6 +1963,7 @@
                 ${createZoneEditor('rowDataClientsSale', 'Filas Clientes (Venta > 0)', s.rowDataClientsSale)} 
                 ${createZoneEditor('rowDataClientsObsequio', 'Filas Clientes (Obsequio)', s.rowDataClientsObsequio)}
                 ${createZoneEditor('rowDataClientsConsignacion', 'Filas Clientes (Consignación)', s.rowDataClientsConsignacion)}
+                ${createZoneEditor('rowDataClientsDescuento', 'Celda con Acuerdo Comercial (descuento)', s.rowDataClientsDescuento)}
                 ${createZoneEditor('rowCargaRestante', 'Fila "CARGA RESTANTE"', s.rowCargaRestante)}
                 ${createZoneEditor('rowTotals', 'Fila "TOTALES"', s.rowTotals)}
             `;
@@ -2034,6 +2082,7 @@
                 rowDataClientsSale: readZoneEditor('rowDataClientsSale'), 
                 rowDataClientsObsequio: readZoneEditor('rowDataClientsObsequio'),
                 rowDataClientsConsignacion: readZoneEditor('rowDataClientsConsignacion'),
+                rowDataClientsDescuento: readZoneEditor('rowDataClientsDescuento'),
                 rowCargaRestante: readZoneEditor('rowCargaRestante'),
                 rowTotals: readZoneEditor('rowTotals'),
                 vaciosHeader: readZoneEditor('vaciosHeader'),
@@ -2098,4 +2147,5 @@
     };
 
 })();
+
 
