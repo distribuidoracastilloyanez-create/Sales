@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v48'; // v48: factura cerveceria solo su rubro + marca en descripcion de alimentos
+const CACHE_NAME = 'ventas-app-cache-v49'; // v49: fix CXC - clientes con A1 corrupto guardaban el nombre personal
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
@@ -180,6 +180,7 @@ self.addEventListener('fetch', event => {
             })
     );
 });
+
 
 
 
