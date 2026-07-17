@@ -1303,6 +1303,7 @@
                 
                 let allClients = [];
                 let currentClientData = null; // MEMORIA PARA "ARRASTRAR" CLIENTES EN HOJAS SIN CABECERA
+                const hojasSinNombre = [];    // hojas que parecen de cliente pero sin nombre legible
 
                 workbook.SheetNames.forEach(sheetName => {
                     const sheet = workbook.Sheets[sheetName];
@@ -1354,24 +1355,34 @@
                         }
                     }
 
-                    // Último recurso: usar la fila NOMBRE (nombre personal). Solo si no se
-                    // pudo obtener el nombre comercial por ninguna de las vías anteriores.
+                    // NOTA: antes existía un último recurso que usaba la fila NOMBRE
+                    // (el nombre PERSONAL) cuando no se hallaba el comercial. Se eliminó
+                    // porque guardaba clientes con un nombre que no se podía reconocer
+                    // (ej. "CLUB DEPORTIVO PALO GORDO" quedaba como "JOSÉ RAMIREZ").
+                    // Ahora, si la hoja parece de cliente pero no se puede leer su nombre
+                    // comercial, se registra para avisar al usuario al terminar la carga.
                     if (!clientName) {
-                         const nameRowIndex = rows.findIndex(r => r[0] && r[0].toString().toUpperCase().includes('NOMBRE'));
-                         if (nameRowIndex !== -1 && rows[nameRowIndex][1]) {
-                             const part1 = (rows[nameRowIndex][1] || '').toString().trim();
-                             const part2 = (rows[nameRowIndex][2] || '').toString().trim();
-                             const isHeaderVal = ['TOTALES','FECHA','NOMBRE','DEUDA'].some(h => part2.toUpperCase().startsWith(h));
-                             clientName = (part1 + (part2 && !isHeaderVal ? part2 : '')).trim();
-                             isClientSheet = true;
-                         }
+                        const pareceCliente = rows.some((r, i) => {
+                            if (i > 4 || !r || !r[0]) return false;
+                            const v = r[0].toString().toUpperCase().trim();
+                            return v === 'NOMBRE' || v === 'TOTALES';
+                        });
+                        if (pareceCliente) hojasSinNombre.push(sheetName);
                     }
 
                     if (!isClientSheet && !clientName) {
-                        const looksLikeDataSheet = rows.slice(0, 3).some(r => {
+                        // Hoja de CONTINUACIÓN (arrastre): sus filas deben parecer transacciones
+                        // reales, es decir fecha + una LETRA de operación (F/E/T/R/C/P).
+                        // Sin esta validación, las tablas de totales diarios del final del
+                        // archivo (que también empiezan con fecha pero llevan números en esa
+                        // columna) se le pegaban al último cliente e inflaban su historial.
+                        const looksLikeDataSheet = rows.slice(0, 5).some(r => {
                             if (!r || !r[0]) return false;
                             const val = r[0].toString().trim();
-                            return val.match(/^\d{4}-\d{2}-\d{2}/) || val.match(/^\d{2}\/\d{2}\/\d{4}/);
+                            const esFecha = val.match(/^\d{4}-\d{2}-\d{2}/) || val.match(/^\d{2}\/\d{2}\/\d{4}/);
+                            if (!esFecha) return false;
+                            const tipo = (r[1] || '').toString().trim().toUpperCase();
+                            return /^[FETRCP]$/.test(tipo);
                         });
 
                         if (looksLikeDataSheet && currentClientData) {
@@ -1527,7 +1538,7 @@
                 });
 
                 if (allClients.length === 0) { _showModal('Error', 'No se encontraron clientes.'); return; }
-                await uploadCXCToFirebase(allClients);
+                await uploadCXCToFirebase(allClients, hojasSinNombre);
 
             } catch (error) { console.error("Excel Error:", error); _showModal('Error', 'Error crítico al procesar Excel: ' + error.message); }
         };
@@ -1535,7 +1546,7 @@
         event.target.value = '';
     }
 
-    async function uploadCXCToFirebase(clients) {
+    async function uploadCXCToFirebase(clients, hojasSinNombre) {
         _showModal('Subiendo', `Guardando historial de ${clients.length} clientes...`);
         try {
             const updateDate = new Date();
@@ -1553,7 +1564,21 @@
             const metaRef = _doc(_db, CXC_COLLECTION_PATH, 'metadata');
             await _setDoc(metaRef, { updatedAt: updateDate, updatedBy: _userId, recordCount: clients.length });
 
-            _showModal('Éxito', `Base de datos actualizada.`, showCXCView);
+            // Si alguna hoja parecía de cliente pero no se pudo leer su nombre comercial,
+            // se avisa para que se pueda corregir el archivo (en vez de perderla en silencio).
+            const sinNombre = hojasSinNombre || [];
+            if (sinNombre.length) {
+                _showModal('Carga con avisos',
+                    `Base de datos actualizada con <strong>${clients.length}</strong> cliente(s).<br><br>` +
+                    `<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:8px;text-align:left;">` +
+                    `<strong style="color:#b45309;">⚠️ ${sinNombre.length} hoja(s) no se pudieron leer</strong><br>` +
+                    `<span style="font-size:11px;color:#78350f;">Parecen de cliente pero no tienen un nombre legible en la fila 1 (columna B). No se cargaron:</span><br>` +
+                    `<span style="font-size:11px;color:#92400e;font-weight:700;">${sinNombre.join(', ')}</span><br>` +
+                    `<span style="font-size:10px;color:#a16207;">Revisa esas hojas en el Excel y vuelve a subirlo.</span></div>`,
+                    showCXCView);
+            } else {
+                _showModal('Éxito', `Base de datos actualizada con <strong>${clients.length}</strong> cliente(s).`, showCXCView);
+            }
         } catch (error) {
             console.error("Upload error:", error);
             _showModal('Error', `Error al procesar: ${error.message}`);
@@ -1687,6 +1712,7 @@
         }, 100);
     };
 })();
+
 
 
 
