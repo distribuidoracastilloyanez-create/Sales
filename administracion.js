@@ -2768,9 +2768,8 @@
                     </div>
 
                     <!-- Sub-vistas -->
-                    <div class="grid grid-cols-3 gap-1.5 mb-3">
-                        <button id="cdVistaEstado" class="py-2 rounded text-[11px] font-bold border transition bg-cyan-600 text-white border-cyan-600">📊 Estado de datos</button>
-                        <button id="cdVistaCompra" class="py-2 rounded text-[11px] font-bold border transition bg-white text-cyan-700 border-cyan-300">📅 Última compra</button>
+                    <div class="grid grid-cols-2 gap-1.5 mb-3">
+                        <button id="cdVistaEstado" class="py-2 rounded text-[11px] font-bold border transition bg-cyan-600 text-white border-cyan-600">📊 Datos + Compra</button>
                         <button id="cdVistaErrores" class="py-2 rounded text-[11px] font-bold border transition bg-white text-cyan-700 border-cyan-300">🔍 Errores</button>
                     </div>
 
@@ -2795,33 +2794,32 @@
                             </div>
                             <div id="cdChips" class="flex flex-wrap gap-1"></div>
                         </div>
+                        <!-- Filtro por COMPRA (dirección + período) -->
+                        <div class="border-t border-cyan-200 pt-2">
+                            <span class="text-[9px] font-bold text-cyan-700 uppercase block mb-1">Compra (opcional)</span>
+                            <div class="grid grid-cols-2 gap-1.5">
+                                <select id="cdCompraDir" class="text-xs border border-cyan-300 rounded p-1.5 bg-white outline-none">
+                                    <option value="off">Sin filtro de compra</option>
+                                    <option value="con">Con compra en...</option>
+                                    <option value="sin">Sin compra en...</option>
+                                </select>
+                                <select id="cdCompraRango" class="text-xs border border-cyan-300 rounded p-1.5 bg-white outline-none" disabled>
+                                    <option value="7">los últimos 7 días</option>
+                                    <option value="15">los últimos 15 días</option>
+                                    <option value="30">el último mes (30 días)</option>
+                                    <option value="nunca">nunca han comprado</option>
+                                </select>
+                            </div>
+                        </div>
                         <div class="grid grid-cols-2 gap-1.5">
                             <select id="cdOrden" class="text-xs border border-cyan-300 rounded p-1.5 bg-white outline-none">
                                 <option value="nombre">Orden: nombre</option>
                                 <option value="completitud">Menos completos primero</option>
                                 <option value="zona">Por zona</option>
+                                <option value="compra">Por última compra</option>
                             </select>
                             <button id="cdCompartir" class="text-xs bg-green-600 text-white rounded p-1.5 font-bold hover:bg-green-700 transition">📊 Exportar Excel</button>
                         </div>
-                    </div>
-
-                    <!-- FILTROS (última compra) -->
-                    <div id="cdFiltrosCompra" class="hidden bg-cyan-50 border border-cyan-200 rounded-lg p-2 mb-3 space-y-2">
-                        <select id="cdRangoCompra" class="w-full text-xs border border-cyan-300 rounded p-1.5 bg-white outline-none">
-                            <option value="7">Sin compra en los últimos 7 días</option>
-                            <option value="15">Sin compra en los últimos 15 días</option>
-                            <option value="21">Sin compra en los últimos 21 días</option>
-                            <option value="mas21">Sin compra en más de 21 días</option>
-                            <option value="nunca">Nunca han comprado</option>
-                        </select>
-                        <div>
-                            <div class="flex items-center justify-between mb-1">
-                                <span class="text-[9px] font-bold text-cyan-700 uppercase">Zonas (toca para marcar varias)</span>
-                                <button id="cdZonasCompraReset" class="text-[9px] text-gray-400 hover:text-gray-600 underline">Todas</button>
-                            </div>
-                            <div id="cdZonaCompraChips" class="flex flex-wrap gap-1 max-h-24 overflow-y-auto"></div>
-                        </div>
-                        <button id="cdCompartirCompra" class="w-full text-xs bg-green-600 text-white rounded p-1.5 font-bold hover:bg-green-700 transition">📊 Exportar Excel</button>
                     </div>
 
                     <!-- Resumen -->
@@ -2834,7 +2832,6 @@
 
         document.getElementById('cdBack').addEventListener('click', window.showAdministracionMenu);
         document.getElementById('cdVistaEstado').addEventListener('click', () => setCdVista('estado'));
-        document.getElementById('cdVistaCompra').addEventListener('click', () => setCdVista('ultimaCompra'));
         document.getElementById('cdVistaErrores').addEventListener('click', () => setCdVista('errores'));
 
         // Cargar todos los datos necesarios
@@ -2853,20 +2850,20 @@
         document.getElementById('cdBuscar').addEventListener('input', () => { clearTimeout(deb); deb = setTimeout(renderCdEstado, 180); });
         renderCdChips();
         renderCdZonaChips('estado');
-        renderCdZonaChips('compra');
         document.getElementById('cdChipsReset').addEventListener('click', () => {
             _cdChipEstados = {}; renderCdChips(); renderCdEstado();
         });
         document.getElementById('cdZonasReset').addEventListener('click', () => {
             _cdZonasSel.clear(); renderCdZonaChips('estado'); renderCdEstado();
         });
-        document.getElementById('cdZonasCompraReset').addEventListener('click', () => {
-            _cdZonasCompraSel.clear(); renderCdZonaChips('compra'); renderCdCompra();
-        });
         document.getElementById('cdOrden').addEventListener('change', renderCdEstado);
-        document.getElementById('cdRangoCompra').addEventListener('change', renderCdCompra);
+        // Filtro de compra fusionado: al elegir dirección se habilita el período
+        document.getElementById('cdCompraDir').addEventListener('change', (e) => {
+            document.getElementById('cdCompraRango').disabled = (e.target.value === 'off');
+            renderCdEstado();
+        });
+        document.getElementById('cdCompraRango').addEventListener('change', renderCdEstado);
         document.getElementById('cdCompartir').addEventListener('click', () => exportarExcelDatos('estado'));
-        document.getElementById('cdCompartirCompra').addEventListener('click', () => exportarExcelDatos('compra'));
 
         setCdVista('estado');
     }
@@ -2877,14 +2874,11 @@
         const on = 'py-2 rounded text-[11px] font-bold border transition bg-cyan-600 text-white border-cyan-600';
         const off = 'py-2 rounded text-[11px] font-bold border transition bg-white text-cyan-700 border-cyan-300';
         document.getElementById('cdVistaEstado').className = vista === 'estado' ? on : off;
-        document.getElementById('cdVistaCompra').className = vista === 'ultimaCompra' ? on : off;
         document.getElementById('cdVistaErrores').className = vista === 'errores' ? on : off;
 
         document.getElementById('cdFiltrosEstado').classList.toggle('hidden', vista !== 'estado');
-        document.getElementById('cdFiltrosCompra').classList.toggle('hidden', vista !== 'ultimaCompra');
 
         if (vista === 'estado') renderCdEstado();
-        else if (vista === 'ultimaCompra') renderCdCompra();
         else renderCdErrores();
     }
 
@@ -2952,8 +2946,30 @@
             });
         });
 
+        // Filtro por COMPRA (dirección con/sin + período), se combina con AND
+        const dir = document.getElementById('cdCompraDir')?.value || 'off';
+        if (dir !== 'off') {
+            const rango = document.getElementById('cdCompraRango')?.value || '7';
+            lista = lista.filter(c => {
+                const d = c.diasSinComprar; // null = nunca compró
+                if (rango === 'nunca') {
+                    // "con compra + nunca" no tiene sentido → vacío; "sin compra + nunca" = los que nunca compraron
+                    return dir === 'sin' ? (d === null) : false;
+                }
+                const limite = parseInt(rango, 10);
+                if (dir === 'con') {
+                    // Compró dentro del período (días sin comprar <= límite)
+                    return d !== null && d <= limite;
+                } else {
+                    // Sin compra en el período (nunca, o más días que el límite)
+                    return d === null || d > limite;
+                }
+            });
+        }
+
         if (orden === 'completitud') lista.sort((a, b) => a.completitud - b.completitud || a.nombreComercial.localeCompare(b.nombreComercial));
         else if (orden === 'zona') lista.sort((a, b) => (a.zona || '').localeCompare(b.zona || '') || a.nombreComercial.localeCompare(b.nombreComercial));
+        else if (orden === 'compra') lista.sort((a, b) => (b.diasSinComprar ?? 99999) - (a.diasSinComprar ?? 99999) || a.nombreComercial.localeCompare(b.nombreComercial));
         else lista.sort((a, b) => a.nombreComercial.localeCompare(b.nombreComercial));
         return lista;
     }
@@ -2986,6 +3002,7 @@
                         </div>
                         <div class="shrink-0 text-right">
                             <div class="text-[10px] font-bold ${c.completitud === 100 ? 'text-green-600' : c.completitud >= 60 ? 'text-amber-600' : 'text-red-500'}">${c.completitud}%</div>
+                            <div class="text-[9px] ${c.diasSinComprar === null ? 'text-gray-400' : c.diasSinComprar > 21 ? 'text-red-500' : c.diasSinComprar >= 15 ? 'text-amber-600' : 'text-gray-500'}">${c.diasSinComprar === null ? 'sin compras' : 'compró hace ' + c.diasSinComprar + 'd'}</div>
                         </div>
                     </div>
                     <div class="flex flex-wrap gap-1 mt-1.5">
@@ -3158,38 +3175,16 @@
         const fmtFecha = (d) => d ? d.toLocaleDateString('es-VE', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '';
         const si = (b) => b ? 'Sí' : 'No';
 
-        if (modo === 'estado') {
+        {
             lista = filtrarEstado();
-            hojaNombre = 'Estado de datos';
+            hojaNombre = 'Datos y compra';
             headers = ['#', 'Nombre Comercial', 'Nombre Personal', 'Zona', 'Teléfono', 'CEP',
-                       'GPS', 'ADC', 'Documentos', 'Fotos', 'Retención', 'Coordenadas', 'Completitud %', 'Última compra'];
+                       'GPS', 'ADC', 'Documentos', 'Fotos', 'Retención', 'Coordenadas', 'Completitud %', 'Última compra', 'Días sin comprar'];
             filas = lista.map((c, i) => [
                 i + 1, c.nombreComercial, c.nombrePersonal || '', c.zona || '', c.telefono || '',
                 c.estados.cep ? c.codigoCEP : 'FALTA',
                 si(c.estados.gps), si(c.estados.adc), si(c.estados.doc), si(c.estados.foto),
                 si(c.aplicaRetencion), c.coordenadas || '', c.completitud,
-                fmtFecha(c.ultimaCompra)
-            ]);
-        } else {
-            const rangoSel = document.getElementById('cdRangoCompra');
-            const rango = rangoSel?.value || '7';
-            lista = _cliDatosData.slice();
-            if (_cdZonasCompraSel.size) lista = lista.filter(c => _cdZonasCompraSel.has(c.zona));
-            lista = lista.filter(c => {
-                if (rango === 'nunca') return c.diasSinComprar === null;
-                if (c.diasSinComprar === null) return rango === 'mas21';
-                if (rango === '7') return c.diasSinComprar >= 7;
-                if (rango === '15') return c.diasSinComprar >= 15;
-                if (rango === '21') return c.diasSinComprar >= 21;
-                if (rango === 'mas21') return c.diasSinComprar > 21;
-                return true;
-            });
-            lista.sort((a, b) => (b.diasSinComprar || 99999) - (a.diasSinComprar || 99999));
-            hojaNombre = 'Ultima compra';
-            headers = ['#', 'Nombre Comercial', 'Nombre Personal', 'Zona', 'Teléfono',
-                       'Última compra', 'Días sin comprar'];
-            filas = lista.map((c, i) => [
-                i + 1, c.nombreComercial, c.nombrePersonal || '', c.zona || '', c.telefono || '',
                 c.ultimaCompra ? fmtFecha(c.ultimaCompra) : 'Nunca',
                 c.diasSinComprar === null ? 'Nunca compró' : c.diasSinComprar
             ]);
@@ -3202,9 +3197,7 @@
             const fechaStr = `${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,'0')}-${String(hoy.getDate()).padStart(2,'0')}`;
 
             // Encabezado con título antes de la tabla
-            const zonasTxt = (modo === 'estado' ? _cdZonasSel : _cdZonasCompraSel).size
-                ? [...(modo === 'estado' ? _cdZonasSel : _cdZonasCompraSel)].join(', ')
-                : 'Todas las zonas';
+            const zonasTxt = _cdZonasSel.size ? [..._cdZonasSel].join(', ') : 'Todas las zonas';
             const aoa = [
                 ['DISTRIBUIDORA CASTILLO YAÑEZ - ' + hojaNombre.toUpperCase()],
                 ['Fecha: ' + hoy.toLocaleDateString('es-VE'), 'Zonas: ' + zonasTxt, 'Total: ' + lista.length + ' clientes'],
@@ -3261,6 +3254,7 @@
 
 })();
 // redeploy trigger 1783190804
+
 
 
 
