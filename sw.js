@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v54'; // v54: cierre - color de celda con descuento + observaciones col C (pasos 5-7)
+const CACHE_NAME = 'ventas-app-cache-v55'; // v55: analista datos - fusion estado+compra en un filtro (con/sin compra + periodo)
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
@@ -181,6 +181,7 @@ self.addEventListener('fetch', event => {
             })
     );
 });
+
 
 
 
