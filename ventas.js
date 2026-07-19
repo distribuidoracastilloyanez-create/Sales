@@ -122,11 +122,36 @@
 
       const savedTasa = localStorage.getItem('tasaCOP'); if (savedTasa) { _tasaCOP = parseFloat(savedTasa); document.getElementById('tasaCopInput').value = _tasaCOP; }
 
-      const savedTasaBs = localStorage.getItem('tasaBs'); if (savedTasaBs) { _tasaBs = parseFloat(savedTasaBs); document.getElementById('tasaBsInput').value = _tasaBs; }
+      // Tasa Bs. predeterminada = tasa BCV del día (la que se ingresa en CXC).
+      // Se puede actualizar manualmente; si el usuario ya la cambió hoy, se respeta su valor.
+      (async () => {
+          try {
+              const inp = document.getElementById('tasaBsInput');
+              if (!inp) return;
+              const tHoy = window.getTasaHoyBCV ? await window.getTasaHoyBCV() : null;
+              const savedBs = localStorage.getItem('tasaBs');
+              const savedBsFecha = localStorage.getItem('tasaBsFecha');
+              const hoyISO = tHoy ? tHoy.iso : '';
+              // Si el usuario ya editó la tasa HOY, respetar su valor; si no, usar la del día.
+              if (savedBs && savedBsFecha === hoyISO) {
+                  _tasaBs = parseFloat(savedBs) || 0;
+              } else if (tHoy && tHoy.rate) {
+                  _tasaBs = Number(tHoy.rate);
+                  localStorage.setItem('tasaBs', _tasaBs);
+                  localStorage.setItem('tasaBsFecha', hoyISO);
+              } else if (savedBs) {
+                  _tasaBs = parseFloat(savedBs) || 0;
+              }
+              if (_tasaBs > 0) {
+                  inp.value = _tasaBs;
+                  if (_monedaActual === 'Bs') { renderVentasInventario(); updateVentaTotal(); }
+              }
+          } catch (e) { console.warn('No se pudo cargar la tasa BCV del día:', e); }
+      })();
 
       document.getElementById('tasaCopInput').addEventListener('input', (e) => { _tasaCOP = parseFloat(e.target.value) || 0; localStorage.setItem('tasaCOP', _tasaCOP); if (_monedaActual === 'COP') { renderVentasInventario(); updateVentaTotal(); } });
 
-      document.getElementById('tasaBsInput').addEventListener('input', (e) => { _tasaBs = parseFloat(e.target.value) || 0; localStorage.setItem('tasaBs', _tasaBs); if (_monedaActual === 'Bs') { renderVentasInventario(); updateVentaTotal(); } });
+      document.getElementById('tasaBsInput').addEventListener('input', (e) => { _tasaBs = parseFloat(e.target.value) || 0; localStorage.setItem('tasaBs', _tasaBs); const h = new Date(); localStorage.setItem('tasaBsFecha', `${h.getFullYear()}-${String(h.getMonth()+1).padStart(2,'0')}-${String(h.getDate()).padStart(2,'0')}`); if (_monedaActual === 'Bs') { renderVentasInventario(); updateVentaTotal(); } });
 
       document.getElementById('rubroFilter').addEventListener('change', renderVentasInventario);
         document.getElementById('generarTicketBtn').addEventListener('click', generarTicket); 
@@ -1467,6 +1492,7 @@
 
   window.ventasModule = { toggleMoneda, handleQuantityChange, handleTipoVacioChange, showPastSaleOptions, editVenta, deleteVenta, invalidateCache: () => { } };
 })();
+
 
 
 
