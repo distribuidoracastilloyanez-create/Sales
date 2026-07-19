@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v59'; // v59: tres roles (admin/vendedor/despachador) + menu por permisos + Venta Directa
+const CACHE_NAME = 'ventas-app-cache-v60'; // v60: rutas por cliente (Palo Gordo/Santa Teresa) + asignar en masa + bandeja filtra por ruta y rol
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
@@ -181,6 +181,7 @@ self.addEventListener('fetch', event => {
             })
     );
 });
+
 
 
 
