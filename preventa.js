@@ -182,12 +182,14 @@
         loading.classList.add('hidden');
         cont.classList.remove('hidden');
 
-        // Solo mostramos usuarios con rol 'user' (vendedores); los admin no reparten ruta
-        const vendedores = _pvUsuarios.filter(u => u.role === 'user');
+        // Vendedores y despachadores reciben ruta ('user' antiguo = vendedor)
+        const esVend = (u) => u.role === 'user' || u.role === 'vendedor';
+        const vendedores = _pvUsuarios.filter(u => esVend(u) || u.role === 'despachador');
         const admins = _pvUsuarios.filter(u => u.role === 'admin');
 
-        const opcionesZona = (sel) => `<option value="">— Sin zona —</option>` +
-            _pvSectores.map(z => `<option value="${z}" ${sel === z ? 'selected' : ''}>${z}</option>`).join('');
+        // Solo las dos rutas oficiales (no los sectores)
+        const opcionesZona = (sel) => `<option value="">— Sin ruta —</option>` +
+            (window.RUTAS_REPARTO || []).map(z => `<option value="${z}" ${sel === z ? 'selected' : ''}>${z}</option>`).join('');
 
         const nombreDe = (u) => {
             const n = [u.nombre, u.apellido].filter(Boolean).join(' ').trim();
@@ -195,12 +197,16 @@
         };
 
         if (!vendedores.length) {
-            cont.innerHTML = '<p class="text-center text-gray-400 py-6 text-sm">No hay vendedores (usuarios con rol User) registrados.</p>';
+            cont.innerHTML = '<p class="text-center text-gray-400 py-6 text-sm">No hay vendedores ni despachadores registrados.</p>';
             return;
         }
 
+        const badgeRol = (u) => u.role === 'despachador'
+            ? '<span class="text-[9px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-bold shrink-0">Despachador</span>'
+            : '<span class="text-[9px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded font-bold shrink-0">Vendedor</span>';
+
         cont.innerHTML = `
-            <p class="text-[10px] text-gray-400 uppercase font-bold">Vendedores (rol User) · ${vendedores.length}</p>
+            <p class="text-[10px] text-gray-400 uppercase font-bold">Personal de ruta · ${vendedores.length}</p>
             ${vendedores.map(u => `
                 <div class="border border-gray-200 rounded-lg p-2.5">
                     <div class="flex items-center justify-between gap-2 mb-1.5">
@@ -208,7 +214,7 @@
                             <div class="font-bold text-gray-800 text-sm truncate">${nombreDe(u)}</div>
                             <div class="text-[10px] text-gray-400 truncate">${u.email || ''}${u.camion ? ' · Camión: ' + u.camion : ''}</div>
                         </div>
-                        <span class="text-[9px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded font-bold shrink-0">Vendedor</span>
+                        ${badgeRol(u)}
                     </div>
                     <div class="flex items-center gap-2">
                         <span class="text-[10px] text-gray-500 shrink-0">Zona/Ruta:</span>
@@ -421,8 +427,16 @@
         const disp = document.getElementById('pvClientDisplay');
         disp.classList.remove('hidden');
         disp.classList.add('flex');
-        document.getElementById('pvSelClientName').textContent =
-            (c.nombreComercial || '(sin nombre)') + (c.nombrePersonal ? ' · ' + c.nombrePersonal : '');
+        const rutaCli = c.ruta || '';
+        document.getElementById('pvSelClientName').innerHTML =
+            (c.nombreComercial || '(sin nombre)') + (c.nombrePersonal ? ' · ' + c.nombrePersonal : '') +
+            (rutaCli ? ` <span class="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-bold">${rutaCli}</span>` : ' <span class="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded">sin ruta</span>');
+
+        // Aviso suave si el cliente es de otra ruta que la del vendedor (no bloquea)
+        const rutaVend = (_pedidoActual.vendedor && _pedidoActual.vendedor.zonaPreventa) || '';
+        if (rutaVend && rutaCli && rutaVend !== rutaCli && _showModal) {
+            _showModal('Aviso de ruta', `Este cliente es de la ruta <strong>${rutaCli}</strong>, pero tu ruta es <strong>${rutaVend}</strong>. Puedes continuar, pero verifica que sea correcto.`);
+        }
 
         // Tasas COP/Bs (se recuerdan como en Nueva Venta)
         const inCop = document.getElementById('pvTasaCop');
@@ -547,7 +561,7 @@
         const pedido = {
             clienteId: c.id, clienteNombre: c.nombreComercial || '',
             clienteNombrePersonal: c.nombrePersonal || '', clienteSector: c.sector || '',
-            vendedorId: v.id, vendedorNombre: _pvNombreVendedor(v), zona: v.zonaPreventa || c.sector || '',
+            vendedorId: v.id, vendedorNombre: _pvNombreVendedor(v), ruta: c.ruta || '', zona: c.ruta || v.zonaPreventa || c.sector || '',
             productos: productos.map(p => ({
                 id: p.id, presentacion: p.presentacion, marca: p.marca || null,
                 cantCj: p.cantCj || 0, cantPaq: p.cantPaq || 0, cantUnd: p.cantUnd || 0,
@@ -590,9 +604,12 @@
     let _pvFiltroEstado = '';     // '' = todos
     let _pvFiltroVendedor = '';
     let _pvFiltroHoy = false;
+    let _pvFiltroRuta = '';       // '' = todas (solo admin)
 
     function showBandejaDespacho() {
-        if (window.userRole !== 'admin') return;
+        const rol = window.userRole === 'user' ? 'vendedor' : window.userRole;
+        if (!['admin', 'vendedor', 'despachador'].includes(rol)) return;
+        const esAdmin = rol === 'admin';
 
         _mainContent.innerHTML = `
             <div class="p-2 sm:p-3 pt-5 w-full max-w-2xl mx-auto">
@@ -615,6 +632,12 @@
                             <option value="">Todos los vendedores</option>
                         </select>
                     </div>
+                    ${esAdmin ? `<div class="mb-2">
+                        <select id="pvBandRuta" class="w-full text-xs border border-blue-300 rounded p-1.5 bg-white outline-none">
+                            <option value="">Todas las rutas</option>
+                            ${(window.RUTAS_REPARTO || []).map(r => `<option value="${r}">${r}</option>`).join('')}
+                        </select>
+                    </div>` : ''}
                     <label class="flex items-center gap-1.5 text-[11px] text-gray-600 mb-2">
                         <input type="checkbox" id="pvBandHoy" class="rounded"> Solo pedidos de hoy
                     </label>
@@ -634,6 +657,7 @@
         document.getElementById('pvBandEstado').addEventListener('change', (e) => { _pvFiltroEstado = e.target.value; renderBandeja(); });
         document.getElementById('pvBandVendedor').addEventListener('change', (e) => { _pvFiltroVendedor = e.target.value; renderBandeja(); });
         document.getElementById('pvBandHoy').addEventListener('change', (e) => { _pvFiltroHoy = e.target.checked; renderBandeja(); });
+        document.getElementById('pvBandRuta')?.addEventListener('change', (e) => { _pvFiltroRuta = e.target.value; renderBandeja(); });
 
         // Escuchar pedidos en tiempo real
         try {
@@ -685,6 +709,21 @@
 
         // Aplicar filtros
         let lista = _pvPedidos.slice();
+
+        // ── FILTRO POR ROL ──
+        // Despachador: solo los pedidos de SU ruta (zonaPreventa de su usuario).
+        // Vendedor: solo SUS pedidos (los que él tomó).
+        // Admin: todos, con filtro de ruta opcional.
+        const rol = window.userRole === 'user' ? 'vendedor' : window.userRole;
+        if (rol === 'despachador') {
+            const miRuta = window.userZona || '';
+            lista = lista.filter(p => (p.ruta || p.zona || '') === miRuta);
+        } else if (rol === 'vendedor') {
+            lista = lista.filter(p => p.vendedorId === _userId);
+        } else if (rol === 'admin' && _pvFiltroRuta) {
+            lista = lista.filter(p => (p.ruta || p.zona || '') === _pvFiltroRuta);
+        }
+
         if (_pvFiltroEstado) lista = lista.filter(p => (p.estado || 'pendiente') === _pvFiltroEstado);
         if (_pvFiltroVendedor) lista = lista.filter(p => p.vendedorNombre === _pvFiltroVendedor);
         if (_pvFiltroHoy) lista = lista.filter(p => _pvEsHoy(p.fechaCreacion));
@@ -1493,6 +1532,7 @@
     }
 
 })();
+
 
 
 
