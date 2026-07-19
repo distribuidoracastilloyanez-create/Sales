@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v55'; // v55: analista datos - fusion estado+compra en un filtro (con/sin compra + periodo)
+const CACHE_NAME = 'ventas-app-cache-v56'; // v56: filtro compra - semana actual y semana anterior (calendario lun-dom)
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
@@ -181,6 +181,7 @@ self.addEventListener('fetch', event => {
             })
     );
 });
+
 
 
 
