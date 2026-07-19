@@ -52,46 +52,57 @@
 
     // ── MENÚ PRINCIPAL DE PRE-VENTA ──
     window.showPreventaMenu = function () {
-        // Seguridad: por ahora solo admin
-        if (window.userRole !== 'admin') {
-            if (_showModal) _showModal('No disponible', 'El sistema de Pre-Venta aún está en preparación.');
+        const rol = window.userRole === 'user' ? 'vendedor' : window.userRole;
+        // Admin, vendedor y despachador pueden entrar a Pre-Venta
+        if (!['admin', 'vendedor', 'despachador'].includes(rol)) {
+            if (_showModal) _showModal('No disponible', 'El sistema de Pre-Venta no está habilitado para tu usuario.');
             return;
         }
+        const esAdmin = rol === 'admin';
+        const esVend = rol === 'vendedor';
+        const esDesp = rol === 'despachador';
 
         const bpad = 'px-2 py-2.5 text-sm';
+        // Botones de Pre-Venta según el rol
+        const btn = (id, txt, clase) => `<button id="${id}" class="w-full ${bpad} ${clase} text-white rounded-lg shadow-md font-bold transition">${txt}</button>`;
+        let botones = '';
+        if (esAdmin || esVend)  botones += btn('pvPedidosBtn', 'Tomar Pedido', 'bg-indigo-500 hover:bg-indigo-600');
+        botones += btn('pvBandejaBtn', 'Bandeja Despacho', 'bg-teal-600 hover:bg-teal-700');
+        if (esAdmin) botones += btn('pvInventarioRutaBtn', 'Inv. por Ruta', 'bg-blue-600 hover:bg-blue-700');
+        if (esAdmin) botones += btn('pvVendedoresBtn', 'Vendedores/Zonas', 'bg-slate-600 hover:bg-slate-700');
+        botones += btn('pvReportesBtn', 'Reportes', 'bg-slate-700 hover:bg-slate-800');
+        botones += btn('pvCatalogoBtn', 'Catálogo', 'bg-green-700 hover:bg-green-800');
+        // Accesos tradicionales reutilizados (según rol)
+        if (esDesp) botones += btn('pvClientesBtn', 'Clientes', 'bg-teal-600 hover:bg-teal-700');
+        if (esDesp) botones += btn('pvCxcBtn', 'CXC', 'bg-amber-600 hover:bg-amber-700');
+        if (esDesp) botones += btn('pvPerfilBtn', 'Mi Perfil', 'bg-slate-700 hover:bg-slate-800');
+        if (esAdmin) botones += btn('pvConfigBtn', 'Configuración', 'bg-gray-600 hover:bg-gray-700');
+
         _mainContent.innerHTML = `
             <div class="p-3 pt-5 container mx-auto max-w-lg">
                 <div class="bg-white/90 backdrop-blur-sm p-4 rounded-lg shadow-xl text-center">
-                    <!-- Navegación entre sistemas -->
+                    ${!esDesp ? `
                     <div class="grid grid-cols-2 gap-2 mb-1">
-                        <button id="pvNavTradiBtn" class="w-full ${bpad} bg-white text-gray-500 border border-gray-300 rounded-lg shadow-sm hover:bg-gray-50 font-bold transition">Venta Tradi.</button>
+                        <button id="pvNavTradiBtn" class="w-full ${bpad} bg-white text-gray-500 border border-gray-300 rounded-lg shadow-sm hover:bg-gray-50 font-bold transition">Venta ${esVend ? 'Directa' : 'Tradi.'}</button>
                         <button id="pvNavPreBtn" class="w-full ${bpad} bg-indigo-600 text-white rounded-lg shadow-md font-bold transition">Pre-Venta</button>
-                    </div>
+                    </div>` : `<h1 class="text-xl mb-1 font-bold text-gray-800">Despacho</h1>`}
                     <button id="pvTasaBcvDisplay" class="mb-3 text-sm font-bold text-gray-700 hover:text-gray-900 hover:underline transition cursor-pointer">(BCV ----- --/--/--)</button>
 
-                    <!-- Aviso de sistema en construcción -->
-                    <div class="bg-indigo-50 border border-indigo-200 rounded-lg p-2 mb-3">
-                        <p class="text-[11px] text-indigo-700 font-semibold">🚧 Sistema nuevo en construcción · visible solo para administradores</p>
-                    </div>
-
-                    <!-- Botones del sistema de Pre-Venta (aún sin función, se irán activando) -->
                     <div class="grid grid-cols-2 gap-2">
-                        <button id="pvPedidosBtn" class="w-full ${bpad} bg-indigo-500 text-white rounded-lg shadow-md hover:bg-indigo-600 font-bold transition">Tomar Pedido</button>
-                        <button id="pvBandejaBtn" class="w-full ${bpad} bg-teal-600 text-white rounded-lg shadow-md hover:bg-teal-700 font-bold transition">Bandeja Despacho</button>
-                        <button id="pvInventarioRutaBtn" class="w-full ${bpad} bg-blue-600 text-white rounded-lg shadow-md hover:bg-blue-700 font-bold transition">Inv. por Ruta</button>
-                        <button id="pvVendedoresBtn" class="w-full ${bpad} bg-purple-600 text-white rounded-lg shadow-md hover:bg-purple-700 font-bold transition">Vendedores/Zonas</button>
-                        <button id="pvReportesBtn" class="w-full ${bpad} bg-slate-700 text-white rounded-lg shadow-md hover:bg-slate-800 font-bold transition">Reportes</button>
-                        <button id="pvCatalogoBtn" class="w-full ${bpad} bg-green-700 text-white rounded-lg shadow-md hover:bg-green-800 font-bold transition">Catálogo</button>
-                        <button id="pvConfigBtn" class="w-full ${bpad} bg-gray-600 text-white rounded-lg shadow-md hover:bg-gray-700 font-bold transition">Configuración</button>
+                        ${botones}
                     </div>
                 </div>
             </div>`;
 
         // Navegación
-        document.getElementById('pvNavTradiBtn').addEventListener('click', () => {
+        document.getElementById('pvNavTradiBtn')?.addEventListener('click', () => {
             if (_showMainMenu) _showMainMenu();
         });
-        document.getElementById('pvNavPreBtn').addEventListener('click', () => window.showPreventaMenu());
+        document.getElementById('pvNavPreBtn')?.addEventListener('click', () => window.showPreventaMenu());
+        // Accesos tradicionales reutilizados (despachador)
+        document.getElementById('pvClientesBtn')?.addEventListener('click', () => { if (window.showClientesSubMenu) window.showClientesSubMenu(); });
+        document.getElementById('pvCxcBtn')?.addEventListener('click', () => { if (window.showCXCView) window.showCXCView(); });
+        document.getElementById('pvPerfilBtn')?.addEventListener('click', () => { if (window.showAdminOrProfileView) window.showAdminOrProfileView(); });
 
         // Tasa BCV (reutiliza la API global del módulo CXC)
         (async () => {
