@@ -224,6 +224,20 @@
 
         let db, auth, storage, userId;
         window.userRole   = 'user'; 
+        window.userZona   = '';
+        // ─── PERMISOS POR ROL ───
+        // Cada rol lista las "llaves" de función que puede ver. El menú se arma leyendo esto.
+        window.ROLE_PERMISOS = {
+            admin: '*', // todo
+            vendedor: ['inventario','clientes','ventas','cxc','calculadora','facturacion','archivos','obsequios','catalogo','perfil','preventa'],
+            despachador: ['clientes','cxc','catalogo','perfil','preventa']
+        };
+        window.puede = function (llave) {
+            const r = window.userRole === 'user' ? 'vendedor' : window.userRole;
+            const p = window.ROLE_PERMISOS[r];
+            if (p === '*') return true;
+            return Array.isArray(p) && p.includes(llave);
+        };
         let activeListeners = [];
         window.isLoggingOut = false; 
         window.TIPOS_VACIO_GLOBAL = ["1/4 - 1/3", "ret 350 ml", "ret 1.25 Lts"];
@@ -396,7 +410,12 @@
             floatingControls.classList.remove('hidden');
             document.body.classList.remove('catalogo-active');
             document.body.style.removeProperty('--catalogo-bg-image');
-            const isAdmin = window.userRole === 'admin';
+            const rolActual = window.userRole === 'user' ? 'vendedor' : window.userRole;
+            // El despachador trabaja desde el menú de Pre-Venta (Bandeja de Despacho)
+            if (rolActual === 'despachador' && window.showPreventaMenu) { window.showPreventaMenu(); return; }
+            const isAdmin = rolActual === 'admin';
+            const esDespachador = rolActual === 'despachador';
+            const P = window.puede;
             // En modo admin los botones son más compactos (2 columnas, sin scroll en móvil)
             const bpad = isAdmin ? 'px-2 py-2.5 text-sm' : 'px-6 py-3';
             const btrans = 'transition transform hover:-translate-y-1';
@@ -404,42 +423,42 @@
             mainContent.innerHTML = `
                 <div class="${isAdmin ? 'p-3 pt-5' : 'p-4 pt-8'} container mx-auto max-w-lg">
                     <div class="bg-white/90 backdrop-blur-sm ${isAdmin ? 'p-4' : 'p-8'} rounded-lg shadow-xl text-center">
-                        ${isAdmin ? `
+                        ${P('preventa') && !esDespachador ? `
                         <div class="grid grid-cols-2 gap-2 mb-1">
                             <button id="navVentaTradiBtn" class="w-full px-2 py-2.5 text-sm bg-gray-700 text-white rounded-lg shadow-md font-bold transition">Venta Tradi.</button>
                             <button id="navPreVentaBtn" class="w-full px-2 py-2.5 text-sm bg-white text-gray-500 border border-gray-300 rounded-lg shadow-sm hover:bg-gray-50 font-bold transition">Pre-Venta</button>
-                        </div>` : `<h1 class="text-3xl mb-1 font-bold text-gray-800">Menú Principal</h1>`}
+                        </div>` : `<h1 class="text-2xl mb-1 font-bold text-gray-800">${esDespachador ? 'Despacho' : 'Menú Principal'}</h1>`}
                         <button id="menuTasaBcvDisplay" class="${isAdmin ? 'mb-3' : 'mb-5'} text-sm font-bold text-gray-700 hover:text-gray-900 hover:underline transition cursor-pointer">(BCV ----- --/--/--)</button>
                         <div class="${isAdmin ? 'grid grid-cols-2 gap-2' : 'space-y-4'}">
-                            <button id="inventarioBtn" class="w-full ${bpad} bg-blue-600 text-white rounded-lg shadow-md hover:bg-blue-700 font-bold transition transform hover:-translate-y-1">Inventario</button>
+                            ${P('inventario') ? `<button id="inventarioBtn" class="w-full ${bpad} bg-blue-600 text-white rounded-lg shadow-md hover:bg-blue-700 font-bold transition transform hover:-translate-y-1">Inventario</button>` : ''}
                             
                             ${isAdmin ? `<button id="editInventarioBtn" class="w-full ${bpad} bg-blue-800 text-white rounded-lg shadow-md hover:bg-blue-900 font-bold transition transform hover:-translate-y-1">${isAdmin ? 'Editar Inv.' : 'Edición de Inventario'}</button>` : ''}
                             
-                            <button id="clientesBtn" class="w-full ${bpad} bg-teal-600 text-white rounded-lg shadow-md hover:bg-teal-700 font-bold transition transform hover:-translate-y-1">Clientes</button>
+                            ${P('clientes') ? `<button id="clientesBtn" class="w-full ${bpad} bg-teal-600 text-white rounded-lg shadow-md hover:bg-teal-700 font-bold transition transform hover:-translate-y-1">Clientes</button>` : ''}
                             
-                            <button id="ventasBtn" class="w-full ${bpad} bg-emerald-600 text-white rounded-lg shadow-md hover:bg-emerald-700 font-bold transition transform hover:-translate-y-1">
-                                Ventas <span id="ventasBadge" class="hidden bg-white text-green-700 text-xs font-black px-2 py-0.5 rounded-full"></span>
-                            </button>
+                            ${P('ventas') ? `<button id="ventasBtn" class="w-full ${bpad} bg-emerald-600 text-white rounded-lg shadow-md hover:bg-emerald-700 font-bold transition transform hover:-translate-y-1">
+                                Venta Directa <span id="ventasBadge" class="hidden bg-white text-green-700 text-xs font-black px-2 py-0.5 rounded-full"></span>
+                            </button>` : ''}
                             
-                            <button id="cxcBtn" class="w-full ${bpad} bg-amber-600 text-white rounded-lg shadow-md hover:bg-amber-700 font-bold transition transform hover:-translate-y-1">CXC</button>
+                            ${P('cxc') ? `<button id="cxcBtn" class="w-full ${bpad} bg-amber-600 text-white rounded-lg shadow-md hover:bg-amber-700 font-bold transition transform hover:-translate-y-1">CXC</button>` : ''}
 
-                            <button id="calculadoraBtn" class="w-full ${bpad} bg-cyan-600 text-white rounded-lg shadow-md hover:bg-cyan-700 font-bold transition transform hover:-translate-y-1">
+                            ${P('calculadora') ? `<button id="calculadoraBtn" class="w-full ${bpad} bg-cyan-600 text-white rounded-lg shadow-md hover:bg-cyan-700 font-bold transition transform hover:-translate-y-1">
                                 ${isAdmin ? 'Calculadora' : 'Calculadora de Pedido'}
-                            </button>
+                            </button>` : ''}
 
-                            <button id="facturacionBtn" class="w-full ${bpad} bg-slate-600 text-white font-bold rounded-lg shadow-md hover:bg-slate-700 transition transform hover:-translate-y-1">
+                            ${P('facturacion') ? `<button id="facturacionBtn" class="w-full ${bpad} bg-slate-600 text-white font-bold rounded-lg shadow-md hover:bg-slate-700 transition transform hover:-translate-y-1">
                                 ${isAdmin ? 'Facturación' : 'Facturación (Simulador)'}
-                            </button>
+                            </button>` : ''}
 
-                            <button id="archivosBtn" class="w-full ${bpad} bg-teal-800 text-white font-bold rounded-lg shadow-md hover:bg-teal-900 transition transform hover:-translate-y-1">
+                            ${P('archivos') ? `<button id="archivosBtn" class="w-full ${bpad} bg-teal-800 text-white font-bold rounded-lg shadow-md hover:bg-teal-900 transition transform hover:-translate-y-1">
                                 ${isAdmin ? 'Archivos' : 'Archivos y ADC'}
-                            </button>
+                            </button>` : ''}
                             
-                            <button id="obsequiosBtn" class="w-full ${bpad} bg-sky-500 text-white rounded-lg shadow-md hover:bg-sky-600 font-bold transition transform hover:-translate-y-1">Obsequios</button>
+                            ${P('obsequios') ? `<button id="obsequiosBtn" class="w-full ${bpad} bg-sky-500 text-white rounded-lg shadow-md hover:bg-sky-600 font-bold transition transform hover:-translate-y-1">Obsequios</button>` : ''}
                             
-                            <button id="catalogoBtn" class="w-full ${bpad} bg-green-700 text-white rounded-lg shadow-md hover:bg-green-800 font-bold transition transform hover:-translate-y-1">Catálogo</button>
+                            ${P('catalogo') ? `<button id="catalogoBtn" class="w-full ${bpad} bg-green-700 text-white rounded-lg shadow-md hover:bg-green-800 font-bold transition transform hover:-translate-y-1">Catálogo</button>` : ''}
                             
-                            <button id="profileAdminBtn" class="w-full ${bpad} bg-slate-700 text-white rounded-lg shadow-md hover:bg-slate-800 font-bold transition transform hover:-translate-y-1">${isAdmin ? 'Admin Panel' : 'Mi Perfil'}</button>
+                            ${P('perfil') ? `<button id="profileAdminBtn" class="w-full ${bpad} bg-slate-700 text-white rounded-lg shadow-md hover:bg-slate-800 font-bold transition transform hover:-translate-y-1">${isAdmin ? 'Admin Panel' : 'Mi Perfil'}</button>` : ''}
                             
                             ${isAdmin ? `<button id="dataBtn" class="w-full ${bpad} bg-slate-800 text-white rounded-lg shadow-md hover:bg-slate-900 font-bold transition transform hover:-translate-y-1">Data</button>` : ''}
                             ${isAdmin ? `<button id="supervisionBtn" class="w-full ${bpad} bg-sky-700 text-white rounded-lg shadow-md hover:bg-sky-800 font-bold transition transform hover:-translate-y-1">${isAdmin ? 'Supervisión' : 'Supervisión y Auditoría'}</button>` : ''}
@@ -552,6 +571,9 @@
                     userId = user.uid;
                     const userDoc   = await getDoc(doc(db, "users", userId));
                     window.userRole = userDoc.exists() ? userDoc.data().role : 'user';
+                    // 'user' (rol antiguo) equivale a 'vendedor' por compatibilidad
+                    if (window.userRole === 'user') window.userRole = 'vendedor';
+                    window.userZona = userDoc.exists() ? (userDoc.data().zonaPreventa || '') : '';
                     
                     document.getElementById('loginContent').classList.add('hidden');
                     document.getElementById('registerContent').classList.add('hidden');
