@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v56'; // v56: filtro compra - semana actual y semana anterior (calendario lun-dom)
+const CACHE_NAME = 'ventas-app-cache-v57'; // v57: preventa - Tomar Pedido replica Nueva Venta (vendedor fijo, COP/Bs, todos los productos)
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
@@ -181,6 +181,7 @@ self.addEventListener('fetch', event => {
             })
     );
 });
+
 
 
 
