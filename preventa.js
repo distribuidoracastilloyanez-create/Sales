@@ -256,61 +256,94 @@
         } catch (e) { console.warn('Sin stock de ruta:', e); }
     }
 
-    async function showTomarPedido() {
-        if (window.userRole !== 'admin') return;
-        _pedidoActual = { vendedor: null, cliente: null, productos: {} };
+    let _pvTasaCOP = 0, _pvTasaBs = 0, _pvMoneda = 'USD';
+    let _pvSortFnPedido = null;
 
+    // Formato de moneda igual al de Nueva Venta
+    function _pvFmtMoneda(valorUSD) {
+        const v = valorUSD || 0;
+        if (_pvMoneda === 'COP' && _pvTasaCOP > 0) return '$' + Math.round(v * _pvTasaCOP).toLocaleString('es-CO') + ' COP';
+        if (_pvMoneda === 'Bs' && _pvTasaBs > 0) return 'Bs ' + (v * _pvTasaBs).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        return '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+    window.preventaModule = window.preventaModule || {};
+    window.preventaModule.togglePedidoMoneda = function () {
+        const ciclo = ['USD', 'COP', 'Bs'], tasas = { USD: 1, COP: _pvTasaCOP, Bs: _pvTasaBs };
+        let i = ciclo.indexOf(_pvMoneda), n = (i + 1) % 3;
+        while (n !== i) { if (tasas[ciclo[n]] > 0) { _pvMoneda = ciclo[n]; renderPedidoProductos(); actualizarTotalPedido(); return; } n = (n + 1) % 3; }
+        if (_showModal) _showModal('Aviso', (_pvTasaCOP <= 0 && _pvTasaBs <= 0) ? 'Ingresa tasas para alternar.' : 'Ingresa una tasa válida (> 0).');
+    };
+    window.preventaModule.handlePedidoQty = function (event) { manejarCantidadPedido(event.target); };
+
+    async function showTomarPedido() {
+        _pedidoActual = { vendedor: null, cliente: null, productos: {} };
+        _pvMoneda = 'USD';
+
+        // El vendedor es el usuario logueado (o el admin, que también puede tomar pedidos con su cuenta)
         _mainContent.innerHTML = `
-            <div class="p-2 sm:p-3 pt-5 w-full max-w-2xl mx-auto">
-                <div class="bg-white/95 backdrop-blur-sm p-3 sm:p-4 rounded-lg shadow-xl">
-                    <div class="flex items-center justify-between mb-3">
-                        <h2 class="text-lg font-bold text-gray-800">Tomar Pedido</h2>
-                        <button id="pvPedBack" class="px-3 py-1.5 bg-gray-400 text-white text-xs rounded hover:bg-gray-500 font-bold transition">Volver</button>
+            <div class="p-2 w-full">
+                <div class="bg-white/90 backdrop-blur-sm p-3 sm:p-4 rounded-lg shadow-xl flex flex-col" style="min-height: calc(100vh - 1rem);">
+                    <div class="mb-2">
+                        <div class="flex justify-between items-center mb-2">
+                            <h2 class="text-lg font-bold text-gray-800">Tomar Pedido</h2>
+                            <button id="pvPedBack" class="px-3 py-1.5 bg-gray-400 text-white text-xs rounded-lg shadow-md hover:bg-gray-500">Volver</button>
+                        </div>
+                        <div id="pvVendedorInfo" class="text-[11px] text-indigo-700 bg-indigo-50 border border-indigo-200 rounded p-1.5 mb-2 font-semibold"></div>
+
+                        <div id="pvClientSearchWrap">
+                            <label for="pvClienteSearch" class="block font-medium mb-1 text-sm">Cliente:</label>
+                            <div class="relative">
+                                <input type="text" id="pvClienteSearch" placeholder="Buscar..." autocomplete="off" class="w-full px-4 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-indigo-400">
+                                <div id="pvClienteDropdown" class="hidden bg-white border border-gray-200 rounded shadow-lg max-h-44 overflow-y-auto mt-1 relative z-20"></div>
+                            </div>
+                        </div>
+
+                        <div id="pvClientDisplay" class="hidden flex-wrap items-center justify-between gap-2">
+                            <p class="flex-grow text-sm"><span class="font-medium">Cliente:</span> <span id="pvSelClientName" class="font-bold"></span></p>
+                            <div id="pvTasasContainer" class="flex flex-row items-center gap-2 mt-2 w-full sm:w-auto sm:mt-0">
+                                <div class="flex items-center space-x-1">
+                                    <label for="pvTasaCop" class="text-xs font-bold text-gray-600">COP:</label>
+                                    <input type="number" id="pvTasaCop" placeholder="4000" class="w-16 px-1 py-1 text-sm border rounded-lg">
+                                </div>
+                                <div class="flex items-center space-x-1">
+                                    <label for="pvTasaBs" class="text-xs font-bold text-gray-600">Bs.:</label>
+                                    <input type="number" id="pvTasaBs" placeholder="36.5" class="w-16 px-1 py-1 text-sm border rounded-lg">
+                                </div>
+                            </div>
+                        </div>
                     </div>
-                    <div id="pvPedLoading" class="text-center py-8 text-gray-400 text-sm">
-                        <svg class="animate-spin h-6 w-6 mx-auto mb-2 text-indigo-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path></svg>
-                        Cargando clientes y catálogo...
+
+                    <div id="pvInvContainer" class="hidden animate-fade-in flex-grow flex flex-col overflow-hidden">
+                        <div class="mb-2">
+                            <label for="pvRubroFilter" class="text-xs font-medium">Filtrar Rubro:</label>
+                            <select id="pvRubroFilter" class="w-full px-2 py-1 border rounded-lg text-sm"><option value="">Todos</option></select>
+                        </div>
+                        <div class="overflow-auto flex-grow rounded-lg shadow">
+                            <table class="min-w-full bg-white text-sm">
+                                <thead class="bg-gray-200 sticky top-0">
+                                    <tr class="uppercase text-xs">
+                                        <th class="py-2 px-2 text-center w-24">Cant</th>
+                                        <th class="py-2 px-2 text-left">Producto</th>
+                                        <th class="py-2 px-2 text-left price-toggle cursor-pointer" onclick="window.preventaModule.togglePedidoMoneda()">Precio</th>
+                                        <th class="py-2 px-1 text-center">Stock</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="pvInvBody" class="text-gray-600"></tbody>
+                            </table>
+                        </div>
                     </div>
-                    <div id="pvPedForm" class="hidden space-y-3">
-                        <!-- Vendedor (selector si es admin; automático si es vendedor) -->
-                        <div id="pvPedVendedorWrap"></div>
-                        <!-- Cliente -->
-                        <div>
-                            <label class="text-[10px] font-bold text-indigo-700 uppercase">Cliente</label>
-                            <input type="text" id="pvPedClienteSearch" placeholder="Buscar cliente..." autocomplete="off"
-                                   class="w-full text-sm border border-indigo-300 rounded p-2 outline-none">
-                            <div id="pvPedClienteDropdown" class="hidden bg-white border border-gray-200 rounded shadow-lg max-h-44 overflow-y-auto mt-1 z-20 relative"></div>
-                            <div id="pvPedClienteSel" class="hidden mt-1 text-xs bg-indigo-50 border border-indigo-200 rounded p-2"></div>
-                        </div>
-                        <!-- Filtro rubro + productos -->
-                        <div>
-                            <div class="flex items-center justify-between mb-1">
-                                <label class="text-[10px] font-bold text-indigo-700 uppercase">Productos</label>
-                                <select id="pvPedRubro" class="text-xs border border-indigo-300 rounded p-1 bg-white outline-none">
-                                    <option value="">Todos los rubros</option>
-                                </select>
-                            </div>
-                            <div id="pvPedProductos" class="border border-gray-200 rounded max-h-[38vh] overflow-y-auto">
-                                <p class="text-center text-gray-400 text-xs py-6">Elige un cliente para empezar a cargar productos.</p>
-                            </div>
-                        </div>
-                        <!-- Total + guardar -->
-                        <div class="sticky bottom-0 bg-white border-t pt-2">
-                            <div id="pvPedAvisoStock" class="hidden text-[10px] bg-amber-50 border border-amber-200 text-amber-700 rounded p-1.5 mb-1.5"></div>
-                            <div class="flex items-center justify-between mb-2">
-                                <span class="text-sm font-bold text-gray-600">Total del pedido:</span>
-                                <span id="pvPedTotal" class="text-xl font-black text-indigo-700">$0.00</span>
-                            </div>
-                            <button id="pvPedGuardar" class="w-full py-2.5 bg-indigo-600 text-white rounded-lg font-bold text-sm hover:bg-indigo-700 transition disabled:opacity-40" disabled>Guardar Pedido</button>
-                            <p class="text-[9px] text-gray-400 text-center mt-1">El pedido queda pendiente para despacho. No descuenta inventario ni factura.</p>
-                        </div>
+
+                    <div id="pvFooter" class="mt-2 flex items-center justify-between hidden">
+                        <span id="pvPedTotal" class="text-base font-bold text-indigo-700">$0.00</span>
+                        <button id="pvPedGuardar" class="px-5 py-2 bg-indigo-600 text-white rounded-lg shadow-md hover:bg-indigo-700 font-bold transition disabled:opacity-40" disabled>Guardar Pedido</button>
                     </div>
                 </div>
             </div>`;
 
         document.getElementById('pvPedBack').addEventListener('click', () => window.showPreventaMenu());
 
-        // Cargar clientes, productos y vendedores
+        // Cargar clientes, productos, usuarios y orden global
         try {
             const [cliSnap, prodSnap, usersSnap] = await Promise.all([
                 _getDocs(_collection(_db, pathClientes())),
@@ -320,70 +353,38 @@
             _pvClientes = cliSnap.docs.map(d => ({ id: d.id, ...d.data() }));
             _pvProductos = prodSnap.docs.map(d => ({ id: d.id, ...d.data() }));
             if (usersSnap) _pvUsuarios = usersSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-            // Cargar la MISMA función de orden que usa la venta tradicional
             if (window.getGlobalProductSortFunction) {
-                try { _pvSortFn = await window.getGlobalProductSortFunction(); } catch (e) { _pvSortFn = null; }
+                try { _pvSortFnPedido = await window.getGlobalProductSortFunction(); } catch (e) { _pvSortFnPedido = null; }
             }
         } catch (e) {
             console.error('Error cargando datos de pedido:', e);
-            document.getElementById('pvPedLoading').innerHTML = '<span class="text-red-500">Error al cargar los datos.</span>';
+            if (_showModal) _showModal('Error', 'No se pudieron cargar los datos.');
             return;
         }
 
-        document.getElementById('pvPedLoading').classList.add('hidden');
-        document.getElementById('pvPedForm').classList.remove('hidden');
-
-        // Vendedor: si es admin, selector; si es vendedor, su propia cuenta automáticamente
-        const wrap = document.getElementById('pvPedVendedorWrap');
-        if (window.userRole === 'admin') {
-            const vendedores = _pvUsuarios.filter(u => u.role === 'user');
-            wrap.innerHTML = `
-                <label class="text-[10px] font-bold text-indigo-700 uppercase">Vendedor (ruta)</label>
-                <select id="pvPedVendedor" class="w-full text-sm border border-indigo-300 rounded p-2 bg-white outline-none">
-                    <option value="">— Elige el vendedor —</option>
-                    ${vendedores.map(u => `<option value="${u.id}">${_pvNombreVendedor(u)}${u.zonaPreventa ? ' · ' + u.zonaPreventa : ''}</option>`).join('')}
-                </select>`;
-            document.getElementById('pvPedVendedor').addEventListener('change', async (e) => {
-                _pedidoActual.vendedor = _pvUsuarios.find(u => u.id === e.target.value) || null;
-                await cargarStockRuta(_pedidoActual.vendedor?.id);
-                renderPedidoProductos();
-                actualizarBotonGuardar();
-            });
-        } else {
-            // Vendedor logueado: se asigna automáticamente su propia cuenta
-            const yo = _pvUsuarios.find(u => u.id === _userId) || { id: _userId, nombre: 'Vendedor' };
-            _pedidoActual.vendedor = yo;
-            await cargarStockRuta(yo.id);
-            wrap.innerHTML = `
-                <label class="text-[10px] font-bold text-indigo-700 uppercase">Vendedor (ruta)</label>
-                <div class="w-full text-sm border border-indigo-200 rounded p-2 bg-indigo-50 text-indigo-800 font-semibold">
-                    ${_pvNombreVendedor(yo)}${yo.zonaPreventa ? ' · ' + yo.zonaPreventa : ''}
-                </div>`;
-        }
-
-        // Poblar rubros
-        const rubros = [...new Set(_pvProductos.map(p => p.rubro).filter(Boolean))].sort();
-        const selRubro = document.getElementById('pvPedRubro');
-        selRubro.innerHTML = '<option value="">Todos los rubros</option>' + rubros.map(r => `<option value="${r}">${r}</option>`).join('');
-        selRubro.addEventListener('change', renderPedidoProductos);
+        // Vendedor FIJO = usuario logueado
+        const yo = _pvUsuarios.find(u => u.id === _userId) || { id: _userId, nombre: 'Vendedor' };
+        _pedidoActual.vendedor = yo;
+        await cargarStockRuta(yo.id);
+        document.getElementById('pvVendedorInfo').textContent =
+            'Vendedor: ' + _pvNombreVendedor(yo) + (yo.zonaPreventa ? ' · Zona: ' + yo.zonaPreventa : '');
 
         // Buscador de cliente
-        const cliInput = document.getElementById('pvPedClienteSearch');
+        const cliInput = document.getElementById('pvClienteSearch');
         let debCli = null;
         cliInput.addEventListener('input', () => {
             clearTimeout(debCli);
             debCli = setTimeout(() => {
                 const term = cliInput.value.toLowerCase().trim();
-                const drop = document.getElementById('pvPedClienteDropdown');
+                const drop = document.getElementById('pvClienteDropdown');
                 if (!term) { drop.classList.add('hidden'); return; }
-                const filtrados = _pvClientes.filter(c =>
+                const res = _pvClientes.filter(c =>
                     (c.nombreComercial || '').toLowerCase().includes(term) ||
                     (c.nombrePersonal || '').toLowerCase().includes(term)).slice(0, 30);
-                drop.innerHTML = filtrados.length
-                    ? filtrados.map(c => `<div class="pv-cli-opt px-2 py-1.5 text-xs hover:bg-indigo-50 cursor-pointer border-b border-gray-100" data-id="${c.id}">
+                drop.innerHTML = res.length
+                    ? res.map(c => `<div class="pv-cli-opt px-2 py-1.5 text-xs hover:bg-indigo-50 cursor-pointer border-b border-gray-100" data-id="${c.id}">
                         <div class="font-semibold text-gray-800">${c.nombreComercial || '(sin nombre)'}</div>
-                        <div class="text-[10px] text-gray-400">${c.nombrePersonal || ''}${c.sector ? ' · ' + c.sector : ''}</div>
-                       </div>`).join('')
+                        <div class="text-[10px] text-gray-400">${c.nombrePersonal || ''}${c.sector ? ' · ' + c.sector : ''}</div></div>`).join('')
                     : '<div class="px-2 py-2 text-xs text-gray-400">Sin coincidencias</div>';
                 drop.classList.remove('hidden');
                 drop.querySelectorAll('.pv-cli-opt').forEach(el =>
@@ -398,39 +399,47 @@
         const c = _pvClientes.find(x => x.id === id);
         if (!c) return;
         _pedidoActual.cliente = c;
-        document.getElementById('pvPedClienteSearch').value = '';
-        document.getElementById('pvPedClienteDropdown').classList.add('hidden');
-        const sel = document.getElementById('pvPedClienteSel');
-        sel.classList.remove('hidden');
-        sel.innerHTML = `<div class="flex items-center justify-between">
-            <div><strong class="text-indigo-800">${c.nombreComercial || '(sin nombre)'}</strong>
-            <span class="text-gray-500">${c.nombrePersonal ? '· ' + c.nombrePersonal : ''}${c.sector ? ' · ' + c.sector : ''}</span></div>
-            <button id="pvPedQuitarCli" class="text-[10px] text-red-500 hover:underline">Cambiar</button></div>`;
-        document.getElementById('pvPedQuitarCli').addEventListener('click', () => {
-            _pedidoActual.cliente = null;
-            sel.classList.add('hidden');
-        });
+
+        document.getElementById('pvClientSearchWrap').classList.add('hidden');
+        const disp = document.getElementById('pvClientDisplay');
+        disp.classList.remove('hidden');
+        disp.classList.add('flex');
+        document.getElementById('pvSelClientName').textContent =
+            (c.nombreComercial || '(sin nombre)') + (c.nombrePersonal ? ' · ' + c.nombrePersonal : '');
+
+        // Tasas COP/Bs (se recuerdan como en Nueva Venta)
+        const inCop = document.getElementById('pvTasaCop');
+        const inBs = document.getElementById('pvTasaBs');
+        const savedCop = localStorage.getItem('tasaCOP'); if (savedCop) { _pvTasaCOP = parseFloat(savedCop) || 0; inCop.value = _pvTasaCOP; }
+        const savedBs = localStorage.getItem('tasaBs'); if (savedBs) { _pvTasaBs = parseFloat(savedBs) || 0; inBs.value = _pvTasaBs; }
+        inCop.addEventListener('input', (e) => { _pvTasaCOP = parseFloat(e.target.value) || 0; localStorage.setItem('tasaCOP', _pvTasaCOP); if (_pvMoneda === 'COP') { renderPedidoProductos(); actualizarTotalPedido(); } });
+        inBs.addEventListener('input', (e) => { _pvTasaBs = parseFloat(e.target.value) || 0; localStorage.setItem('tasaBs', _pvTasaBs); if (_pvMoneda === 'Bs') { renderPedidoProductos(); actualizarTotalPedido(); } });
+
+        // Mostrar tabla y footer
+        document.getElementById('pvInvContainer').classList.remove('hidden');
+        document.getElementById('pvFooter').classList.remove('hidden');
+
+        // Poblar filtro de rubro
+        const rubros = [...new Set(_pvProductos.map(p => p.rubro).filter(Boolean))].sort();
+        const selR = document.getElementById('pvRubroFilter');
+        selR.innerHTML = '<option value="">Todos</option>' + rubros.map(r => `<option value="${r}">${r}</option>`).join('');
+        selR.addEventListener('change', renderPedidoProductos);
+
         renderPedidoProductos();
         actualizarBotonGuardar();
     }
 
-
-    // Renderiza la lista de productos agrupada por segmento, con inputs cj/paq/und
+    // Renderiza TODOS los productos (con o sin stock), igual que Nueva Venta pero sin límite de stock
     function renderPedidoProductos() {
-        const cont = document.getElementById('pvPedProductos');
-        if (!cont) return;
-        if (!_pedidoActual.cliente) {
-            cont.innerHTML = '<p class="text-center text-gray-400 text-xs py-6">Elige un cliente para empezar a cargar productos.</p>';
-            return;
-        }
-        const rubro = document.getElementById('pvPedRubro')?.value || '';
+        const body = document.getElementById('pvInvBody');
+        if (!body) return;
+        const rubro = document.getElementById('pvRubroFilter')?.value || '';
         let lista = _pvProductos.slice();
         if (rubro) lista = lista.filter(p => p.rubro === rubro);
-        // Ordenar con la MISMA función que la venta tradicional (rubro→segmento→marca→producto)
-        if (_pvSortFn) lista.sort(_pvSortFn);
+        if (_pvSortFnPedido) lista.sort(_pvSortFnPedido);
         else lista.sort((a, b) => (a.segmento || '').localeCompare(b.segmento || '') || (a.presentacion || '').localeCompare(b.presentacion || ''));
 
-        if (!lista.length) { cont.innerHTML = '<p class="text-center text-gray-400 text-xs py-6">No hay productos.</p>'; return; }
+        if (!lista.length) { body.innerHTML = '<tr><td colspan="4" class="text-center text-gray-500 py-4">No hay productos.</td></tr>'; return; }
 
         let html = '';
         let lastSeg = null;
@@ -438,43 +447,33 @@
             const seg = prod.segmento || 'Sin segmento';
             if (seg !== lastSeg) {
                 lastSeg = seg;
-                html += `<div class="bg-gray-100 px-2 py-1 font-bold text-[11px] text-gray-600 sticky top-0">${seg}</div>`;
+                html += `<tr class="bg-gray-100"><td colspan="4" class="py-1 px-2 font-bold sticky top-[calc(theme(height.10))] z-[9]">${seg}</td></tr>`;
             }
             const vPor = prod.ventaPor || { und: true };
             const pa = _pedidoActual.productos[prod.id] || {};
             const precios = prod.precios || { und: prod.precioPorUnidad || 0 };
+            const stockU = prod.cantidadUnidades || 0;
 
-            // Stock disponible en la bolsa de la ruta (informativo, no bloquea)
+            // Stock informativo de la bolsa de ruta (si existe), sin bloquear
             const dispCj = _pvStockRuta[prod.id]?.cantCajas ?? null;
-            const pedidoCj = pa.cantCj || 0;
-            let stockTxt = '';
-            if (dispCj !== null) {
-                const restante = dispCj - pedidoCj;
-                const col = restante < 0 ? 'text-red-500' : restante === 0 ? 'text-amber-600' : 'text-green-600';
-                stockTxt = `<span id="pvStk_${prod.id}" class="${col} font-bold"> · ruta: ${dispCj} cj${pedidoCj ? ` (quedan ${restante})` : ''}</span>`;
-            } else if (Object.keys(_pvStockRuta).length) {
-                stockTxt = '<span class="text-gray-300"> · ruta: 0</span>';
-            }
 
-            const inputRow = (type, label, cant, precio) => `
-                <div class="flex items-center gap-2 py-1 px-2 border-b border-gray-50">
-                    <input type="number" min="0" value="${cant || 0}" data-pid="${prod.id}" data-tipo="${type}"
-                           class="pv-ped-input w-14 p-1 text-center border rounded text-sm font-bold focus:ring-2 focus:ring-indigo-400">
-                    <div class="flex-1 min-w-0">
-                        <div class="text-xs font-medium text-gray-700 truncate">${prod.presentacion} <span class="text-[10px] text-gray-400">${label}</span></div>
-                        <div class="text-[10px] text-gray-400">${prod.marca || 'S/M'}${type === 'cj' ? stockTxt : ''}</div>
-                    </div>
-                    <div class="text-xs font-bold text-gray-800 shrink-0">${_pvFmtUSD(precio)}</div>
-                </div>`;
+            const fila = (tipo, label, cant, precio, stockTxt) => `
+                <tr class="border-b hover:bg-gray-50">
+                    <td class="py-2 px-2 text-center align-middle">
+                        <input type="number" min="0" value="${cant || 0}" data-pid="${prod.id}" data-tipo="${tipo}"
+                               class="w-16 p-1 text-center border rounded-md font-bold text-gray-800 focus:ring-2 focus:ring-indigo-500 pv-qty"
+                               oninput="window.preventaModule.handlePedidoQty(event)">
+                    </td>
+                    <td class="py-2 px-2 text-left align-middle font-medium text-gray-700">${label} <span class="text-xs text-gray-500">${prod.marca || 'S/M'}</span></td>
+                    <td class="py-2 px-2 text-left align-middle font-bold text-gray-900 price-toggle cursor-pointer" onclick="window.preventaModule.togglePedidoMoneda()">${_pvFmtMoneda(precio)}</td>
+                    <td class="py-2 px-1 text-center align-middle text-xs font-semibold ${stockU > 0 ? 'text-gray-500' : 'text-red-400'}">${stockTxt}</td>
+                </tr>`;
 
-            if (vPor.cj) html += inputRow('cj', `(Cj/${prod.unidadesPorCaja || 1})`, pa.cantCj, precios.cj || 0);
-            if (vPor.paq) html += inputRow('paq', `(Paq/${prod.unidadesPorPaquete || 1})`, pa.cantPaq, precios.paq || 0);
-            if (vPor.und) html += inputRow('und', `(Und)`, pa.cantUnd, precios.und || 0);
+            if (vPor.cj) { const uCj = prod.unidadesPorCaja || 1; const maxCj = Math.floor(stockU / uCj); html += fila('cj', `${prod.presentacion} (Cj/${uCj} und)`, pa.cantCj, precios.cj || 0, dispCj !== null ? `${dispCj} Cj ruta` : `${maxCj} Cj`); }
+            if (vPor.paq) { const uPaq = prod.unidadesPorPaquete || 1; const maxPaq = Math.floor(stockU / uPaq); html += fila('paq', `${prod.presentacion} (Paq/${uPaq})`, pa.cantPaq, precios.paq || 0, `${maxPaq} Pq`); }
+            if (vPor.und) { html += fila('und', `${prod.presentacion} (Und)`, pa.cantUnd, precios.und || 0, `${stockU} Un`); }
         });
-        cont.innerHTML = html;
-
-        cont.querySelectorAll('.pv-ped-input').forEach(inp =>
-            inp.addEventListener('input', () => manejarCantidadPedido(inp)));
+        body.innerHTML = html;
     }
 
     function manejarCantidadPedido(inp) {
@@ -494,26 +493,9 @@
         }
         _pedidoActual.productos[pid][`cant${tipo[0].toUpperCase() + tipo.slice(1)}`] = qty;
         const pa = _pedidoActual.productos[pid];
-        // Si todo queda en 0, quitar del pedido
-        if ((pa.cantCj || 0) === 0 && (pa.cantPaq || 0) === 0 && (pa.cantUnd || 0) === 0) {
-            delete _pedidoActual.productos[pid];
-        }
+        if ((pa.cantCj || 0) === 0 && (pa.cantPaq || 0) === 0 && (pa.cantUnd || 0) === 0) delete _pedidoActual.productos[pid];
         actualizarTotalPedido();
         actualizarBotonGuardar();
-        actualizarStockVisual(pid);
-    }
-
-    // Actualiza el texto de stock restante de un producto sin re-renderizar todo
-    function actualizarStockVisual(pid) {
-        const span = document.getElementById(`pvStk_${pid}`);
-        if (!span) return;
-        const dispCj = _pvStockRuta[pid]?.cantCajas;
-        if (dispCj === undefined || dispCj === null) return;
-        const pedidoCj = _pedidoActual.productos[pid]?.cantCj || 0;
-        const restante = dispCj - pedidoCj;
-        const col = restante < 0 ? 'text-red-500' : restante === 0 ? 'text-amber-600' : 'text-green-600';
-        span.className = `${col} font-bold`;
-        span.textContent = ` · ruta: ${dispCj} cj${pedidoCj ? ` (quedan ${restante})` : ''}`;
     }
 
     function calcularTotalPedido() {
@@ -525,31 +507,13 @@
 
     function actualizarTotalPedido() {
         const el = document.getElementById('pvPedTotal');
-        if (el) el.textContent = _pvFmtUSD(calcularTotalPedido());
-
-        // Aviso si alguna cantidad supera el stock de la bolsa de la ruta (informativo)
-        const aviso = document.getElementById('pvPedAvisoStock');
-        if (!aviso) return;
-        if (!Object.keys(_pvStockRuta).length) { aviso.classList.add('hidden'); return; }
-        const excedidos = Object.values(_pedidoActual.productos).filter(p => {
-            const disp = _pvStockRuta[p.id]?.cantCajas;
-            if (disp === undefined || disp === null) return (p.cantCj || 0) > 0;
-            return (p.cantCj || 0) > disp;
-        });
-        if (excedidos.length) {
-            aviso.classList.remove('hidden');
-            aviso.innerHTML = `⚠️ ${excedidos.length} producto(s) superan el stock asignado a esta ruta: <strong>${excedidos.slice(0, 3).map(p => p.presentacion).join(', ')}${excedidos.length > 3 ? '...' : ''}</strong>. Puedes guardar igual; despacho lo ajustará.`;
-        } else {
-            aviso.classList.add('hidden');
-        }
+        if (el) el.textContent = _pvFmtMoneda(calcularTotalPedido());
     }
 
     function actualizarBotonGuardar() {
         const btn = document.getElementById('pvPedGuardar');
         if (!btn) return;
-        const hayProductos = Object.keys(_pedidoActual.productos).length > 0;
-        const listo = _pedidoActual.vendedor && _pedidoActual.cliente && hayProductos;
-        btn.disabled = !listo;
+        btn.disabled = !(_pedidoActual.vendedor && _pedidoActual.cliente && Object.keys(_pedidoActual.productos).length);
     }
 
     async function guardarPedido() {
@@ -558,48 +522,36 @@
         if (!productos.length) return;
 
         const btn = document.getElementById('pvPedGuardar');
-        btn.disabled = true;
-        btn.textContent = 'Guardando...';
+        btn.disabled = true; btn.textContent = 'Guardando...';
 
         const total = calcularTotalPedido();
         const v = _pedidoActual.vendedor;
         const c = _pedidoActual.cliente;
-
         const pedido = {
-            clienteId: c.id,
-            clienteNombre: c.nombreComercial || '',
-            clienteNombrePersonal: c.nombrePersonal || '',
-            clienteSector: c.sector || '',
-            vendedorId: v.id,
-            vendedorNombre: _pvNombreVendedor(v),
-            zona: v.zonaPreventa || c.sector || '',
+            clienteId: c.id, clienteNombre: c.nombreComercial || '',
+            clienteNombrePersonal: c.nombrePersonal || '', clienteSector: c.sector || '',
+            vendedorId: v.id, vendedorNombre: _pvNombreVendedor(v), zona: v.zonaPreventa || c.sector || '',
             productos: productos.map(p => ({
                 id: p.id, presentacion: p.presentacion, marca: p.marca || null,
                 cantCj: p.cantCj || 0, cantPaq: p.cantPaq || 0, cantUnd: p.cantUnd || 0,
                 precios: p.precios,
                 subtotal: (p.precios?.cj || 0) * (p.cantCj || 0) + (p.precios?.paq || 0) * (p.cantPaq || 0) + (p.precios?.und || 0) * (p.cantUnd || 0)
             })),
-            total: total,
-            estado: 'pendiente',
-            fechaCreacion: new Date().toISOString(),
+            total: total, estado: 'pendiente', fechaCreacion: new Date().toISOString(),
             creadoPor: _userId,
             historialEstados: [{ estado: 'pendiente', fecha: new Date().toISOString(), por: _userId }]
         };
-
         try {
             await _addDoc(_collection(_db, pathPedidos()), pedido);
             if (_showModal) _showModal('Pedido guardado',
-                `Pedido de <strong>${pedido.clienteNombre}</strong> por <strong>${_pvFmtUSD(total)}</strong> registrado para la ruta de ${pedido.vendedorNombre}. Queda pendiente para despacho.`);
-            // Reiniciar para tomar otro pedido
+                `Pedido de <strong>${pedido.clienteNombre}</strong> por <strong>$${total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong> registrado. Queda pendiente para despacho.`);
             showTomarPedido();
         } catch (e) {
             console.error('Error guardando pedido:', e);
             if (_showModal) _showModal('Error', 'No se pudo guardar el pedido. Intenta de nuevo.');
-            btn.disabled = false;
-            btn.textContent = 'Guardar Pedido';
+            btn.disabled = false; btn.textContent = 'Guardar Pedido';
         }
     }
-
 
     // ═══════════════════════════════════════════════════════════
     // BANDEJA DE DESPACHO — ver pedidos y moverlos por estados
@@ -1524,6 +1476,7 @@
     }
 
 })();
+
 
 
 
