@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v57'; // v57: preventa - Tomar Pedido replica Nueva Venta (vendedor fijo, COP/Bs, todos los productos)
+const CACHE_NAME = 'ventas-app-cache-v58'; // v58: preventa - boton Catalogo que reutiliza el del sistema tradicional
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
@@ -181,6 +181,7 @@ self.addEventListener('fetch', event => {
             })
     );
 });
+
 
 
 
