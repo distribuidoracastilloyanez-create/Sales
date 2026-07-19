@@ -442,9 +442,31 @@
         const inCop = document.getElementById('pvTasaCop');
         const inBs = document.getElementById('pvTasaBs');
         const savedCop = localStorage.getItem('tasaCOP'); if (savedCop) { _pvTasaCOP = parseFloat(savedCop) || 0; inCop.value = _pvTasaCOP; }
-        const savedBs = localStorage.getItem('tasaBs'); if (savedBs) { _pvTasaBs = parseFloat(savedBs) || 0; inBs.value = _pvTasaBs; }
+        // Tasa Bs. predeterminada = tasa BCV del día (la que se ingresa en CXC).
+        // Se puede actualizar; si el usuario ya la cambió hoy, se respeta su valor.
+        (async () => {
+            try {
+                const tHoy = window.getTasaHoyBCV ? await window.getTasaHoyBCV() : null;
+                const savedBs = localStorage.getItem('tasaBs');
+                const savedBsFecha = localStorage.getItem('tasaBsFecha');
+                const hoyISO = tHoy ? tHoy.iso : '';
+                if (savedBs && savedBsFecha === hoyISO) {
+                    _pvTasaBs = parseFloat(savedBs) || 0;
+                } else if (tHoy && tHoy.rate) {
+                    _pvTasaBs = Number(tHoy.rate);
+                    localStorage.setItem('tasaBs', _pvTasaBs);
+                    localStorage.setItem('tasaBsFecha', hoyISO);
+                } else if (savedBs) {
+                    _pvTasaBs = parseFloat(savedBs) || 0;
+                }
+                if (_pvTasaBs > 0) {
+                    inBs.value = _pvTasaBs;
+                    if (_pvMoneda === 'Bs') { renderPedidoProductos(); actualizarTotalPedido(); }
+                }
+            } catch (e) { console.warn('No se pudo cargar la tasa BCV del día:', e); }
+        })();
         inCop.addEventListener('input', (e) => { _pvTasaCOP = parseFloat(e.target.value) || 0; localStorage.setItem('tasaCOP', _pvTasaCOP); if (_pvMoneda === 'COP') { renderPedidoProductos(); actualizarTotalPedido(); } });
-        inBs.addEventListener('input', (e) => { _pvTasaBs = parseFloat(e.target.value) || 0; localStorage.setItem('tasaBs', _pvTasaBs); if (_pvMoneda === 'Bs') { renderPedidoProductos(); actualizarTotalPedido(); } });
+        inBs.addEventListener('input', (e) => { _pvTasaBs = parseFloat(e.target.value) || 0; localStorage.setItem('tasaBs', _pvTasaBs); const h = new Date(); localStorage.setItem('tasaBsFecha', `${h.getFullYear()}-${String(h.getMonth()+1).padStart(2,'0')}-${String(h.getDate()).padStart(2,'0')}`); if (_pvMoneda === 'Bs') { renderPedidoProductos(); actualizarTotalPedido(); } });
 
         // Mostrar tabla y footer
         document.getElementById('pvInvContainer').classList.remove('hidden');
