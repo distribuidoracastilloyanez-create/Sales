@@ -542,13 +542,18 @@
     async function renderUserList() {
         const cont = document.getElementById('user-list-container'); if (!cont) return;
         try { const uRef = _collection(_db, "users"); const snap = await _getDocs(uRef); const users = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b)=>(a.email||'').localeCompare(b.email||''));
-            let tHTML = `<table class="min-w-full bg-white text-sm"><thead class="bg-gray-200 sticky top-0 z-10"><tr><th class="py-2 px-4 border-b text-left">Email</th><th class="py-2 px-4 border-b text-left">Rol</th></tr></thead><tbody>`;
-            users.forEach(u => { tHTML += `<tr class="hover:bg-gray-50"><td class="py-2 px-4 border-b">${u.email||'N/A'}</td><td class="py-2 px-4 border-b"><select onchange="window.adminModule.handleRoleChange('${u.id}', this.value, '${u.email||'N/A'}')" class="w-full p-1 border rounded-lg bg-gray-50 text-sm"><option value="user" ${u.role==='user'?'selected':''}>User</option><option value="admin" ${u.role==='admin'?'selected':''}>Admin</option></select></td></tr>`; });
+            let tHTML = `<table class="min-w-full bg-white text-sm"><thead class="bg-gray-200 sticky top-0 z-10"><tr><th class="py-2 px-4 border-b text-left">Email</th><th class="py-2 px-4 border-b text-left">Rol</th><th class="py-2 px-4 border-b text-left">Ruta</th></tr></thead><tbody>`;
+            users.forEach(u => {
+                // 'user' (antiguo) se considera Vendedor por compatibilidad
+                const rol = (u.role === 'user') ? 'vendedor' : (u.role || 'vendedor');
+                const ruta = u.zonaPreventa || '—';
+                tHTML += `<tr class="hover:bg-gray-50"><td class="py-2 px-4 border-b">${u.email||'N/A'}</td><td class="py-2 px-4 border-b"><select onchange="window.adminModule.handleRoleChange('${u.id}', this.value, '${u.email||'N/A'}')" class="w-full p-1 border rounded-lg bg-gray-50 text-sm"><option value="admin" ${rol==='admin'?'selected':''}>Administrador</option><option value="vendedor" ${rol==='vendedor'?'selected':''}>Vendedor</option><option value="despachador" ${rol==='despachador'?'selected':''}>Despachador / Mkt</option></select></td><td class="py-2 px-4 border-b text-xs text-gray-500">${ruta}</td></tr>`;
+            });
             tHTML += `</tbody></table>`; cont.innerHTML = tHTML;
         } catch (error) { cont.innerHTML = `<p class="text-red-500">Error al cargar.</p>`; }
     }
     async function handleRoleChange(userIdToChange, newRole, userEmail) {
-        if (userIdToChange === _userId && newRole === 'user') { const uRef = _collection(_db, "users"); const qAd = _query(uRef, _where("role", "==", "admin")); const adSnap = await _getDocs(qAd); if (adSnap.size <= 1) { _showModal('No Permitido', 'No puedes quitarte el rol si eres el único admin.'); renderUserList(); return; } }
+        if (userIdToChange === _userId && newRole !== 'admin') { const uRef = _collection(_db, "users"); const qAd = _query(uRef, _where("role", "==", "admin")); const adSnap = await _getDocs(qAd); if (adSnap.size <= 1) { _showModal('No Permitido', 'No puedes quitarte el rol si eres el único admin.'); renderUserList(); return; } }
         _showModal('Confirmar', `Cambiar rol de <strong>${userEmail}</strong> a <strong>${newRole}</strong>?`, async () => { try { const uDRef = _doc(_db, "users", userIdToChange); await _setDoc(uDRef, { role: newRole }, { merge: true }); _showModal('Éxito', 'Rol actualizado.'); renderUserList(); } catch (error) { _showModal('Error', 'No se pudo actualizar.'); renderUserList(); } }, 'Sí', ()=>{renderUserList();});
     }
 
@@ -723,3 +728,4 @@
     };
 
 })();
+
