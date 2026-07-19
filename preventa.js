@@ -78,14 +78,15 @@
         if (esDesp) botones += btn('pvPerfilBtn', 'Mi Perfil', 'bg-slate-700 hover:bg-slate-800');
         if (esAdmin) botones += btn('pvConfigBtn', 'Configuración', 'bg-gray-600 hover:bg-gray-700');
 
+        // El despachador entra directo aquí (es su pantalla principal), así que no
+        // muestra "Volver al Menú". Los demás llegan desde el botón Pre-Venta del menú único.
         _mainContent.innerHTML = `
             <div class="p-3 pt-5 container mx-auto max-w-lg">
                 <div class="bg-white/90 backdrop-blur-sm p-4 rounded-lg shadow-xl text-center">
-                    ${!esDesp ? `
-                    <div class="grid grid-cols-2 gap-2 mb-1">
-                        <button id="pvNavTradiBtn" class="w-full ${bpad} bg-white text-gray-500 border border-gray-300 rounded-lg shadow-sm hover:bg-gray-50 font-bold transition">Venta ${esVend ? 'Directa' : 'Tradi.'}</button>
-                        <button id="pvNavPreBtn" class="w-full ${bpad} bg-indigo-600 text-white rounded-lg shadow-md font-bold transition">Pre-Venta</button>
-                    </div>` : `<h1 class="text-xl mb-1 font-bold text-gray-800">Despacho</h1>`}
+                    <div class="flex items-center justify-between mb-2">
+                        <h1 class="text-xl font-bold text-gray-800">${esDesp ? 'Despacho' : 'Pre-Venta'}</h1>
+                        ${!esDesp ? `<button id="pvNavTradiBtn" class="px-3 py-1.5 bg-gray-400 text-white text-xs rounded-lg shadow-md hover:bg-gray-500 font-bold transition">Volver al Menú</button>` : ''}
+                    </div>
                     <button id="pvTasaBcvDisplay" class="mb-3 text-sm font-bold text-gray-700 hover:text-gray-900 hover:underline transition cursor-pointer">(BCV ----- --/--/--)</button>
 
                     <div class="grid grid-cols-2 gap-2">
@@ -94,11 +95,10 @@
                 </div>
             </div>`;
 
-        // Navegación
+        // Navegación: volver al menú principal único
         document.getElementById('pvNavTradiBtn')?.addEventListener('click', () => {
             if (_showMainMenu) _showMainMenu();
         });
-        document.getElementById('pvNavPreBtn')?.addEventListener('click', () => window.showPreventaMenu());
         // Accesos tradicionales reutilizados (despachador)
         document.getElementById('pvClientesBtn')?.addEventListener('click', () => { if (window.showClientesSubMenu) window.showClientesSubMenu(); });
         document.getElementById('pvCxcBtn')?.addEventListener('click', () => { if (window.showCXCView) window.showCXCView(); });
@@ -1473,7 +1473,7 @@
         // Por zona
         const zonaRows = Object.entries(porZona).sort((a, b) => b[1].monto - a[1].monto)
             .map(([k, v]) => filaKV(`${k} <span class="text-[9px] text-gray-400">(${v.pedidos})</span>`, _pvFmtUSD(v.monto))).join('');
-        html += card('Por zona', zonaRows || '<p class="text-xs text-gray-400">Sin datos</p>');
+        html += card('Por ruta', zonaRows || '<p class="text-xs text-gray-400">Sin datos</p>');
 
         // Top productos
         const prodRows = topProd.map(([k, v], i) => filaKV(`${i + 1}. ${k}`, _pvFmtUSD(v.monto))).join('');
@@ -1532,6 +1532,7 @@
     }
 
 })();
+
 
 
 
