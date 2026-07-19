@@ -81,6 +81,7 @@
                         <button id="pvInventarioRutaBtn" class="w-full ${bpad} bg-blue-600 text-white rounded-lg shadow-md hover:bg-blue-700 font-bold transition">Inv. por Ruta</button>
                         <button id="pvVendedoresBtn" class="w-full ${bpad} bg-purple-600 text-white rounded-lg shadow-md hover:bg-purple-700 font-bold transition">Vendedores/Zonas</button>
                         <button id="pvReportesBtn" class="w-full ${bpad} bg-slate-700 text-white rounded-lg shadow-md hover:bg-slate-800 font-bold transition">Reportes</button>
+                        <button id="pvCatalogoBtn" class="w-full ${bpad} bg-green-700 text-white rounded-lg shadow-md hover:bg-green-800 font-bold transition">Catálogo</button>
                         <button id="pvConfigBtn" class="w-full ${bpad} bg-gray-600 text-white rounded-lg shadow-md hover:bg-gray-700 font-bold transition">Configuración</button>
                     </div>
                 </div>
@@ -112,6 +113,11 @@
         document.getElementById('pvInventarioRutaBtn').addEventListener('click', () => showInventarioRuta());
         document.getElementById('pvVendedoresBtn').addEventListener('click', () => showPreventaVendedores());
         document.getElementById('pvReportesBtn').addEventListener('click', () => showReportesPreventa());
+        document.getElementById('pvCatalogoBtn').addEventListener('click', () => {
+            // Reutiliza la función de Catálogo del sistema tradicional (ya está completa)
+            if (window.showCatalogoSubMenu) window.showCatalogoSubMenu();
+            else if (_showModal) _showModal('Aviso', 'El módulo de Catálogo no está disponible.');
+        });
         document.getElementById('pvConfigBtn').addEventListener('click', () => enConstruccion('Configuración'));
     };
 
@@ -1476,6 +1482,7 @@
     }
 
 })();
+
 
 
 
