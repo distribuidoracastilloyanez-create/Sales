@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v61'; // v61: menu unico (sin toggle) con boton Pre-Venta que abre submenu
+const CACHE_NAME = 'ventas-app-cache-v62'; // v62: tasa Bs. predeterminada = BCV del dia en Nueva Venta y Tomar Pedido
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
@@ -181,6 +181,7 @@ self.addEventListener('fetch', event => {
             })
     );
 });
+
 
 
 
