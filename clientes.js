@@ -14,6 +14,8 @@
     const PUBLIC_DATA_ID = window.AppConfig.PUBLIC_DATA_ID;
     const CLIENTES_COLLECTION_PATH = `artifacts/${PUBLIC_DATA_ID}/public/data/clientes`;
     const SECTORES_COLLECTION_PATH = `artifacts/${PUBLIC_DATA_ID}/public/data/sectores`;
+    // Rutas oficiales de reparto (campo aparte del sector; solo estas dos)
+    window.RUTAS_REPARTO = window.RUTAS_REPARTO || ['Palo Gordo', 'Santa Teresa'];
 
     // --- Tipos de Vacío ---
     const TIPOS_VACIO = ["1/4 - 1/3", "ret 350 ml", "ret 1.25 Lts"];
@@ -64,6 +66,7 @@
                             <button id="verClientesBtn" class="w-full px-6 py-3 bg-indigo-500 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-600 transition">Buscar Cliente</button>
                             <button id="agregarClienteBtn" class="w-full px-6 py-3 bg-indigo-500 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-600 transition">Agregar Cliente</button>
                             <button id="saldosVaciosBtn" class="w-full px-6 py-3 bg-cyan-500 text-white font-semibold rounded-lg shadow-md hover:bg-cyan-600 transition">Consultar Saldos de Vacíos</button>
+                            <button id="asignarRutasBtn" class="w-full px-6 py-3 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 transition">Asignar Rutas</button>
                             ${_userRole === 'admin' ? `
                             <button id="editarSaldosVaciosBtn" class="w-full px-6 py-3 bg-teal-600 text-white font-semibold rounded-lg shadow-md hover:bg-teal-700 transition border-2 border-teal-500">Editar Saldo de Vacíos</button>
                             <button id="funcionesAvanzadasBtn" class="w-full px-6 py-3 bg-gray-700 text-white font-semibold rounded-lg shadow-md hover:bg-gray-800 mt-4 transition">Funciones Avanzadas</button>
@@ -81,6 +84,7 @@
             document.getElementById('funcionesAvanzadasBtn')?.addEventListener('click', showFuncionesAvanzadasView);
         }
         document.getElementById('saldosVaciosBtn').addEventListener('click', showSaldosVaciosView);
+        document.getElementById('asignarRutasBtn')?.addEventListener('click', showAsignarRutasView);
         document.getElementById('backToMenuBtn').addEventListener('click', _showMainMenu);
     }
 
@@ -442,8 +446,16 @@
                 const saldoVaciosInicial = {};
                 TIPOS_VACIO.forEach(tipo => saldoVaciosInicial[tipo] = 0);
 
+                // Ruta opcional: se normaliza contra las rutas oficiales (Palo Gordo / Santa Teresa)
+                let rutaImport = (row[headerMap['ruta']] || '').toString().trim();
+                if (rutaImport) {
+                    const rutaNorm = (window.RUTAS_REPARTO || []).find(r => r.toLowerCase() === rutaImport.toLowerCase());
+                    rutaImport = rutaNorm || '';
+                }
+
                 const cliente = {
                     sector: (row[headerMap['sector']] || '').toString().trim().toUpperCase(),
+                    ruta: rutaImport,
                     nombreComercial: (row[headerMap['nombrecomercial']] || '').toString().trim().toUpperCase(), 
                     nombrePersonal: (row[headerMap['nombrepersonal']] || '').toString().trim().toUpperCase(), 
                     telefono: (row[headerMap['telefono']] || '').toString().trim(),
@@ -642,6 +654,13 @@
                                     <select id="sector" class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" required></select>
                                     <button type="button" id="addSectorBtn" class="px-4 py-2 bg-gray-400 text-white font-bold rounded-lg hover:bg-gray-500 transition">+</button>
                                 </div>
+                                <div class="mt-2">
+                                    <label for="ruta" class="block text-gray-700 font-medium mb-1 text-sm">Ruta de reparto:</label>
+                                    <select id="ruta" class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                                        <option value="">— Sin ruta —</option>
+                                        ${(window.RUTAS_REPARTO || []).map(r => `<option value="${r}">${r}</option>`).join('')}
+                                    </select>
+                                </div>
                             </div>
 
                             <div class="grid grid-cols-3 gap-2">
@@ -743,6 +762,7 @@
         const form = e.target;
 
         const sector = form.sector.value.toUpperCase(); 
+        const ruta = (document.getElementById('ruta')?.value || '').trim(); 
         const tipoDoc = form.tipoDoc.value;
         const numDoc = form.numDoc.value.trim();
         const nombreComercial = form.nombreComercial.value.trim().toUpperCase();
@@ -813,6 +833,7 @@
 
             const clienteData = {
                 sector: sector,
+                ruta: ruta,
                 tipoDocumento: tipoDoc,
                 numeroDocumento: numDoc,
                 nombreComercial: nombreComercial,
@@ -1309,6 +1330,11 @@
                                 <label for="editSector" class="block text-gray-700 font-bold text-sm mb-1 uppercase">Sector / Zona</label>
                                 <select id="editSector" class="w-full px-4 py-2 border border-gray-300 rounded bg-gray-50 focus:bg-white focus:ring-2 focus:ring-yellow-500 outline-none text-sm" required>
                                 </select>
+                                <label for="editRuta" class="block text-gray-700 font-bold text-sm mb-1 mt-2 uppercase">Ruta de reparto</label>
+                                <select id="editRuta" class="w-full px-4 py-2 border border-gray-300 rounded bg-gray-50 focus:bg-white focus:ring-2 focus:ring-yellow-500 outline-none text-sm">
+                                    <option value="">— Sin ruta —</option>
+                                    ${(window.RUTAS_REPARTO || []).map(r => `<option value="${r}" ${(cliente.ruta || '') === r ? 'selected' : ''}>${r}</option>`).join('')}
+                                </select>
                             </div>
                             
                             <div class="grid grid-cols-3 gap-2">
@@ -1438,6 +1464,7 @@
 
             const updatedData = {
                 sector: sectorValue.toUpperCase(),
+                ruta: (document.getElementById('editRuta')?.value || '').trim(),
                 tipoDocumento: tipoDoc,
                 numeroDocumento: numDoc,
                 nombreComercial: (document.getElementById('editNombreComercial').value || '').toUpperCase(),
@@ -1884,6 +1911,146 @@
         showClienteInfo 
     };
 
+
+    // ─────────────────────────────────────────────────────────────
+    // ASIGNAR RUTAS — asigna la ruta (Palo Gordo / Santa Teresa) a los
+    // clientes, filtrando por sector, uno por uno o en bloque.
+    // ─────────────────────────────────────────────────────────────
+    let _arClientes = [];
+    let _arFiltroSector = '';
+    let _arFiltroRuta = 'todos'; // todos | sin | Palo Gordo | Santa Teresa
+
+    async function showAsignarRutasView() {
+        _floatingControls.classList.add('hidden');
+        _mainContent.innerHTML = `
+            <div class="p-3 pt-5 w-full max-w-3xl mx-auto">
+                <div class="bg-white/95 backdrop-blur-sm p-3 sm:p-4 rounded-lg shadow-xl">
+                    <div class="flex items-center justify-between mb-3">
+                        <h2 class="text-lg font-bold text-gray-800">Asignar Rutas</h2>
+                        <button id="arBack" class="px-3 py-1.5 bg-gray-400 text-white text-xs rounded-lg hover:bg-gray-500 font-bold">Volver</button>
+                    </div>
+                    <p class="text-[11px] text-gray-500 mb-3">Asigna a cada cliente su ruta de reparto. Puedes filtrar por sector y asignar en bloque.</p>
+
+                    <div id="arLoading" class="text-center text-gray-400 py-8 text-sm">Cargando clientes...</div>
+
+                    <div id="arCuerpo" class="hidden">
+                        <div class="grid grid-cols-2 gap-2 mb-2">
+                            <select id="arSector" class="text-xs border border-blue-300 rounded p-2 bg-white outline-none">
+                                <option value="">Todos los sectores</option>
+                            </select>
+                            <select id="arRutaFiltro" class="text-xs border border-blue-300 rounded p-2 bg-white outline-none">
+                                <option value="todos">Todas las rutas</option>
+                                <option value="sin">Sin ruta asignada</option>
+                                ${(window.RUTAS_REPARTO || []).map(r => `<option value="${r}">${r}</option>`).join('')}
+                            </select>
+                        </div>
+
+                        <div class="bg-blue-50 border border-blue-200 rounded-lg p-2 mb-3 flex items-center gap-2 flex-wrap">
+                            <span class="text-[11px] font-bold text-blue-700">Asignar a los visibles:</span>
+                            ${(window.RUTAS_REPARTO || []).map(r => `<button class="ar-bloque text-[11px] px-2 py-1 bg-blue-600 text-white rounded font-bold hover:bg-blue-700" data-ruta="${r}">${r}</button>`).join('')}
+                            <button class="ar-bloque text-[11px] px-2 py-1 bg-gray-400 text-white rounded font-bold hover:bg-gray-500" data-ruta="">Quitar ruta</button>
+                            <span id="arContador" class="text-[10px] text-blue-600 ml-auto"></span>
+                        </div>
+
+                        <div id="arLista" class="space-y-1.5 max-h-[55vh] overflow-y-auto"></div>
+                    </div>
+                </div>
+            </div>`;
+
+        document.getElementById('arBack').addEventListener('click', () => window.showClientesSubMenu());
+
+        try {
+            const snap = await _getDocs(_collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/clientes`));
+            _arClientes = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        } catch (e) {
+            console.error('Error cargando clientes para rutas:', e);
+            document.getElementById('arLoading').innerHTML = '<span class="text-red-500">Error al cargar.</span>';
+            return;
+        }
+
+        document.getElementById('arLoading').classList.add('hidden');
+        document.getElementById('arCuerpo').classList.remove('hidden');
+
+        // Poblar sectores
+        const sectores = [...new Set(_arClientes.map(c => c.sector).filter(Boolean))].sort();
+        const selSec = document.getElementById('arSector');
+        selSec.innerHTML = '<option value="">Todos los sectores</option>' + sectores.map(s => `<option value="${s}">${s}</option>`).join('');
+        selSec.addEventListener('change', (e) => { _arFiltroSector = e.target.value; renderArLista(); });
+        document.getElementById('arRutaFiltro').addEventListener('change', (e) => { _arFiltroRuta = e.target.value; renderArLista(); });
+
+        document.querySelectorAll('.ar-bloque').forEach(b =>
+            b.addEventListener('click', () => asignarRutaEnBloque(b.dataset.ruta)));
+
+        renderArLista();
+    }
+
+    function arClientesFiltrados() {
+        let lista = _arClientes.slice();
+        if (_arFiltroSector) lista = lista.filter(c => c.sector === _arFiltroSector);
+        if (_arFiltroRuta === 'sin') lista = lista.filter(c => !c.ruta);
+        else if (_arFiltroRuta !== 'todos') lista = lista.filter(c => c.ruta === _arFiltroRuta);
+        lista.sort((a, b) => (a.nombreComercial || '').localeCompare(b.nombreComercial || ''));
+        return lista;
+    }
+
+    function renderArLista() {
+        const cont = document.getElementById('arLista');
+        if (!cont) return;
+        const lista = arClientesFiltrados();
+        document.getElementById('arContador').textContent = `${lista.length} cliente(s)`;
+        if (!lista.length) { cont.innerHTML = '<p class="text-center text-gray-400 py-6 text-sm">No hay clientes con este filtro.</p>'; return; }
+
+        cont.innerHTML = lista.map(c => `
+            <div class="border border-gray-200 rounded-lg p-2 flex items-center justify-between gap-2">
+                <div class="min-w-0">
+                    <div class="text-xs font-bold text-gray-800 truncate">${c.nombreComercial || '(sin nombre)'}</div>
+                    <div class="text-[10px] text-gray-400 truncate">${c.sector || 'Sin sector'}${c.nombrePersonal ? ' · ' + c.nombrePersonal : ''}</div>
+                </div>
+                <select data-cid="${c.id}" class="ar-sel text-xs border ${c.ruta ? 'border-blue-300' : 'border-gray-300'} rounded p-1.5 bg-white outline-none shrink-0">
+                    <option value="">— Sin ruta —</option>
+                    ${(window.RUTAS_REPARTO || []).map(r => `<option value="${r}" ${(c.ruta || '') === r ? 'selected' : ''}>${r}</option>`).join('')}
+                </select>
+            </div>`).join('');
+
+        cont.querySelectorAll('.ar-sel').forEach(sel =>
+            sel.addEventListener('change', () => guardarRutaCliente(sel.dataset.cid, sel.value, sel)));
+    }
+
+    async function guardarRutaCliente(cid, ruta, selEl) {
+        if (selEl) selEl.disabled = true;
+        try {
+            await _setDoc(_doc(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/clientes`, cid), { ruta: ruta }, { merge: true });
+            const c = _arClientes.find(x => x.id === cid);
+            if (c) c.ruta = ruta;
+            if (selEl) {
+                selEl.classList.add('ring-2', 'ring-green-400');
+                setTimeout(() => { selEl.classList.remove('ring-2', 'ring-green-400'); selEl.disabled = false; }, 700);
+            }
+        } catch (e) {
+            console.error('Error guardando ruta:', e);
+            if (_showModal) _showModal('Error', 'No se pudo guardar la ruta.');
+            if (selEl) selEl.disabled = false;
+        }
+    }
+
+    function asignarRutaEnBloque(ruta) {
+        const lista = arClientesFiltrados();
+        if (!lista.length) return;
+        const txt = ruta ? `asignar la ruta <strong>${ruta}</strong>` : 'quitar la ruta';
+        _showModal('Confirmar', `¿Deseas ${txt} a los <strong>${lista.length}</strong> cliente(s) visibles?`, async () => {
+            let ok = 0;
+            for (const c of lista) {
+                try {
+                    await _setDoc(_doc(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/clientes`, c.id), { ruta: ruta }, { merge: true });
+                    c.ruta = ruta; ok++;
+                } catch (e) { console.error('Error en bloque:', e); }
+            }
+            renderArLista();
+            _showModal('Listo', `Se actualizaron <strong>${ok}</strong> de ${lista.length} cliente(s).`);
+        }, 'Sí, aplicar', () => {});
+    }
+
 })();
+
 
 
