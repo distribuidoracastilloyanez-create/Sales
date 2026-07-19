@@ -2804,7 +2804,8 @@
                                     <option value="sin">Sin compra en...</option>
                                 </select>
                                 <select id="cdCompraRango" class="text-xs border border-cyan-300 rounded p-1.5 bg-white outline-none" disabled>
-                                    <option value="7">los últimos 7 días</option>
+                                    <option value="semanaActual">la semana actual</option>
+                                    <option value="semanaAnterior">la semana anterior</option>
                                     <option value="15">los últimos 15 días</option>
                                     <option value="30">el último mes (30 días)</option>
                                     <option value="nunca">nunca han comprado</option>
@@ -2949,9 +2950,26 @@
         // Filtro por COMPRA (dirección con/sin + período), se combina con AND
         const dir = document.getElementById('cdCompraDir')?.value || 'off';
         if (dir !== 'off') {
-            const rango = document.getElementById('cdCompraRango')?.value || '7';
+            const rango = document.getElementById('cdCompraRango')?.value || 'semanaActual';
+            // Límites de la semana calendario (lunes 00:00 → domingo 23:59)
+            const rangoSemana = (cuantasAtras) => {
+                const hoy = new Date();
+                const dow = (hoy.getDay() + 6) % 7; // 0 = lunes ... 6 = domingo
+                const lunes = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate() - dow - (cuantasAtras * 7));
+                const finDomingo = new Date(lunes.getFullYear(), lunes.getMonth(), lunes.getDate() + 7); // exclusivo
+                return { desde: lunes, hasta: finDomingo };
+            };
             lista = lista.filter(c => {
                 const d = c.diasSinComprar; // null = nunca compró
+                const fecha = c.ultimaCompra;  // Date o null
+
+                // Semana calendario: se compara la FECHA de la última compra contra el rango
+                if (rango === 'semanaActual' || rango === 'semanaAnterior') {
+                    const { desde, hasta } = rangoSemana(rango === 'semanaActual' ? 0 : 1);
+                    const comproEnEsaSemana = fecha && fecha >= desde && fecha < hasta;
+                    return dir === 'con' ? comproEnEsaSemana : !comproEnEsaSemana;
+                }
+
                 if (rango === 'nunca') {
                     // "con compra + nunca" no tiene sentido → vacío; "sin compra + nunca" = los que nunca compraron
                     return dir === 'sin' ? (d === null) : false;
@@ -3254,6 +3272,7 @@
 
 })();
 // redeploy trigger 1783190804
+
 
 
 
