@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v58'; // v58: preventa - boton Catalogo que reutiliza el del sistema tradicional
+const CACHE_NAME = 'ventas-app-cache-v59'; // v59: tres roles (admin/vendedor/despachador) + menu por permisos + Venta Directa
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
@@ -181,6 +181,7 @@ self.addEventListener('fetch', event => {
             })
     );
 });
+
 
 
 
