@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v73'; // v73: tickets de preventa con formato 80mm igual a Venta Directa (768px Courier)
+const CACHE_NAME = 'ventas-app-cache-v74'; // v74: inventario sin negativos - recarga trata negativos como 0 + boton corregir a 0
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
@@ -181,6 +181,7 @@ self.addEventListener('fetch', event => {
             })
     );
 });
+
 
 
 
