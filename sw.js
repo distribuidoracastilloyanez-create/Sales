@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v63'; // v63: preventa - quita Catalogo del submenu y el estado Despachado de la bandeja
+const CACHE_NAME = 'ventas-app-cache-v64'; // v64: menu del vendedor en 2 columnas con el orden de la imagen de referencia
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
@@ -181,6 +181,7 @@ self.addEventListener('fetch', event => {
             })
     );
 });
+
 
 
 
