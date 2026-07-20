@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v71'; // v71: detalle de pedido rediseñado (profesional) + modal sobre overlays + oculta botones flotantes en preventa
+const CACHE_NAME = 'ventas-app-cache-v72'; // v72: Estado del Pedido rediseñado + Ticket de Carga (solo disponibles, nombre de quien carga) + editar pedido usa la pantalla de Tomar Pedido
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
@@ -181,6 +181,7 @@ self.addEventListener('fetch', event => {
             })
     );
 });
+
 
 
 
