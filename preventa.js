@@ -120,12 +120,13 @@
         const enConstruccion = (nombre) => {
             if (_showModal) _showModal('En construcción', `La función "${nombre}" se construirá próximamente. Por ahora es solo la estructura del nuevo sistema.`);
         };
-        document.getElementById('pvPedidosBtn').addEventListener('click', () => showTomarPedido());
-        document.getElementById('pvBandejaBtn').addEventListener('click', () => showBandejaDespacho());
-        document.getElementById('pvInventarioRutaBtn').addEventListener('click', () => showInventarioRuta());
-        document.getElementById('pvVendedoresBtn').addEventListener('click', () => showPreventaVendedores());
-        document.getElementById('pvReportesBtn').addEventListener('click', () => showReportesPreventa());
-        document.getElementById('pvConfigBtn').addEventListener('click', () => enConstruccion('Configuración'));
+        // Cada botón puede o no existir según el rol; se usa ?. para no fallar.
+        document.getElementById('pvPedidosBtn')?.addEventListener('click', () => showTomarPedido());
+        document.getElementById('pvBandejaBtn')?.addEventListener('click', () => showBandejaDespacho());
+        document.getElementById('pvInventarioRutaBtn')?.addEventListener('click', () => showInventarioRuta());
+        document.getElementById('pvVendedoresBtn')?.addEventListener('click', () => showPreventaVendedores());
+        document.getElementById('pvReportesBtn')?.addEventListener('click', () => showReportesPreventa());
+        document.getElementById('pvConfigBtn')?.addEventListener('click', () => enConstruccion('Configuración'));
     };
 
 
@@ -152,7 +153,7 @@
                 </div>
             </div>`;
 
-        document.getElementById('pvVendBack').addEventListener('click', () => window.showPreventaMenu());
+        document.getElementById('pvVendBack')?.addEventListener('click', () => window.showPreventaMenu());
 
         // Cargar usuarios y sectores en paralelo
         try {
@@ -269,10 +270,21 @@
     async function cargarStockRuta(vendedorId) {
         _pvStockRuta = {};
         if (!vendedorId) return;
+        // El stock que se muestra en Tomar Pedido es el MISMO inventario real del
+        // vendedor (el que ve en Inventario y Venta Directa). Así queda sincronizado
+        // automáticamente: ese inventario ya está al día con su ruta.
         try {
-            const snap = await _getDoc(_doc(_db, pathInvRuta(), vendedorId));
-            if (snap.exists()) _pvStockRuta = snap.data().productos || {};
-        } catch (e) { console.warn('Sin stock de ruta:', e); }
+            const invSnap = await _getDocs(_collection(_db, `artifacts/${_appId}/users/${vendedorId}/inventario`));
+            invSnap.docs.forEach(d => {
+                const data = d.data();
+                const uCj = data.unidadesPorCaja || 1;
+                const unidades = data.cantidadUnidades || 0;
+                _pvStockRuta[d.id] = {
+                    cantidadUnidades: unidades,
+                    cantCajas: Math.floor(unidades / uCj)
+                };
+            });
+        } catch (e) { console.warn('No se pudo leer el inventario del vendedor:', e); }
     }
 
     let _pvTasaCOP = 0, _pvTasaBs = 0, _pvMoneda = 'USD';
@@ -360,7 +372,7 @@
                 </div>
             </div>`;
 
-        document.getElementById('pvPedBack').addEventListener('click', () => window.showPreventaMenu());
+        document.getElementById('pvPedBack')?.addEventListener('click', () => window.showPreventaMenu());
 
         // Cargar clientes, productos, usuarios y orden global
         try {
@@ -411,7 +423,7 @@
             }, 200);
         });
 
-        document.getElementById('pvPedGuardar').addEventListener('click', guardarPedido);
+        document.getElementById('pvPedGuardar')?.addEventListener('click', guardarPedido);
     }
 
     function seleccionarClientePedido(id) {
@@ -501,10 +513,12 @@
             const vPor = prod.ventaPor || { und: true };
             const pa = _pedidoActual.productos[prod.id] || {};
             const precios = prod.precios || { und: prod.precioPorUnidad || 0 };
-            const stockU = prod.cantidadUnidades || 0;
 
-            // Stock informativo de la bolsa de ruta (si existe), sin bloquear
-            const dispCj = _pvStockRuta[prod.id]?.cantCajas ?? null;
+            // Stock = inventario REAL del vendedor (el mismo de Inventario/Venta Directa).
+            // Si el producto no está en su inventario, se muestra 0 (pero igual se puede pedir).
+            const invVend = _pvStockRuta[prod.id];
+            const stockU = invVend ? (invVend.cantidadUnidades || 0) : 0;
+            const dispCj = invVend ? (invVend.cantCajas ?? null) : null;
 
             const fila = (tipo, label, cant, precio, stockTxt) => `
                 <tr class="border-b hover:bg-gray-50">
@@ -518,7 +532,7 @@
                     <td class="py-2 px-1 text-center align-middle text-xs font-semibold ${stockU > 0 ? 'text-gray-500' : 'text-red-400'}">${stockTxt}</td>
                 </tr>`;
 
-            if (vPor.cj) { const uCj = prod.unidadesPorCaja || 1; const maxCj = Math.floor(stockU / uCj); html += fila('cj', `${prod.presentacion} (Cj/${uCj} und)`, pa.cantCj, precios.cj || 0, dispCj !== null ? `${dispCj} Cj ruta` : `${maxCj} Cj`); }
+            if (vPor.cj) { const uCj = prod.unidadesPorCaja || 1; const maxCj = Math.floor(stockU / uCj); html += fila('cj', `${prod.presentacion} (Cj/${uCj} und)`, pa.cantCj, precios.cj || 0, `${maxCj} Cj`); }
             if (vPor.paq) { const uPaq = prod.unidadesPorPaquete || 1; const maxPaq = Math.floor(stockU / uPaq); html += fila('paq', `${prod.presentacion} (Paq/${uPaq})`, pa.cantPaq, precios.paq || 0, `${maxPaq} Pq`); }
             if (vPor.und) { html += fila('und', `${prod.presentacion} (Und)`, pa.cantUnd, precios.und || 0, `${stockU} Un`); }
         });
@@ -667,13 +681,13 @@
                 </div>
             </div>`;
 
-        document.getElementById('pvBandBack').addEventListener('click', () => {
+        document.getElementById('pvBandBack')?.addEventListener('click', () => {
             if (_pvBandejaUnsub) { _pvBandejaUnsub(); _pvBandejaUnsub = null; }
             window.showPreventaMenu();
         });
-        document.getElementById('pvBandEstado').addEventListener('change', (e) => { _pvFiltroEstado = e.target.value; renderBandeja(); });
-        document.getElementById('pvBandVendedor').addEventListener('change', (e) => { _pvFiltroVendedor = e.target.value; renderBandeja(); });
-        document.getElementById('pvBandHoy').addEventListener('change', (e) => { _pvFiltroHoy = e.target.checked; renderBandeja(); });
+        document.getElementById('pvBandEstado')?.addEventListener('change', (e) => { _pvFiltroEstado = e.target.value; renderBandeja(); });
+        document.getElementById('pvBandVendedor')?.addEventListener('change', (e) => { _pvFiltroVendedor = e.target.value; renderBandeja(); });
+        document.getElementById('pvBandHoy')?.addEventListener('change', (e) => { _pvFiltroHoy = e.target.checked; renderBandeja(); });
         document.getElementById('pvBandRuta')?.addEventListener('change', (e) => { _pvFiltroRuta = e.target.value; renderBandeja(); });
 
         // Escuchar pedidos en tiempo real
@@ -1552,6 +1566,7 @@
     }
 
 })();
+
 
 
 
