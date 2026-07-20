@@ -384,12 +384,17 @@
         const sortFn = await window.getGlobalProductSortFunction();
         filtrados.sort(sortFn);
 
+        // Unidades ya apartadas por pedidos de pre-venta del vendedor (para la columna Pedidos)
+        let comprometidos = {};
+        try { comprometidos = window.getPedidosComprometidos ? await window.getPedidosComprometidos(_userId) : {}; }
+        catch (e) { comprometidos = {}; }
+
         if (filtrados.length === 0) {
             container.innerHTML = `<div class="p-12 text-center text-gray-500 font-medium text-lg">No se encontraron productos con estos filtros.</div>`;
             return;
         }
 
-        const numCols = readOnly ? 4 : 5;
+        const numCols = readOnly ? 6 : 7;
         let html = `
             <table class="min-w-full bg-white text-sm text-left whitespace-nowrap">
                 <thead class="bg-gray-800 text-white sticky top-0 z-20 shadow-md">
@@ -397,7 +402,9 @@
                         <th class="py-3 px-4 uppercase font-semibold tracking-wider">Presentación</th>
                         <th class="py-3 px-4 uppercase font-semibold tracking-wider hidden sm:table-cell">Marca</th>
                         <th class="py-3 px-4 uppercase font-semibold tracking-wider text-right">Precio</th>
-                        <th class="py-3 px-4 uppercase font-semibold tracking-wider text-center">Stock Base</th>
+                        <th class="py-3 px-4 uppercase font-semibold tracking-wider text-center">Stock</th>
+                        <th class="py-3 px-4 uppercase font-semibold tracking-wider text-center">Pedidos</th>
+                        <th class="py-3 px-4 uppercase font-semibold tracking-wider text-center">Disponible</th>
                         ${!readOnly ? `<th class="py-3 px-4 uppercase font-semibold tracking-wider text-center">Acciones</th>` : ''}
                     </tr>
                 </thead>
@@ -438,7 +445,15 @@
                 labelPrecio = `<span class="text-gray-500 text-xs">Un</span> $${(pre.und || 0).toFixed(2)}`;
             }
 
+            const stockReal = p.cantidadUnidades || 0;
+            const apartado = comprometidos[p.id] || 0;
+            const disponible = stockReal - apartado;
+
             const stockDisplayHtml = formatStockDisplay(p);
+            const pedidosDisplayHtml = apartado > 0
+                ? formatStockDisplay(p, apartado).replace('text-blue-700', 'text-amber-600').replace('text-gray-800', 'text-amber-600')
+                : '<span class="text-gray-300">—</span>';
+            const dispDisplayHtml = formatStockDisplay(p, disponible);
 
             html += `
                 <tr class="hover:bg-amber-50 transition-colors duration-150">
@@ -448,8 +463,14 @@
                     </td>
                     <td class="py-3 px-4 text-gray-600 hidden sm:table-cell">${p.marca || 'S/M'}</td>
                     <td class="py-3 px-4 font-bold text-gray-900 text-right">${labelPrecio}</td>
-                    <td class="py-3 px-4 text-center">
+                    <td class="py-3 px-4 text-center text-gray-500">
                         ${stockDisplayHtml}
+                    </td>
+                    <td class="py-3 px-4 text-center">
+                        ${pedidosDisplayHtml}
+                    </td>
+                    <td class="py-3 px-4 text-center bg-green-50/50 font-bold">
+                        ${dispDisplayHtml}
                     </td>
                     ${!readOnly ? `
                     <td class="py-3 px-4">
@@ -1529,3 +1550,4 @@
     };
 
 })();
+
