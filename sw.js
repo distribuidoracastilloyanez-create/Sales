@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v70'; // v70: cierre del ciclo - entrega descuenta inventario y genera venta (P3) + quita anulado y reporte de no despachados (P4)
+const CACHE_NAME = 'ventas-app-cache-v71'; // v71: detalle de pedido rediseñado (profesional) + modal sobre overlays + oculta botones flotantes en preventa
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
@@ -181,6 +181,7 @@ self.addEventListener('fetch', event => {
             })
     );
 });
+
 
 
 
