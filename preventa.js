@@ -5,7 +5,7 @@
 (function () {
     'use strict';
 
-    let _db, _userId, _userRole, _appId, _mainContent;
+    let _db, _userId, _userRole, _appId, _mainContent, _floatingControls;
     let _showMainMenu, _showModal;
     let _collection, _onSnapshot, _doc, _getDoc, _addDoc, _setDoc, _deleteDoc, _getDocs, _query, _where, _orderBy, _runTransaction, _increment;
 
@@ -35,6 +35,7 @@
         _userRole    = dependencies.userRole;
         _appId       = dependencies.appId;
         _mainContent = dependencies.mainContent;
+        _floatingControls = dependencies.floatingControls;
         _showMainMenu = dependencies.showMainMenu;
         _showModal   = dependencies.showModal;
         _collection  = dependencies.collection;
@@ -55,6 +56,8 @@
     // ── MENÚ PRINCIPAL DE PRE-VENTA ──
     window.showPreventaMenu = function () {
         const rol = window.userRole === 'user' ? 'vendedor' : window.userRole;
+        // Ocultar los controles flotantes (En línea / Cerrar Sesión) dentro de Pre-Venta
+        if (_floatingControls) _floatingControls.classList.add('hidden');
         // Admin, vendedor y despachador pueden entrar a Pre-Venta
         if (!['admin', 'vendedor', 'despachador'].includes(rol)) {
             if (_showModal) _showModal('No disponible', 'El sistema de Pre-Venta no está habilitado para tu usuario.');
@@ -101,6 +104,7 @@
 
         // Navegación: volver al menú principal único
         document.getElementById('pvNavTradiBtn')?.addEventListener('click', () => {
+            if (_floatingControls) _floatingControls.classList.remove('hidden');
             if (_showMainMenu) _showMainMenu();
         });
         // Accesos tradicionales reutilizados (despachador)
@@ -762,6 +766,10 @@
         return lista;
     }
 
+    function _pvDotColor(color) {
+        return ({ gray: 'bg-slate-400', amber: 'bg-amber-500', blue: 'bg-blue-500', green: 'bg-emerald-500', red: 'bg-rose-400' })[color] || 'bg-slate-400';
+    }
+
     function renderListaPedidos() {
         const loading = document.getElementById('pvLPLoading');
         const cont = document.getElementById('pvLPLista');
@@ -781,20 +789,22 @@
             const nItems = (p.productos || []).length;
             const tieneTicket = !!p.ticketGenerado;
             return `
-                <div class="pv-lp-card border border-gray-200 rounded-lg p-3 hover:bg-cyan-50/40 cursor-pointer transition" data-id="${p.id}">
+                <div class="pv-lp-card bg-white border border-slate-200 rounded-lg p-3.5 hover:border-slate-300 hover:shadow-sm cursor-pointer transition" data-id="${p.id}">
                     <div class="flex items-start justify-between gap-2">
                         <div class="min-w-0">
-                            <div class="font-bold text-gray-800 text-sm truncate">${p.clienteNombre || '(sin nombre)'}</div>
-                            <div class="text-[10px] text-gray-400 truncate">${p.vendedorNombre || ''}${p.ruta ? ' · ' + p.ruta : ''} · ${fecha}</div>
+                            <div class="font-semibold text-slate-800 text-sm truncate">${p.clienteNombre || '(sin nombre)'}</div>
+                            <div class="text-[11px] text-slate-400 truncate mt-0.5">${p.vendedorNombre || ''}${p.ruta ? ' &middot; ' + p.ruta : ''} &middot; ${fecha}</div>
                         </div>
                         <div class="text-right shrink-0">
-                            <div class="text-sm font-bold text-cyan-700">$${(p.total || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</div>
-                            <span class="text-[9px] px-1.5 py-0.5 rounded bg-${est.color}-100 text-${est.color}-700 font-bold">${est.icon} ${est.label}</span>
+                            <div class="text-sm font-semibold text-slate-800">$${(p.total || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</div>
+                            <span class="inline-flex items-center gap-1 text-[10px] text-slate-500 font-medium mt-1">
+                                <span class="w-1.5 h-1.5 rounded-full ${_pvDotColor(est.color)}"></span>${est.label}
+                            </span>
                         </div>
                     </div>
-                    <div class="flex items-center justify-between mt-1.5">
-                        <span class="text-[10px] text-gray-400">${nItems} producto(s)</span>
-                        ${tieneTicket ? '<span class="text-[9px] text-green-600 font-bold">🎫 Ticket generado</span>' : ''}
+                    <div class="flex items-center justify-between mt-2 pt-2 border-t border-slate-100">
+                        <span class="text-[11px] text-slate-400">${nItems} producto(s)</span>
+                        ${tieneTicket ? '<span class="text-[10px] text-emerald-600 font-medium">Ticket generado</span>' : ''}
                     </div>
                 </div>`;
         }).join('');
@@ -857,19 +867,20 @@
         document.getElementById('pvLPDetOverlay')?.remove();
         const ov = document.createElement('div');
         ov.id = 'pvLPDetOverlay';
-        ov.className = 'fixed inset-0 z-[9999] bg-black/60 flex items-end sm:items-center justify-center p-0 sm:p-4';
+        ov.className = 'fixed inset-0 z-[9999] bg-slate-900/50 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4';
         ov.innerHTML = `
-            <div class="bg-white w-full max-w-lg rounded-t-2xl sm:rounded-2xl shadow-2xl max-h-[92vh] overflow-y-auto">
-                <div class="sticky top-0 bg-cyan-600 text-white px-4 py-3 flex items-center justify-between">
+            <div class="bg-white w-full max-w-md rounded-t-xl sm:rounded-xl shadow-2xl max-h-[92vh] overflow-y-auto border border-slate-200">
+                <div class="sticky top-0 bg-slate-800 text-white px-5 py-4 flex items-start justify-between">
                     <div class="min-w-0">
-                        <div class="font-bold truncate">${p.clienteNombre || '(sin nombre)'}</div>
-                        <div class="text-[11px] opacity-90 truncate">${p.vendedorNombre || ''}${p.ruta ? ' · ' + p.ruta : ''}</div>
+                        <div class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold mb-0.5">Pedido</div>
+                        <div class="font-semibold text-base truncate leading-tight">${p.clienteNombre || '(sin nombre)'}</div>
+                        <div class="text-xs text-slate-300 truncate mt-0.5">${p.vendedorNombre || ''}${p.ruta ? ' &middot; ' + p.ruta : ''}</div>
                     </div>
-                    <button id="pvLPDetClose" class="text-white text-2xl leading-none px-2">&times;</button>
+                    <button id="pvLPDetClose" class="text-slate-400 hover:text-white text-xl leading-none px-1 -mt-1 transition">&times;</button>
                 </div>
-                <div id="pvLPDetBody" class="p-4">
-                    <div class="text-center text-gray-400 py-6 text-sm">
-                        <svg class="animate-spin h-5 w-5 mx-auto mb-2 text-cyan-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path></svg>
+                <div id="pvLPDetBody" class="p-5">
+                    <div class="text-center text-slate-400 py-8 text-sm">
+                        <svg class="animate-spin h-5 w-5 mx-auto mb-2 text-slate-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path></svg>
                         Verificando disponibilidad...
                     </div>
                 </div>
@@ -889,46 +900,59 @@
         };
 
         const dispHtml = disponibles.length ? disponibles.map(pr => `
-            <div class="flex items-center justify-between py-1.5 border-b border-gray-100">
-                <div class="min-w-0">
-                    <div class="text-sm font-medium text-gray-800 truncate">${pr.presentacion || ''} <span class="text-xs text-gray-400">${pr.marca || ''}</span></div>
-                    <div class="text-[10px] text-gray-400">${fmtCant(pr)}${pr.parcial ? ` · <span class="text-amber-600 font-bold">parcial (${pr.unidadesDespacho} de ${pr.unidadesPedidas} und)</span>` : ''}</div>
+            <div class="flex items-center justify-between py-2.5 px-3 border-b border-slate-100 last:border-0">
+                <div class="min-w-0 flex items-center gap-2.5">
+                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0"></span>
+                    <div class="min-w-0">
+                        <div class="text-sm font-medium text-slate-800 truncate">${pr.presentacion || ''} <span class="text-xs text-slate-400 font-normal">${pr.marca || ''}</span></div>
+                        <div class="text-[11px] text-slate-400 mt-0.5">${fmtCant(pr)}${pr.parcial ? ` &middot; <span class="text-amber-600 font-medium">parcial (${pr.unidadesDespacho} de ${pr.unidadesPedidas} und)</span>` : ''}</div>
+                    </div>
                 </div>
-                <span class="text-green-600 text-lg shrink-0">✓</span>
-            </div>`).join('') : '<p class="text-xs text-gray-400 py-2">Ningún producto disponible.</p>';
+            </div>`).join('') : '<p class="text-xs text-slate-400 py-3 px-3">Ningún producto disponible.</p>';
 
         const noDispHtml = noDisponibles.length ? noDisponibles.map(pr => `
-            <div class="flex items-center justify-between py-1.5 border-b border-gray-100">
-                <div class="min-w-0">
-                    <div class="text-sm font-medium text-gray-500 truncate">${pr.presentacion || ''} <span class="text-xs text-gray-400">${pr.marca || ''}</span></div>
-                    <div class="text-[10px] text-red-400">${fmtCant(pr)} pedido · faltan ${pr.unidadesFaltantes} und</div>
+            <div class="flex items-center justify-between py-2.5 px-3 border-b border-slate-100 last:border-0">
+                <div class="min-w-0 flex items-center gap-2.5">
+                    <span class="w-1.5 h-1.5 rounded-full bg-rose-400 shrink-0"></span>
+                    <div class="min-w-0">
+                        <div class="text-sm font-medium text-slate-500 truncate">${pr.presentacion || ''} <span class="text-xs text-slate-400 font-normal">${pr.marca || ''}</span></div>
+                        <div class="text-[11px] text-rose-500 mt-0.5">${fmtCant(pr)} pedido &middot; faltan ${pr.unidadesFaltantes} und</div>
+                    </div>
                 </div>
-                <span class="text-red-400 text-lg shrink-0">✕</span>
             </div>`).join('') : '';
 
         const est = pvEstadoInfo(p.estado === 'despachado' ? 'cargado' : (p.estado || 'pendiente'));
         const body = document.getElementById('pvLPDetBody');
         if (!body) return;
+        // Mapa de color de punto por estado (sobrio)
+        const dotColor = _pvDotColor(est.color);
         body.innerHTML = `
-            <div class="flex items-center justify-between mb-3">
-                <span class="text-[11px] px-2 py-0.5 rounded bg-${est.color}-100 text-${est.color}-700 font-bold">${est.icon} ${est.label}</span>
-                <span class="text-sm font-bold text-cyan-700">$${(p.total || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+            <div class="flex items-center justify-between mb-5 pb-4 border-b border-slate-100">
+                <span class="inline-flex items-center gap-1.5 text-xs font-medium text-slate-600">
+                    <span class="w-2 h-2 rounded-full ${dotColor}"></span>${est.label}
+                </span>
+                <div class="text-right">
+                    <div class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Total</div>
+                    <div class="text-lg font-semibold text-slate-800">$${(p.total || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</div>
+                </div>
             </div>
 
-            <div class="mb-3">
-                <h4 class="text-xs font-bold text-green-700 uppercase mb-1">✓ Disponibles (van en el ticket)</h4>
-                <div class="bg-green-50/50 rounded-lg px-3 py-1">${dispHtml}</div>
+            <div class="mb-4">
+                <h4 class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2">Disponibles para despacho</h4>
+                <div class="border border-slate-200 rounded-lg overflow-hidden">${dispHtml}</div>
             </div>
 
-            ${noDisponibles.length ? `<div class="mb-3">
-                <h4 class="text-xs font-bold text-red-500 uppercase mb-1">✕ No disponibles (falta stock)</h4>
-                <div class="bg-red-50/40 rounded-lg px-3 py-1">${noDispHtml}</div>
+            ${noDisponibles.length ? `<div class="mb-4">
+                <h4 class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2">Sin stock disponible</h4>
+                <div class="border border-slate-200 rounded-lg overflow-hidden bg-slate-50/50">${noDispHtml}</div>
             </div>` : ''}
 
-            <div class="grid grid-cols-2 gap-2 mt-4">
-                <button id="pvLPTicket" class="col-span-2 py-2.5 bg-cyan-600 text-white rounded-lg font-bold text-sm hover:bg-cyan-700 transition ${disponibles.length ? '' : 'opacity-40 pointer-events-none'}">🎫 Imprimir Ticket ${p.ticketGenerado ? '(regenerar)' : ''}</button>
-                <button id="pvLPEditar" class="py-2 bg-amber-500 text-white rounded-lg font-bold text-sm hover:bg-amber-600 transition">✏️ Editar</button>
-                <button id="pvLPEliminar" class="py-2 bg-red-500 text-white rounded-lg font-bold text-sm hover:bg-red-600 transition">🗑️ Eliminar</button>
+            <div class="space-y-2 mt-6">
+                <button id="pvLPTicket" class="w-full py-3 bg-slate-800 text-white rounded-lg font-medium text-sm hover:bg-slate-900 transition ${disponibles.length ? '' : 'opacity-40 pointer-events-none'}">${p.ticketGenerado ? 'Regenerar ticket' : 'Imprimir ticket de carga'}</button>
+                <div class="grid grid-cols-2 gap-2">
+                    <button id="pvLPEditar" class="py-2.5 bg-white border border-slate-300 text-slate-700 rounded-lg font-medium text-sm hover:bg-slate-50 transition">Editar</button>
+                    <button id="pvLPEliminar" class="py-2.5 bg-white border border-rose-200 text-rose-600 rounded-lg font-medium text-sm hover:bg-rose-50 transition">Eliminar</button>
+                </div>
             </div>`;
 
         // Editar (reutiliza la función de editar/aumentar existente)
@@ -2159,6 +2183,7 @@
     }
 
 })();
+
 
 
 
