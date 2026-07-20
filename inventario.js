@@ -361,7 +361,32 @@
         startMainInventarioListener(smartListenerCallback);
     }
 
+    // Corrige a 0 los productos con stock físico negativo del inventario del vendedor.
+    // La información de faltantes NO se pierde: queda en el reporte de "No despachado".
+    async function corregirStockNegativo() {
+        const negativos = _inventarioCache.filter(p => (p.cantidadUnidades || 0) < 0);
+        if (!negativos.length) { _showModal('Sin negativos', 'No hay productos con stock negativo.'); return; }
+        _showModal('Corregir negativos', `Se encontraron <strong>${negativos.length}</strong> producto(s) con stock negativo. Se pondrán en <strong>0</strong> para que las recargas sean coherentes. La información de faltantes se conserva en el reporte de Pre-Venta. ¿Continuar?`, async () => {
+            try {
+                const batch = _writeBatch(_db);
+                negativos.forEach(p => {
+                    const ref = _doc(_db, `artifacts/${_appId}/users/${_userId}/inventario`, p.id);
+                    batch.set(ref, { cantidadUnidades: 0 }, { merge: true });
+                    p.cantidadUnidades = 0; // actualizar cache local
+                });
+                await batch.commit();
+                _showModal('Listo', `Se corrigieron <strong>${negativos.length}</strong> producto(s) a 0.`);
+                renderProductosList(_lastRenderElementId || 'productosListContainer', _lastRenderReadOnly);
+            } catch (e) {
+                console.error('Error corrigiendo negativos:', e);
+                _showModal('Error', 'No se pudieron corregir los negativos.');
+            }
+        }, 'Sí, corregir', () => {});
+    }
+    let _lastRenderElementId = null, _lastRenderReadOnly = false;
+
     async function renderProductosList(elementId, readOnly = false) {
+        _lastRenderElementId = elementId; _lastRenderReadOnly = readOnly;
         const container = document.getElementById(elementId);
         if (!container) return;
 
@@ -395,7 +420,21 @@
         }
 
         const numCols = readOnly ? 6 : 7;
-        let html = `
+
+        // Aviso de negativos: si hay productos con stock físico negativo, ofrecer corregirlos.
+        const hayNegativos = _inventarioCache.filter(p => (p.cantidadUnidades || 0) < 0).length;
+        let html = '';
+        if (hayNegativos > 0) {
+            html += `<div class="bg-rose-50 border border-rose-200 rounded-lg p-3 mb-3 flex items-center justify-between gap-3 flex-wrap">
+                <div class="text-xs text-rose-700">
+                    <strong>${hayNegativos} producto(s)</strong> con stock negativo. Esto descuadra las recargas.
+                    <span class="text-rose-400">La info de faltantes queda en el reporte de Pre-Venta.</span>
+                </div>
+                <button id="btnCorregirNegativos" class="text-xs px-3 py-1.5 bg-rose-600 text-white rounded-lg font-bold hover:bg-rose-700 transition shrink-0">Corregir a 0</button>
+            </div>`;
+        }
+
+        html += `
             <table class="min-w-full bg-white text-sm text-left whitespace-nowrap">
                 <thead class="bg-gray-800 text-white sticky top-0 z-20 shadow-md">
                     <tr>
@@ -486,6 +525,7 @@
 
         html += `</tbody></table>`;
         container.innerHTML = html;
+        document.getElementById('btnCorregirNegativos')?.addEventListener('click', corregirStockNegativo);
     }
 
     // =========================================================================================
@@ -1550,4 +1590,5 @@
     };
 
 })();
+
 
