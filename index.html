@@ -578,6 +578,12 @@
                     // 'user' (rol antiguo) equivale a 'vendedor' por compatibilidad
                     if (window.userRole === 'user') window.userRole = 'vendedor';
                     window.userZona = userDoc.exists() ? (userDoc.data().zonaPreventa || '') : '';
+                    // Nombre del usuario logueado (para "Cargado por" en el ticket)
+                    if (userDoc.exists()) {
+                        const _ud = userDoc.data();
+                        const _nom = [(_ud.nombre || ''), (_ud.apellido || '')].filter(Boolean).join(' ').trim();
+                        window.userNombre = _nom || _ud.email || 'Usuario';
+                    } else { window.userNombre = 'Usuario'; }
                     
                     document.getElementById('loginContent').classList.add('hidden');
                     document.getElementById('registerContent').classList.add('hidden');
@@ -683,6 +689,7 @@
     </script>
 </body>
 </html>
+
 
 
 
