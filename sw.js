@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v66'; // v66: fix crash submenu (rol) + Tomar Pedido usa el inventario real del vendedor
+const CACHE_NAME = 'ventas-app-cache-v67'; // v67: Stock/Pedidos/Disponible - venta directa y pedidos trabajan por disponible
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
@@ -181,6 +181,7 @@ self.addEventListener('fetch', event => {
             })
     );
 });
+
 
 
 
