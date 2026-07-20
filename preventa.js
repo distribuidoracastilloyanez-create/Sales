@@ -1497,53 +1497,51 @@
             if (pr.cantCj) partes.push(`${pr.cantCj} Caja(s)`);
             if (pr.cantPaq) partes.push(`${pr.cantPaq} Paq`);
             if (pr.cantUnd) partes.push(`${pr.cantUnd} Und`);
-            return `<tr style="border-bottom:1px solid #e5e7eb;">
-                <td style="padding:6px 4px;text-align:center;font-size:16px;">☐</td>
-                <td style="padding:6px 4px;font-size:12px;">
-                    <div style="font-weight:700;color:#1f2937;">${pr.presentacion}${pr.parcial ? ' <span style="font-size:9px;color:#d97706;">(parcial)</span>' : ''}</div>
-                    <div style="font-size:10px;color:#6b7280;">${pr.marca || ''}</div>
-                </td>
-                <td style="padding:6px 4px;text-align:right;font-size:12px;font-weight:700;color:#111827;">${partes.join('<br>') || '—'}</td>
+            return `<tr>
+                <td style="padding:6px 4px;text-align:center;font-size:34px;border-bottom:1px solid #000;">[ ]</td>
+                <td style="padding:6px 4px;font-size:28px;border-bottom:1px solid #000;">${(pr.presentacion || '').toUpperCase()}${pr.parcial ? ' (PARCIAL)' : ''} <span style="font-size:22px;">${(pr.marca || '')}</span></td>
+                <td style="padding:6px 4px;text-align:right;font-size:28px;border-bottom:1px solid #000;">${partes.join(' + ') || '-'}</td>
             </tr>`;
         }).join('');
 
         ov.innerHTML = `
-            <div class="bg-white w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden max-h-[92vh] flex flex-col">
-                <div class="overflow-y-auto flex-1">
-                    <div id="pvTicketCapturable" style="background:#fff;padding:16px;font-family:system-ui,sans-serif;">
-                        <div style="text-align:center;border-bottom:2px solid #334155;padding-bottom:8px;margin-bottom:10px;">
-                            <div style="font-size:16px;font-weight:800;color:#1e293b;">DISTRIBUIDORA CASTILLO YAÑEZ</div>
-                            <div style="font-size:13px;font-weight:700;color:#334155;">ORDEN DE CARGA / ENTREGA</div>
-                            <div style="font-size:10px;color:#94a3b8;">Documento interno · no es factura</div>
+            <div class="bg-white w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden max-h-[92vh] flex flex-col">
+                <div class="overflow-y-auto flex-1 bg-gray-200 p-2">
+                    <div id="pvTicketCapturable" class="bg-white text-black p-4 font-bold mx-auto" style="width:768px;font-family:'Courier New',Courier,monospace;transform-origin:top left;">
+                        <div style="text-align:center;">
+                            <div style="font-size:40px;font-weight:800;">TICKET DE CARGA</div>
+                            <div style="font-size:30px;">DISTRIBUIDORA CASTILLO YAÑEZ</div>
+                            <div style="font-size:22px;">(documento interno - no es factura)</div>
                         </div>
-                        <div style="font-size:11px;color:#374151;margin-bottom:8px;line-height:1.5;">
-                            <div><strong>Cliente:</strong> ${p.clienteNombre || '—'}</div>
-                            <div><strong>Ruta:</strong> ${p.ruta || p.zona || '—'}</div>
-                            <div><strong>Vendedor:</strong> ${p.vendedorNombre || '—'}</div>
-                            <div><strong>Fecha:</strong> ${fecha} ${hora}</div>
+                        <div style="font-size:28px;margin-top:24px;line-height:1.4;">
+                            <div>CLIENTE: ${(p.clienteNombre || '-').toUpperCase()}</div>
+                            <div>RUTA: ${(p.ruta || p.zona || '-')}</div>
+                            <div>VENDEDOR: ${(p.vendedorNombre || '-')}</div>
+                            <div>FECHA: ${fecha} ${hora}</div>
                         </div>
-                        <table style="width:100%;border-collapse:collapse;border-top:1px solid #cbd5e1;">
+                        <table style="width:100%;border-collapse:collapse;font-size:28px;margin-top:20px;">
                             <thead>
-                                <tr style="background:#f1f5f9;">
-                                    <th style="padding:4px;font-size:9px;color:#64748b;text-align:center;width:28px;">✓</th>
-                                    <th style="padding:4px;font-size:9px;color:#64748b;text-align:left;">Producto</th>
-                                    <th style="padding:4px;font-size:9px;color:#64748b;text-align:right;">Cantidad</th>
+                                <tr>
+                                    <th style="padding:4px;text-align:center;border-bottom:3px solid #000;width:70px;">OK</th>
+                                    <th style="padding:4px;text-align:left;border-bottom:3px solid #000;">PRODUCTO</th>
+                                    <th style="padding:4px;text-align:right;border-bottom:3px solid #000;">CANTIDAD</th>
                                 </tr>
                             </thead>
-                            <tbody>${filas || '<tr><td colspan="3" style="padding:8px;text-align:center;color:#9ca3af;font-size:11px;">Sin productos disponibles</td></tr>'}</tbody>
+                            <tbody>${filas || '<tr><td colspan="3" style="padding:16px;text-align:center;font-size:26px;">Sin productos disponibles</td></tr>'}</tbody>
                         </table>
-                        <div style="margin-top:12px;padding-top:8px;border-top:1px dashed #cbd5e1;font-size:10px;color:#6b7280;">
-                            <div><strong>Cargado por:</strong> ${quienCarga}</div>
-                            <div style="margin-top:6px;">Recibido por (cliente): ______________________</div>
-                            <div style="margin-top:6px;">Firma: ______________________</div>
+                        <div style="margin-top:40px;padding-top:16px;border-top:2px dashed #000;font-size:26px;line-height:1.8;">
+                            <div>CARGADO POR: ${(quienCarga || '').toUpperCase()}</div>
+                            <div style="margin-top:12px;">RECIBIDO (CLIENTE): _______________</div>
+                            <div style="margin-top:12px;">FIRMA: __________________________</div>
                         </div>
-                        <div style="margin-top:8px;font-size:9px;color:#94a3b8;text-align:center;">
-                            Solo incluye productos disponibles. Es el respaldo de la carga y la entrega.
+                        <div style="margin-top:20px;font-size:22px;text-align:center;">
+                            Solo incluye productos disponibles.
                         </div>
+                        <hr style="border:none;border-top:2px dashed #000;margin-top:16px;">
                     </div>
                 </div>
                 <div class="p-3 border-t shrink-0 flex gap-2">
-                    <button id="pvTicketImg" class="flex-1 py-2.5 bg-slate-700 text-white rounded-lg font-bold text-sm hover:bg-slate-800 transition">📤 Compartir / Imprimir</button>
+                    <button id="pvTicketImg" class="flex-1 py-2.5 bg-slate-700 text-white rounded-lg font-bold text-sm hover:bg-slate-800 transition">Compartir / Imprimir</button>
                     <button id="pvTicketCerrar" class="px-4 py-2.5 bg-gray-100 text-gray-600 rounded-lg font-bold text-sm">Cerrar</button>
                 </div>
             </div>`;
@@ -1591,59 +1589,58 @@
         const fecha = new Date().toLocaleDateString('es-VE');
         const hora = new Date().toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' });
 
-        // Filas de productos con casilla de "cargado" (SOLO disponibles)
+        // Filas de productos con casilla de "cargado" (SOLO disponibles).
+        // Formato de 80mm igual al de Venta Directa: ancho 768px, Courier New, texto grande, negro.
         const filas = itemsTicket.map((pr) => {
             const partes = [];
             if (pr.cantCj) partes.push(`${pr.cantCj} Caja(s)`);
             if (pr.cantPaq) partes.push(`${pr.cantPaq} Paq`);
             if (pr.cantUnd) partes.push(`${pr.cantUnd} Und`);
-            return `<tr style="border-bottom:1px solid #e5e7eb;">
-                <td style="padding:6px 4px;text-align:center;font-size:16px;">☐</td>
-                <td style="padding:6px 4px;font-size:12px;">
-                    <div style="font-weight:700;color:#1f2937;">${pr.presentacion}${pr.parcial ? ' <span style=\"font-size:9px;color:#d97706;\">(parcial)</span>' : ''}</div>
-                    <div style="font-size:10px;color:#6b7280;">${pr.marca || ''}</div>
-                </td>
-                <td style="padding:6px 4px;text-align:right;font-size:12px;font-weight:700;color:#111827;">${partes.join('<br>') || '—'}</td>
+            return `<tr>
+                <td style="padding:6px 4px;text-align:center;font-size:34px;border-bottom:1px solid #000;">[ ]</td>
+                <td style="padding:6px 4px;font-size:28px;border-bottom:1px solid #000;">${(pr.presentacion || '').toUpperCase()}${pr.parcial ? ' (PARCIAL)' : ''} <span style="font-size:22px;">${(pr.marca || '')}</span></td>
+                <td style="padding:6px 4px;text-align:right;font-size:28px;border-bottom:1px solid #000;">${partes.join(' + ') || '-'}</td>
             </tr>`;
         }).join('');
 
         ov.innerHTML = `
-            <div class="bg-white w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden max-h-[92vh] flex flex-col">
-                <div class="overflow-y-auto flex-1">
-                    <div id="pvTicketCapturable" style="background:#fff;padding:16px;font-family:system-ui,sans-serif;">
-                        <div style="text-align:center;border-bottom:2px solid #334155;padding-bottom:8px;margin-bottom:10px;">
-                            <div style="font-size:16px;font-weight:800;color:#1e293b;">DISTRIBUIDORA CASTILLO YAÑEZ</div>
-                            <div style="font-size:13px;font-weight:700;color:#334155;">TICKET DE CARGA</div>
-                            <div style="font-size:10px;color:#94a3b8;">Documento interno · no es factura</div>
+            <div class="bg-white w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden max-h-[92vh] flex flex-col">
+                <div class="overflow-y-auto flex-1 bg-gray-200 p-2">
+                    <div id="pvTicketCapturable" class="bg-white text-black p-4 font-bold mx-auto" style="width:768px;font-family:'Courier New',Courier,monospace;transform-origin:top left;">
+                        <div style="text-align:center;">
+                            <div style="font-size:40px;font-weight:800;">TICKET DE CARGA</div>
+                            <div style="font-size:30px;">DISTRIBUIDORA CASTILLO YAÑEZ</div>
+                            <div style="font-size:22px;">(documento interno - no es factura)</div>
                         </div>
-                        <div style="font-size:11px;color:#374151;margin-bottom:8px;line-height:1.5;">
-                            <div><strong>Cliente:</strong> ${p.clienteNombre || '—'}</div>
-                            <div><strong>Ruta:</strong> ${p.ruta || p.zona || '—'}</div>
-                            <div><strong>Vendedor:</strong> ${p.vendedorNombre || '—'}</div>
-                            <div><strong>Fecha:</strong> ${fecha} ${hora}</div>
+                        <div style="font-size:28px;margin-top:24px;line-height:1.4;">
+                            <div>CLIENTE: ${(p.clienteNombre || '-').toUpperCase()}</div>
+                            <div>RUTA: ${(p.ruta || p.zona || '-')}</div>
+                            <div>VENDEDOR: ${(p.vendedorNombre || '-')}</div>
+                            <div>FECHA: ${fecha} ${hora}</div>
                         </div>
-                        <table style="width:100%;border-collapse:collapse;border-top:1px solid #cbd5e1;">
+                        <table style="width:100%;border-collapse:collapse;font-size:28px;margin-top:20px;">
                             <thead>
-                                <tr style="background:#f1f5f9;">
-                                    <th style="padding:4px;font-size:9px;color:#64748b;text-align:center;width:28px;">✓</th>
-                                    <th style="padding:4px;font-size:9px;color:#64748b;text-align:left;">Producto</th>
-                                    <th style="padding:4px;font-size:9px;color:#64748b;text-align:right;">Cantidad</th>
+                                <tr>
+                                    <th style="padding:4px;text-align:center;border-bottom:3px solid #000;width:70px;">OK</th>
+                                    <th style="padding:4px;text-align:left;border-bottom:3px solid #000;">PRODUCTO</th>
+                                    <th style="padding:4px;text-align:right;border-bottom:3px solid #000;">CANTIDAD</th>
                                 </tr>
                             </thead>
-                            <tbody>${filas || '<tr><td colspan="3" style="padding:8px;text-align:center;color:#9ca3af;font-size:11px;">Sin productos</td></tr>'}</tbody>
+                            <tbody>${filas || '<tr><td colspan="3" style="padding:16px;text-align:center;font-size:26px;">Sin productos</td></tr>'}</tbody>
                         </table>
-                        <div style="margin-top:12px;padding-top:8px;border-top:1px dashed #cbd5e1;font-size:10px;color:#6b7280;">
-                            <div><strong>Cargado por:</strong> ${quienCarga}</div>
-                            <div style="margin-top:6px;">Firma: ______________________</div>
-                            <div style="margin-top:6px;">Recibido por (cliente): ______________________</div>
+                        <div style="margin-top:40px;padding-top:16px;border-top:2px dashed #000;font-size:26px;line-height:1.8;">
+                            <div>CARGADO POR: ${(quienCarga || '').toUpperCase()}</div>
+                            <div style="margin-top:12px;">FIRMA: __________________________</div>
+                            <div style="margin-top:12px;">RECIBIDO (CLIENTE): _______________</div>
                         </div>
-                        <div style="margin-top:8px;font-size:9px;color:#94a3b8;text-align:center;">
-                            Marque cada casilla al cargar el producto. Este ticket es el respaldo de la carga.
+                        <div style="margin-top:20px;font-size:22px;text-align:center;">
+                            Marque cada casilla al cargar el producto.
                         </div>
+                        <hr style="border:none;border-top:2px dashed #000;margin-top:16px;">
                     </div>
                 </div>
                 <div class="p-3 border-t shrink-0 flex gap-2">
-                    <button id="pvTicketImg" class="flex-1 py-2.5 bg-slate-700 text-white rounded-lg font-bold text-sm hover:bg-slate-800 transition">📤 Compartir / Imprimir</button>
+                    <button id="pvTicketImg" class="flex-1 py-2.5 bg-slate-700 text-white rounded-lg font-bold text-sm hover:bg-slate-800 transition">Compartir / Imprimir</button>
                     <button id="pvTicketCerrar" class="px-4 py-2.5 bg-gray-100 text-gray-600 rounded-lg font-bold text-sm">Cerrar</button>
                 </div>
             </div>`;
