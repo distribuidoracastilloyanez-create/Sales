@@ -71,7 +71,6 @@
         if (esAdmin) botones += btn('pvInventarioRutaBtn', 'Inv. por Ruta', 'bg-blue-600 hover:bg-blue-700');
         if (esAdmin) botones += btn('pvVendedoresBtn', 'Vendedores/Zonas', 'bg-slate-600 hover:bg-slate-700');
         botones += btn('pvReportesBtn', 'Reportes', 'bg-slate-700 hover:bg-slate-800');
-        botones += btn('pvCatalogoBtn', 'Catálogo', 'bg-green-700 hover:bg-green-800');
         // Accesos tradicionales reutilizados (según rol)
         if (esDesp) botones += btn('pvClientesBtn', 'Clientes', 'bg-teal-600 hover:bg-teal-700');
         if (esDesp) botones += btn('pvCxcBtn', 'CXC', 'bg-amber-600 hover:bg-amber-700');
@@ -124,11 +123,6 @@
         document.getElementById('pvInventarioRutaBtn').addEventListener('click', () => showInventarioRuta());
         document.getElementById('pvVendedoresBtn').addEventListener('click', () => showPreventaVendedores());
         document.getElementById('pvReportesBtn').addEventListener('click', () => showReportesPreventa());
-        document.getElementById('pvCatalogoBtn').addEventListener('click', () => {
-            // Reutiliza la función de Catálogo del sistema tradicional (ya está completa)
-            if (window.showCatalogoSubMenu) window.showCatalogoSubMenu();
-            else if (_showModal) _showModal('Aviso', 'El módulo de Catálogo no está disponible.');
-        });
         document.getElementById('pvConfigBtn').addEventListener('click', () => enConstruccion('Configuración'));
     };
 
@@ -615,7 +609,6 @@
         { key: 'pendiente',    label: 'Pendiente',      color: 'gray',   icon: '🕓' },
         { key: 'preparacion',  label: 'En preparación', color: 'amber',  icon: '📋' },
         { key: 'cargado',      label: 'Cargado',        color: 'blue',   icon: '📦' },
-        { key: 'despachado',   label: 'Despachado',     color: 'indigo', icon: '🚚' },
         { key: 'entregado',    label: 'Entregado',      color: 'green',  icon: '✅' },
         { key: 'anulado',      label: 'Anulado',        color: 'red',    icon: '✖️' }
     ];
@@ -788,9 +781,12 @@
         if (!p) return;
         const est = pvEstadoInfo(p.estado || 'pendiente');
 
-        // Secuencia de avance (sin contar anulado)
-        const flujo = ['pendiente', 'preparacion', 'cargado', 'despachado', 'entregado'];
-        const idxActual = flujo.indexOf(p.estado || 'pendiente');
+        // Secuencia de avance (sin contar anulado). Se eliminó 'despachado'.
+        const flujo = ['pendiente', 'preparacion', 'cargado', 'entregado'];
+        // Compatibilidad: un pedido que quedó en el estado viejo 'despachado'
+        // se trata como 'cargado' para efectos de avanzar/retroceder.
+        const estadoNorm = (p.estado === 'despachado') ? 'cargado' : (p.estado || 'pendiente');
+        const idxActual = flujo.indexOf(estadoNorm);
         const siguiente = (idxActual >= 0 && idxActual < flujo.length - 1) ? flujo[idxActual + 1] : null;
         const anterior = (idxActual > 0) ? flujo[idxActual - 1] : null;
 
@@ -1554,6 +1550,7 @@
     }
 
 })();
+
 
 
 
