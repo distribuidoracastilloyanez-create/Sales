@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v68'; // v68: nueva funcion Pedidos - listado con disponibles/no disponibles + editar/eliminar (Parte 1)
+const CACHE_NAME = 'ventas-app-cache-v69'; // v69: ticket de pedido (solo disponibles) congela despacho y pasa a preparacion (Parte 2)
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
@@ -181,6 +181,7 @@ self.addEventListener('fetch', event => {
             })
     );
 });
+
 
 
 
