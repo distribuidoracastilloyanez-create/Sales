@@ -68,6 +68,7 @@
         let botones = '';
         // Orden principal: Tomar Pedido, Estado del Pedido, Reportes
         if (esAdmin || esVend)  botones += btn('pvPedidosBtn', 'Tomar Pedido', 'bg-indigo-500 hover:bg-indigo-600');
+        botones += btn('pvListaPedidosBtn', 'Pedidos', 'bg-cyan-600 hover:bg-cyan-700');
         botones += btn('pvBandejaBtn', 'Estado del Pedido', 'bg-teal-600 hover:bg-teal-700');
         botones += btn('pvReportesBtn', 'Reportes', 'bg-slate-700 hover:bg-slate-800');
         // Funciones adicionales de admin
@@ -122,6 +123,7 @@
         };
         // Cada botón puede o no existir según el rol; se usa ?. para no fallar.
         document.getElementById('pvPedidosBtn')?.addEventListener('click', () => showTomarPedido());
+        document.getElementById('pvListaPedidosBtn')?.addEventListener('click', () => showListaPedidos());
         document.getElementById('pvBandejaBtn')?.addEventListener('click', () => showBandejaDespacho());
         document.getElementById('pvInventarioRutaBtn')?.addEventListener('click', () => showInventarioRuta());
         document.getElementById('pvVendedoresBtn')?.addEventListener('click', () => showPreventaVendedores());
@@ -689,7 +691,273 @@
     let _pvFiltroHoy = false;
     let _pvFiltroRuta = '';       // '' = todas (solo admin)
 
-    function showBandejaDespacho() {
+// ═══════════════════════════════════════════════════════════
+    // PEDIDOS — listado de pedidos tomados (estilo "ventas totales").
+    // El despachador/admin ve cada pedido, con sus productos separados
+    // en DISPONIBLES y NO DISPONIBLES según el stock actual del vendedor.
+    // Desde aquí se imprime el ticket (solo disponibles) y se edita/elimina.
+    // ═══════════════════════════════════════════════════════════
+    let _pvLista = [];
+    let _pvListaUnsub = null;
+    let _pvListaFiltroHoy = false;
+
+    function showListaPedidos() {
+        const rol = window.userRole === 'user' ? 'vendedor' : window.userRole;
+        if (!['admin', 'vendedor', 'despachador'].includes(rol)) return;
+
+        _mainContent.innerHTML = `
+            <div class="p-2 sm:p-3 pt-5 w-full max-w-2xl mx-auto">
+                <div class="bg-white/95 backdrop-blur-sm p-3 sm:p-4 rounded-lg shadow-xl">
+                    <div class="flex items-center justify-between mb-3">
+                        <h2 class="text-lg font-bold text-gray-800">Pedidos</h2>
+                        <button id="pvLPBack" class="px-3 py-1.5 bg-gray-400 text-white text-xs rounded hover:bg-gray-500 font-bold transition">Volver</button>
+                    </div>
+                    <label class="flex items-center gap-1.5 text-[11px] text-gray-600 mb-2">
+                        <input type="checkbox" id="pvLPHoy" class="rounded"> Solo pedidos de hoy
+                    </label>
+                    <div id="pvLPLoading" class="text-center py-8 text-gray-400 text-sm">
+                        <svg class="animate-spin h-6 w-6 mx-auto mb-2 text-cyan-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path></svg>
+                        Cargando pedidos...
+                    </div>
+                    <div id="pvLPLista" class="hidden space-y-2 max-h-[62vh] overflow-y-auto"></div>
+                </div>
+            </div>`;
+
+        document.getElementById('pvLPBack')?.addEventListener('click', () => {
+            if (_pvListaUnsub) { _pvListaUnsub(); _pvListaUnsub = null; }
+            window.showPreventaMenu();
+        });
+        document.getElementById('pvLPHoy')?.addEventListener('change', (e) => { _pvListaFiltroHoy = e.target.checked; renderListaPedidos(); });
+
+        // Pedidos en tiempo real
+        try {
+            const ref = _collection(_db, pathPedidos());
+            _pvListaUnsub = _onSnapshot(ref, snap => {
+                _pvLista = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+                renderListaPedidos();
+            }, err => {
+                console.error('Error escuchando pedidos:', err);
+                const l = document.getElementById('pvLPLoading');
+                if (l) l.innerHTML = '<span class="text-red-500">Error al cargar pedidos.</span>';
+            });
+        } catch (e) {
+            console.error('Error iniciando listado de pedidos:', e);
+        }
+    }
+
+    function _pvListaFiltradaPorRol() {
+        const rol = window.userRole === 'user' ? 'vendedor' : window.userRole;
+        let lista = _pvLista.slice();
+        if (rol === 'despachador') {
+            const miRuta = window.userZona || '';
+            lista = lista.filter(p => (p.ruta || p.zona || '') === miRuta);
+        } else if (rol === 'vendedor') {
+            lista = lista.filter(p => p.vendedorId === _userId);
+        }
+        // No mostrar entregados/anulados en la lista de trabajo (ya cerraron su ciclo)
+        lista = lista.filter(p => (p.estado || 'pendiente') !== 'entregado' && (p.estado || 'pendiente') !== 'anulado');
+        if (_pvListaFiltroHoy) lista = lista.filter(p => _pvEsHoy(p.fechaCreacion));
+        lista.sort((a, b) => (b.fechaCreacion || '').localeCompare(a.fechaCreacion || ''));
+        return lista;
+    }
+
+    function renderListaPedidos() {
+        const loading = document.getElementById('pvLPLoading');
+        const cont = document.getElementById('pvLPLista');
+        if (!cont) return;
+        if (loading) loading.classList.add('hidden');
+        cont.classList.remove('hidden');
+
+        const lista = _pvListaFiltradaPorRol();
+        if (!lista.length) {
+            cont.innerHTML = '<p class="text-center text-gray-400 py-8 text-sm">No hay pedidos activos.</p>';
+            return;
+        }
+
+        cont.innerHTML = lista.map(p => {
+            const est = pvEstadoInfo(p.estado === 'despachado' ? 'cargado' : (p.estado || 'pendiente'));
+            const fecha = p.fechaCreacion ? new Date(p.fechaCreacion).toLocaleDateString('es-VE', { day: '2-digit', month: '2-digit' }) : '';
+            const nItems = (p.productos || []).length;
+            const tieneTicket = !!p.ticketGenerado;
+            return `
+                <div class="pv-lp-card border border-gray-200 rounded-lg p-3 hover:bg-cyan-50/40 cursor-pointer transition" data-id="${p.id}">
+                    <div class="flex items-start justify-between gap-2">
+                        <div class="min-w-0">
+                            <div class="font-bold text-gray-800 text-sm truncate">${p.clienteNombre || '(sin nombre)'}</div>
+                            <div class="text-[10px] text-gray-400 truncate">${p.vendedorNombre || ''}${p.ruta ? ' · ' + p.ruta : ''} · ${fecha}</div>
+                        </div>
+                        <div class="text-right shrink-0">
+                            <div class="text-sm font-bold text-cyan-700">$${(p.total || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</div>
+                            <span class="text-[9px] px-1.5 py-0.5 rounded bg-${est.color}-100 text-${est.color}-700 font-bold">${est.icon} ${est.label}</span>
+                        </div>
+                    </div>
+                    <div class="flex items-center justify-between mt-1.5">
+                        <span class="text-[10px] text-gray-400">${nItems} producto(s)</span>
+                        ${tieneTicket ? '<span class="text-[9px] text-green-600 font-bold">🎫 Ticket generado</span>' : ''}
+                    </div>
+                </div>`;
+        }).join('');
+
+        cont.querySelectorAll('.pv-lp-card').forEach(el =>
+            el.addEventListener('click', () => abrirDetalleListaPedido(el.dataset.id)));
+    }
+
+    // Separa los productos del pedido en disponibles y no disponibles
+    // según el stock actual del VENDEDOR que tomó el pedido.
+    async function _pvClasificarProductos(pedido) {
+        const stockVend = {};
+        try {
+            const invSnap = await _getDocs(_collection(_db, `artifacts/${_appId}/users/${pedido.vendedorId}/inventario`));
+            invSnap.docs.forEach(d => { stockVend[d.id] = d.data().cantidadUnidades || 0; });
+        } catch (e) { console.warn('No se pudo leer inventario del vendedor:', e); }
+
+        // Restar lo comprometido por OTROS pedidos del mismo vendedor (no este),
+        // para no contar dos veces el stock ya apartado.
+        const comprometidoOtros = {};
+        _pvLista.forEach(o => {
+            if (o.id === pedido.id) return;
+            if (o.vendedorId !== pedido.vendedorId) return;
+            const est = o.estado || 'pendiente';
+            if (est === 'entregado' || est === 'anulado') return;
+            (o.productos || []).forEach(pr => {
+                const u = _pvUnidadesProducto(pr);
+                comprometidoOtros[pr.id] = (comprometidoOtros[pr.id] || 0) + u;
+            });
+        });
+
+        const disponibles = [], noDisponibles = [];
+        (pedido.productos || []).forEach(pr => {
+            const pedidas = _pvUnidadesProducto(pr);
+            const stockLibre = (stockVend[pr.id] || 0) - (comprometidoOtros[pr.id] || 0);
+            if (stockLibre >= pedidas && pedidas > 0) {
+                disponibles.push({ ...pr, unidadesPedidas: pedidas, unidadesDespacho: pedidas });
+            } else if (stockLibre > 0) {
+                // Parcial: hay algo, pero no alcanza para todo lo pedido
+                noDisponibles.push({ ...pr, unidadesPedidas: pedidas, unidadesFaltantes: pedidas - stockLibre, stockLibre, parcial: true });
+                disponibles.push({ ...pr, unidadesPedidas: pedidas, unidadesDespacho: stockLibre, parcial: true });
+            } else {
+                noDisponibles.push({ ...pr, unidadesPedidas: pedidas, unidadesFaltantes: pedidas, stockLibre: 0, parcial: false });
+            }
+        });
+        return { disponibles, noDisponibles };
+    }
+
+    function _pvUnidadesProducto(pr) {
+        const cat = (_pvProductos || []).find(x => x.id === pr.id) || {};
+        const uCj = pr.unidadesPorCaja || cat.unidadesPorCaja || 1;
+        const uPaq = pr.unidadesPorPaquete || cat.unidadesPorPaquete || 1;
+        return (pr.cantCj || 0) * uCj + (pr.cantPaq || 0) * uPaq + (pr.cantUnd || 0);
+    }
+
+    async function abrirDetalleListaPedido(id) {
+        const p = _pvLista.find(x => x.id === id);
+        if (!p) return;
+
+        document.getElementById('pvLPDetOverlay')?.remove();
+        const ov = document.createElement('div');
+        ov.id = 'pvLPDetOverlay';
+        ov.className = 'fixed inset-0 z-[9999] bg-black/60 flex items-end sm:items-center justify-center p-0 sm:p-4';
+        ov.innerHTML = `
+            <div class="bg-white w-full max-w-lg rounded-t-2xl sm:rounded-2xl shadow-2xl max-h-[92vh] overflow-y-auto">
+                <div class="sticky top-0 bg-cyan-600 text-white px-4 py-3 flex items-center justify-between">
+                    <div class="min-w-0">
+                        <div class="font-bold truncate">${p.clienteNombre || '(sin nombre)'}</div>
+                        <div class="text-[11px] opacity-90 truncate">${p.vendedorNombre || ''}${p.ruta ? ' · ' + p.ruta : ''}</div>
+                    </div>
+                    <button id="pvLPDetClose" class="text-white text-2xl leading-none px-2">&times;</button>
+                </div>
+                <div id="pvLPDetBody" class="p-4">
+                    <div class="text-center text-gray-400 py-6 text-sm">
+                        <svg class="animate-spin h-5 w-5 mx-auto mb-2 text-cyan-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path></svg>
+                        Verificando disponibilidad...
+                    </div>
+                </div>
+            </div>`;
+        document.body.appendChild(ov);
+        ov.addEventListener('click', (e) => { if (e.target === ov) ov.remove(); });
+        document.getElementById('pvLPDetClose')?.addEventListener('click', () => ov.remove());
+
+        const { disponibles, noDisponibles } = await _pvClasificarProductos(p);
+
+        const fmtCant = (pr) => {
+            const partes = [];
+            if (pr.cantCj) partes.push(`${pr.cantCj} Cj`);
+            if (pr.cantPaq) partes.push(`${pr.cantPaq} Pq`);
+            if (pr.cantUnd) partes.push(`${pr.cantUnd} Un`);
+            return partes.join(' + ') || '0';
+        };
+
+        const dispHtml = disponibles.length ? disponibles.map(pr => `
+            <div class="flex items-center justify-between py-1.5 border-b border-gray-100">
+                <div class="min-w-0">
+                    <div class="text-sm font-medium text-gray-800 truncate">${pr.presentacion || ''} <span class="text-xs text-gray-400">${pr.marca || ''}</span></div>
+                    <div class="text-[10px] text-gray-400">${fmtCant(pr)}${pr.parcial ? ` · <span class="text-amber-600 font-bold">parcial (${pr.unidadesDespacho} de ${pr.unidadesPedidas} und)</span>` : ''}</div>
+                </div>
+                <span class="text-green-600 text-lg shrink-0">✓</span>
+            </div>`).join('') : '<p class="text-xs text-gray-400 py-2">Ningún producto disponible.</p>';
+
+        const noDispHtml = noDisponibles.length ? noDisponibles.map(pr => `
+            <div class="flex items-center justify-between py-1.5 border-b border-gray-100">
+                <div class="min-w-0">
+                    <div class="text-sm font-medium text-gray-500 truncate">${pr.presentacion || ''} <span class="text-xs text-gray-400">${pr.marca || ''}</span></div>
+                    <div class="text-[10px] text-red-400">${fmtCant(pr)} pedido · faltan ${pr.unidadesFaltantes} und</div>
+                </div>
+                <span class="text-red-400 text-lg shrink-0">✕</span>
+            </div>`).join('') : '';
+
+        const est = pvEstadoInfo(p.estado === 'despachado' ? 'cargado' : (p.estado || 'pendiente'));
+        const body = document.getElementById('pvLPDetBody');
+        if (!body) return;
+        body.innerHTML = `
+            <div class="flex items-center justify-between mb-3">
+                <span class="text-[11px] px-2 py-0.5 rounded bg-${est.color}-100 text-${est.color}-700 font-bold">${est.icon} ${est.label}</span>
+                <span class="text-sm font-bold text-cyan-700">$${(p.total || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+            </div>
+
+            <div class="mb-3">
+                <h4 class="text-xs font-bold text-green-700 uppercase mb-1">✓ Disponibles (van en el ticket)</h4>
+                <div class="bg-green-50/50 rounded-lg px-3 py-1">${dispHtml}</div>
+            </div>
+
+            ${noDisponibles.length ? `<div class="mb-3">
+                <h4 class="text-xs font-bold text-red-500 uppercase mb-1">✕ No disponibles (falta stock)</h4>
+                <div class="bg-red-50/40 rounded-lg px-3 py-1">${noDispHtml}</div>
+            </div>` : ''}
+
+            <div class="grid grid-cols-2 gap-2 mt-4">
+                <button id="pvLPTicket" class="col-span-2 py-2.5 bg-cyan-600 text-white rounded-lg font-bold text-sm hover:bg-cyan-700 transition ${disponibles.length ? '' : 'opacity-40 pointer-events-none'}">🎫 Imprimir Ticket ${p.ticketGenerado ? '(regenerar)' : ''}</button>
+                <button id="pvLPEditar" class="py-2 bg-amber-500 text-white rounded-lg font-bold text-sm hover:bg-amber-600 transition">✏️ Editar</button>
+                <button id="pvLPEliminar" class="py-2 bg-red-500 text-white rounded-lg font-bold text-sm hover:bg-red-600 transition">🗑️ Eliminar</button>
+            </div>`;
+
+        // Editar (reutiliza la función de editar/aumentar existente)
+        document.getElementById('pvLPEditar')?.addEventListener('click', () => {
+            ov.remove();
+            if (typeof editarPedidoDespacho === 'function') editarPedidoDespacho(p.id);
+        });
+        // Eliminar
+        document.getElementById('pvLPEliminar')?.addEventListener('click', () => eliminarPedidoLista(p.id, p.clienteNombre));
+        // Ticket (Parte 2 — por ahora aviso)
+        document.getElementById('pvLPTicket')?.addEventListener('click', () => {
+            _showModal('Próximamente', 'La generación del ticket se activa en la siguiente parte.');
+        });
+    }
+
+    async function eliminarPedidoLista(id, nombre) {
+        _showModal('Eliminar pedido', `¿Seguro que deseas eliminar el pedido de <strong>${nombre || 'este cliente'}</strong>? Esta acción no se puede deshacer.`, async () => {
+            try {
+                await _deleteDoc(_doc(_db, pathPedidos(), id));
+                if (window.invalidarComprometidoCache) window.invalidarComprometidoCache();
+                document.getElementById('pvLPDetOverlay')?.remove();
+                // El onSnapshot refresca la lista sola
+            } catch (e) {
+                console.error('Error eliminando pedido:', e);
+                _showModal('Error', 'No se pudo eliminar el pedido.');
+            }
+        }, 'Sí, eliminar', () => {});
+    }
+
+        function showBandejaDespacho() {
         const rol = window.userRole === 'user' ? 'vendedor' : window.userRole;
         if (!['admin', 'vendedor', 'despachador'].includes(rol)) return;
         const esAdmin = rol === 'admin';
@@ -1620,6 +1888,7 @@
     }
 
 })();
+
 
 
 
