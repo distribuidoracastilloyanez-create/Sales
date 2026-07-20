@@ -7,7 +7,7 @@
 
     let _db, _userId, _userRole, _appId, _mainContent;
     let _showMainMenu, _showModal;
-    let _collection, _onSnapshot, _doc, _getDoc, _addDoc, _setDoc, _deleteDoc, _getDocs, _query, _where, _orderBy;
+    let _collection, _onSnapshot, _doc, _getDoc, _addDoc, _setDoc, _deleteDoc, _getDocs, _query, _where, _orderBy, _runTransaction, _increment;
 
     // ── Configuración y rutas (aisladas del sistema tradicional) ──
     const getPublicDataId = () => window.AppConfig.PUBLIC_DATA_ID;
@@ -48,6 +48,8 @@
         _query       = dependencies.query;
         _where       = dependencies.where;
         _orderBy     = dependencies.orderBy;
+        _runTransaction = dependencies.runTransaction;
+        _increment   = dependencies.increment;
     };
 
     // ── MENÚ PRINCIPAL DE PRE-VENTA ──
@@ -679,8 +681,7 @@
         { key: 'pendiente',    label: 'Pendiente',      color: 'gray',   icon: '🕓' },
         { key: 'preparacion',  label: 'En preparación', color: 'amber',  icon: '📋' },
         { key: 'cargado',      label: 'Cargado',        color: 'blue',   icon: '📦' },
-        { key: 'entregado',    label: 'Entregado',      color: 'green',  icon: '✅' },
-        { key: 'anulado',      label: 'Anulado',        color: 'red',    icon: '✖️' }
+        { key: 'entregado',    label: 'Entregado',      color: 'green',  icon: '✅' }
     ];
     function pvEstadoInfo(key) { return PV_ESTADOS.find(e => e.key === key) || PV_ESTADOS[0]; }
 
@@ -1182,10 +1183,7 @@
                     </div>
                     ${(p.estado !== 'anulado' && p.estado !== 'entregado') ? `<button id="pvEditarPedido" class="w-full py-2 bg-amber-500 text-white rounded-lg font-bold text-xs hover:bg-amber-600 transition">✏️ Editar / Aumentar pedido</button>` : ''}
                     <button id="pvTicketGalpon" class="w-full py-2 bg-slate-700 text-white rounded-lg font-bold text-xs hover:bg-slate-800 transition">🖨️ Ticket de Galpón (carga)</button>
-                    <div class="flex gap-2">
-                        ${(p.estado !== 'anulado' && p.estado !== 'entregado') ? `<button id="pvAnular" class="flex-1 py-2 bg-red-50 text-red-500 rounded-lg font-bold text-xs hover:bg-red-100 transition">Anular pedido</button>` : ''}
-                        <button id="pvPedDetCerrar" class="flex-1 py-2 bg-gray-100 text-gray-600 rounded-lg font-bold text-xs">Cerrar</button>
-                    </div>
+                    <button id="pvPedDetCerrar" class="w-full py-2 bg-gray-100 text-gray-600 rounded-lg font-bold text-xs">Cerrar</button>
                 </div>
             </div>`;
         document.body.appendChild(ov);
@@ -1196,17 +1194,119 @@
 
         if (siguiente) document.getElementById('pvAvanzar')?.addEventListener('click', () => cambiarEstadoPedido(p.id, siguiente));
         if (anterior) document.getElementById('pvRetroceder')?.addEventListener('click', () => cambiarEstadoPedido(p.id, anterior));
-        document.getElementById('pvAnular')?.addEventListener('click', () => {
-            if (_showModal) {
-                _showModal('Anular pedido', `¿Anular el pedido de <strong>${p.clienteNombre}</strong>? El pedido quedará marcado como anulado.`,
-                    () => cambiarEstadoPedido(p.id, 'anulado'), 'Sí, anular', () => {});
-            }
-        });
+
     }
 
-    async function cambiarEstadoPedido(id, nuevoEstado) {
-        const p = _pvPedidos.find(x => x.id === id);
+// ═══════════════════════════════════════════════════════════
+    // ENTREGAR PEDIDO (cierra el ciclo de pre-venta) — PARTE 3.
+    // Al entregar:
+    //   1. Descuenta del inventario del VENDEDOR que tomó el pedido,
+    //      SOLO lo del ticket congelado (ticketDespacho).
+    //   2. Genera una VENTA real en el historial del vendedor
+    //      (entra a cierre / CXC / reportes como una venta normal).
+    //   3. Marca el pedido como entregado.
+    // Todo dentro de una transacción para que sea atómico.
+    // ═══════════════════════════════════════════════════════════
+    async function entregarPedido(pedido) {
+        if (!pedido) return;
+
+        // Determinar qué se despacha: el ticket congelado si existe; si no,
+        // todo el pedido (fallback para pedidos sin ticket previo).
+        let despacho = pedido.ticketDespacho;
+        if (!despacho || !despacho.length) {
+            despacho = (pedido.productos || []).map(pr => ({
+                id: pr.id, presentacion: pr.presentacion, marca: pr.marca || null,
+                cantCj: pr.cantCj || 0, cantPaq: pr.cantPaq || 0, cantUnd: pr.cantUnd || 0,
+                unidadesPorCaja: pr.unidadesPorCaja || 1, unidadesPorPaquete: pr.unidadesPorPaquete || 1,
+                unidadesDespacho: _pvUnidadesProducto(pr), precios: pr.precios || null
+            }));
+        }
+        // Solo items con algo que despachar
+        despacho = despacho.filter(d => (d.unidadesDespacho || 0) > 0);
+        if (!despacho.length) {
+            if (_showModal) _showModal('Sin productos', 'Este pedido no tiene productos para entregar.');
+            return;
+        }
+
+        if (!_runTransaction) {
+            if (_showModal) _showModal('Error', 'No se puede completar la entrega sin conexión estable. Intenta de nuevo.');
+            return;
+        }
+
+        const vendedorId = pedido.vendedorId;
+        const invBase = `artifacts/${_appId}/users/${vendedorId}/inventario`;
+        const ventaRef = _doc(_collection(_db, `artifacts/${_appId}/users/${vendedorId}/ventas`));
+
+        try {
+            await _runTransaction(_db, async (transaction) => {
+                // Leer el inventario de cada producto del despacho
+                const refs = despacho.map(d => ({ d, ref: _doc(_db, invBase, d.id) }));
+                const docs = await Promise.all(refs.map(r => transaction.get(r.ref)));
+
+                let totalVenta = 0;
+                const itemsVenta = [];
+
+                refs.forEach((r, i) => {
+                    const invDoc = docs[i];
+                    const stockActual = invDoc.exists() ? (invDoc.data().cantidadUnidades || 0) : 0;
+                    const qty = r.d.unidadesDespacho || 0;
+                    // Descontar (no baja de 0: el ticket ya se congeló con lo disponible)
+                    const nuevo = Math.max(0, stockActual - qty);
+                    if (invDoc.exists()) {
+                        transaction.update(r.ref, { cantidadUnidades: nuevo });
+                    }
+                    // Subtotal según los precios guardados en el pedido
+                    const pr = r.d.precios || {};
+                    const sub = (pr.cj || 0) * (r.d.cantCj || 0) + (pr.paq || 0) * (r.d.cantPaq || 0) + (pr.und || 0) * (r.d.cantUnd || 0);
+                    totalVenta += sub;
+                    itemsVenta.push({
+                        id: r.d.id, presentacion: r.d.presentacion, marca: r.d.marca || null,
+                        precios: r.d.precios || null,
+                        cantidadVendida: { cj: r.d.cantCj || 0, paq: r.d.cantPaq || 0, und: r.d.cantUnd || 0 },
+                        totalUnidadesVendidas: qty,
+                        unidadesPorCaja: r.d.unidadesPorCaja || 1, unidadesPorPaquete: r.d.unidadesPorPaquete || 1
+                    });
+                });
+
+                // Registrar la venta (marcada como originada en pre-venta)
+                const ventaData = {
+                    clienteId: pedido.clienteId || null,
+                    clienteNombre: pedido.clienteNombre || '',
+                    clienteNombrePersonal: pedido.clienteNombrePersonal || '',
+                    fecha: new Date(),
+                    total: totalVenta,
+                    productos: itemsVenta,
+                    vaciosDevueltosPorTipo: {},
+                    origen: 'preventa',
+                    pedidoId: pedido.id,
+                    tipoOperacion: 'contado'
+                };
+                transaction.set(ventaRef, ventaData);
+
+                // Marcar el pedido como entregado
+                const pedRef = _doc(_db, pathPedidos(), pedido.id);
+                transaction.update(pedRef, {
+                    estado: 'entregado',
+                    ventaGenerada: ventaRef.id,
+                    historialEstados: (pedido.historialEstados || []).concat([{ estado: 'entregado', fecha: new Date().toISOString(), por: _userId }])
+                });
+            });
+
+            if (window.invalidarComprometidoCache) window.invalidarComprometidoCache();
+            document.getElementById('pvLPDetOverlay')?.remove();
+            document.getElementById('pvPedDetOverlay')?.remove();
+            if (_showModal) _showModal('Pedido entregado', `Se entregó el pedido de <strong>${pedido.clienteNombre || 'el cliente'}</strong>. El inventario se ajustó y la venta quedó registrada.`);
+        } catch (e) {
+            console.error('Error entregando pedido:', e);
+            if (_showModal) _showModal('Error', 'No se pudo completar la entrega. Verifica la conexión e intenta de nuevo.');
+        }
+    }
+
+        async function cambiarEstadoPedido(id, nuevoEstado) {
+        const p = _pvPedidos.find(x => x.id === id) || _pvLista.find(x => x.id === id);
         if (!p) return;
+        // La ENTREGA cierra el ciclo: descuenta inventario y genera la venta.
+        if (nuevoEstado === 'entregado') { entregarPedido(p); return; }
         const nuevoHist = (p.historialEstados || []).concat([{ estado: nuevoEstado, fecha: new Date().toISOString(), por: _userId }]);
         try {
             if (window.invalidarComprometidoCache) window.invalidarComprometidoCache();
@@ -1851,6 +1951,7 @@
                             <option value="hoy">Hoy</option>
                             <option value="semana">Últimos 7 días</option>
                             <option value="mes">Últimos 30 días</option>
+                            <option value="anio">Este año</option>
                             <option value="todos">Todos</option>
                         </select>
                         <button id="pvRepExcel" class="text-xs bg-green-600 text-white rounded px-3 py-1.5 font-bold hover:bg-green-700 transition">📊 Excel</button>
@@ -1886,6 +1987,7 @@
         if (_pvRepRango === 'hoy') desde.setHours(0, 0, 0, 0);
         else if (_pvRepRango === 'semana') desde.setDate(ahora.getDate() - 7);
         else if (_pvRepRango === 'mes') desde.setDate(ahora.getDate() - 30);
+        else if (_pvRepRango === 'anio') { desde = new Date(ahora.getFullYear(), 0, 1); }
         return pedidos.filter(p => {
             if (!p.fechaCreacion) return false;
             return new Date(p.fechaCreacion) >= desde;
@@ -1991,6 +2093,31 @@
                 </div>`);
         }
 
+        // Productos NO despachados por falta de stock (de los pedidos con ticket generado)
+        const noDesp = {};
+        pedidos.forEach(p => {
+            (p.noDespachado || []).forEach(nd => {
+                if (!nd.id) return;
+                if (!noDesp[nd.id]) noDesp[nd.id] = { presentacion: nd.presentacion || nd.id, marca: nd.marca || '', unidades: 0, veces: 0 };
+                noDesp[nd.id].unidades += (nd.unidadesFaltantes || 0);
+                noDesp[nd.id].veces += 1;
+            });
+        });
+        const noDespArr = Object.values(noDesp).filter(x => x.unidades > 0).sort((a, b) => b.unidades - a.unidades);
+        if (noDespArr.length) {
+            const rows = noDespArr.map(x => `
+                <div class="flex justify-between items-center py-1 border-b border-gray-100">
+                    <div class="min-w-0">
+                        <div class="text-xs font-medium text-gray-700 truncate">${x.presentacion} <span class="text-gray-400">${x.marca}</span></div>
+                        <div class="text-[10px] text-gray-400">solicitado sin stock ${x.veces} vez(ces)</div>
+                    </div>
+                    <span class="text-xs font-bold text-red-500 shrink-0">${x.unidades} und</span>
+                </div>`).join('');
+            html += card('⚠️ No despachado por falta de stock', `
+                <p class="text-[10px] text-gray-400 mb-1">Productos que se pidieron pero no había stock al preparar. Útil para saber qué reponer.</p>
+                ${rows}`);
+        }
+
         cont.innerHTML = html;
     }
 
@@ -2032,6 +2159,7 @@
     }
 
 })();
+
 
 
 
