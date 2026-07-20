@@ -542,7 +542,11 @@
 
                         // Matemáticas: Multiplicar el valor tipeado por el factor real
                         const unitsToAdjust = item.ajuste * factor;
-                        const newStock = currentStock + unitsToAdjust;
+                        // Si el stock actual está en negativo (por faltantes de pedidos ya
+                        // registrados en el reporte), se trata como 0 para que la recarga
+                        // refleje la cantidad real ingresada y no se "coma" el faltante.
+                        const baseStock = Math.max(0, currentStock);
+                        const newStock = baseStock + unitsToAdjust;
 
                         if (newStock < 0) throw new Error(`El ajuste resulta en stock negativo para ${item.prod.presentacion}.`);
 
@@ -553,6 +557,8 @@
                             presentacion: item.prod.presentacion || 'Desconocido', 
                             marca: item.prod.marca || '',
                             stockAnterior: currentStock, 
+                            baseUsada: baseStock,
+                            ajusteDesdeNegativo: currentStock < 0,
                             ajuste: item.ajuste, 
                             factor: factor,
                             unidad: unitLabel,
@@ -1884,4 +1890,5 @@
     }
 
 })();
+
 
