@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v67'; // v67: Stock/Pedidos/Disponible - venta directa y pedidos trabajan por disponible
+const CACHE_NAME = 'ventas-app-cache-v68'; // v68: nueva funcion Pedidos - listado con disponibles/no disponibles + editar/eliminar (Parte 1)
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
@@ -181,6 +181,7 @@ self.addEventListener('fetch', event => {
             })
     );
 });
+
 
 
 
