@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v72'; // v72: Estado del Pedido rediseñado + Ticket de Carga (solo disponibles, nombre de quien carga) + editar pedido usa la pantalla de Tomar Pedido
+const CACHE_NAME = 'ventas-app-cache-v73'; // v73: tickets de preventa con formato 80mm igual a Venta Directa (768px Courier)
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
@@ -181,6 +181,7 @@ self.addEventListener('fetch', event => {
             })
     );
 });
+
 
 
 
