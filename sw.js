@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v64'; // v64: menu del vendedor en 2 columnas con el orden de la imagen de referencia
+const CACHE_NAME = 'ventas-app-cache-v65'; // v65: admin asigna ruta a vendedores + submenu preventa en 1 columna (Estado del Pedido)
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
@@ -181,6 +181,7 @@ self.addEventListener('fetch', event => {
             })
     );
 });
+
 
 
 
