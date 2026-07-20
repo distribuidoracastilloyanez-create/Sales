@@ -66,16 +66,18 @@
         // Botones de Pre-Venta según el rol
         const btn = (id, txt, clase) => `<button id="${id}" class="w-full ${bpad} ${clase} text-white rounded-lg shadow-md font-bold transition">${txt}</button>`;
         let botones = '';
+        // Orden principal: Tomar Pedido, Estado del Pedido, Reportes
         if (esAdmin || esVend)  botones += btn('pvPedidosBtn', 'Tomar Pedido', 'bg-indigo-500 hover:bg-indigo-600');
-        botones += btn('pvBandejaBtn', 'Bandeja Despacho', 'bg-teal-600 hover:bg-teal-700');
+        botones += btn('pvBandejaBtn', 'Estado del Pedido', 'bg-teal-600 hover:bg-teal-700');
+        botones += btn('pvReportesBtn', 'Reportes', 'bg-slate-700 hover:bg-slate-800');
+        // Funciones adicionales de admin
         if (esAdmin) botones += btn('pvInventarioRutaBtn', 'Inv. por Ruta', 'bg-blue-600 hover:bg-blue-700');
         if (esAdmin) botones += btn('pvVendedoresBtn', 'Vendedores/Zonas', 'bg-slate-600 hover:bg-slate-700');
-        botones += btn('pvReportesBtn', 'Reportes', 'bg-slate-700 hover:bg-slate-800');
-        // Accesos tradicionales reutilizados (según rol)
+        if (esAdmin) botones += btn('pvConfigBtn', 'Configuración', 'bg-gray-600 hover:bg-gray-700');
+        // Accesos tradicionales reutilizados (despachador)
         if (esDesp) botones += btn('pvClientesBtn', 'Clientes', 'bg-teal-600 hover:bg-teal-700');
         if (esDesp) botones += btn('pvCxcBtn', 'CXC', 'bg-amber-600 hover:bg-amber-700');
         if (esDesp) botones += btn('pvPerfilBtn', 'Mi Perfil', 'bg-slate-700 hover:bg-slate-800');
-        if (esAdmin) botones += btn('pvConfigBtn', 'Configuración', 'bg-gray-600 hover:bg-gray-700');
 
         // El despachador entra directo aquí (es su pantalla principal), así que no
         // muestra "Volver al Menú". Los demás llegan desde el botón Pre-Venta del menú único.
@@ -88,7 +90,7 @@
                     </div>
                     <button id="pvTasaBcvDisplay" class="mb-3 text-sm font-bold text-gray-700 hover:text-gray-900 hover:underline transition cursor-pointer">(BCV ----- --/--/--)</button>
 
-                    <div class="grid grid-cols-2 gap-2">
+                    <div class="space-y-2">
                         ${botones}
                     </div>
                 </div>
@@ -630,7 +632,7 @@
             <div class="p-2 sm:p-3 pt-5 w-full max-w-2xl mx-auto">
                 <div class="bg-white/95 backdrop-blur-sm p-3 sm:p-4 rounded-lg shadow-xl">
                     <div class="flex items-center justify-between mb-3">
-                        <h2 class="text-lg font-bold text-gray-800">Bandeja de Despacho</h2>
+                        <h2 class="text-lg font-bold text-gray-800">Estado del Pedido</h2>
                         <button id="pvBandBack" class="px-3 py-1.5 bg-gray-400 text-white text-xs rounded hover:bg-gray-500 font-bold transition">Volver</button>
                     </div>
 
@@ -1550,6 +1552,7 @@
     }
 
 })();
+
 
 
 
