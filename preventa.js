@@ -287,7 +287,53 @@
         } catch (e) { console.warn('No se pudo leer el inventario del vendedor:', e); }
     }
 
+    // ─────────────────────────────────────────────────────────────
+    // Devuelve un mapa { productoId: unidadesComprometidas } con los
+    // pedidos ACTIVOS (no entregados ni anulados) de un vendedor.
+    // Son las unidades ya "apartadas" que deben restarse del stock.
+    // Cache de 30s para no releer en cada render.
+    // ─────────────────────────────────────────────────────────────
+    let _pvComprometidoCache = { ts: 0, vendedorId: null, mapa: {} };
+    window.getPedidosComprometidos = async function (vendedorId) {
+        if (!vendedorId || !_db) return {};
+        const ahora = Date.now();
+        if (_pvComprometidoCache.vendedorId === vendedorId &&
+            (ahora - _pvComprometidoCache.ts) < 30000) {
+            return _pvComprometidoCache.mapa;
+        }
+        const mapa = {};
+        try {
+            // Asegurar catálogo cargado (para el fallback de unidades cuando se llama desde ventas.js)
+            if (!_pvProductos || !_pvProductos.length) {
+                try {
+                    const ps = await _getDocs(_collection(_db, pathProductos()));
+                    _pvProductos = ps.docs.map(d => ({ id: d.id, ...d.data() }));
+                } catch (e) { /* seguimos sin fallback */ }
+            }
+            const snap = await _getDocs(_collection(_db, pathPedidos()));
+            snap.docs.forEach(d => {
+                const p = d.data();
+                if (p.vendedorId !== vendedorId) return;               // solo SUS pedidos
+                const est = p.estado || 'pendiente';
+                if (est === 'entregado' || est === 'anulado') return;  // ya no cuentan
+                (p.productos || []).forEach(pr => {
+                    // Fallback al catálogo para pedidos viejos que no guardaron las unidades
+                    const cat = (_pvProductos || []).find(x => x.id === pr.id) || {};
+                    const uCj = pr.unidadesPorCaja || cat.unidadesPorCaja || 1;
+                    const uPaq = pr.unidadesPorPaquete || cat.unidadesPorPaquete || 1;
+                    const unidades = (pr.cantCj || 0) * uCj + (pr.cantPaq || 0) * uPaq + (pr.cantUnd || 0);
+                    if (unidades > 0) mapa[pr.id] = (mapa[pr.id] || 0) + unidades;
+                });
+            });
+        } catch (e) { console.warn('No se pudieron leer los pedidos comprometidos:', e); }
+        _pvComprometidoCache = { ts: ahora, vendedorId, mapa };
+        return mapa;
+    };
+    // Permite invalidar el cache cuando se guarda o cambia un pedido.
+    window.invalidarComprometidoCache = function () { _pvComprometidoCache = { ts: 0, vendedorId: null, mapa: {} }; };
+
     let _pvTasaCOP = 0, _pvTasaBs = 0, _pvMoneda = 'USD';
+    let _pvComprometidoTP = {};  // unidades ya apartadas por pedidos (para el disponible)
     let _pvSortFnPedido = null;
 
     // Formato de moneda igual al de Nueva Venta
@@ -397,6 +443,7 @@
         const yo = _pvUsuarios.find(u => u.id === _userId) || { id: _userId, nombre: 'Vendedor' };
         _pedidoActual.vendedor = yo;
         await cargarStockRuta(yo.id);
+        _pvComprometidoTP = window.getPedidosComprometidos ? await window.getPedidosComprometidos(yo.id) : {};
         document.getElementById('pvVendedorInfo').textContent =
             'Vendedor: ' + _pvNombreVendedor(yo) + (yo.zonaPreventa ? ' · Zona: ' + yo.zonaPreventa : '');
 
@@ -514,11 +561,14 @@
             const pa = _pedidoActual.productos[prod.id] || {};
             const precios = prod.precios || { und: prod.precioPorUnidad || 0 };
 
-            // Stock = inventario REAL del vendedor (el mismo de Inventario/Venta Directa).
-            // Si el producto no está en su inventario, se muestra 0 (pero igual se puede pedir).
+            // DISPONIBLE = stock del vendedor − unidades ya apartadas por sus pedidos.
+            // Es lo que realmente queda para pedir (Tomar Pedido muestra solo el disponible).
             const invVend = _pvStockRuta[prod.id];
-            const stockU = invVend ? (invVend.cantidadUnidades || 0) : 0;
-            const dispCj = invVend ? (invVend.cantCajas ?? null) : null;
+            const stockReal = invVend ? (invVend.cantidadUnidades || 0) : 0;
+            const comprometido = _pvComprometidoTP[prod.id] || 0;
+            const stockU = stockReal - comprometido;  // disponible (puede ser negativo, se muestra pero no bloquea el pedido)
+            const uCjTmp = prod.unidadesPorCaja || 1;
+            const dispCj = Math.floor(stockU / uCjTmp);
 
             const fila = (tipo, label, cant, precio, stockTxt) => `
                 <tr class="border-b hover:bg-gray-50">
@@ -597,6 +647,7 @@
             productos: productos.map(p => ({
                 id: p.id, presentacion: p.presentacion, marca: p.marca || null,
                 cantCj: p.cantCj || 0, cantPaq: p.cantPaq || 0, cantUnd: p.cantUnd || 0,
+                unidadesPorCaja: p.unidadesPorCaja || 1, unidadesPorPaquete: p.unidadesPorPaquete || 1,
                 precios: p.precios,
                 subtotal: (p.precios?.cj || 0) * (p.cantCj || 0) + (p.precios?.paq || 0) * (p.cantPaq || 0) + (p.precios?.und || 0) * (p.cantUnd || 0)
             })),
@@ -606,6 +657,7 @@
         };
         try {
             await _addDoc(_collection(_db, pathPedidos()), pedido);
+            if (window.invalidarComprometidoCache) window.invalidarComprometidoCache();
             if (_showModal) _showModal('Pedido guardado',
                 `Pedido de <strong>${pedido.clienteNombre}</strong> por <strong>$${total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong> registrado. Queda pendiente para despacho.`);
             showTomarPedido();
@@ -888,6 +940,7 @@
         if (!p) return;
         const nuevoHist = (p.historialEstados || []).concat([{ estado: nuevoEstado, fecha: new Date().toISOString(), por: _userId }]);
         try {
+            if (window.invalidarComprometidoCache) window.invalidarComprometidoCache();
             await _setDoc(_doc(_db, pathPedidos(), id), {
                 estado: nuevoEstado,
                 historialEstados: nuevoHist
@@ -1197,6 +1250,7 @@
 
         try {
             await _setDoc(_doc(_db, pathPedidos(), pedidoOriginal.id), cambios, { merge: true });
+            if (window.invalidarComprometidoCache) window.invalidarComprometidoCache();
             document.getElementById('pvEditOverlay')?.remove();
             document.getElementById('pvPedDetOverlay')?.remove();
             // onSnapshot refresca la bandeja
@@ -1566,6 +1620,7 @@
     }
 
 })();
+
 
 
 
