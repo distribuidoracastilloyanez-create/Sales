@@ -12,6 +12,13 @@
 
     let _clientesCache = [];
     let _inventarioCache = []; // Esta será la FUSIÓN de Maestro + Stock
+    let _comprometidoVentas = {}; // unidades apartadas por pedidos de pre-venta del vendedor
+    // Stock DISPONIBLE = stock físico − apartado por pedidos (nunca modifica el cache)
+    function stockDisponible(prod) {
+        const fisico = prod.cantidadUnidades || 0;
+        const apartado = _comprometidoVentas[prod.id] || 0;
+        return fisico - apartado;
+    }
     let _ventasGlobal = [];
     let _ventaActual = { cliente: null, productos: {}, vaciosDevueltosPorTipo: {} };
     // ── ACUERDO COMERCIAL ──
@@ -237,6 +244,10 @@
       // y los precios se comportan igual que siempre.
       await cargarAcuerdoCliente(cliente && cliente.id);
 
+      // Cargar las unidades ya apartadas por pedidos de pre-venta (para vender por disponible)
+      try { _comprometidoVentas = window.getPedidosComprometidos ? await window.getPedidosComprometidos(_userId) : {}; }
+      catch (e) { _comprometidoVentas = {}; }
+
       const searchInput = document.getElementById('clienteSearch');
         if (searchInput) searchInput.blur();
 
@@ -266,7 +277,7 @@
 
     async function renderVentasInventario() {
         const body = document.getElementById('inventarioTableBody'), rF = document.getElementById('rubroFilter'); if (!body || !rF) return; body.innerHTML = `<tr><td colspan="4" class="text-center text-gray-500">Cargando...</td></tr>`;
-        const selRubro = rF.value; const invFilt = _inventarioCache.filter(p => (p.cantidadUnidades || 0) > 0 || _ventaActual.productos[p.id]); let filtInv = selRubro ? invFilt.filter(p => p.rubro === selRubro) : invFilt;
+        const selRubro = rF.value; const invFilt = _inventarioCache.filter(p => stockDisponible(p) > 0 || _ventaActual.productos[p.id]); let filtInv = selRubro ? invFilt.filter(p => p.rubro === selRubro) : invFilt;
         
         if (window.getGlobalProductSortFunction) {
             const sortFunc = await window.getGlobalProductSortFunction();
@@ -276,7 +287,10 @@
         // Aplicar el Acuerdo Comercial del cliente (si tiene) para MOSTRAR el precio rebajado
         if (_acuerdoCliente) filtInv = filtInv.map(aplicarAcuerdo);
 
-        body.innerHTML = window.ventasUI.getInventoryTableRows(filtInv, _ventaActual.productos, _monedaActual, _tasaCOP, _tasaBs, 'segmento');
+        // Para la UI se muestra el DISPONIBLE (stock físico − apartado por pedidos), sin tocar el cache
+        const filtInvUI = filtInv.map(p => ({ ...p, cantidadUnidades: stockDisponible(p) }));
+
+        body.innerHTML = window.ventasUI.getInventoryTableRows(filtInvUI, _ventaActual.productos, _monedaActual, _tasaCOP, _tasaBs, 'segmento');
         
         updateVentaTotal();
     }
@@ -317,7 +331,7 @@
       if(!_ventaActual.productos[pId]) _ventaActual.productos[pId]={...prod, cantCj:0,cantPaq:0,cantUnd:0,totalUnidadesVendidas:0};
       const qty=parseInt(inp.value,10)||0; _ventaActual.productos[pId][`cant${tV[0].toUpperCase()+tV.slice(1)}`]=qty; const pV=_ventaActual.productos[pId], uCj=pV.unidadesPorCaja||1, uPaq=pV.unidadesPorPaquete||1;
       
-      let stockU = prod.cantidadUnidades || 0;
+      let stockU = stockDisponible(prod);
       if (_originalVentaForEdit) {
            const origP = _originalVentaForEdit.productos.find(op => op.id === pId);
            if (origP) stockU += (origP.totalUnidadesVendidas || 0);
@@ -1492,6 +1506,7 @@
 
   window.ventasModule = { toggleMoneda, handleQuantityChange, handleTipoVacioChange, showPastSaleOptions, editVenta, deleteVenta, invalidateCache: () => { } };
 })();
+
 
 
 
