@@ -546,8 +546,13 @@
             users.forEach(u => {
                 // 'user' (antiguo) se considera Vendedor por compatibilidad
                 const rol = (u.role === 'user') ? 'vendedor' : (u.role || 'vendedor');
-                const ruta = u.zonaPreventa || '—';
-                tHTML += `<tr class="hover:bg-gray-50"><td class="py-2 px-4 border-b">${u.email||'N/A'}</td><td class="py-2 px-4 border-b"><select onchange="window.adminModule.handleRoleChange('${u.id}', this.value, '${u.email||'N/A'}')" class="w-full p-1 border rounded-lg bg-gray-50 text-sm"><option value="admin" ${rol==='admin'?'selected':''}>Administrador</option><option value="vendedor" ${rol==='vendedor'?'selected':''}>Vendedor</option><option value="despachador" ${rol==='despachador'?'selected':''}>Despachador / Mkt</option></select></td><td class="py-2 px-4 border-b text-xs text-gray-500">${ruta}</td></tr>`;
+                const rutaActual = u.zonaPreventa || '';
+                const rutasOpts = (window.RUTAS_REPARTO || ['Palo Gordo', 'Santa Teresa']);
+                // El admin no reparte ruta; a vendedores y despachadores se les puede asignar.
+                const celdaRuta = (rol === 'admin')
+                    ? '<span class="text-xs text-gray-400">—</span>'
+                    : `<select onchange="window.adminModule.handleRutaChange('${u.id}', this.value)" class="w-full p-1 border rounded-lg bg-gray-50 text-sm"><option value="">— Sin ruta —</option>${rutasOpts.map(r => `<option value="${r}" ${rutaActual === r ? 'selected' : ''}>${r}</option>`).join('')}</select>`;
+                tHTML += `<tr class="hover:bg-gray-50"><td class="py-2 px-4 border-b">${u.email||'N/A'}</td><td class="py-2 px-4 border-b"><select onchange="window.adminModule.handleRoleChange('${u.id}', this.value, '${u.email||'N/A'}')" class="w-full p-1 border rounded-lg bg-gray-50 text-sm"><option value="admin" ${rol==='admin'?'selected':''}>Administrador</option><option value="vendedor" ${rol==='vendedor'?'selected':''}>Vendedor</option><option value="despachador" ${rol==='despachador'?'selected':''}>Despachador / Mkt</option></select></td><td class="py-2 px-4 border-b">${celdaRuta}</td></tr>`;
             });
             tHTML += `</tbody></table>`; cont.innerHTML = tHTML;
         } catch (error) { cont.innerHTML = `<p class="text-red-500">Error al cargar.</p>`; }
@@ -721,11 +726,26 @@
         } catch (error) { console.error(error); }
     }
 
+    // Asigna una ruta de reparto a un usuario (vendedor/despachador). Solo toca zonaPreventa.
+    async function handleRutaChange(userId, nuevaRuta) {
+        try {
+            await _setDoc(_doc(_db, "users", userId), { zonaPreventa: nuevaRuta }, { merge: true });
+            _showModal('Éxito', nuevaRuta ? `Ruta asignada: <strong>${nuevaRuta}</strong>.` : 'Ruta quitada.');
+            renderUserList();
+        } catch (e) {
+            console.error('Error asignando ruta:', e);
+            _showModal('Error', 'No se pudo asignar la ruta.');
+            renderUserList();
+        }
+    }
+
     window.adminModule = {
         handleRoleChange,
+        handleRutaChange,
         propagateProductChange,
         propagateCategoryChange
     };
 
 })();
+
 
