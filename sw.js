@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v62'; // v62: tasa Bs. predeterminada = BCV del dia en Nueva Venta y Tomar Pedido
+const CACHE_NAME = 'ventas-app-cache-v63'; // v63: preventa - quita Catalogo del submenu y el estado Despachado de la bandeja
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
@@ -181,6 +181,7 @@ self.addEventListener('fetch', event => {
             })
     );
 });
+
 
 
 
