@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v65'; // v65: admin asigna ruta a vendedores + submenu preventa en 1 columna (Estado del Pedido)
+const CACHE_NAME = 'ventas-app-cache-v66'; // v66: fix crash submenu (rol) + Tomar Pedido usa el inventario real del vendedor
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
@@ -181,6 +181,7 @@ self.addEventListener('fetch', event => {
             })
     );
 });
+
 
 
 
