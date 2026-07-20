@@ -937,9 +937,10 @@
         });
         // Eliminar
         document.getElementById('pvLPEliminar')?.addEventListener('click', () => eliminarPedidoLista(p.id, p.clienteNombre));
-        // Ticket (Parte 2 — por ahora aviso)
+        // Ticket: genera el ticket con solo disponibles y pasa a preparación
         document.getElementById('pvLPTicket')?.addEventListener('click', () => {
-            _showModal('Próximamente', 'La generación del ticket se activa en la siguiente parte.');
+            if (!disponibles.length) { if (_showModal) _showModal('Sin disponibles', 'Este pedido no tiene productos disponibles para despachar.'); return; }
+            generarTicketPedido(p, disponibles, noDisponibles);
         });
     }
 
@@ -1227,7 +1228,150 @@
     // Documento interno (NO es factura). Lista productos con casillas
     // para marcar lo cargado. Se puede compartir como imagen o imprimir texto.
     // ═══════════════════════════════════════════════════════════
-    function generarTicketGalpon(p) {
+// ═══════════════════════════════════════════════════════════
+    // TICKET DE PEDIDO (Pre-Venta) — solo productos DISPONIBLES.
+    // Al generarlo: congela lo que se va a despachar en el pedido
+    // (ticketDespacho) y guarda lo NO despachado (noDespachado), y
+    // pasa el pedido a "preparación" automáticamente (Opción A).
+    // Este ticket es la orden de carga Y el respaldo de la entrega.
+    // ═══════════════════════════════════════════════════════════
+    async function generarTicketPedido(pedido, disponibles, noDisponibles) {
+        // 1) Construir el "ticket congelado": lo que realmente se despacha.
+        //    Para parciales, se recalcula cantidades de Cj/Paq/Und a partir
+        //    de las unidades a despachar, para que el ticket sea claro.
+        const ticketItems = disponibles.map(pr => {
+            const cat = (_pvProductos || []).find(x => x.id === pr.id) || {};
+            const uCj = pr.unidadesPorCaja || cat.unidadesPorCaja || 1;
+            const uPaq = pr.unidadesPorPaquete || cat.unidadesPorPaquete || 1;
+            let restante = (pr.unidadesDespacho != null) ? pr.unidadesDespacho : _pvUnidadesProducto(pr);
+            // Si NO es parcial, se respetan las cantidades originales del pedido
+            let cj, paq, und;
+            if (pr.parcial) {
+                cj = Math.floor(restante / uCj); restante -= cj * uCj;
+                paq = uPaq > 1 ? Math.floor(restante / uPaq) : 0; restante -= paq * uPaq;
+                und = restante;
+            } else {
+                cj = pr.cantCj || 0; paq = pr.cantPaq || 0; und = pr.cantUnd || 0;
+            }
+            return {
+                id: pr.id, presentacion: pr.presentacion, marca: pr.marca || null,
+                cantCj: cj, cantPaq: paq, cantUnd: und,
+                unidadesPorCaja: uCj, unidadesPorPaquete: uPaq,
+                unidadesDespacho: (pr.unidadesDespacho != null) ? pr.unidadesDespacho : _pvUnidadesProducto(pr),
+                precios: pr.precios || null, parcial: !!pr.parcial
+            };
+        });
+
+        // Lo NO despachado (para el reporte de faltantes de la Parte 4)
+        const noDespachado = noDisponibles.map(pr => ({
+            id: pr.id, presentacion: pr.presentacion, marca: pr.marca || null,
+            unidadesFaltantes: pr.unidadesFaltantes || 0
+        }));
+
+        // 2) Guardar en el pedido y pasar a preparación (si aún no estaba más avanzado)
+        try {
+            const estActual = pedido.estado || 'pendiente';
+            const nuevoEstado = (estActual === 'pendiente') ? 'preparacion' : estActual;
+            const cambios = {
+                ticketGenerado: true,
+                ticketDespacho: ticketItems,
+                noDespachado: noDespachado,
+                ticketFecha: new Date().toISOString()
+            };
+            if (nuevoEstado !== estActual) {
+                cambios.estado = nuevoEstado;
+                cambios.historialEstados = (pedido.historialEstados || []).concat([{ estado: nuevoEstado, fecha: new Date().toISOString(), por: _userId }]);
+            }
+            if (window.invalidarComprometidoCache) window.invalidarComprometidoCache();
+            await _setDoc(_doc(_db, pathPedidos(), pedido.id), cambios, { merge: true });
+            // Actualizar copia local para el render
+            Object.assign(pedido, cambios);
+        } catch (e) {
+            console.error('Error guardando ticket:', e);
+            if (_showModal) _showModal('Error', 'No se pudo preparar el ticket.');
+            return;
+        }
+
+        // 3) Mostrar el ticket visual (solo disponibles)
+        _renderTicketVisual(pedido, ticketItems);
+    }
+
+    function _renderTicketVisual(p, items) {
+        document.getElementById('pvTicketOverlay')?.remove();
+        const ov = document.createElement('div');
+        ov.id = 'pvTicketOverlay';
+        ov.className = 'fixed inset-0 z-[9999] bg-black/60 flex items-center justify-center p-4';
+
+        const fecha = new Date().toLocaleDateString('es-VE');
+        const hora = new Date().toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' });
+
+        const filas = items.map(pr => {
+            const partes = [];
+            if (pr.cantCj) partes.push(`${pr.cantCj} Caja(s)`);
+            if (pr.cantPaq) partes.push(`${pr.cantPaq} Paq`);
+            if (pr.cantUnd) partes.push(`${pr.cantUnd} Und`);
+            return `<tr style="border-bottom:1px solid #e5e7eb;">
+                <td style="padding:6px 4px;text-align:center;font-size:16px;">☐</td>
+                <td style="padding:6px 4px;font-size:12px;">
+                    <div style="font-weight:700;color:#1f2937;">${pr.presentacion}${pr.parcial ? ' <span style="font-size:9px;color:#d97706;">(parcial)</span>' : ''}</div>
+                    <div style="font-size:10px;color:#6b7280;">${pr.marca || ''}</div>
+                </td>
+                <td style="padding:6px 4px;text-align:right;font-size:12px;font-weight:700;color:#111827;">${partes.join('<br>') || '—'}</td>
+            </tr>`;
+        }).join('');
+
+        ov.innerHTML = `
+            <div class="bg-white w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden max-h-[92vh] flex flex-col">
+                <div class="overflow-y-auto flex-1">
+                    <div id="pvTicketCapturable" style="background:#fff;padding:16px;font-family:system-ui,sans-serif;">
+                        <div style="text-align:center;border-bottom:2px solid #334155;padding-bottom:8px;margin-bottom:10px;">
+                            <div style="font-size:16px;font-weight:800;color:#1e293b;">DISTRIBUIDORA CASTILLO YAÑEZ</div>
+                            <div style="font-size:13px;font-weight:700;color:#334155;">ORDEN DE CARGA / ENTREGA</div>
+                            <div style="font-size:10px;color:#94a3b8;">Documento interno · no es factura</div>
+                        </div>
+                        <div style="font-size:11px;color:#374151;margin-bottom:8px;line-height:1.5;">
+                            <div><strong>Cliente:</strong> ${p.clienteNombre || '—'}</div>
+                            <div><strong>Ruta:</strong> ${p.ruta || p.zona || '—'}</div>
+                            <div><strong>Vendedor:</strong> ${p.vendedorNombre || '—'}</div>
+                            <div><strong>Fecha:</strong> ${fecha} ${hora}</div>
+                        </div>
+                        <table style="width:100%;border-collapse:collapse;border-top:1px solid #cbd5e1;">
+                            <thead>
+                                <tr style="background:#f1f5f9;">
+                                    <th style="padding:4px;font-size:9px;color:#64748b;text-align:center;width:28px;">✓</th>
+                                    <th style="padding:4px;font-size:9px;color:#64748b;text-align:left;">Producto</th>
+                                    <th style="padding:4px;font-size:9px;color:#64748b;text-align:right;">Cantidad</th>
+                                </tr>
+                            </thead>
+                            <tbody>${filas || '<tr><td colspan="3" style="padding:8px;text-align:center;color:#9ca3af;font-size:11px;">Sin productos disponibles</td></tr>'}</tbody>
+                        </table>
+                        <div style="margin-top:12px;padding-top:8px;border-top:1px dashed #cbd5e1;font-size:10px;color:#6b7280;">
+                            <div>Cargado por: ______________________</div>
+                            <div style="margin-top:6px;">Recibido por (cliente): ______________________</div>
+                            <div style="margin-top:6px;">Firma: ______________________</div>
+                        </div>
+                        <div style="margin-top:8px;font-size:9px;color:#94a3b8;text-align:center;">
+                            Solo incluye productos disponibles. Es el respaldo de la carga y la entrega.
+                        </div>
+                    </div>
+                </div>
+                <div class="p-3 border-t shrink-0 flex gap-2">
+                    <button id="pvTicketImg" class="flex-1 py-2.5 bg-slate-700 text-white rounded-lg font-bold text-sm hover:bg-slate-800 transition">📤 Compartir / Imprimir</button>
+                    <button id="pvTicketCerrar" class="px-4 py-2.5 bg-gray-100 text-gray-600 rounded-lg font-bold text-sm">Cerrar</button>
+                </div>
+            </div>`;
+        document.body.appendChild(ov);
+        ov.addEventListener('click', e => { if (e.target === ov) ov.remove(); });
+        document.getElementById('pvTicketCerrar').addEventListener('click', () => {
+            ov.remove();
+            // Refrescar el detalle para reflejar el nuevo estado y "ticket generado"
+            document.getElementById('pvLPDetOverlay')?.remove();
+        });
+        document.getElementById('pvTicketImg').addEventListener('click', () =>
+            _pvCapturarCompartir(document.getElementById('pvTicketCapturable'), `Ticket_${(p.clienteNombre || 'pedido').replace(/[\s/]/g, '_')}`));
+    }
+
+        function generarTicketGalpon(p) {
         document.getElementById('pvTicketOverlay')?.remove();
         const ov = document.createElement('div');
         ov.id = 'pvTicketOverlay';
@@ -1888,6 +2032,7 @@
     }
 
 })();
+
 
 
 
