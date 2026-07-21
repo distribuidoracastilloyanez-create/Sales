@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v76'; // v76: en Ventas Totales no se puede eliminar venta de preventa (se anula en Estado del Pedido) + badge Pre-Venta + anular entrega solo vendedor dueño
+const CACHE_NAME = 'ventas-app-cache-v77'; // v77: ventas de preventa tampoco se pueden editar en Ventas Totales (corregir via Anular entrega en Pre-Venta)
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
