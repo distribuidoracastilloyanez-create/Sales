@@ -179,7 +179,10 @@
             _masterCatalogCache = {};
             snap.forEach(d => { _masterCatalogCache[d.id] = { id: d.id, ...d.data() }; });
             mergeInventarioCache(); 
-      }, err => console.error("Error Maestro:", err));
+      }, err => {
+            if (err.code === 'permission-denied' || err.code === 'unauthenticated') return;
+            console.error("Error Maestro:", err);
+      });
 
 
       const inventarioRef = _collection(_db, `artifacts/${_appId}/users/${_userId}/inventario`);
