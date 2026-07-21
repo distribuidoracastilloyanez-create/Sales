@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v80'; // v80: silenciar Error Maestro al cerrar sesion (guard permission-denied/unauthenticated en listener del catalogo maestro)
+const CACHE_NAME = 'ventas-app-cache-v81'; // v81: recarga no falla por presentacion undefined en productos borrados del catalogo (respaldo Desconocido)
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
