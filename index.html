@@ -426,7 +426,7 @@
             const ordenVend = {
                 calculadoraBtn:1, inventarioBtn:2, facturacionBtn:3, clientesBtn:4,
                 archivosBtn:5, ventasBtn:6, obsequiosBtn:7, preventaMenuBtn:8,
-                catalogoBtn:9, cxcBtn:10, profileAdminBtn:11
+                catalogoBtn:9, ventasTotalesMenuBtn:10, profileAdminBtn:11, cxcBtn:12
             };
             const ord = (id) => isAdmin ? '' : `style="order:${ordenVend[id] || 99}"`;
 
@@ -466,7 +466,9 @@
 
                             ${P('preventa') ? `<button id="preventaMenuBtn" ${ord('preventaMenuBtn')} class="w-full ${bpad} bg-indigo-600 text-white rounded-lg shadow-md hover:bg-indigo-700 font-bold transition transform hover:-translate-y-1">Pre-Venta</button>` : ''}
                             
-                            ${P('perfil') ? `<button id="profileAdminBtn" ${ord('profileAdminBtn')} class="w-full ${isAdmin ? '' : 'col-span-2'} ${bpad} bg-slate-700 text-white rounded-lg shadow-md hover:bg-slate-800 font-bold transition transform hover:-translate-y-1">${isAdmin ? 'Admin Panel' : 'Mi Perfil'}</button>` : ''}
+                            ${P('ventas') ? `<button id="ventasTotalesMenuBtn" ${ord('ventasTotalesMenuBtn')} class="w-full ${bpad} bg-blue-500 text-white rounded-lg shadow-md hover:bg-blue-600 font-bold transition transform hover:-translate-y-1">Ventas Totales</button>` : ''}
+                            
+                            ${P('perfil') ? `<button id="profileAdminBtn" ${ord('profileAdminBtn')} class="w-full ${bpad} bg-slate-700 text-white rounded-lg shadow-md hover:bg-slate-800 font-bold transition transform hover:-translate-y-1">${isAdmin ? 'Admin Panel' : 'Mi Perfil'}</button>` : ''}
                             
                             ${isAdmin ? `<button id="dataBtn" class="w-full ${bpad} bg-slate-800 text-white rounded-lg shadow-md hover:bg-slate-900 font-bold transition transform hover:-translate-y-1">Data</button>` : ''}
                             ${isAdmin ? `<button id="supervisionBtn" class="w-full ${bpad} bg-sky-700 text-white rounded-lg shadow-md hover:bg-sky-800 font-bold transition transform hover:-translate-y-1">${isAdmin ? 'Supervisión' : 'Supervisión y Auditoría'}</button>` : ''}
@@ -496,6 +498,7 @@
             document.getElementById('editInventarioBtn')?.addEventListener('click', () => safeNav(window.showEditInventarioMenu,      'Edición Inventario'));
             document.getElementById('clientesBtn')?.addEventListener('click',       () => safeNav(window.showClientesSubMenu,         'Clientes'));
             document.getElementById('ventasBtn')?.addEventListener('click',         () => safeNav(window.showVentasView,              'Ventas'));
+            document.getElementById('ventasTotalesMenuBtn')?.addEventListener('click', () => safeNav(window.showVentasTotalesView,   'Ventas Totales'));
             document.getElementById('cxcBtn')?.addEventListener('click',           () => safeNav(window.showCXCView,                 'CXC'));
             document.getElementById('facturacionBtn')?.addEventListener('click',   () => safeNav(window.showFacturacionView,          'Facturación'));
             document.getElementById('archivosBtn')?.addEventListener('click',       () => safeNav(window.showArchivosView,            'Archivos'));
