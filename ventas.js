@@ -1243,6 +1243,10 @@
   function editVenta(ventaId) {
       const venta = _ventasGlobal.find(v => v.id === ventaId);
       if (!venta) { _showModal('Error', 'Venta no encontrada.'); return; }
+      if (venta.origen === 'preventa') {
+          _showModal('No permitido', 'Esta venta proviene de un <strong>pedido de Pre-Venta</strong>, por eso no se puede editar desde Ventas Totales. Para corregirla, usa <strong>\u201cAnular entrega\u201d</strong> en Pre-Venta \u2192 Estado del Pedido y vuelve a tomarla/entregarla.');
+          return;
+      }
        _originalVentaForEdit = JSON.parse(JSON.stringify(venta));
       showEditVentaView(venta);
     }
