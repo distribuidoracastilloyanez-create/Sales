@@ -1251,6 +1251,10 @@
          const venta = _ventasGlobal.find(v => v.id === ventaId);
 
        if (!venta) { _showModal('Error', 'Venta no encontrada en la lista actual.'); return; }
+       if (venta.origen === 'preventa') {
+           _showModal('No permitido', 'Esta venta proviene de un <strong>pedido de Pre-Venta</strong>, por eso no se puede eliminar desde Ventas Totales. Para revertirla, usa <strong>\u201cAnular entrega\u201d</strong> en Pre-Venta \u2192 Estado del Pedido.');
+           return;
+       }
 
       _showModal('Confirmar Eliminación', `¿Eliminar venta de ${venta.clienteNombre}? <strong class="text-red-600">Esta acción revertirá el stock y el saldo de vacíos asociados a esta venta.</strong> ¿Continuar?`, async () => {
           _showModal('Progreso', 'Eliminando venta y ajustando datos...');
