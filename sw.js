@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v78'; // v78: preventa registra vacios en la entrega (modal solo con tipos presentes) + actualiza saldoVacios del cliente + anular entrega revierte vacios
+const CACHE_NAME = 'ventas-app-cache-v79'; // v79: cierre de jornada limpia los pedidos de preventa por pedidoId de las ventas cerradas (mas preciso, evita huerfanos)
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
