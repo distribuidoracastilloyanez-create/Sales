@@ -98,7 +98,6 @@
         _mainContent.innerHTML = window.ventasUI.getMainViewTemplate();
 
         document.getElementById('nuevaVentaBtn').addEventListener('click', showNuevaVentaView);
-        document.getElementById('ventasTotalesBtn').addEventListener('click', showVentasTotalesView);
         document.getElementById('backToMenuBtn').addEventListener('click', _showMainMenu);
     }
 
@@ -666,6 +665,7 @@
         }, 'Sí, Generar Ticket', null, true); 
     }
 
+    window.showVentasTotalesView = showVentasTotalesView;
     function showVentasTotalesView() {
         if (_floatingControls) _floatingControls.classList.add('hidden');
         if (!window.ventasUI) { _showModal('Error', 'UI no cargada.'); return; }
@@ -674,7 +674,7 @@
         
         document.getElementById('ventasActualesBtn').addEventListener('click', showVentasActualesView);
         document.getElementById('cierreVentasBtn').addEventListener('click', showCierreSubMenuView);
-        document.getElementById('backToVentasBtn').addEventListener('click', showVentasView);
+        document.getElementById('backToVentasBtn').addEventListener('click', _showMainMenu);
     }
 
     function showVentasActualesView() {
@@ -1175,7 +1175,21 @@
                 ventasPostSnapshot.forEach(v => { batchLimp.delete(_doc(ventasRef, v.id)); });
                 obsequiosPostSnapshot.forEach(o => { batchLimp.delete(_doc(obsequiosRef, o.id)); });
 
+                // Limpiar también los PEDIDOS de pre-venta ya ENTREGADOS de este vendedor:
+                // su venta ya quedó registrada en el cierre, así que el pedido cierra su ciclo.
+                try {
+                    const pedidosRef = _collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/preventa_pedidos`);
+                    const pedidosSnap = await _getDocs(pedidosRef);
+                    pedidosSnap.docs.forEach(d => {
+                        const pd = d.data();
+                        if ((pd.estado === 'entregado') && pd.vendedorId === _userId) {
+                            batchLimp.delete(_doc(pedidosRef, d.id));
+                        }
+                    });
+                } catch (ePed) { console.warn('No se pudieron limpiar pedidos entregados en el cierre:', ePed); }
+
                 await batchLimp.commit();
+                if (window.invalidarComprometidoCache) window.invalidarComprometidoCache();
                 _showModal('Éxito', 'Cierre completado. La jornada se ha limpiado correctamente.', showVentasTotalesView);
                 return true;
 
