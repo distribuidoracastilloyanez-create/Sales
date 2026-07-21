@@ -569,9 +569,12 @@
                 
                 // DETECCIÓN DE CONSIGNACIÓN PARA LA ETIQUETA VISUAL
                 const isConsignacion = v.tipoOperacion === 'consignacion' || v.origen === 'Consignación';
-                const rowBadge = isConsignacion 
+                const esPreventa = v.origen === 'preventa';
+                const rowBadge = esPreventa
+                    ? `<span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-black bg-indigo-100 text-indigo-800 border border-indigo-200 uppercase tracking-wider mt-1">🚚 Pre-Venta</span>`
+                    : (isConsignacion 
                     ? `<span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-black bg-orange-100 text-orange-800 border border-orange-200 uppercase tracking-wider mt-1">📦 Consignación</span>` 
-                    : `<span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-green-50 text-green-700 border border-green-200 uppercase tracking-wider mt-1">🛒 Venta Regular</span>`;
+                    : `<span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-green-50 text-green-700 border border-green-200 uppercase tracking-wider mt-1">🛒 Venta Regular</span>`);
                 
                 const rowBg = isConsignacion ? 'hover:bg-orange-50/50' : 'hover:bg-blue-50/50';
 
@@ -634,7 +637,9 @@
                         <div class="flex flex-col sm:flex-row items-center justify-center gap-1.5 w-full">
                             <button onclick="window.ventasModule.showPastSaleOptions('${v.id}','ticket')" class="w-full sm:w-auto px-3 py-1.5 bg-blue-600 text-white text-xs font-bold rounded shadow-sm hover:bg-blue-700 transition">Ver</button>
                             <button onclick="window.ventasModule.editVenta('${v.id}')" class="w-full sm:w-auto px-3 py-1.5 bg-yellow-500 text-white text-xs font-bold rounded shadow-sm hover:bg-yellow-600 transition text-gray-900">Edit</button>
-                            <button onclick="window.ventasModule.deleteVenta('${v.id}')" class="w-full sm:w-auto px-3 py-1.5 bg-red-600 text-white text-xs font-bold rounded shadow-sm hover:bg-red-700 transition">Del</button>
+                            ${esPreventa
+                                ? `<span class="w-full sm:w-auto px-2 py-1.5 bg-gray-100 text-gray-400 text-[10px] font-bold rounded text-center leading-tight" title="Anular desde Pre-Venta → Estado del Pedido">Anular en Pre-Venta</span>`
+                                : `<button onclick="window.ventasModule.deleteVenta('${v.id}')" class="w-full sm:w-auto px-3 py-1.5 bg-red-600 text-white text-xs font-bold rounded shadow-sm hover:bg-red-700 transition">Del</button>`}
                         </div>
                     </td>
                 </tr>`;
