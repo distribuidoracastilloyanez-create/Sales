@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v74'; // v74: inventario sin negativos - recarga trata negativos como 0 + boton corregir a 0
+const CACHE_NAME = 'ventas-app-cache-v75'; // v75: entregado terminal (no borrar) + Anular entrega (vendedor/admin) + limpieza de pedidos entregados en el cierre + Ventas Totales al menu principal + menu vendedor parejo
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
