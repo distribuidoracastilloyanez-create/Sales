@@ -1175,18 +1175,20 @@
                 ventasPostSnapshot.forEach(v => { batchLimp.delete(_doc(ventasRef, v.id)); });
                 obsequiosPostSnapshot.forEach(o => { batchLimp.delete(_doc(obsequiosRef, o.id)); });
 
-                // Limpiar también los PEDIDOS de pre-venta ya ENTREGADOS de este vendedor:
-                // su venta ya quedó registrada en el cierre, así que el pedido cierra su ciclo.
+                // Limpiar los PEDIDOS de pre-venta cuyas VENTAS se están cerrando en este cierre.
+                // Se cierra exactamente el pedido que generó cada venta de preventa incluida,
+                // evitando dejar pedidos o ventas huérfanas.
                 try {
-                    const pedidosRef = _collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/preventa_pedidos`);
-                    const pedidosSnap = await _getDocs(pedidosRef);
-                    pedidosSnap.docs.forEach(d => {
-                        const pd = d.data();
-                        if ((pd.estado === 'entregado') && pd.vendedorId === _userId) {
-                            batchLimp.delete(_doc(pedidosRef, d.id));
-                        }
-                    });
-                } catch (ePed) { console.warn('No se pudieron limpiar pedidos entregados en el cierre:', ePed); }
+                    const pedidoIdsCerrados = new Set(
+                        ventasPostSnapshot
+                            .filter(v => v.origen === 'preventa' && v.pedidoId)
+                            .map(v => v.pedidoId)
+                    );
+                    if (pedidoIdsCerrados.size) {
+                        const pedidosRef = _collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/preventa_pedidos`);
+                        pedidoIdsCerrados.forEach(pid => { batchLimp.delete(_doc(pedidosRef, pid)); });
+                    }
+                } catch (ePed) { console.warn('No se pudieron limpiar pedidos de preventa en el cierre:', ePed); }
 
                 await batchLimp.commit();
                 if (window.invalidarComprometidoCache) window.invalidarComprometidoCache();
