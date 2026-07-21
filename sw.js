@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v77'; // v77: ventas de preventa tampoco se pueden editar en Ventas Totales (corregir via Anular entrega en Pre-Venta)
+const CACHE_NAME = 'ventas-app-cache-v78'; // v78: preventa registra vacios en la entrega (modal solo con tipos presentes) + actualiza saldoVacios del cliente + anular entrega revierte vacios
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
