@@ -27,7 +27,6 @@
                         <h1 class="text-3xl font-bold text-gray-800 mb-6">Gestión de Ventas</h1>
                         <div class="space-y-4">
                             <button id="nuevaVentaBtn" class="w-full px-6 py-3 bg-green-500 text-white rounded-lg shadow-md hover:bg-green-600">Nueva Venta / Consignación</button>
-                            <button id="ventasTotalesBtn" class="w-full px-6 py-3 bg-blue-500 text-white rounded-lg shadow-md hover:bg-blue-600">Ventas Totales</button>
                             <button id="backToMenuBtn" class="w-full px-6 py-3 bg-gray-400 text-white rounded-lg shadow-md hover:bg-gray-500">Volver</button>
                         </div>
                     </div> 
