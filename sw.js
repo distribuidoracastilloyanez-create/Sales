@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v75'; // v75: entregado terminal (no borrar) + Anular entrega (vendedor/admin) + limpieza de pedidos entregados en el cierre + Ventas Totales al menu principal + menu vendedor parejo
+const CACHE_NAME = 'ventas-app-cache-v76'; // v76: en Ventas Totales no se puede eliminar venta de preventa (se anula en Estado del Pedido) + badge Pre-Venta + anular entrega solo vendedor dueño
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
