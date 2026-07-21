@@ -636,7 +636,7 @@
                     <td class="py-2 px-3 align-middle">
                         <div class="flex flex-col sm:flex-row items-center justify-center gap-1.5 w-full">
                             <button onclick="window.ventasModule.showPastSaleOptions('${v.id}','ticket')" class="w-full sm:w-auto px-3 py-1.5 bg-blue-600 text-white text-xs font-bold rounded shadow-sm hover:bg-blue-700 transition">Ver</button>
-                            <button onclick="window.ventasModule.editVenta('${v.id}')" class="w-full sm:w-auto px-3 py-1.5 bg-yellow-500 text-white text-xs font-bold rounded shadow-sm hover:bg-yellow-600 transition text-gray-900">Edit</button>
+                            ${esPreventa ? '' : `<button onclick="window.ventasModule.editVenta('${v.id}')" class="w-full sm:w-auto px-3 py-1.5 bg-yellow-500 text-white text-xs font-bold rounded shadow-sm hover:bg-yellow-600 transition text-gray-900">Edit</button>`}
                             ${esPreventa
                                 ? `<span class="w-full sm:w-auto px-2 py-1.5 bg-gray-100 text-gray-400 text-[10px] font-bold rounded text-center leading-tight" title="Anular desde Pre-Venta → Estado del Pedido">Anular en Pre-Venta</span>`
                                 : `<button onclick="window.ventasModule.deleteVenta('${v.id}')" class="w-full sm:w-auto px-3 py-1.5 bg-red-600 text-white text-xs font-bold rounded shadow-sm hover:bg-red-700 transition">Del</button>`}
