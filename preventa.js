@@ -1026,6 +1026,11 @@
     }
 
     async function eliminarPedidoLista(id, nombre) {
+        const _pEl = _pvLista.find(x => x.id === id) || _pvPedidos.find(x => x.id === id);
+        if (_pEl && _pEl.estado === 'entregado') {
+            _showModal('No permitido', 'Este pedido ya fue <strong>entregado</strong> y generó una venta, por eso no puede eliminarse. Si necesitas revertirlo, usa <strong>\u201cAnular entrega\u201d</strong> desde Estado del Pedido.');
+            return;
+        }
         _showModal('Eliminar pedido', `¿Seguro que deseas eliminar el pedido de <strong>${nombre || 'este cliente'}</strong>? Esta acción no se puede deshacer.`, async () => {
             try {
                 await _deleteDoc(_doc(_db, pathPedidos(), id));
@@ -1198,6 +1203,8 @@
         const p = _pvPedidos.find(x => x.id === id);
         if (!p) return;
         const est = pvEstadoInfo(p.estado || 'pendiente');
+        const _rolPV = window.userRole === 'user' ? 'vendedor' : window.userRole;
+        const puedeAnular = (p.estado === 'entregado') && (_rolPV === 'admin' || (_rolPV === 'vendedor' && p.vendedorId === _userId));
 
         // Secuencia de avance (sin contar anulado). Se eliminó 'despachado'.
         const flujo = ['pendiente', 'preparacion', 'cargado', 'entregado'];
@@ -1261,9 +1268,10 @@
                 </div>
                 <div class="p-4 border-t border-slate-100 shrink-0 space-y-2">
                     <div class="flex gap-2">
-                        ${anterior ? `<button id="pvRetroceder" class="px-4 py-3 bg-white border border-slate-300 text-slate-600 rounded-lg font-medium text-sm hover:bg-slate-50 transition">Atrás</button>` : ''}
+                        ${(anterior && p.estado !== 'entregado') ? `<button id="pvRetroceder" class="px-4 py-3 bg-white border border-slate-300 text-slate-600 rounded-lg font-medium text-sm hover:bg-slate-50 transition">Atrás</button>` : ''}
                         ${btnSiguiente}
                     </div>
+                    ${puedeAnular ? `<button id="pvAnularEntrega" class="w-full py-2.5 bg-white border border-rose-300 text-rose-600 rounded-lg font-medium text-sm hover:bg-rose-50 transition">Anular entrega</button>` : ''}
                     ${(p.estado !== 'anulado' && p.estado !== 'entregado') ? `<button id="pvEditarPedido" class="w-full py-2.5 bg-white border border-slate-300 text-slate-700 rounded-lg font-medium text-sm hover:bg-slate-50 transition">Editar / Aumentar pedido</button>` : ''}
                     <button id="pvTicketGalpon" class="w-full py-2.5 bg-white border border-slate-300 text-slate-700 rounded-lg font-medium text-sm hover:bg-slate-50 transition">Ticket de Carga</button>
                     <button id="pvPedDetCerrar" class="w-full py-2.5 text-slate-400 hover:text-slate-600 font-medium text-sm transition">Cerrar</button>
@@ -1276,7 +1284,8 @@
         document.getElementById('pvEditarPedido')?.addEventListener('click', () => { document.getElementById('pvPedDetOverlay')?.remove(); showTomarPedido(p); });
 
         if (siguiente) document.getElementById('pvAvanzar')?.addEventListener('click', () => cambiarEstadoPedido(p.id, siguiente));
-        if (anterior) document.getElementById('pvRetroceder')?.addEventListener('click', () => cambiarEstadoPedido(p.id, anterior));
+        if (anterior && p.estado !== 'entregado') document.getElementById('pvRetroceder')?.addEventListener('click', () => cambiarEstadoPedido(p.id, anterior));
+        if (puedeAnular) document.getElementById('pvAnularEntrega')?.addEventListener('click', () => anularEntrega(p));
 
     }
 
@@ -1383,6 +1392,69 @@
             console.error('Error entregando pedido:', e);
             if (_showModal) _showModal('Error', 'No se pudo completar la entrega. Verifica la conexión e intenta de nuevo.');
         }
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // ANULAR ENTREGA — deshace una entrega ya realizada:
+    //   1. Devuelve al inventario del vendedor las unidades del ticket despachado.
+    //   2. Elimina la venta generada (sale de Ventas Totales).
+    //   3. Regresa el pedido a 'cargado' (conserva su ticket para re-entregar).
+    // Permitido: admin, o el vendedor dueño del pedido. Todo atómico.
+    // ═══════════════════════════════════════════════════════════
+    async function anularEntrega(pedido) {
+        if (!pedido) return;
+        const rol = window.userRole === 'user' ? 'vendedor' : window.userRole;
+        const permitido = (rol === 'admin') || (rol === 'vendedor' && pedido.vendedorId === _userId);
+        if (!permitido) { if (_showModal) _showModal('No permitido', 'No tienes permiso para anular esta entrega.'); return; }
+        if (pedido.estado !== 'entregado') { if (_showModal) _showModal('No aplica', 'Solo se puede anular la entrega de un pedido que ya fue entregado.'); return; }
+        if (!_runTransaction) { if (_showModal) _showModal('Error', 'No se puede anular sin conexión estable. Intenta de nuevo.'); return; }
+
+        // Qué se devuelve: lo despachado (ticket congelado) o, en su defecto, el pedido completo.
+        let despacho = pedido.ticketDespacho;
+        if (!despacho || !despacho.length) {
+            despacho = (pedido.productos || []).map(pr => ({ id: pr.id, unidadesDespacho: _pvUnidadesProducto(pr) }));
+        }
+        despacho = despacho.filter(d => (d.unidadesDespacho || 0) > 0);
+
+        _showModal('Anular entrega', `¿Seguro que deseas anular la entrega del pedido de <strong>${pedido.clienteNombre || 'este cliente'}</strong>?<br><br>Se devolverá el inventario, se eliminará la venta generada y el pedido volverá a <strong>\u201ccargado\u201d</strong>.`, async () => {
+            try {
+                const vendedorId = pedido.vendedorId;
+                const invBase = `artifacts/${_appId}/users/${vendedorId}/inventario`;
+                await _runTransaction(_db, async (transaction) => {
+                    // 1. Leer inventario de cada producto despachado (todas las lecturas primero)
+                    const refs = despacho.map(d => ({ d, ref: _doc(_db, invBase, d.id) }));
+                    const docs = await Promise.all(refs.map(r => transaction.get(r.ref)));
+                    // 2. Devolver las unidades (solo si el doc existe)
+                    refs.forEach((r, i) => {
+                        const invDoc = docs[i];
+                        if (invDoc.exists()) {
+                            const stockActual = invDoc.data().cantidadUnidades || 0;
+                            transaction.update(r.ref, { cantidadUnidades: stockActual + (r.d.unidadesDespacho || 0) });
+                        }
+                    });
+                    // 3. Eliminar la venta generada por la entrega (si existe)
+                    if (pedido.ventaGenerada) {
+                        const ventaRef = _doc(_db, `artifacts/${_appId}/users/${vendedorId}/ventas`, pedido.ventaGenerada);
+                        transaction.delete(ventaRef);
+                    }
+                    // 4. Regresar el pedido a 'cargado'
+                    const pedRef = _doc(_db, pathPedidos(), pedido.id);
+                    transaction.update(pedRef, {
+                        estado: 'cargado',
+                        ventaGenerada: null,
+                        historialEstados: (pedido.historialEstados || []).concat([{ estado: 'cargado', fecha: new Date().toISOString(), por: _userId, nota: 'Entrega anulada' }])
+                    });
+                });
+
+                if (window.invalidarComprometidoCache) window.invalidarComprometidoCache();
+                document.getElementById('pvPedDetOverlay')?.remove();
+                document.getElementById('pvLPDetOverlay')?.remove();
+                if (_showModal) _showModal('Entrega anulada', `Se anuló la entrega del pedido de <strong>${pedido.clienteNombre || 'el cliente'}</strong>. El inventario se devolvió y la venta se eliminó.`);
+            } catch (e) {
+                console.error('Error anulando entrega:', e);
+                if (_showModal) _showModal('Error', 'No se pudo anular la entrega. Verifica la conexión e intenta de nuevo.');
+            }
+        }, 'Sí, anular entrega', () => {});
     }
 
         async function cambiarEstadoPedido(id, nuevoEstado) {
