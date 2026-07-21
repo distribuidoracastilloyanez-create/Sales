@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v81'; // v81: recarga no falla por presentacion undefined en productos borrados del catalogo (respaldo Desconocido)
+const CACHE_NAME = 'ventas-app-cache-v82'; // v82: tombstone de productos eliminados + boton Limpiar Huerfanos en Auditoria (borra inventario huerfano y neutraliza teorico)
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
