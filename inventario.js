@@ -1527,7 +1527,7 @@
 
             recargaDetalles.push({
                 productoId: p.id,
-                presentacion: p.presentacion,
+                presentacion: p.presentacion || 'Desconocido',
                 marca: p.marca || 'S/M',
                 segmento: p.segmento || 'S/S',
                 rubro: p.rubro || 'SIN RUBRO',
