@@ -323,6 +323,7 @@
                             <div class="flex gap-2 pt-3 border-t border-red-200">
                                 <button id="btnVerSnapshot"   class="flex-1 bg-white text-blue-700   border border-blue-300   px-4 py-2 rounded-md text-xs font-bold hover:bg-blue-50   shadow-sm transition">👁️ Ver Registro del Punto de Partida</button>
                                 <button id="btnFijarSnapshot" class="flex-1 bg-white text-orange-700 border border-orange-300 px-4 py-2 rounded-md text-xs font-bold hover:bg-orange-50 shadow-sm transition">📸 Fijar Nuevo Punto de Partida</button>
+                                <button id="btnLimpiarHuerfanos" class="flex-1 bg-white text-purple-700 border border-purple-300 px-4 py-2 rounded-md text-xs font-bold hover:bg-purple-50 shadow-sm transition">🧹 Limpiar Huérfanos</button>
                             </div>
                         </div>
 
@@ -367,6 +368,7 @@
 
         document.getElementById('btnBackSup2').addEventListener('click', window.showSupervisionMenu);
         document.getElementById('btnEjecutarAuditoria').addEventListener('click', executeAudit);
+        document.getElementById('btnLimpiarHuerfanos').addEventListener('click', limpiarHuerfanos);
         document.getElementById('btnVerSnapshot').addEventListener('click', handleViewSnapshot);
         document.getElementById('btnFijarSnapshot').addEventListener('click', handleCreateSnapshot);
         document.getElementById('auditSearchInput').addEventListener('input', renderAuditTable);
@@ -539,6 +541,138 @@
         } catch (err) {
             console.error(err);
             _showModal('Error', 'Fallo al obtener el registro: ' + err.message);
+        }
+    }
+
+    // ── Limpieza de productos huérfanos (Opción B) ─────────────────────────────
+    // Un "huérfano" es un id que existe en los datos del vendedor (inventario físico
+    // o historia) pero YA NO está en el catálogo maestro (producto eliminado/recreado).
+    // La limpieza: (1) borra el doc de inventario físico del huérfano y
+    // (2) escribe una corrección que neutraliza su stock teórico, para que
+    // desaparezca por completo del cuadre y el inventario quede coherente.
+    async function limpiarHuerfanos() {
+        const userId = document.getElementById('auditUserSelect').value;
+        if (!userId) { _showModal('Error', 'Seleccione un vendedor primero.'); return; }
+
+        _showModal('Progreso', 'Buscando productos huérfanos...', null, '', null, false);
+        try {
+            await loadMasterCatalog();
+
+            const AUDIT_SNAPSHOT_PATH = `artifacts/${_appId}/users/${userId}/config/auditoriaBaseSnapshot`;
+            const snapshotDoc = await _getDoc(_doc(_db, AUDIT_SNAPSHOT_PATH));
+            const snapData = snapshotDoc.exists() ? snapshotDoc.data() : { inventario: [], fecha: new Date(0) };
+            const baseItems = snapData.inventario || [];
+            const fechaCargaInicial = snapData.fecha?.toDate ? snapData.fecha.toDate() : new Date(snapData.fecha || 0);
+
+            const [vSnap, oSnap, iSnap, rSnapFull, cSnapFull, cierresSnapFull, tombSnap] = await Promise.all([
+                _getDocs(_collection(_db, `artifacts/${_appId}/users/${userId}/ventas`)),
+                _getDocs(_collection(_db, `artifacts/${_appId}/users/${userId}/obsequios_entregados`)),
+                _getDocs(_collection(_db, `artifacts/${_appId}/users/${userId}/inventario`)),
+                _getDocs(_collection(_db, `artifacts/${_appId}/users/${userId}/recargas`)),
+                _getDocs(_collection(_db, `artifacts/${_appId}/users/${userId}/historial_correcciones`)),
+                _getDocs(_collection(_db, `artifacts/${_appId}/users/${userId}/cierres`)),
+                _getDocs(_collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/productos_eliminados`))
+            ]);
+
+            const inventarioActualMap = new Map(iSnap.docs.map(d => [d.id, d.data().cantidadUnidades || 0]));
+            const tombMap = {}; tombSnap.forEach(d => { tombMap[d.id] = d.data(); });
+            const despuesDeSnapshot = (datos) => datos.filter(v => {
+                const dd = v.fecha?.toDate ? v.fecha.toDate() : new Date(v.fecha);
+                return dd instanceof Date && !isNaN(dd) && dd >= fechaCargaInicial;
+            });
+            const ventasActivas    = despuesDeSnapshot(vSnap.docs.map(d => d.data()));
+            const obsequiosActivos = despuesDeSnapshot(oSnap.docs.map(d => d.data()));
+            const recargas         = despuesDeSnapshot(rSnapFull.docs.map(d => d.data()));
+            const correcciones     = despuesDeSnapshot(cSnapFull.docs.map(d => d.data()));
+            const cierres          = despuesDeSnapshot(cierresSnapFull.docs.map(d => d.data()));
+
+            // Cálculo teórico (idéntico a la auditoría)
+            const mapaStockTeorico = new Map();
+            baseItems.forEach(item => { mapaStockTeorico.set(item.productoId || item.id, item.cantidadUnidades || 0); });
+            recargas.forEach(r => (r.detalles || []).forEach(d => {
+                mapaStockTeorico.set(d.productoId, (mapaStockTeorico.get(d.productoId) || 0) + (d.diferenciaUnidades || 0));
+            }));
+            correcciones.forEach(c => {
+                if (c.tipoAjuste === 'LIMPIEZA_PROFUNDA') return;
+                (c.detalles || []).forEach(d => {
+                    const ajuste = d.ajusteBase !== undefined ? d.ajusteBase : d.ajuste !== undefined ? d.ajuste : (d.diferenciaUnidades || d.diferencia || 0);
+                    if (d.productoId && d.productoId !== 'ALL') mapaStockTeorico.set(d.productoId, (mapaStockTeorico.get(d.productoId) || 0) + ajuste);
+                });
+            });
+            ventasActivas.forEach(v => (v.productos || []).forEach(vp => {
+                mapaStockTeorico.set(vp.id, (mapaStockTeorico.get(vp.id) || 0) - (vp.totalUnidadesVendidas || 0));
+            }));
+            obsequiosActivos.forEach(oo => {
+                const pM = _masterMapCache[oo.productoId] || { unidadesPorCaja: 1 };
+                mapaStockTeorico.set(oo.productoId, (mapaStockTeorico.get(oo.productoId) || 0) - ((oo.cantidadCajas || 0) * (oo.unidadesPorCaja || pM.unidadesPorCaja || 1)));
+            });
+            cierres.forEach(c => {
+                (c.ventas || []).forEach(v => (v.productos || []).forEach(vp => mapaStockTeorico.set(vp.id, (mapaStockTeorico.get(vp.id) || 0) - (vp.totalUnidadesVendidas || 0))));
+                (c.consignaciones || []).forEach(v => (v.productos || []).forEach(vp => mapaStockTeorico.set(vp.id, (mapaStockTeorico.get(vp.id) || 0) - (vp.totalUnidadesVendidas || 0))));
+                (c.obsequios || []).forEach(oo => {
+                    const pM = _masterMapCache[oo.productoId] || { unidadesPorCaja: 1 };
+                    mapaStockTeorico.set(oo.productoId, (mapaStockTeorico.get(oo.productoId) || 0) - ((oo.cantidadCajas || 0) * (oo.unidadesPorCaja || pM.unidadesPorCaja || 1)));
+                });
+            });
+
+            // Huérfanos: id NO presente en el catálogo maestro, con teórico o físico != 0
+            const allIds = new Set([...mapaStockTeorico.keys(), ...inventarioActualMap.keys()]);
+            const huerfanos = [];
+            allIds.forEach(pId => {
+                if (_masterMapCache[pId]) return; // existe en catálogo → no es huérfano
+                const teorico = mapaStockTeorico.get(pId) || 0;
+                const fisico  = inventarioActualMap.get(pId) || 0;
+                if (teorico === 0 && fisico === 0) return;
+                const t = tombMap[pId] || {};
+                huerfanos.push({ id: pId, nombre: t.presentacion || '(producto eliminado)', marca: t.marca || '', teorico, fisico });
+            });
+
+            const pModal = document.getElementById('modalContainer');
+            if (pModal) pModal.classList.add('hidden');
+
+            if (!huerfanos.length) { _showModal('Sin huérfanos', 'El inventario de este vendedor ya está coherente con el catálogo actual. No se encontraron productos huérfanos.'); return; }
+
+            const filas = huerfanos.map(h => `<tr class="border-b border-gray-100">
+                <td class="py-1.5 px-2 text-xs text-gray-700">${h.nombre} ${h.marca ? '· ' + h.marca : ''}<div class="text-[10px] text-gray-400 font-mono">${h.id}</div></td>
+                <td class="py-1.5 px-2 text-xs text-center text-gray-500">${h.teorico}</td>
+                <td class="py-1.5 px-2 text-xs text-center text-blue-700 font-semibold">${h.fisico}</td>
+            </tr>`).join('');
+            const detalleHTML = `
+                <p class="text-sm text-gray-600 mb-3">Se encontraron <strong>${huerfanos.length}</strong> producto(s) huérfano(s) (ya no existen en el catálogo). Se eliminarán de su inventario y se neutralizará su stock teórico para que el cuadre quede limpio.</p>
+                <div class="max-h-64 overflow-auto border border-gray-200 rounded">
+                    <table class="min-w-full text-left"><thead class="bg-gray-100 sticky top-0"><tr>
+                        <th class="py-1.5 px-2 text-[10px] font-bold text-gray-600 uppercase">Producto (id)</th>
+                        <th class="py-1.5 px-2 text-[10px] font-bold text-gray-600 uppercase text-center">Teórico</th>
+                        <th class="py-1.5 px-2 text-[10px] font-bold text-gray-600 uppercase text-center">Físico</th>
+                    </tr></thead><tbody>${filas}</tbody></table>
+                </div>`;
+
+            _showModal('Limpiar Productos Huérfanos', detalleHTML, async () => {
+                _showModal('Progreso', 'Limpiando inventario...', null, '', null, false);
+                try {
+                    const batch = _writeBatch(_db);
+                    const invPath = `artifacts/${_appId}/users/${userId}/inventario`;
+                    huerfanos.forEach(h => { batch.delete(_doc(_db, invPath, h.id)); });
+                    // Corrección que neutraliza el teórico (para que desaparezcan del cuadre)
+                    const corrRef = _doc(_collection(_db, `artifacts/${_appId}/users/${userId}/historial_correcciones`));
+                    batch.set(corrRef, {
+                        fecha: new Date(),
+                        usuarioId: _userId,
+                        tipoAjuste: 'LIMPIEZA_HUERFANOS',
+                        detalles: huerfanos.map(h => ({ productoId: h.id, ajusteBase: -(h.teorico || 0), nota: 'Limpieza de producto huérfano (eliminado del catálogo)' }))
+                    });
+                    await batch.commit();
+                    const pM2 = document.getElementById('modalContainer'); if (pM2) pM2.classList.add('hidden');
+                    setTimeout(() => _showModal('Limpieza completada', `Se limpiaron <strong>${huerfanos.length}</strong> producto(s) huérfano(s). El inventario quedó coherente con el catálogo actual.`, () => executeAudit()), 300);
+                } catch (e) {
+                    console.error('Error limpiando huérfanos:', e);
+                    _showModal('Error', `No se pudo completar la limpieza: ${e.message}`);
+                }
+            }, 'Sí, Limpiar', null, true);
+
+        } catch (e) {
+            console.error('Error buscando huérfanos:', e);
+            _showModal('Error', `No se pudo analizar: ${e.message}`);
         }
     }
 
