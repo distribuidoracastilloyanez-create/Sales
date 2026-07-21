@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v79'; // v79: cierre de jornada limpia los pedidos de preventa por pedidoId de las ventas cerradas (mas preciso, evita huerfanos)
+const CACHE_NAME = 'ventas-app-cache-v80'; // v80: silenciar Error Maestro al cerrar sesion (guard permission-denied/unauthenticated en listener del catalogo maestro)
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
