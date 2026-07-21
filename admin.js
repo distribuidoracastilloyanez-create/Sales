@@ -631,6 +631,15 @@
 
         try {
             if (productData === null) {
+                // TOMBSTONE: antes de borrar, archivar el producto para tener
+                // referencia futura del id (auditorías, limpieza de huérfanos).
+                try {
+                    const prev = await _getDoc(masterRef);
+                    if (prev.exists()) {
+                        const tombRef = _doc(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/productos_eliminados`, productId);
+                        await _setDoc(tombRef, { ...prev.data(), id: productId, fechaEliminado: new Date(), eliminadoPor: _userId }, { merge: true });
+                    }
+                } catch (eTomb) { console.warn("No se pudo archivar el producto eliminado (tombstone):", eTomb); }
                 // Si el dato es null, es un borrado
                 await _deleteDoc(masterRef);
                 console.log("🗑️ Eliminado del Catálogo Maestro");
