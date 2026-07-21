@@ -1299,7 +1299,80 @@
     //   3. Marca el pedido como entregado.
     // Todo dentro de una transacción para que sea atómico.
     // ═══════════════════════════════════════════════════════════
-    async function entregarPedido(pedido) {
+    // Antes de entregar: si algún producto del despacho maneja vacíos, pedir
+    // cuántos devolvió el cliente (solo los tipos presentes). Si no, entrega directa.
+    async function iniciarEntregaConVacios(pedido) {
+        if (!pedido) return;
+        // Asegurar catálogo cargado (para saber manejaVacios/tipoVacio)
+        if (!_pvProductos || !_pvProductos.length) {
+            try {
+                const ps = await _getDocs(_collection(_db, pathProductos()));
+                _pvProductos = ps.docs.map(d => ({ id: d.id, ...d.data() }));
+            } catch (e) { console.warn('No se pudo cargar el catálogo para vacíos:', e); }
+        }
+        // Despacho (mismo criterio que entregarPedido)
+        let despacho = pedido.ticketDespacho;
+        if (!despacho || !despacho.length) {
+            despacho = (pedido.productos || []).map(pr => ({ id: pr.id, cantCj: pr.cantCj || 0, unidadesDespacho: _pvUnidadesProducto(pr) }));
+        }
+        despacho = despacho.filter(d => (d.unidadesDespacho || 0) > 0);
+        // Cajas por tipo de vacío
+        const cajasPorTipo = {};
+        despacho.forEach(d => {
+            const cat = (_pvProductos || []).find(x => x.id === d.id) || {};
+            if (cat.manejaVacios && cat.tipoVacio && (d.cantCj || 0) > 0) {
+                cajasPorTipo[cat.tipoVacio] = (cajasPorTipo[cat.tipoVacio] || 0) + (d.cantCj || 0);
+            }
+        });
+        const tipos = Object.keys(cajasPorTipo);
+        // Sin vacíos → entrega directa
+        if (!tipos.length) { entregarPedido(pedido, {}); return; }
+
+        // Modal de vacíos
+        document.getElementById('pvVaciosOverlay')?.remove();
+        const ov = document.createElement('div');
+        ov.id = 'pvVaciosOverlay';
+        ov.className = 'fixed inset-0 z-[9999] bg-slate-900/50 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4';
+        const filas = tipos.map(t => `
+            <div class="flex items-center justify-between gap-3 py-2.5 px-3 border-b border-slate-100 last:border-0">
+                <div class="min-w-0">
+                    <div class="text-sm font-medium text-slate-800">${t}</div>
+                    <div class="text-[11px] text-slate-400 mt-0.5">Entregadas: ${cajasPorTipo[t]} Cj</div>
+                </div>
+                <input type="number" min="0" value="0" inputmode="numeric" data-tipo="${t}"
+                    class="pv-vac-input w-20 px-2 py-1.5 text-center border border-slate-300 rounded-lg text-sm font-bold text-slate-800 focus:ring-2 focus:ring-cyan-500 outline-none">
+            </div>`).join('');
+        ov.innerHTML = `
+            <div class="bg-white w-full max-w-md rounded-t-xl sm:rounded-xl shadow-2xl overflow-hidden max-h-[92vh] flex flex-col border border-slate-200">
+                <div class="bg-slate-800 text-white px-5 py-4 shrink-0">
+                    <div class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold mb-0.5">Entrega · Vacíos</div>
+                    <div class="font-semibold text-base leading-tight truncate">${pedido.clienteNombre || '(sin cliente)'}</div>
+                    <div class="text-xs text-slate-300 mt-0.5">Ingresa cuántos vacíos devolvió el cliente.</div>
+                </div>
+                <div class="overflow-y-auto p-5 flex-1">
+                    <div class="border border-slate-200 rounded-lg overflow-hidden">${filas}</div>
+                </div>
+                <div class="p-4 border-t border-slate-100 shrink-0 space-y-2">
+                    <button id="pvVaciosConfirmar" class="w-full py-3 bg-slate-800 text-white rounded-lg font-medium text-sm hover:bg-slate-900 transition">Confirmar entrega</button>
+                    <button id="pvVaciosCancelar" class="w-full py-2.5 text-slate-400 hover:text-slate-600 font-medium text-sm transition">Cancelar</button>
+                </div>
+            </div>`;
+        document.body.appendChild(ov);
+        ov.addEventListener('click', e => { if (e.target === ov) ov.remove(); });
+        document.getElementById('pvVaciosCancelar').addEventListener('click', () => ov.remove());
+        document.getElementById('pvVaciosConfirmar').addEventListener('click', () => {
+            const devueltos = {};
+            ov.querySelectorAll('.pv-vac-input').forEach(inp => {
+                const t = inp.dataset.tipo;
+                const v = parseInt(inp.value, 10) || 0;
+                if (v > 0) devueltos[t] = v;
+            });
+            ov.remove();
+            entregarPedido(pedido, devueltos);
+        });
+    }
+
+    async function entregarPedido(pedido, devueltosPorTipo = {}) {
         if (!pedido) return;
 
         // Determinar qué se despacha: el ticket congelado si existe; si no,
@@ -1328,15 +1401,21 @@
         const vendedorId = pedido.vendedorId;
         const invBase = `artifacts/${_appId}/users/${vendedorId}/inventario`;
         const ventaRef = _doc(_collection(_db, `artifacts/${_appId}/users/${vendedorId}/ventas`));
+        const clienteRef = pedido.clienteId ? _doc(_db, pathClientes(), pedido.clienteId) : null;
+        const _devueltos = devueltosPorTipo || {};
 
         try {
             await _runTransaction(_db, async (transaction) => {
-                // Leer el inventario de cada producto del despacho
+                // Leer inventario de cada producto del despacho + el cliente (todas las lecturas primero)
                 const refs = despacho.map(d => ({ d, ref: _doc(_db, invBase, d.id) }));
-                const docs = await Promise.all(refs.map(r => transaction.get(r.ref)));
+                const [docs, clienteDoc] = await Promise.all([
+                    Promise.all(refs.map(r => transaction.get(r.ref))),
+                    clienteRef ? transaction.get(clienteRef) : Promise.resolve(null)
+                ]);
 
                 let totalVenta = 0;
                 const itemsVenta = [];
+                const cajasVaciosPorTipo = {};  // deuda de vacíos que genera esta entrega
 
                 refs.forEach((r, i) => {
                     const invDoc = docs[i];
@@ -1351,14 +1430,35 @@
                     const pr = r.d.precios || {};
                     const sub = (pr.cj || 0) * (r.d.cantCj || 0) + (pr.paq || 0) * (r.d.cantPaq || 0) + (pr.und || 0) * (r.d.cantUnd || 0);
                     totalVenta += sub;
+                    // Vacíos: buscar en el catálogo si el producto maneja vacío
+                    const _cat = (_pvProductos || []).find(x => x.id === r.d.id) || {};
+                    const _maneja = !!_cat.manejaVacios;
+                    const _tipoV = _cat.tipoVacio || null;
+                    if (_maneja && _tipoV && (r.d.cantCj || 0) > 0) {
+                        cajasVaciosPorTipo[_tipoV] = (cajasVaciosPorTipo[_tipoV] || 0) + (r.d.cantCj || 0);
+                    }
                     itemsVenta.push({
                         id: r.d.id, presentacion: r.d.presentacion, marca: r.d.marca || null,
                         precios: r.d.precios || null,
                         cantidadVendida: { cj: r.d.cantCj || 0, paq: r.d.cantPaq || 0, und: r.d.cantUnd || 0 },
                         totalUnidadesVendidas: qty,
-                        unidadesPorCaja: r.d.unidadesPorCaja || 1, unidadesPorPaquete: r.d.unidadesPorPaquete || 1
+                        unidadesPorCaja: r.d.unidadesPorCaja || 1, unidadesPorPaquete: r.d.unidadesPorPaquete || 1,
+                        manejaVacios: _maneja, tipoVacio: _tipoV
                     });
                 });
+
+                // Vacíos: neto por tipo = cajas entregadas − devueltos; actualizar saldo del cliente
+                const saldoVaciosAplicado = {};
+                const _tipos = new Set([...Object.keys(cajasVaciosPorTipo), ...Object.keys(_devueltos)]);
+                _tipos.forEach(t => {
+                    const neto = (cajasVaciosPorTipo[t] || 0) - (_devueltos[t] || 0);
+                    if (neto !== 0) saldoVaciosAplicado[t] = neto;
+                });
+                if (clienteDoc && clienteDoc.exists() && Object.keys(saldoVaciosAplicado).length) {
+                    const sVac = { ...(clienteDoc.data().saldoVacios || {}) };
+                    for (const t in saldoVaciosAplicado) sVac[t] = (sVac[t] || 0) + saldoVaciosAplicado[t];
+                    transaction.update(clienteRef, { saldoVacios: sVac });
+                }
 
                 // Registrar la venta (marcada como originada en pre-venta)
                 const ventaData = {
@@ -1368,7 +1468,7 @@
                     fecha: new Date(),
                     total: totalVenta,
                     productos: itemsVenta,
-                    vaciosDevueltosPorTipo: {},
+                    vaciosDevueltosPorTipo: _devueltos,
                     origen: 'preventa',
                     pedidoId: pedido.id,
                     tipoOperacion: 'contado'
@@ -1380,6 +1480,7 @@
                 transaction.update(pedRef, {
                     estado: 'entregado',
                     ventaGenerada: ventaRef.id,
+                    saldoVaciosAplicado: saldoVaciosAplicado,
                     historialEstados: (pedido.historialEstados || []).concat([{ estado: 'entregado', fecha: new Date().toISOString(), por: _userId }])
                 });
             });
@@ -1420,10 +1521,15 @@
             try {
                 const vendedorId = pedido.vendedorId;
                 const invBase = `artifacts/${_appId}/users/${vendedorId}/inventario`;
+                const saldoAplicado = pedido.saldoVaciosAplicado || {};
+                const clienteRef = pedido.clienteId ? _doc(_db, pathClientes(), pedido.clienteId) : null;
                 await _runTransaction(_db, async (transaction) => {
-                    // 1. Leer inventario de cada producto despachado (todas las lecturas primero)
+                    // 1. Leer inventario de cada producto despachado + cliente (todas las lecturas primero)
                     const refs = despacho.map(d => ({ d, ref: _doc(_db, invBase, d.id) }));
-                    const docs = await Promise.all(refs.map(r => transaction.get(r.ref)));
+                    const [docs, clienteDoc] = await Promise.all([
+                        Promise.all(refs.map(r => transaction.get(r.ref))),
+                        clienteRef ? transaction.get(clienteRef) : Promise.resolve(null)
+                    ]);
                     // 2. Devolver las unidades (solo si el doc existe)
                     refs.forEach((r, i) => {
                         const invDoc = docs[i];
@@ -1432,16 +1538,23 @@
                             transaction.update(r.ref, { cantidadUnidades: stockActual + (r.d.unidadesDespacho || 0) });
                         }
                     });
-                    // 3. Eliminar la venta generada por la entrega (si existe)
+                    // 3. Revertir los vacíos aplicados al cliente en la entrega
+                    if (clienteDoc && clienteDoc.exists() && Object.keys(saldoAplicado).length) {
+                        const sVac = { ...(clienteDoc.data().saldoVacios || {}) };
+                        for (const t in saldoAplicado) sVac[t] = (sVac[t] || 0) - saldoAplicado[t];
+                        transaction.update(clienteRef, { saldoVacios: sVac });
+                    }
+                    // 4. Eliminar la venta generada por la entrega (si existe)
                     if (pedido.ventaGenerada) {
                         const ventaRef = _doc(_db, `artifacts/${_appId}/users/${vendedorId}/ventas`, pedido.ventaGenerada);
                         transaction.delete(ventaRef);
                     }
-                    // 4. Regresar el pedido a 'cargado'
+                    // 5. Regresar el pedido a 'cargado'
                     const pedRef = _doc(_db, pathPedidos(), pedido.id);
                     transaction.update(pedRef, {
                         estado: 'cargado',
                         ventaGenerada: null,
+                        saldoVaciosAplicado: null,
                         historialEstados: (pedido.historialEstados || []).concat([{ estado: 'cargado', fecha: new Date().toISOString(), por: _userId, nota: 'Entrega anulada' }])
                     });
                 });
@@ -1461,7 +1574,7 @@
         const p = _pvPedidos.find(x => x.id === id) || _pvLista.find(x => x.id === id);
         if (!p) return;
         // La ENTREGA cierra el ciclo: descuenta inventario y genera la venta.
-        if (nuevoEstado === 'entregado') { entregarPedido(p); return; }
+        if (nuevoEstado === 'entregado') { iniciarEntregaConVacios(p); return; }
         const nuevoHist = (p.historialEstados || []).concat([{ estado: nuevoEstado, fecha: new Date().toISOString(), por: _userId }]);
         try {
             if (window.invalidarComprometidoCache) window.invalidarComprometidoCache();
