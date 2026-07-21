@@ -1204,7 +1204,7 @@
         if (!p) return;
         const est = pvEstadoInfo(p.estado || 'pendiente');
         const _rolPV = window.userRole === 'user' ? 'vendedor' : window.userRole;
-        const puedeAnular = (p.estado === 'entregado') && (_rolPV === 'admin' || (_rolPV === 'vendedor' && p.vendedorId === _userId));
+        const puedeAnular = (p.estado === 'entregado') && (_rolPV === 'vendedor' && p.vendedorId === _userId);
 
         // Secuencia de avance (sin contar anulado). Se eliminó 'despachado'.
         const flujo = ['pendiente', 'preparacion', 'cargado', 'entregado'];
@@ -1404,8 +1404,8 @@
     async function anularEntrega(pedido) {
         if (!pedido) return;
         const rol = window.userRole === 'user' ? 'vendedor' : window.userRole;
-        const permitido = (rol === 'admin') || (rol === 'vendedor' && pedido.vendedorId === _userId);
-        if (!permitido) { if (_showModal) _showModal('No permitido', 'No tienes permiso para anular esta entrega.'); return; }
+        const permitido = (rol === 'vendedor' && pedido.vendedorId === _userId);
+        if (!permitido) { if (_showModal) _showModal('No permitido', 'Solo el vendedor dueño del pedido puede anular la entrega.'); return; }
         if (pedido.estado !== 'entregado') { if (_showModal) _showModal('No aplica', 'Solo se puede anular la entrega de un pedido que ya fue entregado.'); return; }
         if (!_runTransaction) { if (_showModal) _showModal('Error', 'No se puede anular sin conexión estable. Intenta de nuevo.'); return; }
 
