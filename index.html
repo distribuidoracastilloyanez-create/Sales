@@ -497,7 +497,7 @@
             document.getElementById('inventarioBtn')?.addEventListener('click',     () => safeNav(window.showInventarioSubMenu,      'Inventario'));
             document.getElementById('editInventarioBtn')?.addEventListener('click', () => safeNav(window.showEditInventarioMenu,      'Edición Inventario'));
             document.getElementById('clientesBtn')?.addEventListener('click',       () => safeNav(window.showClientesSubMenu,         'Clientes'));
-            document.getElementById('ventasBtn')?.addEventListener('click',         () => safeNav(window.showVentasView,              'Ventas'));
+            document.getElementById('ventasBtn')?.addEventListener('click',         () => { window.pedirPermisoNotif && window.pedirPermisoNotif(); safeNav(window.showVentasView, 'Ventas'); });
             document.getElementById('ventasTotalesMenuBtn')?.addEventListener('click', () => safeNav(window.showVentasTotalesView,   'Ventas Totales'));
             document.getElementById('cxcBtn')?.addEventListener('click',           () => safeNav(window.showCXCView,                 'CXC'));
             document.getElementById('facturacionBtn')?.addEventListener('click',   () => safeNav(window.showFacturacionView,          'Facturación'));
@@ -513,6 +513,7 @@
 
             // Navegación entre sistemas (solo admin): Venta Tradicional / Pre-Venta
             document.getElementById('preventaMenuBtn')?.addEventListener('click', () => {
+                window.pedirPermisoNotif && window.pedirPermisoNotif();
                 if (window.showPreventaMenu) window.showPreventaMenu();
             });
 
@@ -686,6 +687,39 @@
     <script>
         if ('serviceWorker' in navigator) {
             if (window.location.protocol.startsWith('http')) {
+            // ── Notificaciones del sistema (datos incompletos de cliente) ──────────
+            // Pide permiso UNA sola vez, siempre desde un toque del usuario.
+            window.pedirPermisoNotif = function() {
+                try {
+                    if (!('Notification' in window)) return;
+                    if (Notification.permission === 'default') {
+                        Notification.requestPermission().catch(() => {});
+                    }
+                } catch (e) { /* silencioso */ }
+            };
+            // Muestra la notificación en el teléfono (si hay permiso).
+            window.notificarDatosIncompletos = function(nombreCliente, faltantes) {
+                try {
+                    if (!('Notification' in window) || Notification.permission !== 'granted') return;
+                    const cuerpo = (faltantes || []).slice(0, 4).join(' · ') +
+                                   ((faltantes || []).length > 4 ? ` (+${faltantes.length - 4} más)` : '');
+                    const opts = {
+                        body: cuerpo,
+                        tag: 'cliente-incompleto',
+                        icon: './images/icons/icon-192x192.png',
+                        badge: './images/icons/icon-192x192.png',
+                        vibrate: [200, 100, 200]
+                    };
+                    if (navigator.serviceWorker && navigator.serviceWorker.ready) {
+                        navigator.serviceWorker.ready
+                            .then(reg => reg.showNotification(`Datos incompletos: ${nombreCliente}`, opts))
+                            .catch(() => { try { new Notification(`Datos incompletos: ${nombreCliente}`, opts); } catch (e2) {} });
+                    } else {
+                        new Notification(`Datos incompletos: ${nombreCliente}`, opts);
+                    }
+                } catch (e) { console.warn('No se pudo notificar:', e); }
+            };
+
                 navigator.serviceWorker.register('./sw.js').catch(err => console.log('SW Error:', err));
             }
         }
