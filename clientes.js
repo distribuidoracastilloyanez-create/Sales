@@ -279,7 +279,7 @@
                 <div class="container mx-auto max-w-4xl">
                     <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl">
                         <h2 class="text-2xl font-bold text-gray-800 mb-4 text-center">Importar Clientes desde CSV/Excel</h2>
-                        <p class="text-center text-gray-600 mb-6">Selecciona un archivo .csv o .xlsx. La primera fila debe contener los encabezados: Sector, Nombre Comercial, Nombre Personal, telefono, CEP, y opcionalmente: Retención IVA, Coordenadas (o X, Y / Latitud, Longitud).</p>
+                        <p class="text-center text-gray-600 mb-6">Selecciona un archivo .csv o .xlsx. La primera fila debe contener los encabezados: Sector, Nombre Comercial, Nombre Personal, telefono, CEP, y opcionalmente: Retención IVA, Correo, Coordenadas (o X, Y / Latitud, Longitud).</p>
                         <input type="file" id="excel-uploader" accept=".xlsx, .xls, .csv" class="w-full p-4 border-2 border-dashed rounded-lg">
                         <div id="preview-container" class="mt-6 overflow-auto max-h-96"></div>
                         <div id="import-actions" class="mt-6 flex flex-col sm:flex-row gap-4 hidden">
@@ -380,7 +380,7 @@
 
             const headers = jsonData[0].map(h => (h ? h.toString().toLowerCase().trim().replace(/\s+/g, '') : ''));
             const requiredHeaders = ['sector', 'nombrecomercial', 'nombrepersonal', 'telefono', 'cep'];
-            const optionalHeaders = ['retencioniva', 'apilicaretencion', 'coordenadas', 'x', 'y', 'latitud', 'longitud', 'lat', 'lon']; 
+            const optionalHeaders = ['retencioniva', 'apilicaretencion', 'coordenadas', 'x', 'y', 'latitud', 'longitud', 'lat', 'lon', 'correo', 'email']; 
             const headerMap = {};
             let missingHeader = false;
 
@@ -461,6 +461,7 @@
                     telefono: (row[headerMap['telefono']] || '').toString().trim(),
                     codigoCEP: (row[headerMap['cep']] || 'N/A').toString().trim(),
                     coordenadas: coordenadas,
+                    correo: (headerMap['correo'] !== undefined ? (row[headerMap['correo']] || '') : (headerMap['email'] !== undefined ? (row[headerMap['email']] || '') : '')).toString().trim(),
                     aplicaRetencion: aplicaRetencion,
                     saldoVacios: saldoVaciosInicial 
                 };
@@ -716,8 +717,13 @@
                         </div>
                         
                         <div class="mt-4">
+                            <label for="correo" class="block text-gray-700 font-medium mb-2">Correo Electrónico:</label>
+                            <input type="email" id="correo" class="w-full px-4 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Ej: cliente@correo.com">
+                        </div>
+
+                        <div class="mt-4">
                             <label for="datosAdicionales" class="block text-gray-700 font-medium mb-2">Datos Adicionales (Opcional):</label>
-                            <input type="text" id="datosAdicionales" class="w-full px-4 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Ej: Correo electrónico, referencias de dirección, etc.">
+                            <input type="text" id="datosAdicionales" class="w-full px-4 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Ej: referencias de dirección, etc.">
                         </div>
                         
                         <div class="mt-4 bg-gray-50 p-4 rounded-lg border border-gray-200">
@@ -770,6 +776,7 @@
         const telefono = form.telefono.value.trim();
         const codigoCEP = form.codigoCEP.value.trim();
         const coordenadas = form.coordenadas.value.trim();
+        const correo = (document.getElementById('correo')?.value || '').trim();
         const datosAdicionales = form.datosAdicionales.value.trim(); 
         
         const aplicaRetencion = document.getElementById('aplicaRetencion').checked;
@@ -841,6 +848,7 @@
                 telefono: telefono,
                 codigoCEP: codigoCEP,
                 coordenadas: coordenadas,
+                correo: correo,
                 datosAdicionales: datosAdicionales, 
                 aplicaRetencion: aplicaRetencion,
                 saldoVacios: saldoVaciosInicial 
@@ -1262,6 +1270,7 @@
                                 <div class="space-y-2 text-sm">
                                     <p class="flex justify-between border-b border-gray-50 pb-1.5"><strong class="text-gray-600">Doc/RIF:</strong> <span class="font-mono font-bold text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-100">${docFormat}</span></p>
                                     <p class="flex justify-between border-b border-gray-50 pb-1.5 items-center"><strong class="text-gray-600">Teléfono:</strong> ${telefonoHTML}</p>
+                                    <p class="flex justify-between border-b border-gray-50 pb-1.5"><strong class="text-gray-600">Correo:</strong> <span class="font-medium text-gray-800 break-all">${cliente.correo || 'N/A'}</span></p>
                                     <p class="flex justify-between border-b border-gray-50 pb-1.5"><strong class="text-gray-600">Sector:</strong> <span class="font-medium text-gray-800">${cliente.sector || 'N/A'}</span></p>
                                     <p class="flex justify-between border-b border-gray-50 pb-1.5"><strong class="text-gray-600">CEP:</strong> <span class="font-medium text-gray-800">${cliente.codigoCEP || 'N/A'}</span></p>
                                 </div>
@@ -1390,8 +1399,13 @@
                         </div>
 
                         <div class="mt-4">
+                            <label for="editCorreo" class="block text-gray-700 font-bold text-sm mb-1 uppercase">Correo Electrónico</label>
+                            <input type="email" id="editCorreo" value="${cliente.correo || ''}" class="w-full px-4 py-2 border border-gray-300 rounded bg-gray-50 focus:bg-white focus:ring-2 focus:ring-yellow-500 outline-none text-sm" placeholder="Ej: cliente@correo.com">
+                        </div>
+
+                        <div class="mt-4">
                             <label for="editDatosAdicionales" class="block text-gray-700 font-bold text-sm mb-1 uppercase">Datos Adicionales (Opcional)</label>
-                            <input type="text" id="editDatosAdicionales" value="${cliente.datosAdicionales || ''}" class="w-full px-4 py-2 border border-gray-300 rounded bg-gray-50 focus:bg-white focus:ring-2 focus:ring-yellow-500 outline-none text-sm" placeholder="Correo electrónico, referencias, etc.">
+                            <input type="text" id="editDatosAdicionales" value="${cliente.datosAdicionales || ''}" class="w-full px-4 py-2 border border-gray-300 rounded bg-gray-50 focus:bg-white focus:ring-2 focus:ring-yellow-500 outline-none text-sm" placeholder="Referencias de dirección, etc.">
                         </div>
 
                         <div class="mt-4 bg-gray-100 p-3 rounded border border-gray-300">
@@ -1472,6 +1486,7 @@
                 telefono: document.getElementById('editTelefono').value || '',
                 codigoCEP: document.getElementById('editCodigoCEP').value || '',
                 coordenadas: (document.getElementById('editCoordenadas').value || '').trim(),
+                correo: (document.getElementById('editCorreo')?.value || '').trim(),
                 datosAdicionales: datosAdicionales, 
                 aplicaRetencion: aplicaRetencion,
                 saldoVacios: cliente.saldoVacios || {} 
@@ -2032,6 +2047,100 @@
             if (selEl) selEl.disabled = false;
         }
     }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // VALIDACIÓN DE DATOS DEL CLIENTE (compartida por Venta Directa y Pre-Venta)
+    // Criterio definido: se considera INCOMPLETO si le falta alguno de:
+    //   documento (tipo + número), nombre comercial, nombre del representante,
+    //   teléfono, coordenadas, correo electrónico, o si NO tiene al menos
+    //   un archivo en "Documentos" Y al menos uno en "Imágenes".
+    //   (La categoría "adc" —equipos de la compañía— se ignora a propósito.)
+    // ═══════════════════════════════════════════════════════════════════════
+    const _cacheArchivosCliente = {};   // clienteId -> {doc:bool, img:bool}
+    const _clientesYaAvisados = new Set(); // evita repetir el aviso en la sesión
+
+    function _coordsValidas(coord) {
+        if (!coord) return false;
+        const partes = coord.toString().split(',');
+        if (partes.length !== 2) return false;
+        const lat = parseFloat(partes[0]), lon = parseFloat(partes[1]);
+        return !isNaN(lat) && !isNaN(lon) && lat !== 0 && lon !== 0;
+    }
+
+    // Revisa solo los campos del registro (sin tocar la red)
+    window.evaluarDatosCliente = function(cliente) {
+        const faltantes = [];
+        if (!cliente) return faltantes;
+        if (!cliente.tipoDocumento || !cliente.numeroDocumento) faltantes.push('Documento (V/J/E-Número)');
+        if (!(cliente.nombreComercial || '').trim())  faltantes.push('Razón Social / Comercio');
+        if (!(cliente.nombrePersonal || '').trim())   faltantes.push('Nombre del Representante');
+        if (!(cliente.telefono || '').trim())         faltantes.push('Teléfono');
+        if (!_coordsValidas(cliente.coordenadas))     faltantes.push('Coordenadas');
+        const correo = (cliente.correo || '').trim();
+        if (!correo || correo.indexOf('@') === -1)    faltantes.push('Correo Electrónico');
+        return faltantes;
+    };
+
+    // Consulta si el cliente tiene documentos e imágenes cargados (1 lectura, con caché)
+    window.verificarArchivosCliente = async function(clienteId) {
+        if (!clienteId) return { doc: false, img: false };
+        if (_cacheArchivosCliente[clienteId]) return _cacheArchivosCliente[clienteId];
+        const res = { doc: false, img: false };
+        try {
+            const q = _query(
+                _collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/archivos_clientes`),
+                _where('clienteId', '==', clienteId)
+            );
+            const snap = await _getDocs(q);
+            snap.forEach(d => {
+                const cat = d.data().categoria;
+                if (cat === 'documentos') res.doc = true;
+                if (cat === 'imagenes')   res.img = true;
+            });
+            _cacheArchivosCliente[clienteId] = res;
+        } catch (e) {
+            console.warn('No se pudo verificar archivos del cliente:', e);
+            return { doc: true, img: true }; // ante fallo de red, no molestar
+        }
+        return res;
+    };
+
+    // Permite refrescar la caché si el usuario acaba de subir un archivo
+    window.invalidarCacheArchivosCliente = function(clienteId) {
+        if (clienteId) delete _cacheArchivosCliente[clienteId];
+        else Object.keys(_cacheArchivosCliente).forEach(k => delete _cacheArchivosCliente[k]);
+    };
+
+    // Orquestador: evalúa y (si aplica) muestra el aviso. NO bloquea la operación.
+    // Devuelve la lista de faltantes.
+    window.chequearClienteIncompleto = async function(cliente, contexto) {
+        try {
+            if (!cliente || !cliente.id) return [];
+            const faltantes = window.evaluarDatosCliente(cliente);
+            const arch = await window.verificarArchivosCliente(cliente.id);
+            if (!arch.doc) faltantes.push('Sin documento cargado (Archivos)');
+            if (!arch.img) faltantes.push('Sin imagen cargada (Archivos)');
+            if (!faltantes.length) return [];
+            if (_clientesYaAvisados.has(cliente.id)) return faltantes; // ya se avisó
+            _clientesYaAvisados.add(cliente.id);
+
+            if (window.notificarDatosIncompletos) {
+                window.notificarDatosIncompletos(cliente.nombreComercial || 'Cliente', faltantes);
+            }
+            const lista = faltantes.map(x => `<li class="flex items-start gap-2 py-0.5"><span class="text-amber-500 mt-0.5">•</span><span>${x}</span></li>`).join('');
+            const msg = `
+                <div class="text-left">
+                    <p class="text-sm text-gray-700 mb-2">El cliente <strong>${cliente.nombreComercial || ''}</strong> tiene datos pendientes por completar:</p>
+                    <ul class="text-sm text-gray-800 bg-amber-50 border border-amber-200 rounded p-3 mb-2">${lista}</ul>
+                    <p class="text-xs text-gray-500">Puedes continuar con la operación. Completa la información en el módulo <strong>Clientes</strong> (y en <strong>Archivos</strong> los documentos e imágenes).</p>
+                </div>`;
+            if (_showModal) _showModal('⚠️ Datos incompletos del cliente', msg);
+            return faltantes;
+        } catch (e) {
+            console.warn('Chequeo de cliente incompleto falló:', e);
+            return [];
+        }
+    };
 
     function asignarRutaEnBloque(ruta) {
         const lista = arClientesFiltrados();
