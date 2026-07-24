@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v82'; // v82: tombstone de productos eliminados + boton Limpiar Huerfanos en Auditoria (borra inventario huerfano y neutraliza teorico)
+const CACHE_NAME = 'ventas-app-cache-v83'; // v83: campo correo en clientes (form/edicion/detalle/CSV) + aviso y notificacion de cliente con datos incompletos en Venta Directa y Tomar Pedido
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
