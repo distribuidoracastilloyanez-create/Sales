@@ -533,9 +533,19 @@
 
         // Aviso suave si el cliente es de otra ruta que la del vendedor (no bloquea)
         const rutaVend = (_pedidoActual.vendedor && _pedidoActual.vendedor.zonaPreventa) || '';
-        if (rutaVend && rutaCli && rutaVend !== rutaCli && _showModal) {
+        const hayAvisoRuta = !!(rutaVend && rutaCli && rutaVend !== rutaCli && _showModal);
+        if (hayAvisoRuta) {
             _showModal('Aviso de ruta', `Este cliente es de la ruta <strong>${rutaCli}</strong>, pero tu ruta es <strong>${rutaVend}</strong>. Puedes continuar, pero verifica que sea correcto.`);
         }
+
+        // Aviso (no bloqueante) si el cliente tiene datos incompletos.
+        // Se retrasa un poco para no pisar el aviso de ruta si ambos aplican.
+        try {
+            const rolPVC = window.userRole === 'user' ? 'vendedor' : window.userRole;
+            if ((rolPVC === 'vendedor' || rolPVC === 'admin') && window.chequearClienteIncompleto) {
+                setTimeout(() => window.chequearClienteIncompleto(c, 'Tomar Pedido'), hayAvisoRuta ? 2500 : 600);
+            }
+        } catch (e) { console.warn('Chequeo cliente (preventa):', e); }
 
         // Tasas COP/Bs (se recuerdan como en Nueva Venta)
         const inCop = document.getElementById('pvTasaCop');
