@@ -242,6 +242,14 @@
   async function selectCliente(cliente) {
       _ventaActual.cliente = cliente; 
 
+      // Aviso (no bloqueante) si el cliente tiene datos incompletos
+      try {
+          const rolVD = window.userRole === 'user' ? 'vendedor' : window.userRole;
+          if ((rolVD === 'vendedor' || rolVD === 'admin') && window.chequearClienteIncompleto) {
+              setTimeout(() => window.chequearClienteIncompleto(cliente, 'Venta Directa'), 600);
+          }
+      } catch (e) { console.warn('Chequeo cliente (venta directa):', e); }
+
       // Cargar el Acuerdo Comercial del cliente (si tiene). Si no, queda null
       // y los precios se comportan igual que siempre.
       await cargarAcuerdoCliente(cliente && cliente.id);
