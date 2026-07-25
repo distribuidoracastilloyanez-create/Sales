@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v84'; // v84: Corte de Carga por ruta (consolidado 80mm) en Estado del Pedido + historial de cortes en Reportes (reimprimir / marcar cargado)
+const CACHE_NAME = 'ventas-app-cache-v85'; // v85: fix flujo preventa - entrega/vacios sin ticket clasifican disponibilidad, congela lo entregado (anular simetrico), guard doble-entrega, clasif usa _pvPedidos si _pvLista vacia
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
