@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v83'; // v83: campo correo en clientes (form/edicion/detalle/CSV) + aviso y notificacion de cliente con datos incompletos en Venta Directa y Tomar Pedido
+const CACHE_NAME = 'ventas-app-cache-v84'; // v84: Corte de Carga por ruta (consolidado 80mm) en Estado del Pedido + historial de cortes en Reportes (reimprimir / marcar cargado)
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
