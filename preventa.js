@@ -364,6 +364,12 @@
     window.preventaModule.handlePedidoQty = function (event) { manejarCantidadPedido(event.target); };
 
     async function showTomarPedido(pedidoEditar = null) {
+        // No permitir editar un pedido que ya fue incluido en un CORTE de carga:
+        // su hoja de carga ya se imprimió y cambiar cantidades la dejaría desfasada.
+        if (pedidoEditar && pedidoEditar.corteId) {
+            if (_showModal) _showModal('No permitido', `Este pedido ya entró en el <strong>Corte N°${pedidoEditar.corteNumero || ''}</strong> (${pedidoEditar.corteRuta || 'ruta'}). No puede editarse porque su hoja de carga ya fue impresa.`);
+            return;
+        }
         _pedidoEnEdicion = pedidoEditar;
         _pedidoActual = { vendedor: null, cliente: null, productos: {} };
         _pvMoneda = 'USD';
