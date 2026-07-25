@@ -892,7 +892,8 @@
         // Restar lo comprometido por OTROS pedidos del mismo vendedor (no este),
         // para no contar dos veces el stock ya apartado.
         const comprometidoOtros = {};
-        _pvLista.forEach(o => {
+        const _fuentePedidos = (_pvLista && _pvLista.length) ? _pvLista : (_pvPedidos || []);
+        _fuentePedidos.forEach(o => {
             if (o.id === pedido.id) return;
             if (o.vendedorId !== pedido.vendedorId) return;
             const est = o.estado || 'pendiente';
@@ -1324,10 +1325,13 @@
                 _pvProductos = ps.docs.map(d => ({ id: d.id, ...d.data() }));
             } catch (e) { console.warn('No se pudo cargar el catálogo para vacíos:', e); }
         }
-        // Despacho (mismo criterio que entregarPedido)
+        // Despacho (mismo criterio que entregarPedido): ticket congelado o,
+        // si no hay, clasificando disponibilidad ahora. Así las cajas de vacío
+        // se calculan sobre lo REALMENTE entregado.
         let despacho = pedido.ticketDespacho;
         if (!despacho || !despacho.length) {
-            despacho = (pedido.productos || []).map(pr => ({ id: pr.id, cantCj: pr.cantCj || 0, unidadesDespacho: _pvUnidadesProducto(pr) }));
+            const clasif = await _pvClasificarProductos(pedido);
+            despacho = _pvCongelarDespacho(clasif.disponibles);
         }
         despacho = despacho.filter(d => (d.unidadesDespacho || 0) > 0);
         // Cajas por tipo de vacío
@@ -1388,17 +1392,20 @@
 
     async function entregarPedido(pedido, devueltosPorTipo = {}) {
         if (!pedido) return;
+        // Guard anti doble-entrega: un pedido ya entregado no se vuelve a procesar
+        // (evitaría duplicar la venta y descontar inventario dos veces).
+        if ((pedido.estado || '') === 'entregado') {
+            if (_showModal) _showModal('Ya entregado', 'Este pedido ya fue entregado.');
+            return;
+        }
 
         // Determinar qué se despacha: el ticket congelado si existe; si no,
-        // todo el pedido (fallback para pedidos sin ticket previo).
+        // se CLASIFICA la disponibilidad ahora (igual que el ticket) para que
+        // la venta refleje solo lo entregado y no descuadre el inventario.
         let despacho = pedido.ticketDespacho;
         if (!despacho || !despacho.length) {
-            despacho = (pedido.productos || []).map(pr => ({
-                id: pr.id, presentacion: pr.presentacion, marca: pr.marca || null,
-                cantCj: pr.cantCj || 0, cantPaq: pr.cantPaq || 0, cantUnd: pr.cantUnd || 0,
-                unidadesPorCaja: pr.unidadesPorCaja || 1, unidadesPorPaquete: pr.unidadesPorPaquete || 1,
-                unidadesDespacho: _pvUnidadesProducto(pr), precios: pr.precios || null
-            }));
+            const clasif = await _pvClasificarProductos(pedido);
+            despacho = _pvCongelarDespacho(clasif.disponibles);
         }
         // Solo items con algo que despachar
         despacho = despacho.filter(d => (d.unidadesDespacho || 0) > 0);
@@ -1489,12 +1496,15 @@
                 };
                 transaction.set(ventaRef, ventaData);
 
-                // Marcar el pedido como entregado
+                // Marcar el pedido como entregado. Congelamos 'ticketDespacho' con lo
+                // REALMENTE entregado, para que una eventual anulación restaure exactamente
+                // eso (ni más ni menos) al inventario.
                 const pedRef = _doc(_db, pathPedidos(), pedido.id);
                 transaction.update(pedRef, {
                     estado: 'entregado',
                     ventaGenerada: ventaRef.id,
                     saldoVaciosAplicado: saldoVaciosAplicado,
+                    ticketDespacho: despacho,
                     historialEstados: (pedido.historialEstados || []).concat([{ estado: 'entregado', fecha: new Date().toISOString(), por: _userId }])
                 });
             });
@@ -1617,16 +1627,15 @@
     // pasa el pedido a "preparación" automáticamente (Opción A).
     // Este ticket es la orden de carga Y el respaldo de la entrega.
     // ═══════════════════════════════════════════════════════════
-    async function generarTicketPedido(pedido, disponibles, noDisponibles) {
-        // 1) Construir el "ticket congelado": lo que realmente se despacha.
-        //    Para parciales, se recalcula cantidades de Cj/Paq/Und a partir
-        //    de las unidades a despachar, para que el ticket sea claro.
-        const ticketItems = disponibles.map(pr => {
+    // Congela el despacho (lo que realmente se entrega) recalculando Cj/Paq/Und
+    // para los parciales. Se usa tanto en el ticket como en la entrega, para que
+    // la venta y el descuento de inventario SIEMPRE coincidan.
+    function _pvCongelarDespacho(disponibles) {
+        return (disponibles || []).map(pr => {
             const cat = (_pvProductos || []).find(x => x.id === pr.id) || {};
             const uCj = pr.unidadesPorCaja || cat.unidadesPorCaja || 1;
             const uPaq = pr.unidadesPorPaquete || cat.unidadesPorPaquete || 1;
             let restante = (pr.unidadesDespacho != null) ? pr.unidadesDespacho : _pvUnidadesProducto(pr);
-            // Si NO es parcial, se respetan las cantidades originales del pedido
             let cj, paq, und;
             if (pr.parcial) {
                 cj = Math.floor(restante / uCj); restante -= cj * uCj;
@@ -1643,6 +1652,11 @@
                 precios: pr.precios || null, parcial: !!pr.parcial
             };
         });
+    }
+
+    async function generarTicketPedido(pedido, disponibles, noDisponibles) {
+        // 1) Construir el "ticket congelado": lo que realmente se despacha.
+        const ticketItems = _pvCongelarDespacho(disponibles);
 
         // Lo NO despachado (para el reporte de faltantes de la Parte 4)
         const noDespachado = noDisponibles.map(pr => ({
