@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v85'; // v85: fix flujo preventa - entrega/vacios sin ticket clasifican disponibilidad, congela lo entregado (anular simetrico), guard doble-entrega, clasif usa _pvPedidos si _pvLista vacia
+const CACHE_NAME = 'ventas-app-cache-v86'; // v86: bloquear edicion de pedidos ya incluidos en un corte de carga (hoja de carga ya impresa)
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
