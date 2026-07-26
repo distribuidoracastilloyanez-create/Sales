@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v89'; // v89: [modelos fase 3] distribucion por modelo en Tomar Pedido + descuento/restauracion por modelo en entrega/anular (invariante total=suma modelos)
+const CACHE_NAME = 'ventas-app-cache-v90'; // v90: [modelos robustez] desacoplar cantidadUnidades (fuente de verdad) de modelosStock (orientativo) en entrega/anular + Corregir a 0 modelo-aware
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
