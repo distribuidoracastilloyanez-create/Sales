@@ -372,7 +372,7 @@
                 const batch = _writeBatch(_db);
                 negativos.forEach(p => {
                     const ref = _doc(_db, `artifacts/${_appId}/users/${_userId}/inventario`, p.id);
-                    batch.set(ref, { cantidadUnidades: 0 }, { merge: true });
+                    batch.set(ref, { cantidadUnidades: 0, modelosStock: {} }, { merge: true });
                     p.cantidadUnidades = 0; // actualizar cache local
                 });
                 await batch.commit();
