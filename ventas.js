@@ -217,6 +217,7 @@
                 _inventarioCache.push({
                   ...master,
                   cantidadUnidades: stock ? stock.cantidadUnidades : 0,
+                  modelosStock: (stock && stock._legacyData && stock._legacyData.modelosStock) ? stock._legacyData.modelosStock : {},
                   id: id
                 });
             } else if (stock && stock._legacyData) {
@@ -358,7 +359,85 @@
             handleQuantityChange({target:inp}); 
             return; 
         }
-        pV.totalUnidadesVendidas=totU; if(totU===0&&pV.cantCj===0&&pV.cantPaq===0&&pV.cantUnd===0) delete _ventaActual.productos[pId]; updateVentaTotal();
+        pV.totalUnidadesVendidas=totU;
+      // Modelos: al cambiar la cantidad, la distribución previa deja de ser válida
+      if (pV.modelosDistribucion) delete pV.modelosDistribucion;
+      if(totU===0&&pV.cantCj===0&&pV.cantPaq===0&&pV.cantUnd===0) delete _ventaActual.productos[pId]; updateVentaTotal();
+      if (prod.manejaModelos) _vdActualizarBtnModelos(pId);
+    }
+
+    // Actualiza (sin re-render) la etiqueta del botón de modelos en venta directa
+    function _vdActualizarBtnModelos(pId) {
+        const btn = document.querySelector(`.vd-modelos-btn[data-pid="${pId}"]`);
+        if (!btn) return;
+        const prod = _inventarioCache.find(p => p.id === pId);
+        if (!prod) return;
+        const pa = _ventaActual.productos[pId] || {};
+        const totU = (pa.cantCj || 0) * (prod.unidadesPorCaja || 1) + (pa.cantPaq || 0) * (prod.unidadesPorPaquete || 1) + (pa.cantUnd || 0);
+        const dist = pa.modelosDistribucion;
+        const sum = dist ? Object.values(dist).reduce((a, b) => a + (b || 0), 0) : 0;
+        const ok = totU > 0 && dist && sum === totU;
+        btn.textContent = ok ? `✓ modelos distribuidos (${totU} u)` : `▸ Distribuir modelos${totU > 0 ? ' (' + totU + ' u)' : ''}`;
+        btn.className = `vd-modelos-btn text-[11px] font-bold ${ok ? 'text-green-600' : 'text-indigo-600'} hover:underline`;
+    }
+
+    // Modal para distribuir en modelos la cantidad vendida (venta directa)
+    function abrirDistribucionVentaDirecta(pId) {
+        const prod = _inventarioCache.find(p => p.id === pId);
+        if (!prod || !prod.manejaModelos) return;
+        const pa = _ventaActual.productos[pId] || {};
+        const totU = (pa.cantCj || 0) * (prod.unidadesPorCaja || 1) + (pa.cantPaq || 0) * (prod.unidadesPorPaquete || 1) + (pa.cantUnd || 0);
+        if (totU <= 0) { _showModal('Sin cantidad', 'Primero ingresa la cantidad a vender de este producto.'); return; }
+        const modelos = prod.modelos || [];
+        const modelosStock = prod.modelosStock || {};
+        const prev = pa.modelosDistribucion || {};
+        document.getElementById('vdModOverlay')?.remove();
+        const ov = document.createElement('div');
+        ov.id = 'vdModOverlay';
+        ov.className = 'fixed inset-0 z-[9999] bg-slate-900/50 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4';
+        const filas = modelos.map(m => `
+            <div class="flex items-center justify-between gap-3 py-2 px-3 border-b border-slate-100 last:border-0">
+                <div class="min-w-0"><div class="text-sm font-medium text-slate-800">${m}</div><div class="text-[11px] text-slate-400">Disponible: ${modelosStock[m] || 0} u</div></div>
+                <input type="number" min="0" value="${prev[m] || 0}" data-modelo="${m}" class="vd-mod-inp w-24 px-2 py-1.5 text-center border border-slate-300 rounded-lg text-sm font-bold text-slate-800 focus:ring-2 focus:ring-indigo-500 outline-none">
+            </div>`).join('');
+        ov.innerHTML = `
+            <div class="bg-white w-full max-w-md rounded-t-xl sm:rounded-xl shadow-2xl overflow-hidden max-h-[92vh] flex flex-col border border-slate-200">
+                <div class="bg-indigo-700 text-white px-5 py-4 shrink-0">
+                    <div class="text-[10px] uppercase tracking-wider text-indigo-200 font-semibold">Venta &middot; Modelos</div>
+                    <div class="font-semibold text-base truncate">${prod.presentacion} &middot; ${prod.marca || ''}</div>
+                    <div class="text-xs text-indigo-100 mt-0.5">Distribuye <strong>${totU}</strong> unidad(es) entre los modelos.</div>
+                </div>
+                <div class="overflow-y-auto p-4 flex-1">
+                    <div class="border border-slate-200 rounded-lg overflow-hidden">${filas}</div>
+                    <div id="vdModEstado" class="mt-3 text-center text-sm font-bold"></div>
+                </div>
+                <div class="p-4 border-t border-slate-100 shrink-0 space-y-2">
+                    <button id="vdModGuardar" class="w-full py-3 bg-indigo-700 text-white rounded-lg font-medium text-sm hover:bg-indigo-800 transition disabled:opacity-40">Guardar distribución</button>
+                    <button id="vdModCancelar" class="w-full py-2.5 text-slate-400 hover:text-slate-600 font-medium text-sm">Cancelar</button>
+                </div>
+            </div>`;
+        document.body.appendChild(ov);
+        const getInputs = () => Array.from(ov.querySelectorAll('.vd-mod-inp'));
+        const guardar = document.getElementById('vdModGuardar');
+        const estado = document.getElementById('vdModEstado');
+        const recompute = () => {
+            const suma = getInputs().reduce((a, i) => a + (parseInt(i.value, 10) || 0), 0);
+            const dif = totU - suma;
+            if (dif === 0) { estado.textContent = '✓ Distribución completa'; estado.className = 'mt-3 text-center text-sm font-bold text-green-600'; guardar.disabled = false; }
+            else if (dif > 0) { estado.textContent = `Faltan ${dif} u por asignar`; estado.className = 'mt-3 text-center text-sm font-bold text-amber-600'; guardar.disabled = true; }
+            else { estado.textContent = `Sobran ${-dif} u (reduce)`; estado.className = 'mt-3 text-center text-sm font-bold text-rose-600'; guardar.disabled = true; }
+        };
+        getInputs().forEach(i => i.addEventListener('input', recompute));
+        recompute();
+        ov.addEventListener('click', e => { if (e.target === ov) ov.remove(); });
+        document.getElementById('vdModCancelar').addEventListener('click', () => ov.remove());
+        guardar.addEventListener('click', () => {
+            const dist = {};
+            getInputs().forEach(i => { const v = parseInt(i.value, 10) || 0; if (v > 0) dist[i.dataset.modelo] = v; });
+            if (_ventaActual.productos[pId]) _ventaActual.productos[pId].modelosDistribucion = dist;
+            ov.remove();
+            _vdActualizarBtnModelos(pId);
+        });
     }
 
     function handleTipoVacioChange(event) { const inp=event.target, tipo=inp.dataset.tipoVacio, cant=parseInt(inp.value,10)||0; if(tipo&&_ventaActual.vaciosDevueltosPorTipo.hasOwnProperty(tipo)) _ventaActual.vaciosDevueltosPorTipo[tipo]=cant; }
@@ -482,7 +561,13 @@
               if (qtyNeeded > 0) {
                     if (stockLocal < qtyNeeded) throw new Error(`Stock insuficiente localmente para: ${p.presentacion}`);
                     const invRef = _doc(_db, `artifacts/${_appId}/users/${_userId}/inventario`, p.id);
-                    batch.update(invRef, { cantidadUnidades: _increment(-qtyNeeded) });
+                    const _updOff = { cantidadUnidades: _increment(-qtyNeeded) };
+                    if (p.manejaModelos && p.modelosDistribucion) {
+                        const _newMod = { ...(p.modelosStock || {}) };
+                        for (const _m in p.modelosDistribucion) _newMod[_m] = Math.max(0, (_newMod[_m] || 0) - (p.modelosDistribucion[_m] || 0));
+                        _updOff.modelosStock = _newMod;
+                    }
+                    batch.update(invRef, _updOff);
                 }
 
                 const precios = p.precios || { und: p.precioPorUnidad || 0 };
@@ -499,7 +584,7 @@
                       precios: p.precios, ventaPor: p.ventaPor, unidadesPorPaquete: p.unidadesPorPaquete, unidadesPorCaja: p.unidadesPorCaja,
                       cantidadVendida: { cj: p.cantCj||0, paq: p.cantPaq||0, und: p.cantUnd||0 },
                       totalUnidadesVendidas: p.totalUnidadesVendidas,
-                      iva: p.iva??0, manejaVacios: p.manejaVacios||false, tipoVacio: p.tipoVacio||null,
+                      iva: p.iva??0, manejaVacios: p.manejaVacios||false, tipoVacio: p.tipoVacio||null, manejaModelos: p.manejaModelos||false, modelosDistribucion: p.modelosDistribucion||null,
                       descuentoAC: p._acDescuento || null, preciosOriginales: p._acPreciosOriginales || null
                   });
               }
@@ -564,11 +649,16 @@
                             throw new Error(`Stock insuficiente para ${item.presentacion}. Disponible: ${currentStock}, Solicitado: ${item.qty}`);
                         }
 
-                        if (item.qty > 0) {
-                            transaction.update(item.ref, { cantidadUnidades: currentStock - item.qty });
-                        }
-
                         const p = prodsParaGuardar.find(prod => prod.id === item.id);
+                        if (item.qty > 0) {
+                            const _updOn = { cantidadUnidades: currentStock - item.qty };
+                            if (p && p.manejaModelos && p.modelosDistribucion) {
+                                const _newMod = { ...(invDoc.data().modelosStock || {}) };
+                                for (const _m in p.modelosDistribucion) _newMod[_m] = Math.max(0, (_newMod[_m] || 0) - (p.modelosDistribucion[_m] || 0));
+                                _updOn.modelosStock = _newMod;
+                            }
+                            transaction.update(item.ref, _updOn);
+                        }
                         const precios = p.precios || { und: p.precioPorUnidad || 0 };
                       const sub = (precios.cj || 0) * (p.cantCj || 0) + (precios.paq || 0) * (p.cantPaq || 0) + (precios.und || 0) * (p.cantUnd || 0);
                       totalVenta += sub;
@@ -586,7 +676,7 @@
                                unidadesPorPaquete: p.unidadesPorPaquete, unidadesPorCaja: p.unidadesPorCaja,
                                cantidadVendida: { cj: p.cantCj||0, paq: p.cantPaq||0, und: p.cantUnd||0 },
                                totalUnidadesVendidas: p.totalUnidadesVendidas,
-                               iva: p.iva??0, manejaVacios: p.manejaVacios||false, tipoVacio: p.tipoVacio||null,
+                               iva: p.iva??0, manejaVacios: p.manejaVacios||false, tipoVacio: p.tipoVacio||null, manejaModelos: p.manejaModelos||false, modelosDistribucion: p.modelosDistribucion||null,
                                descuentoAC: p._acDescuento || null, preciosOriginales: p._acPreciosOriginales || null
                             });
                       }
@@ -638,6 +728,16 @@
         const prods = Object.values(_ventaActual.productos);
         const hayVac = Object.values(_ventaActual.vaciosDevueltosPorTipo).some(c => c > 0);
         if (prods.length === 0 && !hayVac) { _showModal('Error', 'Agrega productos o registra vacíos devueltos.'); return; }
+
+        // Validar distribución de modelos completa
+        const _faltanMod = prods.filter(p => {
+            if (!p.manejaModelos) return false;
+            const totU = p.totalUnidadesVendidas || 0;
+            const d = p.modelosDistribucion;
+            const sum = d ? Object.values(d).reduce((a, b) => a + (b || 0), 0) : 0;
+            return totU > 0 && (!d || sum !== totU);
+        });
+        if (_faltanMod.length) { _showModal('Falta distribuir modelos', `Antes de guardar, distribuye los modelos de:<br><br>• ${_faltanMod.map(p => p.presentacion).join('<br>• ')}`); return; }
 
       const ticketBtn = document.getElementById('generarTicketBtn');
 
@@ -1336,6 +1436,12 @@
                          if (invDoc && invDoc.exists()) {
                              const stockActual = invDoc.data().cantidadUnidades || 0;
                              dataToSet = { cantidadUnidades: stockActual + ajuste.cantidad };
+                             const _bk = ajuste.datosBackup || {};
+                             if (_bk.manejaModelos && _bk.modelosDistribucion) {
+                                 const _newMod = { ...(invDoc.data().modelosStock || {}) };
+                                 for (const _m in _bk.modelosDistribucion) _newMod[_m] = (_newMod[_m] || 0) + (_bk.modelosDistribucion[_m] || 0);
+                                 dataToSet.modelosStock = _newMod;
+                             }
                          } else {
                              const bk = ajuste.datosBackup;
                              dataToSet = {
@@ -1430,6 +1536,15 @@
 
       if (prods.length === 0 && !hayVac && Object.values(_originalVentaForEdit.vaciosDevueltosPorTipo || {}).every(c => c === 0)) { _showModal('Error', 'La venta no puede quedar vacía.'); return; }
 
+      const _faltanModE = prods.filter(p => {
+          if (!p.manejaModelos) return false;
+          const totU = p.totalUnidadesVendidas || 0;
+          const d = p.modelosDistribucion;
+          const sum = d ? Object.values(d).reduce((a, b) => a + (b || 0), 0) : 0;
+          return totU > 0 && (!d || sum !== totU);
+      });
+      if (_faltanModE.length) { _showModal('Falta distribuir modelos', `Antes de guardar, distribuye los modelos de:<br><br>• ${_faltanModE.map(p => p.presentacion).join('<br>• ')}`); return; }
+
       // LEER EL SELECTOR EN LA VISTA DE EDICIÓN
       const editTipoOperacionSelect = document.getElementById('editTipoOperacion');
       const nuevoTipoOperacion = editTipoOperacionSelect ? editTipoOperacionSelect.value : (_originalVentaForEdit.tipoOperacion || 'venta');
@@ -1480,11 +1595,22 @@
                         
                           if (invDoc) {
                               const pData = invDoc.data();
+                              const _emUpd = {};
                               if (deltaU !== 0) {
                                   const currentStock = pData.cantidadUnidades || 0;
                                   if ((currentStock + deltaU) < 0) throw new Error(`Stock insuficiente: ${pData.presentacion}`);
-                                  transaction.update(invRefs.find(r=>r.id===pId).ref, { cantidadUnidades: currentStock + deltaU });
+                                  _emUpd.cantidadUnidades = currentStock + deltaU;
                               }
+                              // Modelos (orientativo): ajustar por diferencia origDist - newDist
+                              const _oD = (origP && origP.modelosDistribucion) || {};
+                              const _nD = (newP && newP.modelosDistribucion) || {};
+                              const _cl = new Set([...Object.keys(_oD), ...Object.keys(_nD)]);
+                              if (_cl.size) {
+                                  const _nm = { ...(pData.modelosStock || {}) };
+                                  _cl.forEach(m => { _nm[m] = Math.max(0, (_nm[m] || 0) + (_oD[m] || 0) - (_nD[m] || 0)); });
+                                  _emUpd.modelosStock = _nm;
+                              }
+                              if (Object.keys(_emUpd).length) transaction.update(invRefs.find(r=>r.id===pId).ref, _emUpd);
 
                               if (pData.manejaVacios && pData.tipoVacio) {
                                   const tV = pData.tipoVacio;
@@ -1539,7 +1665,8 @@
       }, 'Sí, Guardar', null, true);
   }
 
-  window.ventasModule = { toggleMoneda, handleQuantityChange, handleTipoVacioChange, showPastSaleOptions, editVenta, deleteVenta, invalidateCache: () => { } };
+  window.ventasModule = { toggleMoneda, handleQuantityChange,
+        abrirDistribucionVentaDirecta, handleTipoVacioChange, showPastSaleOptions, editVenta, deleteVenta, invalidateCache: () => { } };
 })();
 
 
