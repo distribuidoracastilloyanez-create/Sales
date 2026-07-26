@@ -14,6 +14,7 @@
     let _listenersUnsubscribes = []; 
     let _lastFilters = { searchTerm: '', rubro: '', segmento: '', marca: '' };
     let _recargaTempState = {}; 
+    let _recargaModelosState = {}; // productId -> { modelo: unidadesAAgregar } (recarga por modelo)
 
     const PUBLIC_DATA_ID = window.AppConfig.PUBLIC_DATA_ID; 
 
@@ -58,7 +59,7 @@
                 const stockData = _userStockCache[id];
                 
                 if (master) {
-                    _inventarioCache.push({ ...master, cantidadUnidades: stockData ? (stockData.cantidadUnidades || 0) : 0, id: id });
+                    _inventarioCache.push({ ...master, cantidadUnidades: stockData ? (stockData.cantidadUnidades || 0) : 0, modelosStock: (stockData && stockData.modelosStock) ? stockData.modelosStock : {}, id: id });
                 } else if (stockData) {
                     _inventarioCache.push({ ...stockData, id: id });
                 }
@@ -1374,7 +1375,7 @@
 
     async function showRecargaProductosView() {
          if (_floatingControls) _floatingControls.classList.add('hidden');
-         _recargaTempState = {};
+         _recargaTempState = {}; _recargaModelosState = {};
 
         _mainContent.innerHTML = `
             <div class="p-4 pt-8">
@@ -1509,6 +1510,7 @@
                                 class="w-24 p-1.5 text-center border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 recarga-qty-input font-bold bg-white text-green-700 shadow-sm">
                             <span class="ml-2 text-xs font-bold text-gray-500 whitespace-nowrap">x ${unitLabel}</span>
                         </div>
+                        ${p.manejaModelos ? `<div class="mt-1.5"><button type="button" data-doc-id="${p.id}" class="recarga-modelos-btn text-[11px] font-bold ${_recargaModelosState[p.id] ? 'text-green-600' : 'text-indigo-600'} hover:underline">${_recargaModelosState[p.id] ? '✓ modelos distribuidos' : '▸ Distribuir modelos'}</button></div>` : ''}
                     </td>
                 </tr>`;
         });
@@ -1522,6 +1524,8 @@
             input.addEventListener('input', (e) => {
                 const val = e.target.value;
                 _recargaTempState[e.target.dataset.docId] = val;
+                // Si cambia la cantidad, la distribución previa de modelos deja de ser válida
+                if (_recargaModelosState[e.target.dataset.docId]) delete _recargaModelosState[e.target.dataset.docId];
             });
 
             // 2. Interceptar el scroll de la rueda del ratón y anularlo
@@ -1530,6 +1534,75 @@
                 input.blur();       // Quita el foco del input para permitir el scroll de la página
             }, { passive: false }); // 'passive: false' es necesario para que preventDefault funcione en wheel
             
+        });
+
+        container.querySelectorAll('.recarga-modelos-btn').forEach(btn => {
+            btn.addEventListener('click', () => abrirDistribucionRecarga(btn.dataset.docId));
+        });
+    }
+
+    // Modal para distribuir en modelos la cantidad a recargar (+ stock existente sin asignar).
+    function abrirDistribucionRecarga(productId) {
+        const p = _inventarioCache.find(x => x.id === productId);
+        if (!p || !p.manejaModelos) return;
+        const modelos = p.modelos || [];
+        const vPor = p.ventaPor || { und: true };
+        let factor = 1;
+        if (vPor.und) factor = 1; else if (vPor.paq) factor = p.unidadesPorPaquete || 1; else if (vPor.cj) factor = p.unidadesPorCaja || 1;
+        const inputVal = parseInt(String(_recargaTempState[p.id] != null ? _recargaTempState[p.id] : '').trim(), 10) || 0;
+        const toAdd = inputVal * factor;
+        const existing = p.modelosStock || {};
+        const assigned = modelos.reduce((a, m) => a + (existing[m] || 0), 0);
+        const unassigned = Math.max(0, (p.cantidadUnidades || 0) - assigned);
+        const totalToDistribute = unassigned + toAdd;
+        if (totalToDistribute <= 0) { _showModal('Sin unidades', 'No hay unidades por distribuir. Ingresa una cantidad a recargar (o el stock ya está todo asignado).'); return; }
+        const prev = _recargaModelosState[p.id] || {};
+        document.getElementById('recModelosOverlay')?.remove();
+        const ov = document.createElement('div');
+        ov.id = 'recModelosOverlay';
+        ov.className = 'fixed inset-0 z-[9999] bg-slate-900/50 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4';
+        const filas = modelos.map(m => `
+            <div class="flex items-center justify-between gap-3 py-2 px-3 border-b border-slate-100 last:border-0">
+                <div class="min-w-0"><div class="text-sm font-medium text-slate-800">${m}</div><div class="text-[11px] text-slate-400">Actual: ${existing[m] || 0} u</div></div>
+                <input type="number" min="0" value="${prev[m] || 0}" data-modelo="${m}" class="rec-mod-inp w-24 px-2 py-1.5 text-center border border-slate-300 rounded-lg text-sm font-bold text-slate-800 focus:ring-2 focus:ring-indigo-500 outline-none">
+            </div>`).join('');
+        ov.innerHTML = `
+            <div class="bg-white w-full max-w-md rounded-t-xl sm:rounded-xl shadow-2xl overflow-hidden max-h-[92vh] flex flex-col border border-slate-200">
+                <div class="bg-indigo-700 text-white px-5 py-4 shrink-0">
+                    <div class="text-[10px] uppercase tracking-wider text-indigo-200 font-semibold">Recarga &middot; Modelos</div>
+                    <div class="font-semibold text-base truncate">${p.presentacion} &middot; ${p.marca || ''}</div>
+                    <div class="text-xs text-indigo-100 mt-0.5">Distribuye <strong>${totalToDistribute}</strong> unidad(es) entre los modelos${unassigned > 0 ? ` (incluye ${unassigned} ya en stock sin asignar)` : ''}.</div>
+                </div>
+                <div class="overflow-y-auto p-4 flex-1">
+                    <div class="border border-slate-200 rounded-lg overflow-hidden">${filas}</div>
+                    <div id="recModEstado" class="mt-3 text-center text-sm font-bold"></div>
+                </div>
+                <div class="p-4 border-t border-slate-100 shrink-0 space-y-2">
+                    <button id="recModGuardar" class="w-full py-3 bg-indigo-700 text-white rounded-lg font-medium text-sm hover:bg-indigo-800 transition disabled:opacity-40">Guardar distribución</button>
+                    <button id="recModCancelar" class="w-full py-2.5 text-slate-400 hover:text-slate-600 font-medium text-sm">Cancelar</button>
+                </div>
+            </div>`;
+        document.body.appendChild(ov);
+        const getInputs = () => Array.from(ov.querySelectorAll('.rec-mod-inp'));
+        const guardar = document.getElementById('recModGuardar');
+        const estado = document.getElementById('recModEstado');
+        const recompute = () => {
+            const suma = getInputs().reduce((a, i) => a + (parseInt(i.value, 10) || 0), 0);
+            const dif = totalToDistribute - suma;
+            if (dif === 0) { estado.textContent = '✓ Distribución completa'; estado.className = 'mt-3 text-center text-sm font-bold text-green-600'; guardar.disabled = false; }
+            else if (dif > 0) { estado.textContent = `Faltan ${dif} u por asignar`; estado.className = 'mt-3 text-center text-sm font-bold text-amber-600'; guardar.disabled = true; }
+            else { estado.textContent = `Sobran ${-dif} u (reduce)`; estado.className = 'mt-3 text-center text-sm font-bold text-rose-600'; guardar.disabled = true; }
+        };
+        getInputs().forEach(i => i.addEventListener('input', recompute));
+        recompute();
+        ov.addEventListener('click', e => { if (e.target === ov) ov.remove(); });
+        document.getElementById('recModCancelar').addEventListener('click', () => ov.remove());
+        guardar.addEventListener('click', () => {
+            const dist = {};
+            getInputs().forEach(i => { const v = parseInt(i.value, 10) || 0; if (v > 0) dist[i.dataset.modelo] = v; });
+            _recargaModelosState[p.id] = dist;
+            ov.remove();
+            renderRecargaList();
         });
     }
 
@@ -1540,6 +1613,7 @@
         let changesCount = 0;
         let invalidValues = false;
         const recargaDetalles = []; 
+        const modelosPendientes = [];
 
         // Ordenar primero para que el Snapshot del historial mantenga el orden visual
         let productosOrdenados = [..._inventarioCache];
@@ -1569,7 +1643,7 @@
             const unitsToAdd = inputVal * factor;
             const newBaseTotal = currentBaseSano + unitsToAdd;
 
-            recargaDetalles.push({
+            const _detalle = {
                 productoId: p.id,
                 presentacion: p.presentacion || 'Desconocido',
                 marca: p.marca || 'S/M',
@@ -1579,16 +1653,43 @@
                 unidadesNuevas: newBaseTotal,
                 diferenciaUnidades: unitsToAdd,
                 factorUtilizado: factor
-            });
+            };
+            const invRef = _doc(_db, `artifacts/${_appId}/users/${_userId}/inventario`, p.id);
 
-            if (unitsToAdd > 0 || currentBaseRaw < 0) {
-                const docRef = _doc(_db, `artifacts/${_appId}/users/${_userId}/inventario`, p.id);
-                batch.set(docRef, { cantidadUnidades: newBaseTotal }, { merge: true });
+            if (p.manejaModelos) {
+                const existing = p.modelosStock || {};
+                const mods = p.modelos || [];
+                const assigned = mods.reduce((a, m) => a + (existing[m] || 0), 0);
+                const unassigned = Math.max(0, currentBaseSano - assigned);
+                const totalToDistribute = unassigned + unitsToAdd;
+                const dist = _recargaModelosState[p.id] || null;
+                const sumDist = dist ? Object.values(dist).reduce((a, b) => a + (b || 0), 0) : 0;
+
+                if (unitsToAdd > 0) {
+                    if (!dist || sumDist !== totalToDistribute) { modelosPendientes.push(`${p.presentacion} (${p.marca || ''})`); recargaDetalles.push(_detalle); return; }
+                } else if (dist && sumDist > 0) {
+                    if (sumDist !== unassigned) { modelosPendientes.push(`${p.presentacion} (${p.marca || ''})`); recargaDetalles.push(_detalle); return; }
+                } else {
+                    recargaDetalles.push(_detalle); return; // no se recarga ni redistribuye este producto
+                }
+                const newModelos = {};
+                mods.forEach(m => { newModelos[m] = (existing[m] || 0) + ((dist && dist[m]) || 0); });
+                _detalle.modelosDistribucion = dist || {};
+                _detalle.modelosStockNuevo = newModelos;
+                recargaDetalles.push(_detalle);
+                batch.set(invRef, { cantidadUnidades: newBaseTotal, modelosStock: newModelos }, { merge: true });
                 changesCount++;
+            } else {
+                recargaDetalles.push(_detalle);
+                if (unitsToAdd > 0 || currentBaseRaw < 0) {
+                    batch.set(invRef, { cantidadUnidades: newBaseTotal }, { merge: true });
+                    changesCount++;
+                }
             }
         });
 
         if (invalidValues) { _showModal('Error', 'Hay valores inválidos (negativos) en las casillas. Por favor revise.'); return; }
+        if (modelosPendientes.length) { _showModal('Falta distribuir modelos', `Antes de recargar, distribuye los modelos de:<br><br>• ${modelosPendientes.join('<br>• ')}`); return; }
 
         _showModal('Confirmar Recarga', `Se guardará un reporte del catálogo completo (${recargaDetalles.length} items) y se actualizará el stock de ${changesCount} productos (incluyendo limpieza automática de negativos). ¿Continuar?`, async () => {
             _showModal('Progreso', 'Procesando recarga...', null, '', null, false);
@@ -1606,7 +1707,7 @@
                     await batch.commit();
                 }
                 
-                _recargaTempState = {};
+                _recargaTempState = {}; _recargaModelosState = {};
                 renderRecargaList(); 
 
                 const pModal = document.getElementById('modalContainer');
