@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v88'; // v88: [modelos fase 2] recarga con distribucion por modelo (modal, suma exacta, guarda modelosStock, distribuye stock existente sin asignar)
+const CACHE_NAME = 'ventas-app-cache-v89'; // v89: [modelos fase 3] distribucion por modelo en Tomar Pedido + descuento/restauracion por modelo en entrega/anular (invariante total=suma modelos)
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
