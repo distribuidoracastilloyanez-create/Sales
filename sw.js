@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v86'; // v86: bloquear edicion de pedidos ya incluidos en un corte de carga (hoja de carga ya impresa)
+const CACHE_NAME = 'ventas-app-cache-v87'; // v87: [modelos fase 1] definicion de modelos por producto (check + lista dinamica) en agregar/editar producto
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
