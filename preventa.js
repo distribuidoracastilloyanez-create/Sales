@@ -1563,8 +1563,10 @@
                         if (_manejaModE) {
                             const curMod = { ...(invDoc.data().modelosStock || {}) };
                             for (const _m in _distE) curMod[_m] = Math.max(0, (curMod[_m] || 0) - (_distE[_m] || 0));
-                            const nuevaCant = Object.values(curMod).reduce((a, b) => a + (b || 0), 0);
-                            transaction.update(r.ref, { modelosStock: curMod, cantidadUnidades: nuevaCant });
+                            // El TOTAL se descuenta del real (no se deriva de los modelos): así
+                            // cantidadUnidades sigue correcta aunque modelosStock haya derivado por
+                            // ventas directas u otros ajustes. modelosStock es orientativo.
+                            transaction.update(r.ref, { modelosStock: curMod, cantidadUnidades: Math.max(0, stockActual - qty) });
                         } else {
                             transaction.update(r.ref, { cantidadUnidades: Math.max(0, stockActual - qty) });
                         }
@@ -1687,8 +1689,8 @@
                         if (_manejaModA) {
                             const curMod = { ...(invDoc.data().modelosStock || {}) };
                             for (const _m in _distA) curMod[_m] = (curMod[_m] || 0) + (_distA[_m] || 0);
-                            const nuevaCant = Object.values(curMod).reduce((a, b) => a + (b || 0), 0);
-                            transaction.update(r.ref, { modelosStock: curMod, cantidadUnidades: nuevaCant });
+                            const stockActual = invDoc.data().cantidadUnidades || 0;
+                            transaction.update(r.ref, { modelosStock: curMod, cantidadUnidades: stockActual + (r.d.unidadesDespacho || 0) });
                         } else {
                             const stockActual = invDoc.data().cantidadUnidades || 0;
                             transaction.update(r.ref, { cantidadUnidades: stockActual + (r.d.unidadesDespacho || 0) });
