@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v90'; // v90: [modelos robustez] desacoplar cantidadUnidades (fuente de verdad) de modelosStock (orientativo) en entrega/anular + Corregir a 0 modelo-aware
+const CACHE_NAME = 'ventas-app-cache-v91'; // v91: [modelos fase venta directa] distribucion por modelo en Nueva Venta (crear/editar/eliminar) - modelosStock orientativo, total intacto
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
