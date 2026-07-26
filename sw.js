@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v87'; // v87: [modelos fase 1] definicion de modelos por producto (check + lista dinamica) en agregar/editar producto
+const CACHE_NAME = 'ventas-app-cache-v88'; // v88: [modelos fase 2] recarga con distribucion por modelo (modal, suma exacta, guarda modelosStock, distribuye stock existente sin asignar)
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
