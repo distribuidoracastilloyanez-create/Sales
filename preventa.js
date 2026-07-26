@@ -291,7 +291,8 @@
                 const unidades = data.cantidadUnidades || 0;
                 _pvStockRuta[d.id] = {
                     cantidadUnidades: unidades,
-                    cantCajas: Math.floor(unidades / uCj)
+                    cantCajas: Math.floor(unidades / uCj),
+                    modelosStock: data.modelosStock || {}
                 };
             });
         } catch (e) { console.warn('No se pudo leer el inventario del vendedor:', e); }
@@ -362,6 +363,7 @@
         if (_showModal) _showModal('Aviso', (_pvTasaCOP <= 0 && _pvTasaBs <= 0) ? 'Ingresa tasas para alternar.' : 'Ingresa una tasa válida (> 0).');
     };
     window.preventaModule.handlePedidoQty = function (event) { manejarCantidadPedido(event.target); };
+    window.preventaModule.abrirDistribucionPedido = function (pid) { abrirDistribucionPedido(pid); };
 
     async function showTomarPedido(pedidoEditar = null) {
         // No permitir editar un pedido que ya fue incluido en un CORTE de carga:
@@ -510,6 +512,9 @@
                     precios: pr.precios || cat.precios || {},
                     unidadesPorCaja: pr.unidadesPorCaja || cat.unidadesPorCaja || 1,
                     unidadesPorPaquete: pr.unidadesPorPaquete || cat.unidadesPorPaquete || 1,
+                    manejaModelos: !!(cat.manejaModelos || pr.manejaModelos),
+                    modelos: cat.modelos || pr.modelos || [],
+                    modelosDistribucion: pr.modelosDistribucion || null,
                     cantCj: pr.cantCj || 0, cantPaq: pr.cantPaq || 0, cantUnd: pr.cantUnd || 0
                 };
             });
@@ -646,6 +651,15 @@
             if (vPor.cj) { const uCj = prod.unidadesPorCaja || 1; const maxCj = Math.floor(stockU / uCj); html += fila('cj', `${prod.presentacion} (Cj/${uCj} und)`, pa.cantCj, precios.cj || 0, `${maxCj} Cj`); }
             if (vPor.paq) { const uPaq = prod.unidadesPorPaquete || 1; const maxPaq = Math.floor(stockU / uPaq); html += fila('paq', `${prod.presentacion} (Paq/${uPaq})`, pa.cantPaq, precios.paq || 0, `${maxPaq} Pq`); }
             if (vPor.und) { html += fila('und', `${prod.presentacion} (Und)`, pa.cantUnd, precios.und || 0, `${stockU} Un`); }
+            if (prod.manejaModelos) {
+                const totUM = (pa.cantCj || 0) * (prod.unidadesPorCaja || 1) + (pa.cantPaq || 0) * (prod.unidadesPorPaquete || 1) + (pa.cantUnd || 0);
+                const distM = pa.modelosDistribucion;
+                const distSumM = distM ? Object.values(distM).reduce((a, b) => a + (b || 0), 0) : 0;
+                const okM = totUM > 0 && distM && distSumM === totUM;
+                html += `<tr class="border-b bg-indigo-50/30"><td colspan="4" class="py-1.5 px-3 text-right">
+                    <button type="button" onclick="window.preventaModule.abrirDistribucionPedido('${prod.id}')" data-pid="${prod.id}" class="pv-modelos-btn text-[11px] font-bold ${okM ? 'text-green-600' : 'text-indigo-600'} hover:underline">${okM ? '✓ modelos distribuidos (' + totUM + ' u)' : '▸ Distribuir modelos' + (totUM > 0 ? ' (' + totUM + ' u)' : '')}</button>
+                </td></tr>`;
+            }
         });
         body.innerHTML = html;
     }
@@ -662,14 +676,92 @@
                 rubro: prod.rubro || null, segmento: prod.segmento || null,
                 precios: prod.precios || { und: prod.precioPorUnidad || 0 },
                 unidadesPorCaja: prod.unidadesPorCaja || 1, unidadesPorPaquete: prod.unidadesPorPaquete || 1,
+                manejaModelos: !!prod.manejaModelos, modelos: prod.modelos || [],
                 cantCj: 0, cantPaq: 0, cantUnd: 0
             };
         }
         _pedidoActual.productos[pid][`cant${tipo[0].toUpperCase() + tipo.slice(1)}`] = qty;
         const pa = _pedidoActual.productos[pid];
+        // Al cambiar la cantidad, la distribución de modelos previa deja de ser válida
+        if (pa.modelosDistribucion) delete pa.modelosDistribucion;
         if ((pa.cantCj || 0) === 0 && (pa.cantPaq || 0) === 0 && (pa.cantUnd || 0) === 0) delete _pedidoActual.productos[pid];
         actualizarTotalPedido();
         actualizarBotonGuardar();
+        if (prod.manejaModelos) _pvActualizarBtnModelos(pid);
+    }
+
+    // Actualiza (sin re-render) la etiqueta del botón "Distribuir modelos" de un producto
+    function _pvActualizarBtnModelos(pid) {
+        const btn = document.querySelector(`.pv-modelos-btn[data-pid="${pid}"]`);
+        if (!btn) return;
+        const prod = _pvProductos.find(p => p.id === pid);
+        if (!prod) return;
+        const pa = _pedidoActual.productos[pid] || {};
+        const totU = (pa.cantCj || 0) * (prod.unidadesPorCaja || 1) + (pa.cantPaq || 0) * (prod.unidadesPorPaquete || 1) + (pa.cantUnd || 0);
+        const dist = pa.modelosDistribucion;
+        const distSum = dist ? Object.values(dist).reduce((a, b) => a + (b || 0), 0) : 0;
+        const ok = totU > 0 && dist && distSum === totU;
+        btn.textContent = ok ? `✓ modelos distribuidos (${totU} u)` : `▸ Distribuir modelos${totU > 0 ? ' (' + totU + ' u)' : ''}`;
+        btn.className = `pv-modelos-btn text-[11px] font-bold ${ok ? 'text-green-600' : 'text-indigo-600'} hover:underline`;
+    }
+
+    // Modal para distribuir en modelos la cantidad pedida de un producto.
+    function abrirDistribucionPedido(pid) {
+        const prod = _pvProductos.find(p => p.id === pid);
+        if (!prod || !prod.manejaModelos) return;
+        const pa = _pedidoActual.productos[pid] || {};
+        const totU = (pa.cantCj || 0) * (prod.unidadesPorCaja || 1) + (pa.cantPaq || 0) * (prod.unidadesPorPaquete || 1) + (pa.cantUnd || 0);
+        if (totU <= 0) { if (_showModal) _showModal('Sin cantidad', 'Primero ingresa la cantidad a pedir de este producto.'); return; }
+        const modelos = prod.modelos || [];
+        const modelosStock = (_pvStockRuta[pid] && _pvStockRuta[pid].modelosStock) || {};
+        const prev = pa.modelosDistribucion || {};
+        document.getElementById('pvModPedOverlay')?.remove();
+        const ov = document.createElement('div');
+        ov.id = 'pvModPedOverlay';
+        ov.className = 'fixed inset-0 z-[9999] bg-slate-900/50 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4';
+        const filas = modelos.map(m => `
+            <div class="flex items-center justify-between gap-3 py-2 px-3 border-b border-slate-100 last:border-0">
+                <div class="min-w-0"><div class="text-sm font-medium text-slate-800">${m}</div><div class="text-[11px] text-slate-400">Disponible: ${modelosStock[m] || 0} u</div></div>
+                <input type="number" min="0" value="${prev[m] || 0}" data-modelo="${m}" class="pv-modped-inp w-24 px-2 py-1.5 text-center border border-slate-300 rounded-lg text-sm font-bold text-slate-800 focus:ring-2 focus:ring-indigo-500 outline-none">
+            </div>`).join('');
+        ov.innerHTML = `
+            <div class="bg-white w-full max-w-md rounded-t-xl sm:rounded-xl shadow-2xl overflow-hidden max-h-[92vh] flex flex-col border border-slate-200">
+                <div class="bg-indigo-700 text-white px-5 py-4 shrink-0">
+                    <div class="text-[10px] uppercase tracking-wider text-indigo-200 font-semibold">Pedido &middot; Modelos</div>
+                    <div class="font-semibold text-base truncate">${prod.presentacion} &middot; ${prod.marca || ''}</div>
+                    <div class="text-xs text-indigo-100 mt-0.5">Distribuye <strong>${totU}</strong> unidad(es) entre los modelos.</div>
+                </div>
+                <div class="overflow-y-auto p-4 flex-1">
+                    <div class="border border-slate-200 rounded-lg overflow-hidden">${filas}</div>
+                    <div id="pvModPedEstado" class="mt-3 text-center text-sm font-bold"></div>
+                </div>
+                <div class="p-4 border-t border-slate-100 shrink-0 space-y-2">
+                    <button id="pvModPedGuardar" class="w-full py-3 bg-indigo-700 text-white rounded-lg font-medium text-sm hover:bg-indigo-800 transition disabled:opacity-40">Guardar distribución</button>
+                    <button id="pvModPedCancelar" class="w-full py-2.5 text-slate-400 hover:text-slate-600 font-medium text-sm">Cancelar</button>
+                </div>
+            </div>`;
+        document.body.appendChild(ov);
+        const getInputs = () => Array.from(ov.querySelectorAll('.pv-modped-inp'));
+        const guardar = document.getElementById('pvModPedGuardar');
+        const estado = document.getElementById('pvModPedEstado');
+        const recompute = () => {
+            const suma = getInputs().reduce((a, i) => a + (parseInt(i.value, 10) || 0), 0);
+            const dif = totU - suma;
+            if (dif === 0) { estado.textContent = '✓ Distribución completa'; estado.className = 'mt-3 text-center text-sm font-bold text-green-600'; guardar.disabled = false; }
+            else if (dif > 0) { estado.textContent = `Faltan ${dif} u por asignar`; estado.className = 'mt-3 text-center text-sm font-bold text-amber-600'; guardar.disabled = true; }
+            else { estado.textContent = `Sobran ${-dif} u (reduce)`; estado.className = 'mt-3 text-center text-sm font-bold text-rose-600'; guardar.disabled = true; }
+        };
+        getInputs().forEach(i => i.addEventListener('input', recompute));
+        recompute();
+        ov.addEventListener('click', e => { if (e.target === ov) ov.remove(); });
+        document.getElementById('pvModPedCancelar').addEventListener('click', () => ov.remove());
+        guardar.addEventListener('click', () => {
+            const dist = {};
+            getInputs().forEach(i => { const v = parseInt(i.value, 10) || 0; if (v > 0) dist[i.dataset.modelo] = v; });
+            if (_pedidoActual.productos[pid]) _pedidoActual.productos[pid].modelosDistribucion = dist;
+            ov.remove();
+            _pvActualizarBtnModelos(pid);
+        });
     }
 
     function calcularTotalPedido() {
@@ -695,6 +787,19 @@
         const productos = Object.values(_pedidoActual.productos);
         if (!productos.length) return;
 
+        // Validar que los productos con modelos tengan su distribución completa
+        const _faltanMod = productos.filter(p => {
+            if (!p.manejaModelos) return false;
+            const totU = (p.cantCj || 0) * (p.unidadesPorCaja || 1) + (p.cantPaq || 0) * (p.unidadesPorPaquete || 1) + (p.cantUnd || 0);
+            const d = p.modelosDistribucion;
+            const sum = d ? Object.values(d).reduce((a, b) => a + (b || 0), 0) : 0;
+            return totU > 0 && (!d || sum !== totU);
+        });
+        if (_faltanMod.length) {
+            if (_showModal) _showModal('Falta distribuir modelos', `Antes de guardar, distribuye los modelos de:<br><br>• ${_faltanMod.map(p => p.presentacion).join('<br>• ')}`);
+            return;
+        }
+
         const btn = document.getElementById('pvPedGuardar');
         btn.disabled = true; btn.textContent = 'Guardando...';
 
@@ -705,6 +810,7 @@
             id: p.id, presentacion: p.presentacion, marca: p.marca || null,
             cantCj: p.cantCj || 0, cantPaq: p.cantPaq || 0, cantUnd: p.cantUnd || 0,
             unidadesPorCaja: p.unidadesPorCaja || 1, unidadesPorPaquete: p.unidadesPorPaquete || 1,
+            manejaModelos: !!p.manejaModelos, modelos: p.modelos || [], modelosDistribucion: p.modelosDistribucion || null,
             precios: p.precios,
             subtotal: (p.precios?.cj || 0) * (p.cantCj || 0) + (p.precios?.paq || 0) * (p.cantPaq || 0) + (p.precios?.und || 0) * (p.cantUnd || 0)
         }));
@@ -1448,10 +1554,20 @@
                     const invDoc = docs[i];
                     const stockActual = invDoc.exists() ? (invDoc.data().cantidadUnidades || 0) : 0;
                     const qty = r.d.unidadesDespacho || 0;
-                    // Descontar (no baja de 0: el ticket ya se congeló con lo disponible)
-                    const nuevo = Math.max(0, stockActual - qty);
+                    // Modelos: si el producto maneja modelos, se descuenta por modelo y
+                    // cantidadUnidades se DERIVA de la suma (invariante garantizada).
+                    const _plE = (pedido.productos || []).find(x => x.id === r.d.id) || {};
+                    const _distE = r.d.modelosDistribucion || _plE.modelosDistribucion || null;
+                    const _manejaModE = (r.d.manejaModelos || _plE.manejaModelos) && _distE;
                     if (invDoc.exists()) {
-                        transaction.update(r.ref, { cantidadUnidades: nuevo });
+                        if (_manejaModE) {
+                            const curMod = { ...(invDoc.data().modelosStock || {}) };
+                            for (const _m in _distE) curMod[_m] = Math.max(0, (curMod[_m] || 0) - (_distE[_m] || 0));
+                            const nuevaCant = Object.values(curMod).reduce((a, b) => a + (b || 0), 0);
+                            transaction.update(r.ref, { modelosStock: curMod, cantidadUnidades: nuevaCant });
+                        } else {
+                            transaction.update(r.ref, { cantidadUnidades: Math.max(0, stockActual - qty) });
+                        }
                     }
                     // Subtotal según los precios guardados en el pedido
                     const pr = r.d.precios || {};
@@ -1470,7 +1586,8 @@
                         cantidadVendida: { cj: r.d.cantCj || 0, paq: r.d.cantPaq || 0, und: r.d.cantUnd || 0 },
                         totalUnidadesVendidas: qty,
                         unidadesPorCaja: r.d.unidadesPorCaja || 1, unidadesPorPaquete: r.d.unidadesPorPaquete || 1,
-                        manejaVacios: _maneja, tipoVacio: _tipoV
+                        manejaVacios: _maneja, tipoVacio: _tipoV,
+                        manejaModelos: !!_manejaModE, modelosDistribucion: _distE || null
                     });
                 });
 
@@ -1563,7 +1680,16 @@
                     // 2. Devolver las unidades (solo si el doc existe)
                     refs.forEach((r, i) => {
                         const invDoc = docs[i];
-                        if (invDoc.exists()) {
+                        if (!invDoc.exists()) return;
+                        const _plA = (pedido.productos || []).find(x => x.id === r.d.id) || {};
+                        const _distA = r.d.modelosDistribucion || _plA.modelosDistribucion || null;
+                        const _manejaModA = (r.d.manejaModelos || _plA.manejaModelos) && _distA;
+                        if (_manejaModA) {
+                            const curMod = { ...(invDoc.data().modelosStock || {}) };
+                            for (const _m in _distA) curMod[_m] = (curMod[_m] || 0) + (_distA[_m] || 0);
+                            const nuevaCant = Object.values(curMod).reduce((a, b) => a + (b || 0), 0);
+                            transaction.update(r.ref, { modelosStock: curMod, cantidadUnidades: nuevaCant });
+                        } else {
                             const stockActual = invDoc.data().cantidadUnidades || 0;
                             transaction.update(r.ref, { cantidadUnidades: stockActual + (r.d.unidadesDespacho || 0) });
                         }
@@ -1655,7 +1781,8 @@
                 cantCj: cj, cantPaq: paq, cantUnd: und,
                 unidadesPorCaja: uCj, unidadesPorPaquete: uPaq,
                 unidadesDespacho: (pr.unidadesDespacho != null) ? pr.unidadesDespacho : _pvUnidadesProducto(pr),
-                precios: pr.precios || null, parcial: !!pr.parcial
+                precios: pr.precios || null, parcial: !!pr.parcial,
+                manejaModelos: !!pr.manejaModelos, modelosDistribucion: pr.modelosDistribucion || null
             };
         });
     }
