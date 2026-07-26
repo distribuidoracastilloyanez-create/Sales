@@ -180,6 +180,16 @@
                 if (vPor.und) { 
                     html += createRow('und', vActProd.cantUnd || 0, stockU, precios.und || 0, `${stockU} Und`, `${prod.presentacion} (Und)`); 
                 }
+                if (prod.manejaModelos) {
+                    const uCjM = prod.unidadesPorCaja || 1, uPaqM = prod.unidadesPorPaquete || 1;
+                    const totUM = (vActProd.cantCj || 0) * uCjM + (vActProd.cantPaq || 0) * uPaqM + (vActProd.cantUnd || 0);
+                    const distM = vActProd.modelosDistribucion;
+                    const sumM = distM ? Object.values(distM).reduce((a, b) => a + (b || 0), 0) : 0;
+                    const okM = totUM > 0 && distM && sumM === totUM;
+                    html += `<tr class="border-b bg-indigo-50/30"><td colspan="4" class="py-1.5 px-3 text-right">
+                        <button type="button" onclick="window.ventasModule.abrirDistribucionVentaDirecta('${prod.id}')" data-pid="${prod.id}" class="vd-modelos-btn text-[11px] font-bold ${okM ? 'text-green-600' : 'text-indigo-600'} hover:underline">${okM ? '✓ modelos distribuidos (' + totUM + ' u)' : '▸ Distribuir modelos' + (totUM > 0 ? ' (' + totUM + ' u)' : '')}</button>
+                    </td></tr>`;
+                }
             });
             return html;
         },
