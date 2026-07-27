@@ -10,8 +10,8 @@
     let _clientesCache = [];
     let _inventarioCache = []; 
     let _usersCache = []; // Caché de vendedores para el panel Admin
-    let _obsequioConfig = { productoId: null, productoData: null }; 
-    let _obsequioActual = { cliente: null, cantidadEntregada: 0, vaciosRecibidos: 0, observacion: '' };
+    let _obsequioConfig = { productoIds: [], productos: [] }; 
+    let _obsequioActual = { cliente: null, producto: null, cantidadEntregada: 0, vaciosRecibidos: 0, observacion: '' };
     let _lastObsequiosSearch = []; 
 
     const TIPOS_VACIO = window.TIPOS_VACIO_GLOBAL || ["1/4 - 1/3", "ret 350 ml", "ret 1.25 Lts"];
@@ -82,6 +82,12 @@
                     </div>
                     <div id="obs-form-loader" class="text-center p-8 font-medium text-gray-500 animate-pulse">Sincronizando Catálogo y Clientes...</div>
                     <div id="obs-form-content" class="hidden space-y-4">
+                        <div>
+                            <label class="block text-sm font-bold text-gray-700 mb-1">Producto a obsequiar:</label>
+                            <select id="obsProdSelect" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 outline-none shadow-sm font-medium bg-white">
+                                <option value="">-- Seleccione el producto --</option>
+                            </select>
+                        </div>
                         <div class="relative" id="cliSearchContainer">
                             <label class="block text-sm font-bold text-gray-700 mb-1">Buscar Cliente:</label>
                             <input type="text" id="cliSearch" placeholder="Escriba el nombre comercial..." class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 outline-none shadow-sm">
@@ -124,7 +130,7 @@
         const loader = document.getElementById('obs-form-loader');
         const content = document.getElementById('obs-form-content');
 
-        if (_obsequioConfig.productoData) {
+        if (_obsequioConfig.productos && _obsequioConfig.productos.length) {
             loader.classList.add('hidden');
             content.classList.remove('hidden');
             setupObsequioUI();
@@ -141,8 +147,11 @@
         try {
             const snap = await _getDoc(_doc(_db, OBSEQUIO_CONFIG_PATH));
             if (snap.exists()) {
-                _obsequioConfig.productoId = snap.data().productoId;
-                _obsequioConfig.productoData = _inventarioCache.find(p => p.id === _obsequioConfig.productoId);
+                const data = snap.data();
+                // Compat: acepta el nuevo 'productoIds' (array) o el viejo 'productoId' (único)
+                const ids = Array.isArray(data.productoIds) ? data.productoIds : (data.productoId ? [data.productoId] : []);
+                _obsequioConfig.productoIds = ids;
+                _obsequioConfig.productos = ids.map(id => _inventarioCache.find(p => p.id === id)).filter(Boolean);
             }
         } catch (e) {
             console.warn("Error cargando config obsequio:", e);
@@ -189,11 +198,27 @@
     }
 
     function setupObsequioUI() {
-        const p = _obsequioConfig.productoData;
-        document.getElementById('prodName').textContent = p.presentacion;
-        const uCaja = p.unidadesPorCaja || 1;
-        document.getElementById('prodStock').textContent = `${Math.floor((p.cantidadUnidades||0) / uCaja)} Cajas`;
-        document.getElementById('vacTipo').textContent = `Tipo: ${p.tipoVacio || 'N/A'}`;
+        const sel = document.getElementById('obsProdSelect');
+        const productos = _obsequioConfig.productos || [];
+        sel.innerHTML = '<option value="">-- Seleccione el producto --</option>' +
+            productos.map(p => `<option value="${p.id}">${p.marca ? p.marca + ' - ' : ''}${p.presentacion}</option>`).join('');
+
+        const actualizarInfoProducto = () => {
+            const p = _obsequioActual.producto;
+            const nEl = document.getElementById('prodName'), sEl = document.getElementById('prodStock'), tEl = document.getElementById('vacTipo');
+            if (!p) { if (nEl) nEl.textContent = '—'; if (sEl) sEl.textContent = '—'; if (tEl) tEl.textContent = ''; return; }
+            if (nEl) nEl.textContent = p.presentacion;
+            const uCaja = p.unidadesPorCaja || 1;
+            if (sEl) sEl.textContent = `${Math.floor((p.cantidadUnidades || 0) / uCaja)} Cajas`;
+            if (tEl) tEl.textContent = p.tipoVacio ? `Tipo: ${p.tipoVacio}` : '';
+        };
+        sel.onchange = () => {
+            _obsequioActual.producto = productos.find(p => p.id === sel.value) || null;
+            actualizarInfoProducto();
+        };
+        // Si hay un solo producto configurado, se preselecciona
+        if (productos.length === 1) { sel.value = productos[0].id; _obsequioActual.producto = productos[0]; }
+        actualizarInfoProducto();
 
         const input = document.getElementById('cliSearch');
         const drop = document.getElementById('cliDrop');
@@ -230,8 +255,9 @@
         e.preventDefault();
         const cjs = parseInt(document.getElementById('cantEnt').value);
         const vRec = parseInt(document.getElementById('vacRec').value) || 0;
-        const p = _obsequioConfig.productoData;
+        const p = _obsequioActual.producto;
 
+        if (!p) { _showModal('Error', 'Selecciona el producto a obsequiar.'); return; }
         if (isNaN(cjs) || cjs <= 0) {
             _showModal('Error', 'Debe ingresar una cantidad válida de cajas a entregar.');
             return;
