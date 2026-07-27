@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v103'; // v103: Estado del Pedido rediseñado - lista (mas antiguos arriba), estado clickeable, detalle al tocar el cliente, y corte 'hasta aqui' dentro de la lista
+const CACHE_NAME = 'ventas-app-cache-v104'; // v104: Reportes con bitacora de actualizaciones (preventa_log) + fix corte con pedidos borrados (recalcula/elimina) + quitar 'Marcar corte como cargado' (el corte no altera estados)
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
