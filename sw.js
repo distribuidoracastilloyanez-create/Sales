@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v100'; // v100: fix Tomar Pedido - cargar datos antes de pintar el template (elimina crash 'Cannot set properties of null' en pvVendedorInfo) + cancelar listeners
+const CACHE_NAME = 'ventas-app-cache-v101'; // v101: fix - boton Atras del pedido ahora pide confirmacion (evita demotar el estado por accidente al cancelar la entrega)
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
