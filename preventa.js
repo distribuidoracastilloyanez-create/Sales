@@ -1203,8 +1203,14 @@
         if (!['admin', 'vendedor', 'despachador'].includes(rol)) return;
         const esAdmin = rol === 'admin';
         _pvModoCorte = false;
-        // El despachador ve por defecto su ruta (zona), pero puede cambiarla (incl. "Todas")
-        if (rol === 'despachador' && !_pvFiltroRuta) _pvFiltroRuta = window.userZona || '';
+        // Memoria: restaurar los filtros guardados del usuario (ruta y vendedor)
+        try {
+            const _rG = localStorage.getItem('pv_filtro_ruta_' + _userId);
+            const _vG = localStorage.getItem('pv_filtro_vendedor_' + _userId);
+            if (_rG !== null) _pvFiltroRuta = _rG;
+            else if (rol === 'despachador' && !_pvFiltroRuta) _pvFiltroRuta = window.userZona || '';
+            if (_vG !== null) _pvFiltroVendedor = _vG;
+        } catch (e) { if (rol === 'despachador' && !_pvFiltroRuta) _pvFiltroRuta = window.userZona || ''; }
 
         _mainContent.innerHTML = `
             <div class="p-2 sm:p-3 pt-5 w-full max-w-2xl mx-auto">
@@ -1259,9 +1265,9 @@
         document.getElementById('pvCorteBtn')?.addEventListener('click', () => { if (_pvModoCorte) _pvSalirModoCorte(); else _pvEntrarModoCorte(); });
         document.getElementById('pvCorteCancelarModo')?.addEventListener('click', _pvSalirModoCorte);
         document.getElementById('pvBandEstado')?.addEventListener('change', (e) => { _pvFiltroEstado = e.target.value; renderBandeja(); });
-        document.getElementById('pvBandVendedor')?.addEventListener('change', (e) => { _pvFiltroVendedor = e.target.value; renderBandeja(); });
+        document.getElementById('pvBandVendedor')?.addEventListener('change', (e) => { _pvFiltroVendedor = e.target.value; try { localStorage.setItem('pv_filtro_vendedor_' + _userId, _pvFiltroVendedor); } catch (_) {} renderBandeja(); });
         document.getElementById('pvBandHoy')?.addEventListener('change', (e) => { _pvFiltroHoy = e.target.checked; renderBandeja(); });
-        document.getElementById('pvBandRuta')?.addEventListener('change', (e) => { _pvFiltroRuta = e.target.value; renderBandeja(); });
+        document.getElementById('pvBandRuta')?.addEventListener('change', (e) => { _pvFiltroRuta = e.target.value; try { localStorage.setItem('pv_filtro_ruta_' + _userId, _pvFiltroRuta); } catch (_) {} renderBandeja(); });
 
         // Escuchar pedidos en tiempo real
         try {
@@ -1271,7 +1277,7 @@
                 // Poblar vendedores únicos
                 const sel = document.getElementById('pvBandVendedor');
                 if (sel) {
-                    const actual = sel.value;
+                    const actual = sel.value || _pvFiltroVendedor || '';
                     const vends = [...new Set(_pvPedidos.map(p => p.vendedorNombre).filter(Boolean))].sort();
                     sel.innerHTML = '<option value="">Todos los vendedores</option>' +
                         vends.map(v => `<option value="${v}" ${v === actual ? 'selected' : ''}>${v}</option>`).join('');
@@ -2583,7 +2589,7 @@
                     marca: pr.marca || cat.marca || '',
                     rubro: cat.rubro || 'SIN RUBRO',
                     segmento: cat.segmento || '',
-                    ordenSegmento: cat.ordenSegmento, ordenMarca: cat.ordenMarca, ordenProducto: cat.ordenProducto,
+                    ordenSegmento: cat.ordenSegmento ?? null, ordenMarca: cat.ordenMarca ?? null, ordenProducto: cat.ordenProducto ?? null,
                     totalCj: 0, totalPaq: 0, totalUnd: 0, totalUnidades: 0, modelosTotales: {}
                 };
             }
@@ -2709,9 +2715,16 @@
                 consolidado, estado: 'abierto'
             };
             const corteRef = await _addDoc(_collection(_db, pathCortes()), corteData);
-            await Promise.all(pedidos.map(p => _setDoc(_doc(_db, pathPedidos(), p.id), {
-                corteId: corteRef.id, corteNumero: numero, corteRuta: ruta, corteFecha: fechaISO
-            }, { merge: true })));
+            await Promise.all(pedidos.map(p => {
+                const cambios = { corteId: corteRef.id, corteNumero: numero, corteRuta: ruta, corteFecha: fechaISO };
+                // El corte NO cambia estados salvo un avance conveniente: los pendientes pasan a
+                // "preparación" (se están preparando para cargar). Cargado/Entregado siguen manuales.
+                if ((p.estado || 'pendiente') === 'pendiente') {
+                    cambios.estado = 'preparacion';
+                    cambios.historialEstados = (p.historialEstados || []).concat([{ estado: 'preparacion', fecha: fechaISO, por: _userId, nota: 'Incluido en corte N°' + numero }]);
+                }
+                return _setDoc(_doc(_db, pathPedidos(), p.id), cambios, { merge: true });
+            }));
             _pvLog('corte', `Corte N°${numero} generado (${pedidos.length} pedido(s))`, { corteId: corteRef.id });
             const modalC = document.getElementById('modalContainer'); if (modalC) modalC.classList.add('hidden');
             generarTicketCorte({ id: corteRef.id, ...corteData });
