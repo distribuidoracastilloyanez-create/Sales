@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v99'; // v99: despachador tiene selector de ruta (por defecto su zona, opcion Todas) en Estado del Pedido y Pedidos - ya no queda bloqueado si la zona no coincide
+const CACHE_NAME = 'ventas-app-cache-v100'; // v100: fix Tomar Pedido - cargar datos antes de pintar el template (elimina crash 'Cannot set properties of null' en pvVendedorInfo) + cancelar listeners
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
