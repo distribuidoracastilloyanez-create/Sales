@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v95'; // v95: [modelos fix F2/F3] Corregir a 0 y recarga ahora SI limpian modelosStock/huerfanos (merge de Firestore requiere setear claves a 0)
+const CACHE_NAME = 'ventas-app-cache-v96'; // v96: fix - el despachador ahora conserva En Linea / Cerrar Sesion (controles flotantes) en Pre-Venta
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
