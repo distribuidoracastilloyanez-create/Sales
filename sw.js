@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v101'; // v101: fix - boton Atras del pedido ahora pide confirmacion (evita demotar el estado por accidente al cancelar la entrega)
+const CACHE_NAME = 'ventas-app-cache-v102'; // v102: corte agrupado por rubro + orden global, impresion Carta (Epson) con total unidades, y sin iconos en titulos de botones
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
