@@ -372,8 +372,10 @@
                 const batch = _writeBatch(_db);
                 negativos.forEach(p => {
                     const ref = _doc(_db, `artifacts/${_appId}/users/${_userId}/inventario`, p.id);
-                    batch.set(ref, { cantidadUnidades: 0, modelosStock: {} }, { merge: true });
-                    p.cantidadUnidades = 0; // actualizar cache local
+                    // merge NO borra un mapa con {}; hay que setear cada clave existente a 0
+                    const _zeroMod = {}; Object.keys(p.modelosStock || {}).forEach(k => { _zeroMod[k] = 0; });
+                    batch.set(ref, { cantidadUnidades: 0, modelosStock: _zeroMod }, { merge: true });
+                    p.cantidadUnidades = 0; p.modelosStock = {}; // actualizar cache local
                 });
                 await batch.commit();
                 _showModal('Listo', `Se corrigieron <strong>${negativos.length}</strong> producto(s) a 0.`);
@@ -1690,6 +1692,8 @@
                 }
                 const newModelos = {};
                 mods.forEach(m => { newModelos[m] = (existing[m] || 0) + ((dist && dist[m]) || 0); });
+                // Limpiar modelos huérfanos (quitados del catálogo): setear en 0 para que el merge los actualice
+                Object.keys(p.modelosStock || {}).forEach(k => { if (!(k in newModelos)) newModelos[k] = 0; });
                 _detalle.modelosDistribucion = dist || {};
                 _detalle.modelosStockNuevo = newModelos;
                 recargaDetalles.push(_detalle);
