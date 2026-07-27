@@ -1847,7 +1847,7 @@
             if (pr.cantUnd) partes.push(`${pr.cantUnd} Und`);
             return `<tr>
                 <td style="padding:6px 4px;text-align:center;font-size:34px;border-bottom:1px solid #000;">[ ]</td>
-                <td style="padding:6px 4px;font-size:28px;border-bottom:1px solid #000;">${(pr.presentacion || '').toUpperCase()}${pr.parcial ? ' (PARCIAL)' : ''} <span style="font-size:22px;">${(pr.marca || '')}</span></td>
+                <td style="padding:6px 4px;font-size:28px;border-bottom:1px solid #000;">${(pr.presentacion || '').toUpperCase()}${pr.parcial ? ' (PARCIAL)' : ''} <span style="font-size:22px;">${(pr.marca || '')}</span>${(pr.modelosDistribucion && Object.keys(pr.modelosDistribucion).length) ? `<div style="font-size:22px;padding-left:18px;">&#8627; ${Object.entries(pr.modelosDistribucion).filter(([, v]) => v > 0).map(([m, v]) => `${m}: ${v}`).join('    ')}</div>` : ''}</td>
                 <td style="padding:6px 4px;text-align:right;font-size:28px;border-bottom:1px solid #000;">${partes.join(' + ') || '-'}</td>
             </tr>`;
         }).join('');
@@ -1946,7 +1946,7 @@
             if (pr.cantUnd) partes.push(`${pr.cantUnd} Und`);
             return `<tr>
                 <td style="padding:6px 4px;text-align:center;font-size:34px;border-bottom:1px solid #000;">[ ]</td>
-                <td style="padding:6px 4px;font-size:28px;border-bottom:1px solid #000;">${(pr.presentacion || '').toUpperCase()}${pr.parcial ? ' (PARCIAL)' : ''} <span style="font-size:22px;">${(pr.marca || '')}</span></td>
+                <td style="padding:6px 4px;font-size:28px;border-bottom:1px solid #000;">${(pr.presentacion || '').toUpperCase()}${pr.parcial ? ' (PARCIAL)' : ''} <span style="font-size:22px;">${(pr.marca || '')}</span>${(pr.modelosDistribucion && Object.keys(pr.modelosDistribucion).length) ? `<div style="font-size:22px;padding-left:18px;">&#8627; ${Object.entries(pr.modelosDistribucion).filter(([, v]) => v > 0).map(([m, v]) => `${m}: ${v}`).join('    ')}</div>` : ''}</td>
                 <td style="padding:6px 4px;text-align:right;font-size:28px;border-bottom:1px solid #000;">${partes.join(' + ') || '-'}</td>
             </tr>`;
         }).join('');
@@ -2415,11 +2415,14 @@
     function _pvConsolidarProductos(pedidos) {
         const map = {};
         pedidos.forEach(p => (p.productos || []).forEach(pr => {
-            if (!map[pr.id]) map[pr.id] = { productoId: pr.id, presentacion: pr.presentacion || '', marca: pr.marca || '', totalCj: 0, totalPaq: 0, totalUnd: 0, totalUnidades: 0 };
+            if (!map[pr.id]) map[pr.id] = { productoId: pr.id, presentacion: pr.presentacion || '', marca: pr.marca || '', totalCj: 0, totalPaq: 0, totalUnd: 0, totalUnidades: 0, modelosTotales: {} };
             map[pr.id].totalCj  += pr.cantCj  || 0;
             map[pr.id].totalPaq += pr.cantPaq || 0;
             map[pr.id].totalUnd += pr.cantUnd || 0;
             map[pr.id].totalUnidades += _pvUnidadesProducto(pr);
+            if (pr.manejaModelos && pr.modelosDistribucion) {
+                for (const _m in pr.modelosDistribucion) map[pr.id].modelosTotales[_m] = (map[pr.id].modelosTotales[_m] || 0) + (pr.modelosDistribucion[_m] || 0);
+            }
         }));
         return Object.values(map).sort((a, b) => (a.presentacion || '').localeCompare(b.presentacion || ''));
     }
@@ -2471,8 +2474,9 @@
             if (c.totalCj)  partes.push(`${c.totalCj} Cj`);
             if (c.totalPaq) partes.push(`${c.totalPaq} Paq`);
             if (c.totalUnd) partes.push(`${c.totalUnd} Und`);
+            const _md = (c.modelosTotales && Object.keys(c.modelosTotales).length) ? Object.entries(c.modelosTotales).filter(([, v]) => v > 0).map(([m, v]) => `${m}: ${v}`).join('  ·  ') : '';
             return `<tr class="border-b border-slate-100">
-                <td class="py-1.5 px-2 text-xs text-slate-700">${(c.presentacion || '').toUpperCase()} <span class="text-slate-400">${c.marca || ''}</span></td>
+                <td class="py-1.5 px-2 text-xs text-slate-700">${(c.presentacion || '').toUpperCase()} <span class="text-slate-400">${c.marca || ''}</span>${_md ? `<div class="text-[10px] text-indigo-600 mt-0.5">↳ ${_md}</div>` : ''}</td>
                 <td class="py-1.5 px-2 text-xs text-right font-semibold text-slate-800 whitespace-nowrap">${partes.join(' + ') || '-'}</td>
             </tr>`;
         }).join('');
@@ -2532,9 +2536,10 @@
             if (c.totalCj)  partes.push(`${c.totalCj} Caja(s)`);
             if (c.totalPaq) partes.push(`${c.totalPaq} Paq`);
             if (c.totalUnd) partes.push(`${c.totalUnd} Und`);
+            const _md = (c.modelosTotales && Object.keys(c.modelosTotales).length) ? Object.entries(c.modelosTotales).filter(([, v]) => v > 0).map(([m, v]) => `${m}: ${v}`).join('    ') : '';
             return `<tr>
                 <td style="padding:6px 4px;text-align:center;font-size:34px;border-bottom:1px solid #000;">[ ]</td>
-                <td style="padding:6px 4px;font-size:28px;border-bottom:1px solid #000;">${(c.presentacion || '').toUpperCase()} <span style="font-size:22px;">${c.marca || ''}</span></td>
+                <td style="padding:6px 4px;font-size:28px;border-bottom:1px solid #000;">${(c.presentacion || '').toUpperCase()} <span style="font-size:22px;">${c.marca || ''}</span>${_md ? `<div style="font-size:22px;padding-left:18px;">&#8627; ${_md}</div>` : ''}</td>
                 <td style="padding:6px 4px;text-align:right;font-size:28px;border-bottom:1px solid #000;">${partes.join(' + ') || '-'}</td>
             </tr>`;
         }).join('');
