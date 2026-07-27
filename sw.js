@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v105'; // v105: fix corte (undefined->null), generar corte avanza pendiente->preparacion, y memoria de filtros ruta/vendedor por usuario
+const CACHE_NAME = 'ventas-app-cache-v106'; // v106: el corte ya no bloquea re-cortar (un pedido ya cortado puede volver a incluirse en un corte nuevo)
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
