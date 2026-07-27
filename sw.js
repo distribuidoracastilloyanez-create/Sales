@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v106'; // v106: el corte ya no bloquea re-cortar (un pedido ya cortado puede volver a incluirse en un corte nuevo)
+const CACHE_NAME = 'ventas-app-cache-v107'; // v107: quitar Reportes; corte con vista compacta (clientes+fecha); impresion Carta via pagina limpia (window.open) para Epson; 80mm oculto
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
