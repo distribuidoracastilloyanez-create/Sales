@@ -500,6 +500,7 @@
                     <td class="py-3 px-4 font-semibold text-gray-800">
                         ${labelPres}
                         <span class="block sm:hidden text-xs text-gray-500 font-normal mt-0.5">${p.marca || 'S/M'}</span>
+                        ${p.manejaModelos && p.modelos && p.modelos.length ? `<div class="text-[10px] text-indigo-600 font-normal mt-0.5">Modelos: ${p.modelos.map(m => `${m} <b>${(p.modelosStock && p.modelosStock[m]) || 0}</b>`).join(' · ')}</div>` : ''}
                     </td>
                     <td class="py-3 px-4 text-gray-600 hidden sm:table-cell">${p.marca || 'S/M'}</td>
                     <td class="py-3 px-4 font-bold text-gray-900 text-right">${labelPrecio}</td>
