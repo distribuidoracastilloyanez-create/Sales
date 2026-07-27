@@ -80,7 +80,6 @@
         if (esAdmin || esVend)  botones += btn('pvPedidosBtn', 'Tomar Pedido', 'bg-indigo-500 hover:bg-indigo-600');
         botones += btn('pvListaPedidosBtn', 'Pedidos', 'bg-cyan-600 hover:bg-cyan-700');
         botones += btn('pvBandejaBtn', 'Estado del Pedido', 'bg-teal-600 hover:bg-teal-700');
-        botones += btn('pvReportesBtn', 'Reportes', 'bg-slate-700 hover:bg-slate-800');
         // Funciones adicionales de admin
         if (esAdmin) botones += btn('pvInventarioRutaBtn', 'Inv. por Ruta', 'bg-blue-600 hover:bg-blue-700');
         if (esAdmin) botones += btn('pvVendedoresBtn', 'Vendedores/Zonas', 'bg-slate-600 hover:bg-slate-700');
@@ -2685,9 +2684,9 @@
         ov.innerHTML = `
             <div class="bg-white w-full max-w-md rounded-t-xl sm:rounded-xl shadow-2xl overflow-hidden max-h-[92vh] flex flex-col border border-slate-200">
                 <div class="bg-purple-700 text-white px-5 py-4 shrink-0">
-                    <div class="text-[10px] uppercase tracking-wider text-purple-200 font-semibold">Corte de Carga</div>
+                    <div class="text-[10px] uppercase tracking-wider text-purple-200 font-semibold">Corte de Carga · ${new Date().toLocaleDateString('es-VE')} ${new Date().toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' })}</div>
                     <div class="font-semibold text-base">${pedidos.length} pedido(s) · ${clientes.length} cliente(s)</div>
-                    <div class="text-xs text-purple-100 mt-0.5">Total de productos a cargar en el camión.</div>
+                    <div class="text-[11px] text-purple-100 mt-1 leading-snug"><span class="text-purple-300">Clientes:</span> ${clientes.join(' · ') || '-'}</div>
                 </div>
                 <div class="overflow-y-auto p-4 flex-1"><table class="w-full"><tbody>${filas}</tbody></table></div>
                 <div class="p-4 border-t border-slate-100 shrink-0 space-y-2">
@@ -2756,38 +2755,31 @@
             }).join('');
             return `<tr><td colspan="3" style="padding:16px 4px 4px;font-size:26px;font-weight:800;text-transform:uppercase;border-bottom:3px solid #000;">${g.rubro}</td></tr>${filasG}`;
         }).join('');
+        const clientesTxt = (corte.clientes || []).join(' · ') || '-';
+        const prevRubros = _pvAgruparPorRubro(corte.consolidado || []).map(g => {
+            const items = g.items.map(c => {
+                const partes = [];
+                if (c.totalCj)  partes.push(`${c.totalCj} Cj`);
+                if (c.totalPaq) partes.push(`${c.totalPaq} Paq`);
+                if (c.totalUnd) partes.push(`${c.totalUnd} Und`);
+                const md = (c.modelosTotales && Object.keys(c.modelosTotales).length) ? `<div class="text-[10px] text-indigo-600">${Object.entries(c.modelosTotales).filter(([, v]) => v > 0).map(([m, v]) => `${m}: ${v}`).join(' · ')}</div>` : '';
+                return `<div class="flex justify-between gap-2 py-1 border-b border-slate-50"><div class="min-w-0 text-xs text-slate-700">${(c.presentacion || '').toUpperCase()} <span class="text-slate-400">${c.marca || ''}</span>${md}</div><div class="text-xs font-semibold text-slate-800 whitespace-nowrap text-right">${partes.join(' + ') || '-'}<div class="text-[10px] text-slate-400 font-normal">${c.totalUnidades || 0} u</div></div></div>`;
+            }).join('');
+            return `<div class="mb-2"><div class="text-[11px] font-bold text-purple-700 uppercase tracking-wide mb-0.5">${g.rubro}</div>${items}</div>`;
+        }).join('');
         const ov = document.createElement('div');
         ov.id = 'pvTicketOverlay';
-        ov.className = 'fixed inset-0 z-[9999] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4';
+        ov.className = 'fixed inset-0 z-[9999] bg-slate-900/50 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4';
         ov.innerHTML = `
-            <div class="bg-white w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden max-h-[92vh] flex flex-col">
-                <div class="overflow-y-auto flex-1 bg-gray-200 p-2">
-                    <div id="pvCorteCapturable" class="bg-white text-black p-4 font-bold mx-auto" style="width:768px;font-family:'Courier New',Courier,monospace;transform-origin:top left;">
-                        <div style="text-align:center;">
-                            <div style="font-size:40px;font-weight:800;">CORTE DE CARGA</div>
-                            <div style="font-size:30px;">DISTRIBUIDORA CASTILLO YAÑEZ</div>
-                            <div style="font-size:22px;">(documento interno - no es factura)</div>
-                        </div>
-                        <div style="font-size:28px;margin-top:24px;line-height:1.4;">
-                            <div>CORTE N&deg;: ${corte.numero}</div>
-                            <div>RUTA: ${corte.ruta || '-'}</div>
-                            <div>PEDIDOS: ${corte.totalPedidos} &middot; CLIENTES: ${(corte.clientes || []).length}</div>
-                            <div>DESPACHADOR: ${corte.despachadorNombre || '-'}</div>
-                            <div>FECHA: ${fecha} ${hora}</div>
-                        </div>
-                        <table style="width:100%;border-collapse:collapse;font-size:28px;margin-top:20px;">
-                            <thead><tr>
-                                <th style="padding:4px;text-align:center;border-bottom:3px solid #000;width:70px;">OK</th>
-                                <th style="padding:4px;text-align:left;border-bottom:3px solid #000;">PRODUCTO</th>
-                                <th style="padding:4px;text-align:right;border-bottom:3px solid #000;">TOTAL</th>
-                            </tr></thead>
-                            <tbody>${filas || '<tr><td colspan="3" style="padding:16px;text-align:center;font-size:26px;">Sin productos</td></tr>'}</tbody>
-                        </table>
-                        <div style="margin-top:20px;font-size:22px;text-align:center;">Total de productos a cargar en el camion.</div>
-                        <hr style="border:none;border-top:2px dashed #000;margin-top:16px;">
-                    </div>
+            <div class="bg-white w-full max-w-md rounded-t-xl sm:rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] flex flex-col border border-slate-200">
+                <div class="bg-slate-800 text-white px-5 py-4 shrink-0">
+                    <div class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Corte de Carga · ${fecha} ${hora}</div>
+                    <div class="font-semibold text-base">Corte N°${corte.numero} · ${corte.totalPedidos || 0} pedido(s)</div>
+                    <div class="text-[11px] text-slate-300 mt-1 leading-snug"><span class="text-slate-400">Clientes:</span> ${clientesTxt}</div>
+                    <div class="text-[10px] text-slate-400 mt-0.5">Despachador: ${corte.despachadorNombre || '-'}</div>
                 </div>
-                <div class="p-3 border-t shrink-0 grid grid-cols-2 gap-2">
+                <div class="overflow-y-auto p-4 flex-1">${prevRubros || '<p class="text-sm text-slate-400 text-center py-4">Sin productos</p>'}</div>
+                <div class="p-3 border-t border-slate-100 shrink-0 grid grid-cols-2 gap-2">
                     <button id="pvCorteTicketImg" class="py-2.5 bg-slate-700 text-white rounded-lg font-bold text-sm hover:bg-slate-800 transition">80mm (térmica)</button>
                     <button id="pvCorteTicketEpson" class="py-2.5 bg-blue-700 text-white rounded-lg font-bold text-sm hover:bg-blue-800 transition">Carta (tinta/Epson)</button>
                     <button id="pvCorteTicketCerrar" class="col-span-2 py-2.5 bg-gray-100 text-gray-600 rounded-lg font-bold text-sm">Cerrar</button>
@@ -2796,9 +2788,42 @@
         document.body.appendChild(ov);
         ov.addEventListener('click', e => { if (e.target === ov) ov.remove(); });
         document.getElementById('pvCorteTicketCerrar').addEventListener('click', () => ov.remove());
-        document.getElementById('pvCorteTicketImg').addEventListener('click', () =>
-            _pvCapturarCompartir(document.getElementById('pvCorteCapturable'), `Corte_${corte.numero}_${(corte.ruta || '').replace(/[\s/]/g, '_')}`));
         document.getElementById('pvCorteTicketEpson').addEventListener('click', () => generarTicketCorteEpson(corte));
+        document.getElementById('pvCorteTicketImg').addEventListener('click', () => {
+            // Ticket 80mm OCULTO (768px) solo para capturarlo como imagen (no llena la pantalla)
+            document.getElementById('pvCorte80Holder')?.remove();
+            const holder = document.createElement('div');
+            holder.id = 'pvCorte80Holder';
+            holder.style.cssText = 'position:fixed;left:-10000px;top:0;z-index:-1;';
+            holder.innerHTML = `
+                <div id="pvCorte80Cap" class="bg-white text-black p-4 font-bold" style="width:768px;font-family:'Courier New',Courier,monospace;">
+                    <div style="text-align:center;">
+                        <div style="font-size:40px;font-weight:800;">CORTE DE CARGA</div>
+                        <div style="font-size:30px;">DISTRIBUIDORA CASTILLO YAÑEZ</div>
+                        <div style="font-size:22px;">(documento interno - no es factura)</div>
+                    </div>
+                    <div style="font-size:28px;margin-top:24px;line-height:1.4;">
+                        <div>CORTE N&deg;: ${corte.numero}</div>
+                        <div>PEDIDOS: ${corte.totalPedidos} &middot; CLIENTES: ${(corte.clientes || []).length}</div>
+                        <div>DESPACHADOR: ${corte.despachadorNombre || '-'}</div>
+                        <div>FECHA: ${fecha} ${hora}</div>
+                        <div style="margin-top:8px;">CLIENTES: ${(corte.clientes || []).join(', ') || '-'}</div>
+                    </div>
+                    <table style="width:100%;border-collapse:collapse;font-size:28px;margin-top:20px;">
+                        <thead><tr>
+                            <th style="padding:4px;text-align:center;border-bottom:3px solid #000;width:70px;">OK</th>
+                            <th style="padding:4px;text-align:left;border-bottom:3px solid #000;">PRODUCTO</th>
+                            <th style="padding:4px;text-align:right;border-bottom:3px solid #000;">TOTAL</th>
+                        </tr></thead>
+                        <tbody>${filas || '<tr><td colspan="3" style="padding:16px;text-align:center;font-size:26px;">Sin productos</td></tr>'}</tbody>
+                    </table>
+                    <div style="margin-top:20px;font-size:22px;text-align:center;">Total de productos a cargar en el camion.</div>
+                    <hr style="border:none;border-top:2px dashed #000;margin-top:16px;">
+                </div>`;
+            document.body.appendChild(holder);
+            _pvCapturarCompartir(document.getElementById('pvCorte80Cap'), `Corte_${corte.numero}`);
+            setTimeout(() => { document.getElementById('pvCorte80Holder')?.remove(); }, 6000);
+        });
     }
 
     // Impresión CARTA (Epson L1250 tinta/WiFi): documento estructurado, tabla por rubro
@@ -2853,23 +2878,24 @@
             </div>
             <div class="meta">
                 <div><b>Corte N°:</b> ${corte.numero}</div>
-                <div><b>Ruta:</b> ${corte.ruta || '-'}</div>
                 <div><b>Pedidos:</b> ${corte.totalPedidos} &nbsp;·&nbsp; <b style="min-width:0">Clientes:</b> ${(corte.clientes || []).length}</div>
                 <div><b>Despachador:</b> ${corte.despachadorNombre || '-'}</div>
                 <div><b>Fecha:</b> ${fecha} ${hora}</div>
+                <div><b>Clientes:</b> ${(corte.clientes || []).join(', ') || '-'}</div>
             </div>
             ${cuerpo || '<p style="text-align:center;">Sin productos</p>'}
             <div class="foot">Total de productos a cargar en el camión.</div>
             </body></html>`;
-        const iframe = document.createElement('iframe');
-        iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;';
-        document.body.appendChild(iframe);
-        const doc = iframe.contentWindow.document;
-        doc.open(); doc.write(html); doc.close();
-        setTimeout(() => {
-            try { iframe.contentWindow.focus(); iframe.contentWindow.print(); } catch (e) { console.warn('print:', e); }
-            setTimeout(() => iframe.remove(), 2000);
-        }, 350);
+        // Abrir en una pestaña/ventana nueva (página limpia) para imprimir correctamente
+        // en la Epson vía el diálogo del navegador / Epson Smart Panel.
+        const w = window.open('', '_blank');
+        if (!w) {
+            if (_showModal) _showModal('Permite ventanas', 'Tu navegador bloqueó la ventana de impresión. Habilita las <strong>ventanas emergentes</strong> para este sitio y vuelve a intentar.');
+            return;
+        }
+        w.document.open(); w.document.write(html); w.document.close();
+        w.onload = () => { try { w.focus(); w.print(); } catch (e) { console.warn('print:', e); } };
+        setTimeout(() => { try { w.focus(); w.print(); } catch (e) {} }, 700);
     }
 
     // ── Historial de cortes (Reportes) ──────────────────────────
