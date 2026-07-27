@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v96'; // v96: fix - el despachador ahora conserva En Linea / Cerrar Sesion (controles flotantes) en Pre-Venta
+const CACHE_NAME = 'ventas-app-cache-v97'; // v97: agregada 'Ruta Prueba' a RUTAS_REPARTO (para cuentas de prueba)
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
