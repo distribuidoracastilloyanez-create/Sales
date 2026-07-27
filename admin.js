@@ -586,30 +586,35 @@
         _mainContent.innerHTML = `
             <div class="p-4 pt-8"> <div class="container mx-auto max-w-lg"> <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl">
                 <div class="flex justify-between items-center mb-6"> <h1 class="text-2xl font-bold flex-grow text-center">Configurar Obsequio</h1> <button id="backToAdminMenuBtn" class="px-4 py-2 bg-gray-400 text-white text-sm rounded-lg shadow-md hover:bg-gray-500 ml-4 flex-shrink-0">Volver</button> </div>
-                <p class="text-gray-600 mb-4 text-center text-sm">Selecciona producto obsequio.</p>
-                <div class="space-y-4 text-left"> <div> <label for="obsequioProductSelect">Producto:</label> <select id="obsequioProductSelect" class="w-full px-4 py-2 border rounded-lg"> <option value="">Cargando...</option> </select> </div> <button id="saveObsequioConfigBtn" class="w-full px-6 py-3 bg-purple-500 text-white rounded-lg shadow-md hover:bg-purple-600">Guardar Config Pública</button> </div>
+                <p class="text-gray-600 mb-4 text-center text-sm">Selecciona uno o más productos de obsequio.</p>
+                <div class="space-y-4 text-left"> <div> <label class="font-medium block mb-1">Productos de obsequio (marca uno o más):</label> <div id="obsequioProductList" class="border border-gray-200 rounded-lg p-2 max-h-72 overflow-y-auto space-y-1"><p class="text-sm text-gray-400 text-center py-3">Cargando...</p></div> </div> <button id="saveObsequioConfigBtn" class="w-full px-6 py-3 bg-purple-500 text-white rounded-lg shadow-md hover:bg-purple-600">Guardar Config Pública</button> </div>
             </div> </div> </div>
         `;
         document.getElementById('backToAdminMenuBtn').addEventListener('click', showAdminSubMenuView); document.getElementById('saveObsequioConfigBtn').addEventListener('click', handleSaveObsequioConfig); await loadAndPopulateObsequioSelect();
     }
     async function loadAndPopulateObsequioSelect() {
-        const selEl = document.getElementById('obsequioProductSelect'); if (!selEl) return;
-        try { const invRef = _collection(_db, `artifacts/${_appId}/users/${_userId}/inventario`); const snap = await _getDocs(invRef); const pVal = snap.docs.map(d=>({id: d.id,...d.data()})).filter(p=>p.manejaVacios&&p.ventaPor?.cj).sort((a,b)=>`${a.marca} ${a.segmento} ${a.presentacion}`.localeCompare(`${b.marca} ${b.segmento} ${b.presentacion}`));
-            selEl.innerHTML='<option value="">-- Seleccione --</option>'; 
-            pVal.forEach(p=>{selEl.innerHTML+=`<option value="${p.id}">${p.marca} - ${p.segmento} - ${p.presentacion}</option>`;});
-            
-            // CORRECCIÓN: Usar PUBLIC_DATA_ID
-            const confRef = _doc(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/config/obsequio`); 
-            const confSnap = await _getDoc(confRef); 
-            if (confSnap.exists()){ _obsequioProductId = confSnap.data().productoId; if (_obsequioProductId) selEl.value=_obsequioProductId; }
-        } catch (error) { selEl.innerHTML='<option value="">Error</option>'; }
+        const listEl = document.getElementById('obsequioProductList'); if (!listEl) return;
+        try {
+            const invRef = _collection(_db, `artifacts/${_appId}/users/${_userId}/inventario`);
+            const snap = await _getDocs(invRef);
+            const pVal = snap.docs.map(d=>({id: d.id,...d.data()})).filter(p=>p.manejaVacios&&p.ventaPor?.cj).sort((a,b)=>`${a.marca} ${a.segmento} ${a.presentacion}`.localeCompare(`${b.marca} ${b.segmento} ${b.presentacion}`));
+            // IDs ya configurados (compat: productoIds nuevo o productoId viejo)
+            let selectedIds = [];
+            const confRef = _doc(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/config/obsequio`);
+            const confSnap = await _getDoc(confRef);
+            if (confSnap.exists()) { const d = confSnap.data(); selectedIds = Array.isArray(d.productoIds) ? d.productoIds : (d.productoId ? [d.productoId] : []); }
+            if (!pVal.length) { listEl.innerHTML='<p class="text-sm text-gray-400 text-center py-3">No hay productos que manejen vacío por caja.</p>'; return; }
+            listEl.innerHTML = pVal.map(p=>`<label class="flex items-center gap-2 p-2 hover:bg-gray-50 rounded cursor-pointer"><input type="checkbox" class="obsequio-chk h-4 w-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500" value="${p.id}" ${selectedIds.includes(p.id)?'checked':''}><span class="text-sm text-gray-800">${p.marca} - ${p.segmento} - ${p.presentacion}</span></label>`).join('');
+        } catch (error) { listEl.innerHTML='<p class="text-sm text-red-500 text-center py-3">Error al cargar productos.</p>'; }
     }
     async function handleSaveObsequioConfig() {
-        const selPId = document.getElementById('obsequioProductSelect').value; if (!selPId) { _showModal('Error', 'Selecciona producto.'); return; } _showModal('Progreso','Guardando...');
-        try { 
-            // CORRECCIÓN: Usar PUBLIC_DATA_ID
-            const confRef = _doc(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/config/obsequio`); 
-            await _setDoc(confRef, { productoId: selPId }); _obsequioProductId = selPId; _showModal('Éxito','Configuración guardada.'); showAdminSubMenuView(); 
+        const ids = Array.from(document.querySelectorAll('.obsequio-chk:checked')).map(c => c.value);
+        if (!ids.length) { _showModal('Error', 'Selecciona al menos un producto.'); return; }
+        _showModal('Progreso','Guardando...');
+        try {
+            const confRef = _doc(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/config/obsequio`);
+            await _setDoc(confRef, { productoIds: ids });
+            _showModal('Éxito', `Configuración guardada (${ids.length} producto(s) de obsequio).`); showAdminSubMenuView();
         }
         catch (error) { _showModal('Error','Error al guardar.'); }
     }
