@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v97'; // v97: agregada 'Ruta Prueba' a RUTAS_REPARTO (para cuentas de prueba)
+const CACHE_NAME = 'ventas-app-cache-v98'; // v98: la ruta del pedido ahora viene de la zona del VENDEDOR (zonaPreventa), no del cliente
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
