@@ -313,6 +313,7 @@
             return _pvComprometidoCache.mapa;
         }
         const mapa = {};
+        const mapaMod = {};
         try {
             // Asegurar catálogo cargado (para el fallback de unidades cuando se llama desde ventas.js)
             if (!_pvProductos || !_pvProductos.length) {
@@ -334,17 +335,27 @@
                     const uPaq = pr.unidadesPorPaquete || cat.unidadesPorPaquete || 1;
                     const unidades = (pr.cantCj || 0) * uCj + (pr.cantPaq || 0) * uPaq + (pr.cantUnd || 0);
                     if (unidades > 0) mapa[pr.id] = (mapa[pr.id] || 0) + unidades;
+                    if (pr.manejaModelos && pr.modelosDistribucion) {
+                        if (!mapaMod[pr.id]) mapaMod[pr.id] = {};
+                        for (const _m in pr.modelosDistribucion) mapaMod[pr.id][_m] = (mapaMod[pr.id][_m] || 0) + (pr.modelosDistribucion[_m] || 0);
+                    }
                 });
             });
         } catch (e) { console.warn('No se pudieron leer los pedidos comprometidos:', e); }
-        _pvComprometidoCache = { ts: ahora, vendedorId, mapa };
+        _pvComprometidoCache = { ts: ahora, vendedorId, mapa, mapaMod };
         return mapa;
+    };
+    // Devuelve el comprometido por modelo: { productId: { modelo: unidades } }
+    window.getComprometidoModelos = async function (vendedorId) {
+        await window.getPedidosComprometidos(vendedorId);
+        return _pvComprometidoCache.mapaMod || {};
     };
     // Permite invalidar el cache cuando se guarda o cambia un pedido.
     window.invalidarComprometidoCache = function () { _pvComprometidoCache = { ts: 0, vendedorId: null, mapa: {} }; };
 
     let _pvTasaCOP = 0, _pvTasaBs = 0, _pvMoneda = 'USD';
     let _pvComprometidoTP = {};  // unidades ya apartadas por pedidos (para el disponible)
+    let _pvComprometidoModTP = {};  // { productId: { modelo: unidades apartadas } } (guía por modelo)
     let _pvSortFnPedido = null;
 
     // Formato de moneda igual al de Nueva Venta
@@ -463,6 +474,7 @@
         _pedidoActual.vendedor = yo;
         await cargarStockRuta(yo.id);
         _pvComprometidoTP = window.getPedidosComprometidos ? await window.getPedidosComprometidos(yo.id) : {};
+        _pvComprometidoModTP = window.getComprometidoModelos ? await window.getComprometidoModelos(yo.id) : {};
         document.getElementById('pvVendedorInfo').textContent =
             'Vendedor: ' + _pvNombreVendedor(yo) + (yo.zonaPreventa ? ' · Zona: ' + yo.zonaPreventa : '');
 
@@ -714,6 +726,7 @@
         if (totU <= 0) { if (_showModal) _showModal('Sin cantidad', 'Primero ingresa la cantidad a pedir de este producto.'); return; }
         const modelos = prod.modelos || [];
         const modelosStock = (_pvStockRuta[pid] && _pvStockRuta[pid].modelosStock) || {};
+        const _compMod = (_pvComprometidoModTP && _pvComprometidoModTP[pid]) || {};
         const prev = pa.modelosDistribucion || {};
         document.getElementById('pvModPedOverlay')?.remove();
         const ov = document.createElement('div');
@@ -721,7 +734,7 @@
         ov.className = 'fixed inset-0 z-[9999] bg-slate-900/50 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4';
         const filas = modelos.map(m => `
             <div class="flex items-center justify-between gap-3 py-2 px-3 border-b border-slate-100 last:border-0">
-                <div class="min-w-0"><div class="text-sm font-medium text-slate-800">${m}</div><div class="text-[11px] text-slate-400">Disponible: ${modelosStock[m] || 0} u</div></div>
+                <div class="min-w-0"><div class="text-sm font-medium text-slate-800">${m}</div><div class="text-[11px] text-slate-400">Disponible: ${Math.max(0, (modelosStock[m] || 0) - (_compMod[m] || 0))} u</div></div>
                 <input type="number" min="0" value="${prev[m] || 0}" data-modelo="${m}" class="pv-modped-inp w-24 px-2 py-1.5 text-center border border-slate-300 rounded-lg text-sm font-bold text-slate-800 focus:ring-2 focus:ring-indigo-500 outline-none">
             </div>`).join('');
         ov.innerHTML = `
