@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v92'; // v92: obsequios multi-producto (admin selecciona uno o mas, vendedor elige cual obsequiar) con compat productoId viejo
+const CACHE_NAME = 'ventas-app-cache-v93'; // v93: [modelos] desglose por modelo en ticket de carga y corte + ver stock por modelo en Consultar Stock
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
