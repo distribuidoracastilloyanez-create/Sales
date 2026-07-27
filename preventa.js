@@ -19,6 +19,7 @@
     const pathPedidos   = () => `artifacts/${getPublicDataId()}/public/data/preventa_pedidos`;
     const pathInvRuta   = () => `artifacts/${getPublicDataId()}/public/data/preventa_inventario_ruta`;
     const pathCortes    = () => `artifacts/${getPublicDataId()}/public/data/preventa_cortes`;
+    const pathLog       = () => `artifacts/${getPublicDataId()}/public/data/preventa_log`;
 
     // Caches locales
     let _pvUsuarios = [];
@@ -1186,6 +1187,8 @@
             try {
                 await _deleteDoc(_doc(_db, pathPedidos(), id));
                 if (window.invalidarComprometidoCache) window.invalidarComprometidoCache();
+                _pvLog('eliminar', `Pedido de ${nombre || 's/cliente'} ELIMINADO`, { pedidoId: id });
+                if (_pEl && _pEl.corteId) { try { await _pvRecalcularCorteTrasEliminar(_pEl.corteId, id); } catch (e) { console.warn('recalc corte:', e); } }
                 document.getElementById('pvLPDetOverlay')?.remove();
                 // El onSnapshot refresca la lista sola
             } catch (e) {
@@ -1289,6 +1292,45 @@
         const d = new Date(iso);
         const h = new Date();
         return d.getFullYear() === h.getFullYear() && d.getMonth() === h.getMonth() && d.getDate() === h.getDate();
+    }
+
+    // Bitácora de despacho: registra cambios de estado, cortes y eliminaciones.
+    async function _pvLog(tipo, descripcion, extra) {
+        try {
+            const yo = (_pvUsuarios || []).find(u => u.id === _userId);
+            await _addDoc(_collection(_db, pathLog()), Object.assign({
+                fecha: new Date().toISOString(), tipo, descripcion,
+                por: _userId, porNombre: yo ? _pvNombreVendedor(yo) : (window.userNombre || 'Usuario')
+            }, extra || {}));
+        } catch (e) { console.warn('bitácora:', e); }
+    }
+
+    // Al eliminar un pedido que estaba en un corte: lo quita del corte y reconsolida.
+    // Si el corte queda sin pedidos, se elimina.
+    async function _pvRecalcularCorteTrasEliminar(corteId, pedidoId) {
+        const snap = await _getDoc(_doc(_db, pathCortes(), corteId));
+        if (!snap.exists()) return;
+        const c = snap.data();
+        const nuevosIds = (c.pedidoIds || []).filter(pid => pid !== pedidoId);
+        if (!nuevosIds.length) {
+            await _deleteDoc(_doc(_db, pathCortes(), corteId));
+            _pvLog('corte_eliminado', `Corte N°${c.numero} eliminado (quedó sin pedidos)`, { corteId });
+            return;
+        }
+        if (!_pvProductos || !_pvProductos.length) {
+            try { const cat = await _getDocs(_collection(_db, pathProductos())); _pvProductos = cat.docs.map(d => ({ id: d.id, ...d.data() })); } catch (e) {}
+        }
+        const restantes = [];
+        for (const pid of nuevosIds) {
+            try { const ps = await _getDoc(_doc(_db, pathPedidos(), pid)); if (ps.exists()) restantes.push({ id: pid, ...ps.data() }); } catch (e) {}
+        }
+        const consolidado = _pvConsolidarProductos(restantes);
+        await _setDoc(_doc(_db, pathCortes(), corteId), {
+            pedidoIds: nuevosIds,
+            totalPedidos: restantes.length,
+            clientes: [...new Set(restantes.map(p => p.clienteNombre).filter(Boolean))],
+            consolidado
+        }, { merge: true });
     }
 
     function _pvEntrarModoCorte() {
@@ -1752,6 +1794,7 @@
             if (window.invalidarComprometidoCache) window.invalidarComprometidoCache();
             document.getElementById('pvLPDetOverlay')?.remove();
             document.getElementById('pvPedDetOverlay')?.remove();
+            _pvLog('entrega', `Pedido de ${pedido.clienteNombre || 's/cliente'} ENTREGADO`, { pedidoId: pedido.id });
             if (_showModal) _showModal('Pedido entregado', `Se entregó el pedido de <strong>${pedido.clienteNombre || 'el cliente'}</strong>. El inventario se ajustó y la venta quedó registrada.`);
         } catch (e) {
             console.error('Error entregando pedido:', e);
@@ -1835,6 +1878,7 @@
                 if (window.invalidarComprometidoCache) window.invalidarComprometidoCache();
                 document.getElementById('pvPedDetOverlay')?.remove();
                 document.getElementById('pvLPDetOverlay')?.remove();
+                _pvLog('anular', `Entrega ANULADA · pedido de ${pedido.clienteNombre || 's/cliente'}`, { pedidoId: pedido.id });
                 if (_showModal) _showModal('Entrega anulada', `Se anuló la entrega del pedido de <strong>${pedido.clienteNombre || 'el cliente'}</strong>. El inventario se devolvió y la venta se eliminó.`);
             } catch (e) {
                 console.error('Error anulando entrega:', e);
@@ -1855,6 +1899,7 @@
                 estado: nuevoEstado,
                 historialEstados: nuevoHist
             }, { merge: true });
+            _pvLog('estado', `Pedido de ${p.clienteNombre || 's/cliente'} → ${pvEstadoInfo(nuevoEstado).label}`, { pedidoId: id, estado: nuevoEstado });
             document.getElementById('pvPedDetOverlay')?.remove();
             // El onSnapshot refresca la lista automáticamente
         } catch (e) {
@@ -2667,6 +2712,7 @@
             await Promise.all(pedidos.map(p => _setDoc(_doc(_db, pathPedidos(), p.id), {
                 corteId: corteRef.id, corteNumero: numero, corteRuta: ruta, corteFecha: fechaISO
             }, { merge: true })));
+            _pvLog('corte', `Corte N°${numero} generado (${pedidos.length} pedido(s))`, { corteId: corteRef.id });
             const modalC = document.getElementById('modalContainer'); if (modalC) modalC.classList.add('hidden');
             generarTicketCorte({ id: corteRef.id, ...corteData });
         } catch (e) {
@@ -2821,24 +2867,40 @@
         cont.innerHTML = lista.map(c => {
             const f = c.fecha ? new Date(c.fecha) : null;
             const fs = f ? `${f.toLocaleDateString('es-VE')} ${f.toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' })}` : '';
-            const cargado = c.estado === 'cargado';
             return `<div class="border border-slate-200 rounded-lg p-3">
-                <div class="flex items-start justify-between gap-2">
-                    <div class="min-w-0">
-                        <div class="font-semibold text-slate-800 text-sm">Corte N°${c.numero} · ${c.ruta || '-'}</div>
-                        <div class="text-[11px] text-slate-400 mt-0.5">${fs} · ${c.despachadorNombre || ''}</div>
-                        <div class="text-[11px] text-slate-500 mt-0.5">${c.totalPedidos || 0} pedido(s) · ${(c.consolidado || []).length} producto(s)</div>
-                    </div>
-                    <span class="shrink-0 text-[10px] font-bold px-2 py-1 rounded ${cargado ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'}">${cargado ? 'Cargado' : 'Abierto'}</span>
+                <div class="min-w-0">
+                    <div class="font-semibold text-slate-800 text-sm">Corte N°${c.numero}</div>
+                    <div class="text-[11px] text-slate-400 mt-0.5">${fs} · ${c.despachadorNombre || ''}</div>
+                    <div class="text-[11px] text-slate-500 mt-0.5">${c.totalPedidos || 0} pedido(s) · ${(c.consolidado || []).length} producto(s)</div>
                 </div>
                 <div class="flex gap-2 mt-2 pt-2 border-t border-slate-100">
                     <button data-id="${c.id}" class="pv-corte-reimp flex-1 py-1.5 bg-white border border-slate-300 text-slate-700 rounded text-xs font-bold hover:bg-slate-50 transition">Re-imprimir</button>
-                    ${cargado ? '' : `<button data-id="${c.id}" class="pv-corte-cargar flex-1 py-1.5 bg-blue-600 text-white rounded text-xs font-bold hover:bg-blue-700 transition">Marcar Cargado</button>`}
                 </div>
             </div>`;
         }).join('');
         cont.querySelectorAll('.pv-corte-reimp').forEach(b => b.addEventListener('click', () => { const c = _pvCortes.find(x => x.id === b.dataset.id); if (c) generarTicketCorte(c); }));
-        cont.querySelectorAll('.pv-corte-cargar').forEach(b => b.addEventListener('click', () => marcarCorteCargado(b.dataset.id)));
+    }
+
+    // ── Bitácora (historial de actualizaciones) en Reportes ──
+    let _pvLogItems = [];
+    function renderLogBitacora() {
+        const cont = document.getElementById('pvLogLista');
+        if (!cont) return;
+        const lista = _pvLogItems.slice().sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
+        if (!lista.length) { cont.innerHTML = '<p class="text-xs text-slate-400 text-center py-3">Sin actualizaciones registradas.</p>'; return; }
+        const colorTipo = { estado: 'bg-slate-400', entrega: 'bg-green-500', anular: 'bg-rose-500', corte: 'bg-purple-500', corte_eliminado: 'bg-purple-300', eliminar: 'bg-red-500' };
+        cont.innerHTML = lista.slice(0, 200).map(l => {
+            const f = l.fecha ? new Date(l.fecha) : null;
+            const fs = f ? `${f.toLocaleDateString('es-VE', { day: '2-digit', month: '2-digit' })} ${f.toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' })}` : '';
+            const dot = colorTipo[l.tipo] || 'bg-slate-300';
+            return `<div class="flex items-start gap-2 py-1.5 px-2 border-b border-slate-50">
+                <span class="w-1.5 h-1.5 rounded-full ${dot} mt-1.5 shrink-0"></span>
+                <div class="min-w-0 flex-1">
+                    <div class="text-[12px] text-slate-700 leading-snug">${l.descripcion || ''}</div>
+                    <div class="text-[10px] text-slate-400">${fs} · ${l.porNombre || ''}</div>
+                </div>
+            </div>`;
+        }).join('');
     }
 
     async function marcarCorteCargado(id) {
@@ -2882,6 +2944,8 @@
                         <button id="pvRepBack" class="px-3 py-1.5 bg-gray-400 text-white text-xs rounded hover:bg-gray-500 font-bold transition">Volver</button>
                     </div>
                     <div class="mb-4">
+                        <h3 class="text-sm font-bold text-slate-700 mb-2">Historial de actualizaciones</h3>
+                        <div id="pvLogLista" class="space-y-0 max-h-[45vh] overflow-y-auto border border-slate-100 rounded-lg mb-4"><p class="text-xs text-slate-400 text-center py-3">Cargando historial...</p></div>
                         <h3 class="text-sm font-bold text-slate-700 mb-2">Cortes de Carga</h3>
                         <div id="pvCortesLista" class="space-y-2 max-h-[40vh] overflow-y-auto"><p class="text-xs text-slate-400 text-center py-3">Cargando cortes...</p></div>
                     </div>
@@ -2926,6 +2990,11 @@
             _pvCortes = cs.docs.map(d => ({ id: d.id, ...d.data() }));
         } catch (e) { _pvCortes = []; }
         renderCortes();
+        try {
+            const ls = await _getDocs(_collection(_db, pathLog()));
+            _pvLogItems = ls.docs.map(d => ({ id: d.id, ...d.data() }));
+        } catch (e) { _pvLogItems = []; }
+        renderLogBitacora();
     }
 
     function _pvFiltrarPorRango(pedidos) {
