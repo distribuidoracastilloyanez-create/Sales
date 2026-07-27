@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v98'; // v98: la ruta del pedido ahora viene de la zona del VENDEDOR (zonaPreventa), no del cliente
+const CACHE_NAME = 'ventas-app-cache-v99'; // v99: despachador tiene selector de ruta (por defecto su zona, opcion Todas) en Estado del Pedido y Pedidos - ya no queda bloqueado si la zona no coincide
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
