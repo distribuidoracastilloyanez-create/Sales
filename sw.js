@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v91'; // v91: [modelos fase venta directa] distribucion por modelo en Nueva Venta (crear/editar/eliminar) - modelosStock orientativo, total intacto
+const CACHE_NAME = 'ventas-app-cache-v92'; // v92: obsequios multi-producto (admin selecciona uno o mas, vendedor elige cual obsequiar) con compat productoId viejo
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
