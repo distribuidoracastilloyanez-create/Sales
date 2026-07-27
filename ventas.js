@@ -377,7 +377,7 @@
         const dist = pa.modelosDistribucion;
         const sum = dist ? Object.values(dist).reduce((a, b) => a + (b || 0), 0) : 0;
         const ok = totU > 0 && dist && sum === totU;
-        btn.textContent = ok ? `✓ modelos distribuidos (${totU} u)` : `▸ Distribuir modelos${totU > 0 ? ' (' + totU + ' u)' : ''}`;
+        btn.textContent = ok ? `Modelos distribuidos (${totU} u)` : `Distribuir modelos${totU > 0 ? ' (' + totU + ' u)' : ''}`;
         btn.className = `vd-modelos-btn text-[11px] font-bold ${ok ? 'text-green-600' : 'text-indigo-600'} hover:underline`;
     }
 
@@ -423,7 +423,7 @@
         const recompute = () => {
             const suma = getInputs().reduce((a, i) => a + (parseInt(i.value, 10) || 0), 0);
             const dif = totU - suma;
-            if (dif === 0) { estado.textContent = '✓ Distribución completa'; estado.className = 'mt-3 text-center text-sm font-bold text-green-600'; guardar.disabled = false; }
+            if (dif === 0) { estado.textContent = 'Distribución completa'; estado.className = 'mt-3 text-center text-sm font-bold text-green-600'; guardar.disabled = false; }
             else if (dif > 0) { estado.textContent = `Faltan ${dif} u por asignar`; estado.className = 'mt-3 text-center text-sm font-bold text-amber-600'; guardar.disabled = true; }
             else { estado.textContent = `Sobran ${-dif} u (reduce)`; estado.className = 'mt-3 text-center text-sm font-bold text-rose-600'; guardar.disabled = true; }
         };
@@ -1237,7 +1237,7 @@
       const totalConsig = consignacionesActivas.reduce((s, d) => s + (d.data().total || 0), 0);
 
       const msgCierre = consignacionesActivas.length > 0
-          ? `⚠️ Tienes <strong>${consignacionesActivas.length} consignación(es) activa(s)</strong> por un total de <strong>$${totalConsig.toFixed(2)}</strong> que también serán incluidas en el cierre.<br><br>Se generará el reporte y se limpiará la jornada. ¿Deseas continuar?`
+          ? `Tienes <strong>${consignacionesActivas.length} consignación(es) activa(s)</strong> por un total de <strong>$${totalConsig.toFixed(2)}</strong> que también serán incluidas en el cierre.<br><br>Se generará el reporte y se limpiará la jornada. ¿Deseas continuar?`
           : 'Se generará el reporte y se limpiará la jornada para iniciar una nueva. ¿Deseas continuar?';
 
       _showModal('Confirmar Cierre Definitivo', msgCierre, async () => {
