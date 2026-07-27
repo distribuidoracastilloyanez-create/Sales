@@ -58,8 +58,10 @@
     // ── MENÚ PRINCIPAL DE PRE-VENTA ──
     window.showPreventaMenu = function () {
         const rol = window.userRole === 'user' ? 'vendedor' : window.userRole;
-        // Ocultar los controles flotantes (En línea / Cerrar Sesión) dentro de Pre-Venta
-        if (_floatingControls) _floatingControls.classList.add('hidden');
+        // El despachador VIVE en Pre-Venta (entra aquí directo), así que debe conservar
+        // los controles flotantes (En línea / Cerrar Sesión). Vendedor/admin los ocultan
+        // aquí porque vuelven al menú principal para cerrar sesión.
+        if (_floatingControls) _floatingControls.classList.toggle('hidden', rol !== 'despachador');
         // Admin, vendedor y despachador pueden entrar a Pre-Venta
         if (!['admin', 'vendedor', 'despachador'].includes(rol)) {
             if (_showModal) _showModal('No disponible', 'El sistema de Pre-Venta no está habilitado para tu usuario.');
