@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v94'; // v94: [modelos] disponibilidad proyectada por modelo en Tomar Pedido + reconciliacion de modelos en recarga (auto-sana stock de modelos quitados)
+const CACHE_NAME = 'ventas-app-cache-v95'; // v95: [modelos fix F2/F3] Corregir a 0 y recarga ahora SI limpian modelosStock/huerfanos (merge de Firestore requiere setear claves a 0)
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
