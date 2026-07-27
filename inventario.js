@@ -1542,6 +1542,19 @@
         });
     }
 
+    // Reconcilia un mapa de modelos para que su suma no exceda 'target'
+    // (escala proporcional si quedó por encima, p.ej. tras ventas directas).
+    function _scaleModelos(modelos, target) {
+        const keys = Object.keys(modelos || {});
+        const sum = keys.reduce((a, k) => a + (modelos[k] || 0), 0);
+        if (sum <= target || sum <= 0) return { ...modelos };
+        const res = {}; let acc = 0;
+        keys.forEach(k => { res[k] = Math.floor((modelos[k] || 0) * target / sum); acc += res[k]; });
+        let rem = target - acc;
+        keys.slice().sort((a, b) => (modelos[b] || 0) - (modelos[a] || 0)).forEach(k => { if (rem > 0) { res[k] += 1; rem--; } });
+        return res;
+    }
+
     // Modal para distribuir en modelos la cantidad a recargar (+ stock existente sin asignar).
     function abrirDistribucionRecarga(productId) {
         const p = _inventarioCache.find(x => x.id === productId);
@@ -1552,7 +1565,8 @@
         if (vPor.und) factor = 1; else if (vPor.paq) factor = p.unidadesPorPaquete || 1; else if (vPor.cj) factor = p.unidadesPorCaja || 1;
         const inputVal = parseInt(String(_recargaTempState[p.id] != null ? _recargaTempState[p.id] : '').trim(), 10) || 0;
         const toAdd = inputVal * factor;
-        const existing = p.modelosStock || {};
+        const _existRaw = {}; modelos.forEach(m => { _existRaw[m] = (p.modelosStock && p.modelosStock[m]) || 0; });
+        const existing = _scaleModelos(_existRaw, p.cantidadUnidades || 0);
         const assigned = modelos.reduce((a, m) => a + (existing[m] || 0), 0);
         const unassigned = Math.max(0, (p.cantidadUnidades || 0) - assigned);
         const totalToDistribute = unassigned + toAdd;
@@ -1658,8 +1672,9 @@
             const invRef = _doc(_db, `artifacts/${_appId}/users/${_userId}/inventario`, p.id);
 
             if (p.manejaModelos) {
-                const existing = p.modelosStock || {};
                 const mods = p.modelos || [];
+                const _existRaw = {}; mods.forEach(m => { _existRaw[m] = (p.modelosStock && p.modelosStock[m]) || 0; });
+                const existing = _scaleModelos(_existRaw, currentBaseSano);
                 const assigned = mods.reduce((a, m) => a + (existing[m] || 0), 0);
                 const unassigned = Math.max(0, currentBaseSano - assigned);
                 const totalToDistribute = unassigned + unitsToAdd;
