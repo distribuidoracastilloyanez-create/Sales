@@ -63,7 +63,7 @@
                                 <label for="tipoOperacionSelect" class="text-xs font-bold text-gray-600 block mb-1">Tipo de Documento:</label>
                                 <select id="tipoOperacionSelect" class="w-full sm:w-auto px-3 py-1.5 border border-gray-300 rounded-lg text-sm bg-gray-50 focus:ring-2 focus:ring-blue-500 outline-none font-semibold text-gray-800">
                                     <option value="venta">🛒 Venta Regular (Factura/Nota)</option>
-                                    <option value="consignacion">📦 Dejada a Consignación</option>
+                                    <option value="consignacion">Dejada a Consignación</option>
                                 </select>
                             </div>
 
@@ -187,7 +187,7 @@
                     const sumM = distM ? Object.values(distM).reduce((a, b) => a + (b || 0), 0) : 0;
                     const okM = totUM > 0 && distM && sumM === totUM;
                     html += `<tr class="border-b bg-indigo-50/30"><td colspan="4" class="py-1.5 px-3 text-right">
-                        <button type="button" onclick="window.ventasModule.abrirDistribucionVentaDirecta('${prod.id}')" data-pid="${prod.id}" class="vd-modelos-btn text-[11px] font-bold ${okM ? 'text-green-600' : 'text-indigo-600'} hover:underline">${okM ? '✓ modelos distribuidos (' + totUM + ' u)' : '▸ Distribuir modelos' + (totUM > 0 ? ' (' + totUM + ' u)' : '')}</button>
+                        <button type="button" onclick="window.ventasModule.abrirDistribucionVentaDirecta('${prod.id}')" data-pid="${prod.id}" class="vd-modelos-btn text-[11px] font-bold ${okM ? 'text-green-600' : 'text-indigo-600'} hover:underline">${okM ? 'Modelos distribuidos (' + totUM + ' u)' : 'Distribuir modelos' + (totUM > 0 ? ' (' + totUM + ' u)' : '')}</button>
                     </td></tr>`;
                 }
             });
@@ -507,7 +507,7 @@
                                 <label for="editTipoOperacion" class="text-xs font-bold text-gray-600 block mb-1">Tipo de Operación Registrada:</label>
                                 <select id="editTipoOperacion" class="w-full sm:w-auto px-3 py-1.5 border border-gray-300 rounded text-sm bg-white focus:ring-2 focus:ring-yellow-500 outline-none font-bold text-gray-800">
                                     <option value="venta" ${!isConsignacion ? 'selected' : ''}>🛒 Venta Regular</option>
-                                    <option value="consignacion" ${isConsignacion ? 'selected' : ''}>📦 Consignación</option>
+                                    <option value="consignacion" ${isConsignacion ? 'selected' : ''}>Consignación</option>
                                 </select>
                             </div>
                         </div>
@@ -583,7 +583,7 @@
                 const rowBadge = esPreventa
                     ? `<span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-black bg-indigo-100 text-indigo-800 border border-indigo-200 uppercase tracking-wider mt-1">🚚 Pre-Venta</span>`
                     : (isConsignacion 
-                    ? `<span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-black bg-orange-100 text-orange-800 border border-orange-200 uppercase tracking-wider mt-1">📦 Consignación</span>` 
+                    ? `<span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-black bg-orange-100 text-orange-800 border border-orange-200 uppercase tracking-wider mt-1">Consignación</span>` 
                     : `<span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-green-50 text-green-700 border border-green-200 uppercase tracking-wider mt-1">🛒 Venta Regular</span>`);
                 
                 const rowBg = isConsignacion ? 'hover:bg-orange-50/50' : 'hover:bg-blue-50/50';
