@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v93'; // v93: [modelos] desglose por modelo en ticket de carga y corte + ver stock por modelo en Consultar Stock
+const CACHE_NAME = 'ventas-app-cache-v94'; // v94: [modelos] disponibilidad proyectada por modelo en Tomar Pedido + reconciliacion de modelos en recarga (auto-sana stock de modelos quitados)
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
