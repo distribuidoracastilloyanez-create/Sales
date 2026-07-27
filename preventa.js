@@ -1398,7 +1398,9 @@
         }
 
         // Candidatos a corte: activos y aún no cortados, en el orden mostrado
-        const candidatos = lista.filter(p => !p.corteId && (p.estado || 'pendiente') !== 'entregado' && (p.estado || 'pendiente') !== 'anulado');
+        // Candidatos a corte: activos (no entregado/anulado). El corte es una ayuda imprimible,
+        // no bloquea: un pedido ya cortado se puede volver a incluir en un corte nuevo.
+        const candidatos = lista.filter(p => (p.estado || 'pendiente') !== 'entregado' && (p.estado || 'pendiente') !== 'anulado');
         const idxCand = {}; candidatos.forEach((p, i) => idxCand[p.id] = i);
 
         cont.innerHTML = lista.map((p, pos) => {
@@ -1409,7 +1411,7 @@
             const accionDer = _pvModoCorte
                 ? (esCand
                     ? `<button data-cortar="${p.id}" class="pv-cortar-hasta text-[10px] px-2 py-1.5 rounded bg-purple-600 text-white font-bold whitespace-nowrap hover:bg-purple-700 transition">Cortar hasta aquí</button>`
-                    : `<span class="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-400 font-bold whitespace-nowrap">${p.corteId ? 'En corte ' + (p.corteNumero || '') : est.label}</span>`)
+                    : `<span class="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-400 font-bold whitespace-nowrap">${est.label}</span>`)
                 : `<button data-estado="${p.id}" class="pv-estado-btn text-[10px] px-2 py-1 rounded bg-${est.color}-100 text-${est.color}-700 font-bold shrink-0 whitespace-nowrap hover:ring-2 hover:ring-${est.color}-300 transition">${est.label}</button>`;
             return `<div class="border border-gray-200 rounded-lg p-2.5 ${_pvModoCorte && esCand ? 'bg-purple-50/50 border-purple-200' : ''}">
                 <div class="flex items-center justify-between gap-2 mb-1">
