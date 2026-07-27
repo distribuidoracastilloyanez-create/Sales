@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v104'; // v104: Reportes con bitacora de actualizaciones (preventa_log) + fix corte con pedidos borrados (recalcula/elimina) + quitar 'Marcar corte como cargado' (el corte no altera estados)
+const CACHE_NAME = 'ventas-app-cache-v105'; // v105: fix corte (undefined->null), generar corte avanza pendiente->preparacion, y memoria de filtros ruta/vendedor por usuario
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
