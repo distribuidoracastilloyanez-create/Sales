@@ -836,7 +836,7 @@
                 const cambios = {
                     clienteId: c.id, clienteNombre: c.nombreComercial || '',
                     clienteNombrePersonal: c.nombrePersonal || '', clienteSector: c.sector || '',
-                    ruta: c.ruta || _pedidoEnEdicion.ruta || '', zona: c.ruta || _pedidoEnEdicion.zona || '',
+                    ruta: _pedidoEnEdicion.ruta || (_pedidoActual.vendedor && _pedidoActual.vendedor.zonaPreventa) || c.ruta || '', zona: _pedidoEnEdicion.zona || (_pedidoActual.vendedor && _pedidoActual.vendedor.zonaPreventa) || c.ruta || '',
                     productos: productosDoc, total: total,
                     editadoPor: _userId, editadoFecha: new Date().toISOString()
                 };
@@ -852,7 +852,7 @@
             const pedido = {
                 clienteId: c.id, clienteNombre: c.nombreComercial || '',
                 clienteNombrePersonal: c.nombrePersonal || '', clienteSector: c.sector || '',
-                vendedorId: v.id, vendedorNombre: _pvNombreVendedor(v), ruta: c.ruta || '', zona: c.ruta || v.zonaPreventa || c.sector || '',
+                vendedorId: v.id, vendedorNombre: _pvNombreVendedor(v), ruta: v.zonaPreventa || c.ruta || '', zona: v.zonaPreventa || c.ruta || c.sector || '',
                 productos: productosDoc,
                 total: total, estado: 'pendiente', fechaCreacion: new Date().toISOString(),
                 creadoPor: _userId,
