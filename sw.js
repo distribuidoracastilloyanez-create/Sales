@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v102'; // v102: corte agrupado por rubro + orden global, impresion Carta (Epson) con total unidades, y sin iconos en titulos de botones
+const CACHE_NAME = 'ventas-app-cache-v103'; // v103: Estado del Pedido rediseñado - lista (mas antiguos arriba), estado clickeable, detalle al tocar el cliente, y corte 'hasta aqui' dentro de la lista
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
