@@ -15,7 +15,7 @@
     const CLIENTES_COLLECTION_PATH = `artifacts/${PUBLIC_DATA_ID}/public/data/clientes`;
     const SECTORES_COLLECTION_PATH = `artifacts/${PUBLIC_DATA_ID}/public/data/sectores`;
     // Rutas oficiales de reparto (campo aparte del sector; solo estas dos)
-    window.RUTAS_REPARTO = window.RUTAS_REPARTO || ['Palo Gordo', 'Santa Teresa'];
+    window.RUTAS_REPARTO = window.RUTAS_REPARTO || ['Palo Gordo', 'Santa Teresa', 'Ruta Prueba'];
 
     // --- Tipos de Vacío ---
     const TIPOS_VACIO = ["1/4 - 1/3", "ret 350 ml", "ret 1.25 Lts"];
