@@ -1438,7 +1438,9 @@
         document.getElementById('pvEditarPedido')?.addEventListener('click', () => { document.getElementById('pvPedDetOverlay')?.remove(); showTomarPedido(p); });
 
         if (siguiente) document.getElementById('pvAvanzar')?.addEventListener('click', () => cambiarEstadoPedido(p.id, siguiente));
-        if (anterior && p.estado !== 'entregado') document.getElementById('pvRetroceder')?.addEventListener('click', () => cambiarEstadoPedido(p.id, anterior));
+        if (anterior && p.estado !== 'entregado') document.getElementById('pvRetroceder')?.addEventListener('click', () => {
+            _showModal('Regresar estado', `¿Seguro que quieres regresar el pedido a <strong>${pvEstadoInfo(anterior).label}</strong>? (esto NO es cerrar; cambia el estado del pedido)`, () => cambiarEstadoPedido(p.id, anterior), 'Sí, regresar', () => {});
+        });
         if (puedeAnular) document.getElementById('pvAnularEntrega')?.addEventListener('click', () => anularEntrega(p));
 
     }
