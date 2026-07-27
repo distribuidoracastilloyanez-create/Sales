@@ -389,6 +389,41 @@
         _pedidoActual = { vendedor: null, cliente: null, productos: {} };
         _pvMoneda = 'USD';
 
+        // Cancelar los listeners en tiempo real de la lista/bandeja: si no, re-renderizan
+        // _mainContent encima de esta pantalla durante los await de más abajo.
+        if (_pvListaUnsub) { _pvListaUnsub(); _pvListaUnsub = null; }
+        if (_pvBandejaUnsub) { _pvBandejaUnsub(); _pvBandejaUnsub = null; }
+
+        // === Cargar TODOS los datos ANTES de pintar el template ===
+        // (Si se pinta y luego se hace await, un re-render intermedio puede dejar el DOM
+        //  a medias y provocar "Cannot set properties of null". Cargando antes, todo el
+        //  acceso al DOM de más abajo es síncrono.)
+        // Cargar clientes, productos, usuarios y orden global
+        try {
+            const [cliSnap, prodSnap, usersSnap] = await Promise.all([
+                _getDocs(_collection(_db, pathClientes())),
+                _getDocs(_collection(_db, pathProductos())),
+                _pvUsuarios.length ? Promise.resolve(null) : _getDocs(_collection(_db, 'users'))
+            ]);
+            _pvClientes = cliSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+            _pvProductos = prodSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+            if (usersSnap) _pvUsuarios = usersSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+            if (window.getGlobalProductSortFunction) {
+                try { _pvSortFnPedido = await window.getGlobalProductSortFunction(); } catch (e) { _pvSortFnPedido = null; }
+            }
+        } catch (e) {
+            console.error('Error cargando datos de pedido:', e);
+            if (_showModal) _showModal('Error', 'No se pudieron cargar los datos.');
+            return;
+        }
+
+        // Vendedor FIJO = usuario logueado
+        const yo = _pvUsuarios.find(u => u.id === _userId) || { id: _userId, nombre: 'Vendedor' };
+        _pedidoActual.vendedor = yo;
+        await cargarStockRuta(yo.id);
+        _pvComprometidoTP = window.getPedidosComprometidos ? await window.getPedidosComprometidos(yo.id) : {};
+        _pvComprometidoModTP = window.getComprometidoModelos ? await window.getComprometidoModelos(yo.id) : {};
+
         // El vendedor es el usuario logueado (o el admin, que también puede tomar pedidos con su cuenta)
         _mainContent.innerHTML = `
             <div class="p-2 w-full">
@@ -452,32 +487,8 @@
 
         document.getElementById('pvPedBack')?.addEventListener('click', () => window.showPreventaMenu());
 
-        // Cargar clientes, productos, usuarios y orden global
-        try {
-            const [cliSnap, prodSnap, usersSnap] = await Promise.all([
-                _getDocs(_collection(_db, pathClientes())),
-                _getDocs(_collection(_db, pathProductos())),
-                _pvUsuarios.length ? Promise.resolve(null) : _getDocs(_collection(_db, 'users'))
-            ]);
-            _pvClientes = cliSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-            _pvProductos = prodSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-            if (usersSnap) _pvUsuarios = usersSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-            if (window.getGlobalProductSortFunction) {
-                try { _pvSortFnPedido = await window.getGlobalProductSortFunction(); } catch (e) { _pvSortFnPedido = null; }
-            }
-        } catch (e) {
-            console.error('Error cargando datos de pedido:', e);
-            if (_showModal) _showModal('Error', 'No se pudieron cargar los datos.');
-            return;
-        }
-
-        // Vendedor FIJO = usuario logueado
-        const yo = _pvUsuarios.find(u => u.id === _userId) || { id: _userId, nombre: 'Vendedor' };
-        _pedidoActual.vendedor = yo;
-        await cargarStockRuta(yo.id);
-        _pvComprometidoTP = window.getPedidosComprometidos ? await window.getPedidosComprometidos(yo.id) : {};
-        _pvComprometidoModTP = window.getComprometidoModelos ? await window.getComprometidoModelos(yo.id) : {};
-        document.getElementById('pvVendedorInfo').textContent =
+        const _viEl = document.getElementById('pvVendedorInfo');
+        if (_viEl) _viEl.textContent =
             'Vendedor: ' + _pvNombreVendedor(yo) + (yo.zonaPreventa ? ' · Zona: ' + yo.zonaPreventa : '');
 
         // Buscador de cliente
