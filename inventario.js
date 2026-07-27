@@ -319,7 +319,7 @@
                 <div class="bg-gray-100/95 backdrop-blur-md p-4 md:p-8 rounded-2xl shadow-2xl border border-gray-200"> 
                     <div class="flex flex-col md:flex-row justify-between items-center mb-6 border-b border-gray-300 pb-4">
                          <h2 class="text-3xl font-black text-gray-800 tracking-tight">
-                             ${isAdmin ? '⚙️ Gestión del Catálogo' : '📦 Consultar Inventario'}
+                             ${isAdmin ? 'Gestión del Catálogo' : 'Consultar Inventario'}
                          </h2>
                          <button id="backToInventarioBtnTop" class="mt-4 md:mt-0 px-6 py-2 bg-gray-500 text-white font-bold rounded-lg shadow hover:bg-gray-600 transition-colors">
                              ← Volver
@@ -334,7 +334,7 @@
                     
                     <div class="mt-6 flex flex-col sm:flex-row gap-4 justify-between"> 
                         <button id="backToInventarioBtnBottom" class="w-full sm:w-auto px-8 py-3 bg-gray-500 text-white font-bold rounded-lg shadow hover:bg-gray-600 transition-colors">Volver al Menú</button> 
-                        ${isAdmin ? `<button id="deleteAllProductosBtn" class="w-full sm:w-auto px-8 py-3 bg-red-600 text-white font-bold rounded-lg shadow hover:bg-red-700 transition-colors">⚠️ Eliminar Todo el Catálogo</button>` : ''} 
+                        ${isAdmin ? `<button id="deleteAllProductosBtn" class="w-full sm:w-auto px-8 py-3 bg-red-600 text-white font-bold rounded-lg shadow hover:bg-red-700 transition-colors">Eliminar Todo el Catálogo</button>` : ''} 
                     </div> 
                 </div> 
             </div>`;
@@ -656,7 +656,7 @@
                     const marcaTitle = document.createElement('div');
                     marcaTitle.className = 'marca-title font-semibold text-gray-800 cursor-move mb-2 flex items-center bg-gray-100 p-1.5 rounded border border-gray-200 text-sm';
                     marcaTitle.innerHTML = `<span class="mr-2 drag-handle-mar px-2 py-0.5 bg-white rounded shadow-sm text-gray-400 pointer-events-none text-xs">↕</span>
-                                            <span class="pointer-events-none truncate">🏷️ ${marcaName}</span>`;
+                                            <span class="pointer-events-none truncate">🏷${marcaName}</span>`;
                     li.appendChild(marcaTitle);
 
                     const prodList = document.createElement('ul');
@@ -1513,7 +1513,7 @@
                                 class="w-24 p-1.5 text-center border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 recarga-qty-input font-bold bg-white text-green-700 shadow-sm">
                             <span class="ml-2 text-xs font-bold text-gray-500 whitespace-nowrap">x ${unitLabel}</span>
                         </div>
-                        ${p.manejaModelos ? `<div class="mt-1.5"><button type="button" data-doc-id="${p.id}" class="recarga-modelos-btn text-[11px] font-bold ${_recargaModelosState[p.id] ? 'text-green-600' : 'text-indigo-600'} hover:underline">${_recargaModelosState[p.id] ? '✓ modelos distribuidos' : '▸ Distribuir modelos'}</button></div>` : ''}
+                        ${p.manejaModelos ? `<div class="mt-1.5"><button type="button" data-doc-id="${p.id}" class="recarga-modelos-btn text-[11px] font-bold ${_recargaModelosState[p.id] ? 'text-green-600' : 'text-indigo-600'} hover:underline">${_recargaModelosState[p.id] ? 'Modelos distribuidos' : 'Distribuir modelos'}</button></div>` : ''}
                     </td>
                 </tr>`;
         });
@@ -1606,7 +1606,7 @@
         const recompute = () => {
             const suma = getInputs().reduce((a, i) => a + (parseInt(i.value, 10) || 0), 0);
             const dif = totalToDistribute - suma;
-            if (dif === 0) { estado.textContent = '✓ Distribución completa'; estado.className = 'mt-3 text-center text-sm font-bold text-green-600'; guardar.disabled = false; }
+            if (dif === 0) { estado.textContent = 'Distribución completa'; estado.className = 'mt-3 text-center text-sm font-bold text-green-600'; guardar.disabled = false; }
             else if (dif > 0) { estado.textContent = `Faltan ${dif} u por asignar`; estado.className = 'mt-3 text-center text-sm font-bold text-amber-600'; guardar.disabled = true; }
             else { estado.textContent = `Sobran ${-dif} u (reduce)`; estado.className = 'mt-3 text-center text-sm font-bold text-rose-600'; guardar.disabled = true; }
         };
