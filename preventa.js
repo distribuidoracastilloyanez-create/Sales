@@ -895,6 +895,7 @@
     function pvEstadoInfo(key) { return PV_ESTADOS.find(e => e.key === key) || PV_ESTADOS[0]; }
 
     let _pvPedidos = [];          // pedidos en tiempo real
+    let _pvModoCorte = false;     // modo "corte hasta aquí" en Estado del Pedido
     let _pvBandejaUnsub = null;   // listener a cancelar
     let _pvFiltroEstado = '';     // '' = todos
     let _pvFiltroVendedor = '';
@@ -1198,6 +1199,7 @@
         const rol = window.userRole === 'user' ? 'vendedor' : window.userRole;
         if (!['admin', 'vendedor', 'despachador'].includes(rol)) return;
         const esAdmin = rol === 'admin';
+        _pvModoCorte = false;
         // El despachador ve por defecto su ruta (zona), pero puede cambiarla (incl. "Todas")
         if (rol === 'despachador' && !_pvFiltroRuta) _pvFiltroRuta = window.userZona || '';
 
@@ -1209,7 +1211,12 @@
                         <button id="pvBandBack" class="px-3 py-1.5 bg-gray-400 text-white text-xs rounded hover:bg-gray-500 font-bold transition">Volver</button>
                     </div>
 
-                    ${(rol === 'despachador' || rol === 'admin') ? `<button id="pvCorteBtn" class="w-full mb-3 py-2.5 bg-purple-600 text-white rounded-lg font-bold text-sm hover:bg-purple-700 transition shadow-sm">Corte de Carga (por ruta)</button>` : ''}
+                    ${(rol === 'despachador' || rol === 'admin') ? `
+                    <button id="pvCorteBtn" class="w-full mb-2 py-2.5 bg-purple-600 text-white rounded-lg font-bold text-sm hover:bg-purple-700 transition shadow-sm">Corte de Carga</button>
+                    <div id="pvCorteBanner" class="hidden mb-3 p-2.5 bg-purple-50 border border-purple-200 rounded-lg text-[11px] text-purple-800 flex items-center justify-between gap-2">
+                        <span>Elige <strong>hasta qué pedido</strong> cortar (toca "Cortar hasta aquí").</span>
+                        <button id="pvCorteCancelarModo" class="px-2 py-1 bg-white border border-purple-300 rounded text-purple-700 font-bold whitespace-nowrap">Cancelar</button>
+                    </div>` : ''}
 
                     <!-- Contadores por estado -->
                     <div id="pvBandContadores" class="flex flex-wrap gap-1 mb-2"></div>
@@ -1246,7 +1253,8 @@
             if (_pvBandejaUnsub) { _pvBandejaUnsub(); _pvBandejaUnsub = null; }
             window.showPreventaMenu();
         });
-        document.getElementById('pvCorteBtn')?.addEventListener('click', iniciarCorteCarga);
+        document.getElementById('pvCorteBtn')?.addEventListener('click', () => { if (_pvModoCorte) _pvSalirModoCorte(); else _pvEntrarModoCorte(); });
+        document.getElementById('pvCorteCancelarModo')?.addEventListener('click', _pvSalirModoCorte);
         document.getElementById('pvBandEstado')?.addEventListener('change', (e) => { _pvFiltroEstado = e.target.value; renderBandeja(); });
         document.getElementById('pvBandVendedor')?.addEventListener('change', (e) => { _pvFiltroVendedor = e.target.value; renderBandeja(); });
         document.getElementById('pvBandHoy')?.addEventListener('change', (e) => { _pvFiltroHoy = e.target.checked; renderBandeja(); });
@@ -1281,6 +1289,19 @@
         const d = new Date(iso);
         const h = new Date();
         return d.getFullYear() === h.getFullYear() && d.getMonth() === h.getMonth() && d.getDate() === h.getDate();
+    }
+
+    function _pvEntrarModoCorte() {
+        _pvModoCorte = true;
+        const b = document.getElementById('pvCorteBanner'); if (b) b.classList.remove('hidden');
+        const btn = document.getElementById('pvCorteBtn'); if (btn) { btn.textContent = 'Salir de modo corte'; btn.classList.remove('bg-purple-600', 'hover:bg-purple-700'); btn.classList.add('bg-slate-500', 'hover:bg-slate-600'); }
+        renderBandeja();
+    }
+    function _pvSalirModoCorte() {
+        _pvModoCorte = false;
+        const b = document.getElementById('pvCorteBanner'); if (b) b.classList.add('hidden');
+        const btn = document.getElementById('pvCorteBtn'); if (btn) { btn.textContent = 'Corte de Carga'; btn.classList.add('bg-purple-600', 'hover:bg-purple-700'); btn.classList.remove('bg-slate-500', 'hover:bg-slate-600'); }
+        renderBandeja();
     }
 
     function renderBandeja() {
@@ -1320,25 +1341,35 @@
         if (_pvFiltroVendedor) lista = lista.filter(p => p.vendedorNombre === _pvFiltroVendedor);
         if (_pvFiltroHoy) lista = lista.filter(p => _pvEsHoy(p.fechaCreacion));
 
-        // Ordenar: más recientes primero
-        lista.sort((a, b) => (b.fechaCreacion || '').localeCompare(a.fechaCreacion || ''));
+        // Ordenar: MÁS ANTIGUOS primero (orden de llegada, para el corte "hasta aquí")
+        lista.sort((a, b) => (a.fechaCreacion || '').localeCompare(b.fechaCreacion || ''));
 
         if (!lista.length) {
             cont.innerHTML = '<p class="text-center text-gray-400 py-8 text-sm">No hay pedidos con estos filtros.</p>';
             return;
         }
 
-        cont.innerHTML = lista.map(p => {
+        // Candidatos a corte: activos y aún no cortados, en el orden mostrado
+        const candidatos = lista.filter(p => !p.corteId && (p.estado || 'pendiente') !== 'entregado' && (p.estado || 'pendiente') !== 'anulado');
+        const idxCand = {}; candidatos.forEach((p, i) => idxCand[p.id] = i);
+
+        cont.innerHTML = lista.map((p, pos) => {
             const est = pvEstadoInfo(p.estado || 'pendiente');
             const numProd = (p.productos || []).length;
             const fecha = p.fechaCreacion ? new Date(p.fechaCreacion).toLocaleDateString('es-VE', { day: '2-digit', month: '2-digit' }) + ' ' + new Date(p.fechaCreacion).toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' }) : '';
-            return `<div class="border border-gray-200 rounded-lg p-2.5 hover:bg-teal-50 cursor-pointer pv-ped-card" data-id="${p.id}">
+            const esCand = idxCand[p.id] !== undefined;
+            const accionDer = _pvModoCorte
+                ? (esCand
+                    ? `<button data-cortar="${p.id}" class="pv-cortar-hasta text-[10px] px-2 py-1.5 rounded bg-purple-600 text-white font-bold whitespace-nowrap hover:bg-purple-700 transition">Cortar hasta aquí</button>`
+                    : `<span class="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-400 font-bold whitespace-nowrap">${p.corteId ? 'En corte ' + (p.corteNumero || '') : est.label}</span>`)
+                : `<button data-estado="${p.id}" class="pv-estado-btn text-[10px] px-2 py-1 rounded bg-${est.color}-100 text-${est.color}-700 font-bold shrink-0 whitespace-nowrap hover:ring-2 hover:ring-${est.color}-300 transition">${est.label}</button>`;
+            return `<div class="border border-gray-200 rounded-lg p-2.5 ${_pvModoCorte && esCand ? 'bg-purple-50/50 border-purple-200' : ''}">
                 <div class="flex items-center justify-between gap-2 mb-1">
                     <div class="min-w-0">
-                        <div class="font-bold text-gray-800 text-sm truncate">${p.clienteNombre || '(sin cliente)'}</div>
+                        <button data-detalle="${p.id}" class="pv-ped-nombre text-left font-bold text-gray-800 text-sm truncate hover:text-teal-700 hover:underline">${pos + 1}. ${p.clienteNombre || '(sin cliente)'}</button>
                         <div class="text-[10px] text-gray-400 truncate">${p.zona || '—'} · ${p.vendedorNombre || '—'}</div>
                     </div>
-                    <span class="text-[10px] px-1.5 py-0.5 rounded bg-${est.color}-100 text-${est.color}-700 font-bold shrink-0 whitespace-nowrap">${est.label}</span>
+                    ${accionDer}
                 </div>
                 <div class="flex items-center justify-between text-[11px]">
                     <span class="text-gray-500">${numProd} producto(s) · ${fecha}</span>
@@ -1347,8 +1378,63 @@
             </div>`;
         }).join('');
 
-        cont.querySelectorAll('.pv-ped-card').forEach(el =>
-            el.addEventListener('click', () => mostrarDetallePedido(el.dataset.id)));
+        cont.querySelectorAll('.pv-ped-nombre').forEach(el => el.addEventListener('click', () => mostrarDetallePedido(el.dataset.detalle)));
+        cont.querySelectorAll('.pv-estado-btn').forEach(el => el.addEventListener('click', () => _pvAbrirMenuEstado(el.dataset.estado)));
+        cont.querySelectorAll('.pv-cortar-hasta').forEach(el => el.addEventListener('click', () => {
+            const idx = idxCand[el.dataset.cortar];
+            const pedidosCorte = candidatos.slice(0, idx + 1);
+            const rutaLabel = _pvFiltroRuta || window.userZona || 'General';
+            _pvSalirModoCorte();
+            previsualizarCorte(pedidosCorte, rutaLabel);
+        }));
+    }
+
+    // Menú compacto para cambiar el estado del pedido desde la columna Estado
+    function _pvAbrirMenuEstado(id) {
+        const p = _pvPedidos.find(x => x.id === id);
+        if (!p) return;
+        const cur = p.estado || 'pendiente';
+        if (cur === 'anulado') { if (_showModal) _showModal('Anulado', 'Este pedido está anulado.'); return; }
+        const orden = ['pendiente', 'preparacion', 'cargado', 'entregado'];
+        const i = orden.indexOf(cur);
+        const trans = [];
+        if (i > 0) trans.push({ estado: orden[i - 1], tipo: 'atras' });
+        if (i >= 0 && i < orden.length - 1) trans.push({ estado: orden[i + 1], tipo: 'avanzar' });
+        const curInfo = pvEstadoInfo(cur);
+        document.getElementById('pvEstadoMenuOverlay')?.remove();
+        const ov = document.createElement('div');
+        ov.id = 'pvEstadoMenuOverlay';
+        ov.className = 'fixed inset-0 z-[9999] bg-slate-900/50 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4';
+        const botones = trans.map(t => {
+            const ei = pvEstadoInfo(t.estado);
+            const cls = t.tipo === 'avanzar' ? 'bg-slate-800 hover:bg-slate-900 text-white' : 'bg-white border border-slate-300 text-slate-600 hover:bg-slate-50';
+            const etq = t.tipo === 'avanzar' ? `Avanzar a ${ei.label}` : `Regresar a ${ei.label}`;
+            return `<button data-estado="${t.estado}" data-tipo="${t.tipo}" class="pv-est-op w-full py-3 rounded-lg font-medium text-sm transition ${cls}">${etq}</button>`;
+        }).join('');
+        ov.innerHTML = `
+            <div class="bg-white w-full max-w-xs rounded-t-xl sm:rounded-xl shadow-2xl overflow-hidden border border-slate-200">
+                <div class="px-5 py-4 border-b border-slate-100">
+                    <div class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Cambiar estado</div>
+                    <div class="font-semibold text-slate-800 text-sm truncate">${p.clienteNombre || '(sin cliente)'}</div>
+                    <div class="text-xs text-slate-500 mt-0.5">Estado actual: <span class="font-semibold text-${curInfo.color}-700">${curInfo.label}</span></div>
+                </div>
+                <div class="p-4 space-y-2">
+                    ${botones || '<p class="text-sm text-slate-400 text-center py-2">Sin cambios disponibles.</p>'}
+                    <button id="pvEstMenuCancelar" class="w-full py-2.5 text-slate-400 hover:text-slate-600 font-medium text-sm">Cancelar</button>
+                </div>
+            </div>`;
+        document.body.appendChild(ov);
+        ov.addEventListener('click', e => { if (e.target === ov) ov.remove(); });
+        document.getElementById('pvEstMenuCancelar').addEventListener('click', () => ov.remove());
+        ov.querySelectorAll('.pv-est-op').forEach(b => b.addEventListener('click', () => {
+            const nuevo = b.dataset.estado, tipo = b.dataset.tipo;
+            ov.remove();
+            if (tipo === 'atras') {
+                _showModal('Regresar estado', `¿Seguro que quieres regresar el pedido a <strong>${pvEstadoInfo(nuevo).label}</strong>? (cambia el estado del pedido)`, () => cambiarEstadoPedido(id, nuevo), 'Sí, regresar', () => {});
+            } else {
+                cambiarEstadoPedido(id, nuevo);
+            }
+        }));
     }
 
 
@@ -2520,10 +2606,9 @@
         ov.querySelectorAll('.pv-corte-ruta').forEach(b => b.addEventListener('click', () => { ov.remove(); previsualizarCorte(b.dataset.ruta); }));
     }
 
-    function previsualizarCorte(ruta) {
-        const rutaLabel = ruta === '__SIN_RUTA__' ? 'Sin ruta' : ruta;
-        const pedidos = _pvPedidosCorteElegibles(ruta);
-        if (!pedidos.length) { if (_showModal) _showModal('Sin pedidos', `No hay pedidos pendientes de corte en <strong>${rutaLabel}</strong>.`); return; }
+    function previsualizarCorte(pedidos, rutaLabel) {
+        rutaLabel = rutaLabel || 'General';
+        if (!pedidos || !pedidos.length) { if (_showModal) _showModal('Sin pedidos', 'No hay pedidos para incluir en el corte.'); return; }
         const consolidado = _pvConsolidarProductos(pedidos);
         const clientes = [...new Set(pedidos.map(p => p.clienteNombre).filter(Boolean))];
         document.getElementById('pvCorteOverlay')?.remove();
@@ -2547,7 +2632,7 @@
         ov.innerHTML = `
             <div class="bg-white w-full max-w-md rounded-t-xl sm:rounded-xl shadow-2xl overflow-hidden max-h-[92vh] flex flex-col border border-slate-200">
                 <div class="bg-purple-700 text-white px-5 py-4 shrink-0">
-                    <div class="text-[10px] uppercase tracking-wider text-purple-200 font-semibold">Corte de Carga · ${rutaLabel}</div>
+                    <div class="text-[10px] uppercase tracking-wider text-purple-200 font-semibold">Corte de Carga</div>
                     <div class="font-semibold text-base">${pedidos.length} pedido(s) · ${clientes.length} cliente(s)</div>
                     <div class="text-xs text-purple-100 mt-0.5">Total de productos a cargar en el camión.</div>
                 </div>
