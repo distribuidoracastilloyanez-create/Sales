@@ -682,7 +682,7 @@
                 const distSumM = distM ? Object.values(distM).reduce((a, b) => a + (b || 0), 0) : 0;
                 const okM = totUM > 0 && distM && distSumM === totUM;
                 html += `<tr class="border-b bg-indigo-50/30"><td colspan="4" class="py-1.5 px-3 text-right">
-                    <button type="button" onclick="window.preventaModule.abrirDistribucionPedido('${prod.id}')" data-pid="${prod.id}" class="pv-modelos-btn text-[11px] font-bold ${okM ? 'text-green-600' : 'text-indigo-600'} hover:underline">${okM ? '✓ modelos distribuidos (' + totUM + ' u)' : '▸ Distribuir modelos' + (totUM > 0 ? ' (' + totUM + ' u)' : '')}</button>
+                    <button type="button" onclick="window.preventaModule.abrirDistribucionPedido('${prod.id}')" data-pid="${prod.id}" class="pv-modelos-btn text-[11px] font-bold ${okM ? 'text-green-600' : 'text-indigo-600'} hover:underline">${okM ? 'Modelos distribuidos (' + totUM + ' u)' : 'Distribuir modelos' + (totUM > 0 ? ' (' + totUM + ' u)' : '')}</button>
                 </td></tr>`;
             }
         });
@@ -726,7 +726,7 @@
         const dist = pa.modelosDistribucion;
         const distSum = dist ? Object.values(dist).reduce((a, b) => a + (b || 0), 0) : 0;
         const ok = totU > 0 && dist && distSum === totU;
-        btn.textContent = ok ? `✓ modelos distribuidos (${totU} u)` : `▸ Distribuir modelos${totU > 0 ? ' (' + totU + ' u)' : ''}`;
+        btn.textContent = ok ? `Modelos distribuidos (${totU} u)` : `Distribuir modelos${totU > 0 ? ' (' + totU + ' u)' : ''}`;
         btn.className = `pv-modelos-btn text-[11px] font-bold ${ok ? 'text-green-600' : 'text-indigo-600'} hover:underline`;
     }
 
@@ -773,7 +773,7 @@
         const recompute = () => {
             const suma = getInputs().reduce((a, i) => a + (parseInt(i.value, 10) || 0), 0);
             const dif = totU - suma;
-            if (dif === 0) { estado.textContent = '✓ Distribución completa'; estado.className = 'mt-3 text-center text-sm font-bold text-green-600'; guardar.disabled = false; }
+            if (dif === 0) { estado.textContent = 'Distribución completa'; estado.className = 'mt-3 text-center text-sm font-bold text-green-600'; guardar.disabled = false; }
             else if (dif > 0) { estado.textContent = `Faltan ${dif} u por asignar`; estado.className = 'mt-3 text-center text-sm font-bold text-amber-600'; guardar.disabled = true; }
             else { estado.textContent = `Sobran ${-dif} u (reduce)`; estado.className = 'mt-3 text-center text-sm font-bold text-rose-600'; guardar.disabled = true; }
         };
@@ -887,10 +887,10 @@
     // Por ahora NO descuenta inventario (eso será una fase posterior).
     // ═══════════════════════════════════════════════════════════
     const PV_ESTADOS = [
-        { key: 'pendiente',    label: 'Pendiente',      color: 'gray',   icon: '🕓' },
-        { key: 'preparacion',  label: 'En preparación', color: 'amber',  icon: '📋' },
-        { key: 'cargado',      label: 'Cargado',        color: 'blue',   icon: '📦' },
-        { key: 'entregado',    label: 'Entregado',      color: 'green',  icon: '✅' }
+        { key: 'pendiente',    label: 'Pendiente',      color: 'gray',   icon: '' },
+        { key: 'preparacion',  label: 'En preparación', color: 'amber',  icon: '' },
+        { key: 'cargado',      label: 'Cargado',        color: 'blue',   icon: '' },
+        { key: 'entregado',    label: 'Entregado',      color: 'green',  icon: '' }
     ];
     function pvEstadoInfo(key) { return PV_ESTADOS.find(e => e.key === key) || PV_ESTADOS[0]; }
 
@@ -1209,7 +1209,7 @@
                         <button id="pvBandBack" class="px-3 py-1.5 bg-gray-400 text-white text-xs rounded hover:bg-gray-500 font-bold transition">Volver</button>
                     </div>
 
-                    ${(rol === 'despachador' || rol === 'admin') ? `<button id="pvCorteBtn" class="w-full mb-3 py-2.5 bg-purple-600 text-white rounded-lg font-bold text-sm hover:bg-purple-700 transition shadow-sm">✂️ Corte de Carga (por ruta)</button>` : ''}
+                    ${(rol === 'despachador' || rol === 'admin') ? `<button id="pvCorteBtn" class="w-full mb-3 py-2.5 bg-purple-600 text-white rounded-lg font-bold text-sm hover:bg-purple-700 transition shadow-sm">Corte de Carga (por ruta)</button>` : ''}
 
                     <!-- Contadores por estado -->
                     <div id="pvBandContadores" class="flex flex-wrap gap-1 mb-2"></div>
@@ -1218,7 +1218,7 @@
                     <div class="grid grid-cols-2 gap-1.5 mb-2">
                         <select id="pvBandEstado" class="text-xs border border-teal-300 rounded p-1.5 bg-white outline-none">
                             <option value="">Todos los estados</option>
-                            ${PV_ESTADOS.map(e => `<option value="${e.key}">${e.icon} ${e.label}</option>`).join('')}
+                            ${PV_ESTADOS.map(e => `<option value="${e.key}">${e.label}</option>`).join('')}
                         </select>
                         <select id="pvBandVendedor" class="text-xs border border-teal-300 rounded p-1.5 bg-white outline-none">
                             <option value="">Todos los vendedores</option>
@@ -1296,7 +1296,7 @@
             cont2.innerHTML = PV_ESTADOS.filter(e => e.key !== 'anulado').map(e => {
                 const n = _pvPedidos.filter(p => (p.estado || 'pendiente') === e.key).length;
                 if (!n) return '';
-                return `<span class="text-[10px] px-1.5 py-0.5 rounded bg-${e.color}-100 text-${e.color}-700 font-bold">${e.icon} ${n} ${e.label}</span>`;
+                return `<span class="text-[10px] px-1.5 py-0.5 rounded bg-${e.color}-100 text-${e.color}-700 font-bold">${n} ${e.label}</span>`;
             }).join('');
         }
 
@@ -1338,7 +1338,7 @@
                         <div class="font-bold text-gray-800 text-sm truncate">${p.clienteNombre || '(sin cliente)'}</div>
                         <div class="text-[10px] text-gray-400 truncate">${p.zona || '—'} · ${p.vendedorNombre || '—'}</div>
                     </div>
-                    <span class="text-[10px] px-1.5 py-0.5 rounded bg-${est.color}-100 text-${est.color}-700 font-bold shrink-0 whitespace-nowrap">${est.icon} ${est.label}</span>
+                    <span class="text-[10px] px-1.5 py-0.5 rounded bg-${est.color}-100 text-${est.color}-700 font-bold shrink-0 whitespace-nowrap">${est.label}</span>
                 </div>
                 <div class="flex items-center justify-between text-[11px]">
                     <span class="text-gray-500">${numProd} producto(s) · ${fecha}</span>
@@ -2091,7 +2091,7 @@
         ov.innerHTML = `
             <div class="bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden max-h-[92vh] flex flex-col">
                 <div class="bg-amber-500 text-white px-4 py-3 shrink-0">
-                    <div class="font-bold text-base">✏️ Editar pedido</div>
+                    <div class="font-bold text-base">✏ Editar pedido</div>
                     <div class="text-xs opacity-90">${p.clienteNombre || ''} · ${p.vendedorNombre || ''}</div>
                 </div>
                 <div class="p-3 shrink-0 border-b">
@@ -2444,7 +2444,18 @@
     function _pvConsolidarProductos(pedidos) {
         const map = {};
         pedidos.forEach(p => (p.productos || []).forEach(pr => {
-            if (!map[pr.id]) map[pr.id] = { productoId: pr.id, presentacion: pr.presentacion || '', marca: pr.marca || '', totalCj: 0, totalPaq: 0, totalUnd: 0, totalUnidades: 0, modelosTotales: {} };
+            if (!map[pr.id]) {
+                const cat = (_pvProductos || []).find(x => x.id === pr.id) || {};
+                map[pr.id] = {
+                    productoId: pr.id,
+                    presentacion: pr.presentacion || cat.presentacion || '',
+                    marca: pr.marca || cat.marca || '',
+                    rubro: cat.rubro || 'SIN RUBRO',
+                    segmento: cat.segmento || '',
+                    ordenSegmento: cat.ordenSegmento, ordenMarca: cat.ordenMarca, ordenProducto: cat.ordenProducto,
+                    totalCj: 0, totalPaq: 0, totalUnd: 0, totalUnidades: 0, modelosTotales: {}
+                };
+            }
             map[pr.id].totalCj  += pr.cantCj  || 0;
             map[pr.id].totalPaq += pr.cantPaq || 0;
             map[pr.id].totalUnd += pr.cantUnd || 0;
@@ -2453,10 +2464,31 @@
                 for (const _m in pr.modelosDistribucion) map[pr.id].modelosTotales[_m] = (map[pr.id].modelosTotales[_m] || 0) + (pr.modelosDistribucion[_m] || 0);
             }
         }));
-        return Object.values(map).sort((a, b) => (a.presentacion || '').localeCompare(b.presentacion || ''));
+        const arr = Object.values(map);
+        if (_pvSortFnPedido) arr.sort(_pvSortFnPedido);
+        else arr.sort((a, b) => (a.rubro || '').localeCompare(b.rubro || '') || (a.presentacion || '').localeCompare(b.presentacion || ''));
+        return arr;
     }
 
-    function iniciarCorteCarga() {
+    // Agrupa el consolidado por rubro (respetando el orden ya aplicado)
+    function _pvAgruparPorRubro(consolidado) {
+        const grupos = []; const idx = {};
+        (consolidado || []).forEach(c => {
+            const r = c.rubro || 'SIN RUBRO';
+            if (idx[r] === undefined) { idx[r] = grupos.length; grupos.push({ rubro: r, items: [] }); }
+            grupos[idx[r]].items.push(c);
+        });
+        return grupos;
+    }
+
+    async function iniciarCorteCarga() {
+        // Asegurar catálogo y orden global cargados (para agrupar por rubro y ordenar)
+        if (!_pvProductos || !_pvProductos.length) {
+            try { const ps = await _getDocs(_collection(_db, pathProductos())); _pvProductos = ps.docs.map(d => ({ id: d.id, ...d.data() })); } catch (e) {}
+        }
+        if (!_pvSortFnPedido && window.getGlobalProductSortFunction) {
+            try { _pvSortFnPedido = await window.getGlobalProductSortFunction(); } catch (e) {}
+        }
         const rutas = window.RUTAS_REPARTO || [];
         document.getElementById('pvCorteOverlay')?.remove();
         const ov = document.createElement('div');
@@ -2498,16 +2530,19 @@
         const ov = document.createElement('div');
         ov.id = 'pvCorteOverlay';
         ov.className = 'fixed inset-0 z-[9999] bg-slate-900/50 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4';
-        const filas = consolidado.map(c => {
-            const partes = [];
-            if (c.totalCj)  partes.push(`${c.totalCj} Cj`);
-            if (c.totalPaq) partes.push(`${c.totalPaq} Paq`);
-            if (c.totalUnd) partes.push(`${c.totalUnd} Und`);
-            const _md = (c.modelosTotales && Object.keys(c.modelosTotales).length) ? Object.entries(c.modelosTotales).filter(([, v]) => v > 0).map(([m, v]) => `${m}: ${v}`).join('  ·  ') : '';
-            return `<tr class="border-b border-slate-100">
-                <td class="py-1.5 px-2 text-xs text-slate-700">${(c.presentacion || '').toUpperCase()} <span class="text-slate-400">${c.marca || ''}</span>${_md ? `<div class="text-[10px] text-indigo-600 mt-0.5">↳ ${_md}</div>` : ''}</td>
-                <td class="py-1.5 px-2 text-xs text-right font-semibold text-slate-800 whitespace-nowrap">${partes.join(' + ') || '-'}</td>
-            </tr>`;
+        const filas = _pvAgruparPorRubro(consolidado).map(g => {
+            const filasG = g.items.map(c => {
+                const partes = [];
+                if (c.totalCj)  partes.push(`${c.totalCj} Cj`);
+                if (c.totalPaq) partes.push(`${c.totalPaq} Paq`);
+                if (c.totalUnd) partes.push(`${c.totalUnd} Und`);
+                const _md = (c.modelosTotales && Object.keys(c.modelosTotales).length) ? Object.entries(c.modelosTotales).filter(([, v]) => v > 0).map(([m, v]) => `${m}: ${v}`).join('  ·  ') : '';
+                return `<tr class="border-b border-slate-100">
+                    <td class="py-1.5 px-2 text-xs text-slate-700">${(c.presentacion || '').toUpperCase()} <span class="text-slate-400">${c.marca || ''}</span>${_md ? `<div class="text-[10px] text-indigo-600 mt-0.5">${_md}</div>` : ''}</td>
+                    <td class="py-1.5 px-2 text-xs text-right font-semibold text-slate-800 whitespace-nowrap">${partes.join(' + ') || '-'}</td>
+                </tr>`;
+            }).join('');
+            return `<tr><td colspan="2" class="pt-3 pb-1 px-2 text-[11px] font-bold text-purple-700 uppercase tracking-wide">${g.rubro}</td></tr>${filasG}`;
         }).join('');
         ov.innerHTML = `
             <div class="bg-white w-full max-w-md rounded-t-xl sm:rounded-xl shadow-2xl overflow-hidden max-h-[92vh] flex flex-col border border-slate-200">
@@ -2560,17 +2595,20 @@
         const fechaD = corte.fecha ? new Date(corte.fecha) : new Date();
         const fecha = fechaD.toLocaleDateString('es-VE');
         const hora = fechaD.toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' });
-        const filas = (corte.consolidado || []).map(c => {
-            const partes = [];
-            if (c.totalCj)  partes.push(`${c.totalCj} Caja(s)`);
-            if (c.totalPaq) partes.push(`${c.totalPaq} Paq`);
-            if (c.totalUnd) partes.push(`${c.totalUnd} Und`);
-            const _md = (c.modelosTotales && Object.keys(c.modelosTotales).length) ? Object.entries(c.modelosTotales).filter(([, v]) => v > 0).map(([m, v]) => `${m}: ${v}`).join('    ') : '';
-            return `<tr>
-                <td style="padding:6px 4px;text-align:center;font-size:34px;border-bottom:1px solid #000;">[ ]</td>
-                <td style="padding:6px 4px;font-size:28px;border-bottom:1px solid #000;">${(c.presentacion || '').toUpperCase()} <span style="font-size:22px;">${c.marca || ''}</span>${_md ? `<div style="font-size:22px;padding-left:18px;">&#8627; ${_md}</div>` : ''}</td>
-                <td style="padding:6px 4px;text-align:right;font-size:28px;border-bottom:1px solid #000;">${partes.join(' + ') || '-'}</td>
-            </tr>`;
+        const filas = _pvAgruparPorRubro(corte.consolidado || []).map(g => {
+            const filasG = g.items.map(c => {
+                const partes = [];
+                if (c.totalCj)  partes.push(`${c.totalCj} Caja(s)`);
+                if (c.totalPaq) partes.push(`${c.totalPaq} Paq`);
+                if (c.totalUnd) partes.push(`${c.totalUnd} Und`);
+                const _md = (c.modelosTotales && Object.keys(c.modelosTotales).length) ? Object.entries(c.modelosTotales).filter(([, v]) => v > 0).map(([m, v]) => `${m}: ${v}`).join('    ') : '';
+                return `<tr>
+                    <td style="padding:6px 4px;text-align:center;font-size:34px;border-bottom:1px solid #000;">[ ]</td>
+                    <td style="padding:6px 4px;font-size:28px;border-bottom:1px solid #000;">${(c.presentacion || '').toUpperCase()} <span style="font-size:22px;">${c.marca || ''}</span>${_md ? `<div style="font-size:22px;padding-left:18px;">${_md}</div>` : ''}</td>
+                    <td style="padding:6px 4px;text-align:right;font-size:28px;border-bottom:1px solid #000;">${partes.join(' + ') || '-'}</td>
+                </tr>`;
+            }).join('');
+            return `<tr><td colspan="3" style="padding:16px 4px 4px;font-size:26px;font-weight:800;text-transform:uppercase;border-bottom:3px solid #000;">${g.rubro}</td></tr>${filasG}`;
         }).join('');
         const ov = document.createElement('div');
         ov.id = 'pvTicketOverlay';
@@ -2603,9 +2641,10 @@
                         <hr style="border:none;border-top:2px dashed #000;margin-top:16px;">
                     </div>
                 </div>
-                <div class="p-3 border-t shrink-0 flex gap-2">
-                    <button id="pvCorteTicketImg" class="flex-1 py-2.5 bg-slate-700 text-white rounded-lg font-bold text-sm hover:bg-slate-800 transition">Compartir / Imprimir</button>
-                    <button id="pvCorteTicketCerrar" class="px-4 py-2.5 bg-gray-100 text-gray-600 rounded-lg font-bold text-sm">Cerrar</button>
+                <div class="p-3 border-t shrink-0 grid grid-cols-2 gap-2">
+                    <button id="pvCorteTicketImg" class="py-2.5 bg-slate-700 text-white rounded-lg font-bold text-sm hover:bg-slate-800 transition">80mm (térmica)</button>
+                    <button id="pvCorteTicketEpson" class="py-2.5 bg-blue-700 text-white rounded-lg font-bold text-sm hover:bg-blue-800 transition">Carta (tinta/Epson)</button>
+                    <button id="pvCorteTicketCerrar" class="col-span-2 py-2.5 bg-gray-100 text-gray-600 rounded-lg font-bold text-sm">Cerrar</button>
                 </div>
             </div>`;
         document.body.appendChild(ov);
@@ -2613,6 +2652,78 @@
         document.getElementById('pvCorteTicketCerrar').addEventListener('click', () => ov.remove());
         document.getElementById('pvCorteTicketImg').addEventListener('click', () =>
             _pvCapturarCompartir(document.getElementById('pvCorteCapturable'), `Corte_${corte.numero}_${(corte.ruta || '').replace(/[\s/]/g, '_')}`));
+        document.getElementById('pvCorteTicketEpson').addEventListener('click', () => generarTicketCorteEpson(corte));
+    }
+
+    // Impresión CARTA (Epson L1250 tinta/WiFi): documento estructurado, tabla por rubro
+    // con columna de total de unidades. Imprime vía diálogo del navegador (iframe oculto).
+    function generarTicketCorteEpson(corte) {
+        const fechaD = corte.fecha ? new Date(corte.fecha) : new Date();
+        const fecha = fechaD.toLocaleDateString('es-VE');
+        const hora = fechaD.toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' });
+        const grupos = _pvAgruparPorRubro(corte.consolidado || []);
+        const cuerpo = grupos.map(g => `
+            <div class="rubro">${g.rubro}</div>
+            <table>
+                <thead><tr>
+                    <th class="ok">OK</th><th>Producto</th><th>Marca</th>
+                    <th class="c">Cajas</th><th class="c">Paq</th><th class="c">Und</th><th class="c">Total Und</th>
+                </tr></thead>
+                <tbody>${g.items.map(c => {
+                    const md = (c.modelosTotales && Object.keys(c.modelosTotales).length) ? `<div class="mod">${Object.entries(c.modelosTotales).filter(([, v]) => v > 0).map(([m, v]) => `${m}: ${v}`).join(' · ')}</div>` : '';
+                    return `<tr>
+                        <td class="c">[ ]</td>
+                        <td>${(c.presentacion || '').toUpperCase()}${md}</td>
+                        <td>${c.marca || ''}</td>
+                        <td class="c">${c.totalCj || 0}</td>
+                        <td class="c">${c.totalPaq || 0}</td>
+                        <td class="c">${c.totalUnd || 0}</td>
+                        <td class="c"><b>${c.totalUnidades || 0}</b></td>
+                    </tr>`;
+                }).join('')}</tbody>
+            </table>`).join('');
+        const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Corte ${corte.numero}</title>
+            <style>
+                @page { size: letter; margin: 12mm; }
+                * { box-sizing: border-box; }
+                body { font-family: Arial, Helvetica, sans-serif; color:#000; font-size:12px; margin:0; }
+                .hdr { text-align:center; margin-bottom:8px; }
+                .hdr h1 { font-size:20px; margin:0; letter-spacing:1px; }
+                .hdr .sub { font-size:13px; }
+                .hdr .fine { font-size:10px; color:#333; }
+                .meta { font-size:12px; margin:10px 0 14px; line-height:1.6; border:1px solid #000; padding:8px 10px; }
+                .meta b { display:inline-block; min-width:110px; }
+                .rubro { background:#e8e8e8; font-weight:bold; text-transform:uppercase; padding:5px 8px; margin-top:12px; border:1px solid #000; border-bottom:none; font-size:13px; }
+                table { width:100%; border-collapse:collapse; margin-bottom:2px; }
+                th, td { border:1px solid #444; padding:5px 6px; font-size:12px; vertical-align:top; }
+                th { background:#f2f2f2; text-align:left; }
+                .c { text-align:center; } .ok { width:34px; } .mod { font-size:10px; color:#333; margin-top:2px; }
+                .foot { margin-top:14px; font-size:11px; text-align:center; color:#333; }
+            </style></head><body>
+            <div class="hdr">
+                <h1>CORTE DE CARGA</h1>
+                <div class="sub">DISTRIBUIDORA CASTILLO YAÑEZ</div>
+                <div class="fine">(documento interno - no es factura)</div>
+            </div>
+            <div class="meta">
+                <div><b>Corte N°:</b> ${corte.numero}</div>
+                <div><b>Ruta:</b> ${corte.ruta || '-'}</div>
+                <div><b>Pedidos:</b> ${corte.totalPedidos} &nbsp;·&nbsp; <b style="min-width:0">Clientes:</b> ${(corte.clientes || []).length}</div>
+                <div><b>Despachador:</b> ${corte.despachadorNombre || '-'}</div>
+                <div><b>Fecha:</b> ${fecha} ${hora}</div>
+            </div>
+            ${cuerpo || '<p style="text-align:center;">Sin productos</p>'}
+            <div class="foot">Total de productos a cargar en el camión.</div>
+            </body></html>`;
+        const iframe = document.createElement('iframe');
+        iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;';
+        document.body.appendChild(iframe);
+        const doc = iframe.contentWindow.document;
+        doc.open(); doc.write(html); doc.close();
+        setTimeout(() => {
+            try { iframe.contentWindow.focus(); iframe.contentWindow.print(); } catch (e) { console.warn('print:', e); }
+            setTimeout(() => iframe.remove(), 2000);
+        }, 350);
     }
 
     // ── Historial de cortes (Reportes) ──────────────────────────
@@ -2633,7 +2744,7 @@
                         <div class="text-[11px] text-slate-400 mt-0.5">${fs} · ${c.despachadorNombre || ''}</div>
                         <div class="text-[11px] text-slate-500 mt-0.5">${c.totalPedidos || 0} pedido(s) · ${(c.consolidado || []).length} producto(s)</div>
                     </div>
-                    <span class="shrink-0 text-[10px] font-bold px-2 py-1 rounded ${cargado ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'}">${cargado ? '📦 Cargado' : '🕓 Abierto'}</span>
+                    <span class="shrink-0 text-[10px] font-bold px-2 py-1 rounded ${cargado ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'}">${cargado ? 'Cargado' : 'Abierto'}</span>
                 </div>
                 <div class="flex gap-2 mt-2 pt-2 border-t border-slate-100">
                     <button data-id="${c.id}" class="pv-corte-reimp flex-1 py-1.5 bg-white border border-slate-300 text-slate-700 rounded text-xs font-bold hover:bg-slate-50 transition">Re-imprimir</button>
@@ -2686,11 +2797,11 @@
                         <button id="pvRepBack" class="px-3 py-1.5 bg-gray-400 text-white text-xs rounded hover:bg-gray-500 font-bold transition">Volver</button>
                     </div>
                     <div class="mb-4">
-                        <h3 class="text-sm font-bold text-slate-700 mb-2">✂️ Cortes de Carga</h3>
+                        <h3 class="text-sm font-bold text-slate-700 mb-2">Cortes de Carga</h3>
                         <div id="pvCortesLista" class="space-y-2 max-h-[40vh] overflow-y-auto"><p class="text-xs text-slate-400 text-center py-3">Cargando cortes...</p></div>
                     </div>
                     <hr class="my-3 border-slate-200">
-                    <h3 class="text-sm font-bold text-slate-700 mb-2">📈 Pedidos por rango</h3>
+                    <h3 class="text-sm font-bold text-slate-700 mb-2">Pedidos por rango</h3>
                     <div class="flex gap-1.5 mb-3">
                         <select id="pvRepRango" class="flex-1 text-xs border border-slate-300 rounded p-1.5 bg-white outline-none">
                             <option value="hoy">Hoy</option>
@@ -2815,7 +2926,7 @@
                 <div class="bg-indigo-50 rounded p-2 text-center"><div class="text-lg font-black text-indigo-700">${_pvFmtUSD(totalMonto)}</div><div class="text-[9px] text-gray-500 uppercase">Monto total</div></div>
             </div>
             <div class="flex flex-wrap gap-1 mb-2">
-                ${PV_ESTADOS.map(e => porEstado[e.key] ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-${e.color}-100 text-${e.color}-700 font-bold">${e.icon} ${porEstado[e.key]} ${e.label}</span>` : '').join('')}
+                ${PV_ESTADOS.map(e => porEstado[e.key] ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-${e.color}-100 text-${e.color}-700 font-bold">${porEstado[e.key]} ${e.label}</span>` : '').join('')}
             </div>
             ${filaKV('Ticket promedio', _pvFmtUSD(ticketProm))}`);
 
@@ -2865,7 +2976,7 @@
                     </div>
                     <span class="text-xs font-bold text-red-500 shrink-0">${x.unidades} und</span>
                 </div>`).join('');
-            html += card('⚠️ No despachado por falta de stock', `
+            html += card('No despachado por falta de stock', `
                 <p class="text-[10px] text-gray-400 mb-1">Productos que se pidieron pero no había stock al preparar. Útil para saber qué reponer.</p>
                 ${rows}`);
         }
