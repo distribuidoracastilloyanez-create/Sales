@@ -948,8 +948,8 @@
         const rol = window.userRole === 'user' ? 'vendedor' : window.userRole;
         let lista = _pvLista.slice();
         if (rol === 'despachador') {
-            const miRuta = window.userZona || '';
-            lista = lista.filter(p => (p.ruta || p.zona || '') === miRuta);
+            const rf = _pvFiltroRuta || window.userZona || '';
+            if (rf) lista = lista.filter(p => (p.ruta || p.zona || '') === rf);
         } else if (rol === 'vendedor') {
             lista = lista.filter(p => p.vendedorId === _userId);
         }
@@ -1187,6 +1187,8 @@
         const rol = window.userRole === 'user' ? 'vendedor' : window.userRole;
         if (!['admin', 'vendedor', 'despachador'].includes(rol)) return;
         const esAdmin = rol === 'admin';
+        // El despachador ve por defecto su ruta (zona), pero puede cambiarla (incl. "Todas")
+        if (rol === 'despachador' && !_pvFiltroRuta) _pvFiltroRuta = window.userZona || '';
 
         _mainContent.innerHTML = `
             <div class="p-2 sm:p-3 pt-5 w-full max-w-2xl mx-auto">
@@ -1211,10 +1213,10 @@
                             <option value="">Todos los vendedores</option>
                         </select>
                     </div>
-                    ${esAdmin ? `<div class="mb-2">
+                    ${(esAdmin || rol === 'despachador') ? `<div class="mb-2">
                         <select id="pvBandRuta" class="w-full text-xs border border-blue-300 rounded p-1.5 bg-white outline-none">
                             <option value="">Todas las rutas</option>
-                            ${(window.RUTAS_REPARTO || []).map(r => `<option value="${r}">${r}</option>`).join('')}
+                            ${(window.RUTAS_REPARTO || []).map(r => `<option value="${r}" ${_pvFiltroRuta === r ? 'selected' : ''}>${r}</option>`).join('')}
                         </select>
                     </div>` : ''}
                     <label class="flex items-center gap-1.5 text-[11px] text-gray-600 mb-2">
@@ -1296,8 +1298,7 @@
         // Admin: todos, con filtro de ruta opcional.
         const rol = window.userRole === 'user' ? 'vendedor' : window.userRole;
         if (rol === 'despachador') {
-            const miRuta = window.userZona || '';
-            lista = lista.filter(p => (p.ruta || p.zona || '') === miRuta);
+            if (_pvFiltroRuta) lista = lista.filter(p => (p.ruta || p.zona || '') === _pvFiltroRuta);
         } else if (rol === 'vendedor') {
             lista = lista.filter(p => p.vendedorId === _userId);
         } else if (rol === 'admin' && _pvFiltroRuta) {
