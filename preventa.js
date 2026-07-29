@@ -18,8 +18,6 @@
     // Colección NUEVA y aislada para los pedidos de preventa:
     const pathPedidos   = () => `artifacts/${getPublicDataId()}/public/data/preventa_pedidos`;
     const pathInvRuta   = () => `artifacts/${getPublicDataId()}/public/data/preventa_inventario_ruta`;
-    const pathCortes    = () => `artifacts/${getPublicDataId()}/public/data/preventa_cortes`;
-    const pathLog       = () => `artifacts/${getPublicDataId()}/public/data/preventa_log`;
 
     // Caches locales
     let _pvUsuarios = [];
@@ -137,7 +135,6 @@
         document.getElementById('pvBandejaBtn')?.addEventListener('click', () => showBandejaDespacho());
         document.getElementById('pvInventarioRutaBtn')?.addEventListener('click', () => showInventarioRuta());
         document.getElementById('pvVendedoresBtn')?.addEventListener('click', () => showPreventaVendedores());
-        document.getElementById('pvReportesBtn')?.addEventListener('click', () => showReportesPreventa());
         document.getElementById('pvConfigBtn')?.addEventListener('click', () => enConstruccion('Configuración'));
     };
 
@@ -381,10 +378,6 @@
     async function showTomarPedido(pedidoEditar = null) {
         // No permitir editar un pedido que ya fue incluido en un CORTE de carga:
         // su hoja de carga ya se imprimió y cambiar cantidades la dejaría desfasada.
-        if (pedidoEditar && pedidoEditar.corteId) {
-            if (_showModal) _showModal('No permitido', `Este pedido ya entró en el <strong>Corte N°${pedidoEditar.corteNumero || ''}</strong> (${pedidoEditar.corteRuta || 'ruta'}). No puede editarse porque su hoja de carga ya fue impresa.`);
-            return;
-        }
         _pedidoEnEdicion = pedidoEditar;
         _pedidoActual = { vendedor: null, cliente: null, productos: {} };
         _pvMoneda = 'USD';
@@ -1186,8 +1179,6 @@
             try {
                 await _deleteDoc(_doc(_db, pathPedidos(), id));
                 if (window.invalidarComprometidoCache) window.invalidarComprometidoCache();
-                _pvLog('eliminar', `Pedido de ${nombre || 's/cliente'} ELIMINADO`, { pedidoId: id });
-                if (_pEl && _pEl.corteId) { try { await _pvRecalcularCorteTrasEliminar(_pEl.corteId, id); } catch (e) { console.warn('recalc corte:', e); } }
                 document.getElementById('pvLPDetOverlay')?.remove();
                 // El onSnapshot refresca la lista sola
             } catch (e) {
@@ -1300,43 +1291,9 @@
     }
 
     // Bitácora de despacho: registra cambios de estado, cortes y eliminaciones.
-    async function _pvLog(tipo, descripcion, extra) {
-        try {
-            const yo = (_pvUsuarios || []).find(u => u.id === _userId);
-            await _addDoc(_collection(_db, pathLog()), Object.assign({
-                fecha: new Date().toISOString(), tipo, descripcion,
-                por: _userId, porNombre: yo ? _pvNombreVendedor(yo) : (window.userNombre || 'Usuario')
-            }, extra || {}));
-        } catch (e) { console.warn('bitácora:', e); }
-    }
 
     // Al eliminar un pedido que estaba en un corte: lo quita del corte y reconsolida.
     // Si el corte queda sin pedidos, se elimina.
-    async function _pvRecalcularCorteTrasEliminar(corteId, pedidoId) {
-        const snap = await _getDoc(_doc(_db, pathCortes(), corteId));
-        if (!snap.exists()) return;
-        const c = snap.data();
-        const nuevosIds = (c.pedidoIds || []).filter(pid => pid !== pedidoId);
-        if (!nuevosIds.length) {
-            await _deleteDoc(_doc(_db, pathCortes(), corteId));
-            _pvLog('corte_eliminado', `Corte N°${c.numero} eliminado (quedó sin pedidos)`, { corteId });
-            return;
-        }
-        if (!_pvProductos || !_pvProductos.length) {
-            try { const cat = await _getDocs(_collection(_db, pathProductos())); _pvProductos = cat.docs.map(d => ({ id: d.id, ...d.data() })); } catch (e) {}
-        }
-        const restantes = [];
-        for (const pid of nuevosIds) {
-            try { const ps = await _getDoc(_doc(_db, pathPedidos(), pid)); if (ps.exists()) restantes.push({ id: pid, ...ps.data() }); } catch (e) {}
-        }
-        const consolidado = _pvConsolidarProductos(restantes);
-        await _setDoc(_doc(_db, pathCortes(), corteId), {
-            pedidoIds: nuevosIds,
-            totalPedidos: restantes.length,
-            clientes: [...new Set(restantes.map(p => p.clienteNombre).filter(Boolean))],
-            consolidado
-        }, { merge: true });
-    }
 
     function _pvEntrarModoCorte() {
         _pvModoCorte = true;
@@ -1801,7 +1758,6 @@
             if (window.invalidarComprometidoCache) window.invalidarComprometidoCache();
             document.getElementById('pvLPDetOverlay')?.remove();
             document.getElementById('pvPedDetOverlay')?.remove();
-            _pvLog('entrega', `Pedido de ${pedido.clienteNombre || 's/cliente'} ENTREGADO`, { pedidoId: pedido.id });
             if (_showModal) _showModal('Pedido entregado', `Se entregó el pedido de <strong>${pedido.clienteNombre || 'el cliente'}</strong>. El inventario se ajustó y la venta quedó registrada.`);
         } catch (e) {
             console.error('Error entregando pedido:', e);
@@ -1885,7 +1841,6 @@
                 if (window.invalidarComprometidoCache) window.invalidarComprometidoCache();
                 document.getElementById('pvPedDetOverlay')?.remove();
                 document.getElementById('pvLPDetOverlay')?.remove();
-                _pvLog('anular', `Entrega ANULADA · pedido de ${pedido.clienteNombre || 's/cliente'}`, { pedidoId: pedido.id });
                 if (_showModal) _showModal('Entrega anulada', `Se anuló la entrega del pedido de <strong>${pedido.clienteNombre || 'el cliente'}</strong>. El inventario se devolvió y la venta se eliminó.`);
             } catch (e) {
                 console.error('Error anulando entrega:', e);
@@ -1906,7 +1861,6 @@
                 estado: nuevoEstado,
                 historialEstados: nuevoHist
             }, { merge: true });
-            _pvLog('estado', `Pedido de ${p.clienteNombre || 's/cliente'} → ${pvEstadoInfo(nuevoEstado).label}`, { pedidoId: id, estado: nuevoEstado });
             document.getElementById('pvPedDetOverlay')?.remove();
             // El onSnapshot refresca la lista automáticamente
         } catch (e) {
@@ -2201,86 +2155,6 @@
     // ═══════════════════════════════════════════════════════════
     let _pvEditProductos = {}; // estado temporal de edición
 
-    async function editarPedidoDespacho(p) {
-        // Asegurar catálogo cargado (si entró directo a la bandeja)
-        if (!_pvProductos.length) {
-            try {
-                const snap = await _getDocs(_collection(_db, pathProductos()));
-                _pvProductos = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-            } catch (e) { console.error('Error cargando catálogo:', e); }
-        }
-
-        // Cargar los productos actuales del pedido al estado de edición
-        _pvEditProductos = {};
-        (p.productos || []).forEach(pr => {
-            _pvEditProductos[pr.id] = {
-                id: pr.id, presentacion: pr.presentacion, marca: pr.marca || null,
-                precios: pr.precios || {},
-                unidadesPorCaja: (_pvProductos.find(x => x.id === pr.id)?.unidadesPorCaja) || 1,
-                unidadesPorPaquete: (_pvProductos.find(x => x.id === pr.id)?.unidadesPorPaquete) || 1,
-                cantCj: pr.cantCj || 0, cantPaq: pr.cantPaq || 0, cantUnd: pr.cantUnd || 0
-            };
-        });
-
-        document.getElementById('pvEditOverlay')?.remove();
-        const ov = document.createElement('div');
-        ov.id = 'pvEditOverlay';
-        ov.className = 'fixed inset-0 z-[9999] bg-black/60 flex items-center justify-center p-4';
-        ov.innerHTML = `
-            <div class="bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden max-h-[92vh] flex flex-col">
-                <div class="bg-amber-500 text-white px-4 py-3 shrink-0">
-                    <div class="font-bold text-base">✏ Editar pedido</div>
-                    <div class="text-xs opacity-90">${p.clienteNombre || ''} · ${p.vendedorNombre || ''}</div>
-                </div>
-                <div class="p-3 shrink-0 border-b">
-                    <input type="text" id="pvEditBuscarProd" placeholder="Buscar producto para agregar..." autocomplete="off"
-                           class="w-full text-sm border border-amber-300 rounded p-2 outline-none">
-                    <div id="pvEditProdDrop" class="hidden bg-white border border-gray-200 rounded shadow-lg max-h-40 overflow-y-auto mt-1"></div>
-                </div>
-                <div id="pvEditLista" class="overflow-y-auto p-3 flex-1"></div>
-                <div class="p-3 border-t shrink-0">
-                    <div class="flex items-center justify-between mb-2">
-                        <span class="text-sm font-bold text-gray-600">Nuevo total:</span>
-                        <span id="pvEditTotal" class="text-xl font-black text-amber-600">$0.00</span>
-                    </div>
-                    <div class="flex gap-2">
-                        <button id="pvEditGuardar" class="flex-1 py-2.5 bg-amber-600 text-white rounded-lg font-bold text-sm hover:bg-amber-700 transition">Guardar cambios</button>
-                        <button id="pvEditCancelar" class="px-4 py-2.5 bg-gray-100 text-gray-600 rounded-lg font-bold text-sm">Cancelar</button>
-                    </div>
-                </div>
-            </div>`;
-        document.body.appendChild(ov);
-        ov.addEventListener('click', e => { if (e.target === ov) ov.remove(); });
-        document.getElementById('pvEditCancelar').addEventListener('click', () => ov.remove());
-
-        renderEditLista();
-
-        // Buscador de productos para agregar
-        const buscar = document.getElementById('pvEditBuscarProd');
-        let deb = null;
-        buscar.addEventListener('input', () => {
-            clearTimeout(deb);
-            deb = setTimeout(() => {
-                const term = buscar.value.toLowerCase().trim();
-                const drop = document.getElementById('pvEditProdDrop');
-                if (!term) { drop.classList.add('hidden'); return; }
-                const found = _pvProductos.filter(pr =>
-                    (pr.presentacion || '').toLowerCase().includes(term) ||
-                    (pr.marca || '').toLowerCase().includes(term)).slice(0, 20);
-                drop.innerHTML = found.length
-                    ? found.map(pr => `<div class="pv-edit-add px-2 py-1.5 text-xs hover:bg-amber-50 cursor-pointer border-b border-gray-100" data-id="${pr.id}">
-                        <span class="font-semibold text-gray-800">${pr.presentacion}</span> <span class="text-gray-400">${pr.marca || ''}</span></div>`).join('')
-                    : '<div class="px-2 py-2 text-xs text-gray-400">Sin coincidencias</div>';
-                drop.classList.remove('hidden');
-                drop.querySelectorAll('.pv-edit-add').forEach(el => el.addEventListener('click', () => {
-                    agregarProdEdit(el.dataset.id);
-                    buscar.value = ''; drop.classList.add('hidden');
-                }));
-            }, 200);
-        });
-
-        document.getElementById('pvEditGuardar').addEventListener('click', () => guardarEdicionPedido(p));
-    }
 
     function agregarProdEdit(pid) {
         if (_pvEditProductos[pid]) return; // ya está
@@ -2558,26 +2432,12 @@
     // REPORTES DE PREVENTA — analítica sobre preventa_pedidos
     // Solo lectura. No toca el sistema tradicional.
     // ═══════════════════════════════════════════════════════════
-    let _pvRepPedidos = [];
-    let _pvRepRango = 'hoy';
 
     // ═══════════════════════════════════════════════════════════
-    // CORTE DE CARGA (por ruta) — consolida los pedidos activos de una ruta
-    // aún no cortados, imprime el TOTAL de productos a cargar y marca esos
-    // pedidos como "cortados". NO cambia el estado ni toca inventario.
-    // NO es el cierre de ventas del día (ese está en Ventas Totales).
+    // CORTE DE CARGA — ayuda EFÍMERA e imprimible: consolida los pedidos
+    // elegidos ("hasta aquí") y muestra el total a cargar. No se guarda en la
+    // base de datos ni marca los pedidos; solo avanza Pendiente→Preparación.
     // ═══════════════════════════════════════════════════════════
-    function _pvPedidosCorteElegibles(ruta) {
-        const rutas = window.RUTAS_REPARTO || [];
-        return (_pvPedidos || []).filter(p => {
-            if (p.corteId) return false;
-            const est = p.estado || 'pendiente';
-            if (est === 'entregado' || est === 'anulado') return false;
-            const pr = p.ruta || '';
-            if (ruta === '__SIN_RUTA__') return !pr || !rutas.includes(pr);
-            return pr === ruta;
-        });
-    }
 
     function _pvConsolidarProductos(pedidos) {
         const map = {};
@@ -2619,44 +2479,6 @@
         return grupos;
     }
 
-    async function iniciarCorteCarga() {
-        // Asegurar catálogo y orden global cargados (para agrupar por rubro y ordenar)
-        if (!_pvProductos || !_pvProductos.length) {
-            try { const ps = await _getDocs(_collection(_db, pathProductos())); _pvProductos = ps.docs.map(d => ({ id: d.id, ...d.data() })); } catch (e) {}
-        }
-        if (!_pvSortFnPedido && window.getGlobalProductSortFunction) {
-            try { _pvSortFnPedido = await window.getGlobalProductSortFunction(); } catch (e) {}
-        }
-        const rutas = window.RUTAS_REPARTO || [];
-        document.getElementById('pvCorteOverlay')?.remove();
-        const ov = document.createElement('div');
-        ov.id = 'pvCorteOverlay';
-        ov.className = 'fixed inset-0 z-[9999] bg-slate-900/50 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4';
-        const opciones = rutas.map(r => ({ key: r, label: r }));
-        if (_pvPedidosCorteElegibles('__SIN_RUTA__').length) opciones.push({ key: '__SIN_RUTA__', label: 'Sin ruta asignada' });
-        const filasRuta = opciones.map(op => {
-            const eleg = _pvPedidosCorteElegibles(op.key);
-            const dis = eleg.length ? '' : 'opacity-50 pointer-events-none';
-            return `<button data-ruta="${op.key}" class="pv-corte-ruta w-full flex items-center justify-between px-4 py-3 border border-slate-200 rounded-lg hover:border-purple-400 hover:bg-purple-50 transition ${dis}">
-                <span class="font-semibold text-slate-800">${op.label}</span>
-                <span class="text-xs font-bold ${eleg.length ? 'text-purple-700 bg-purple-100' : 'text-slate-400 bg-slate-100'} px-2 py-1 rounded">${eleg.length} pedido(s)</span>
-            </button>`;
-        }).join('');
-        ov.innerHTML = `
-            <div class="bg-white w-full max-w-md rounded-t-xl sm:rounded-xl shadow-2xl overflow-hidden flex flex-col border border-slate-200">
-                <div class="bg-purple-700 text-white px-5 py-4">
-                    <div class="text-[10px] uppercase tracking-wider text-purple-200 font-semibold">Despacho</div>
-                    <div class="font-semibold text-base">Corte de Carga</div>
-                    <div class="text-xs text-purple-100 mt-0.5">Elige la ruta del camión a cargar.</div>
-                </div>
-                <div class="p-4 space-y-2">${filasRuta || '<p class="text-sm text-slate-400 text-center py-4">No hay rutas configuradas.</p>'}</div>
-                <div class="p-4 border-t border-slate-100"><button id="pvCorteCancelar" class="w-full py-2.5 text-slate-400 hover:text-slate-600 font-medium text-sm">Cancelar</button></div>
-            </div>`;
-        document.body.appendChild(ov);
-        ov.addEventListener('click', e => { if (e.target === ov) ov.remove(); });
-        document.getElementById('pvCorteCancelar').addEventListener('click', () => ov.remove());
-        ov.querySelectorAll('.pv-corte-ruta').forEach(b => b.addEventListener('click', () => { ov.remove(); previsualizarCorte(b.dataset.ruta); }));
-    }
 
     function previsualizarCorte(pedidos, rutaLabel) {
         rutaLabel = rutaLabel || 'General';
@@ -2703,32 +2525,27 @@
     async function generarCorte(ruta, pedidos, consolidado) {
         if (_showModal) _showModal('Progreso', 'Generando corte...');
         try {
-            let numero = 1;
-            try { const cs = await _getDocs(_collection(_db, pathCortes())); numero = cs.size + 1; } catch (e) {}
             const yo = (_pvUsuarios || []).find(u => u.id === _userId);
             const despNombre = yo ? _pvNombreVendedor(yo) : (window.userNombre || 'Despachador');
             const fechaISO = new Date().toISOString();
-            const corteData = {
-                numero, ruta, fecha: fechaISO,
-                despachadorId: _userId, despachadorNombre: despNombre,
-                pedidoIds: pedidos.map(p => p.id), totalPedidos: pedidos.length,
-                clientes: [...new Set(pedidos.map(p => p.clienteNombre).filter(Boolean))],
-                consolidado, estado: 'abierto'
-            };
-            const corteRef = await _addDoc(_collection(_db, pathCortes()), corteData);
+            // El corte es EFÍMERO: solo una ayuda imprimible. No se guarda en la base de
+            // datos ni marca los pedidos. Único efecto: los pedidos Pendientes avanzan a
+            // Preparación (se están preparando para cargar); el resto de estados es manual.
             await Promise.all(pedidos.map(p => {
-                const cambios = { corteId: corteRef.id, corteNumero: numero, corteRuta: ruta, corteFecha: fechaISO };
-                // El corte NO cambia estados salvo un avance conveniente: los pendientes pasan a
-                // "preparación" (se están preparando para cargar). Cargado/Entregado siguen manuales.
-                if ((p.estado || 'pendiente') === 'pendiente') {
-                    cambios.estado = 'preparacion';
-                    cambios.historialEstados = (p.historialEstados || []).concat([{ estado: 'preparacion', fecha: fechaISO, por: _userId, nota: 'Incluido en corte N°' + numero }]);
-                }
-                return _setDoc(_doc(_db, pathPedidos(), p.id), cambios, { merge: true });
+                if ((p.estado || 'pendiente') !== 'pendiente') return Promise.resolve();
+                return _setDoc(_doc(_db, pathPedidos(), p.id), {
+                    estado: 'preparacion',
+                    historialEstados: (p.historialEstados || []).concat([{ estado: 'preparacion', fecha: fechaISO, por: _userId, nota: 'Incluido en corte de carga' }])
+                }, { merge: true });
             }));
-            _pvLog('corte', `Corte N°${numero} generado (${pedidos.length} pedido(s))`, { corteId: corteRef.id });
+            const corteData = {
+                fecha: fechaISO, despachadorNombre: despNombre,
+                totalPedidos: pedidos.length,
+                clientes: [...new Set(pedidos.map(p => p.clienteNombre).filter(Boolean))],
+                consolidado
+            };
             const modalC = document.getElementById('modalContainer'); if (modalC) modalC.classList.add('hidden');
-            generarTicketCorte({ id: corteRef.id, ...corteData });
+            generarTicketCorte(corteData);
         } catch (e) {
             console.error('Error generando corte:', e);
             if (_showModal) _showModal('Error', 'No se pudo generar el corte. Verifica la conexión e intenta de nuevo.');
@@ -2774,7 +2591,7 @@
             <div class="bg-white w-full max-w-md rounded-t-xl sm:rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] flex flex-col border border-slate-200">
                 <div class="bg-slate-800 text-white px-5 py-4 shrink-0">
                     <div class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Corte de Carga · ${fecha} ${hora}</div>
-                    <div class="font-semibold text-base">Corte N°${corte.numero} · ${corte.totalPedidos || 0} pedido(s)</div>
+                    <div class="font-semibold text-base">${corte.totalPedidos || 0} pedido(s)</div>
                     <div class="text-[11px] text-slate-300 mt-1 leading-snug"><span class="text-slate-400">Clientes:</span> ${clientesTxt}</div>
                     <div class="text-[10px] text-slate-400 mt-0.5">Despachador: ${corte.despachadorNombre || '-'}</div>
                 </div>
@@ -2803,7 +2620,6 @@
                         <div style="font-size:22px;">(documento interno - no es factura)</div>
                     </div>
                     <div style="font-size:28px;margin-top:24px;line-height:1.4;">
-                        <div>CORTE N&deg;: ${corte.numero}</div>
                         <div>PEDIDOS: ${corte.totalPedidos} &middot; CLIENTES: ${(corte.clientes || []).length}</div>
                         <div>DESPACHADOR: ${corte.despachadorNombre || '-'}</div>
                         <div>FECHA: ${fecha} ${hora}</div>
@@ -2821,7 +2637,7 @@
                     <hr style="border:none;border-top:2px dashed #000;margin-top:16px;">
                 </div>`;
             document.body.appendChild(holder);
-            _pvCapturarCompartir(document.getElementById('pvCorte80Cap'), `Corte_${corte.numero}`);
+            _pvCapturarCompartir(document.getElementById('pvCorte80Cap'), 'Corte_de_Carga');
             setTimeout(() => { document.getElementById('pvCorte80Holder')?.remove(); }, 6000);
         });
     }
@@ -2853,7 +2669,7 @@
                     </tr>`;
                 }).join('')}</tbody>
             </table>`).join('');
-        const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Corte ${corte.numero}</title>
+        const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Corte de Carga</title>
             <style>
                 @page { size: letter; margin: 12mm; }
                 * { box-sizing: border-box; }
@@ -2877,7 +2693,6 @@
                 <div class="fine">(documento interno - no es factura)</div>
             </div>
             <div class="meta">
-                <div><b>Corte N°:</b> ${corte.numero}</div>
                 <div><b>Pedidos:</b> ${corte.totalPedidos} &nbsp;·&nbsp; <b style="min-width:0">Clientes:</b> ${(corte.clientes || []).length}</div>
                 <div><b>Despachador:</b> ${corte.despachadorNombre || '-'}</div>
                 <div><b>Fecha:</b> ${fecha} ${hora}</div>
@@ -2899,322 +2714,12 @@
     }
 
     // ── Historial de cortes (Reportes) ──────────────────────────
-    let _pvCortes = [];
-    function renderCortes() {
-        const cont = document.getElementById('pvCortesLista');
-        if (!cont) return;
-        const lista = _pvCortes.slice().sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
-        if (!lista.length) { cont.innerHTML = '<p class="text-xs text-slate-400 text-center py-3">Aún no hay cortes de carga.</p>'; return; }
-        cont.innerHTML = lista.map(c => {
-            const f = c.fecha ? new Date(c.fecha) : null;
-            const fs = f ? `${f.toLocaleDateString('es-VE')} ${f.toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' })}` : '';
-            return `<div class="border border-slate-200 rounded-lg p-3">
-                <div class="min-w-0">
-                    <div class="font-semibold text-slate-800 text-sm">Corte N°${c.numero}</div>
-                    <div class="text-[11px] text-slate-400 mt-0.5">${fs} · ${c.despachadorNombre || ''}</div>
-                    <div class="text-[11px] text-slate-500 mt-0.5">${c.totalPedidos || 0} pedido(s) · ${(c.consolidado || []).length} producto(s)</div>
-                </div>
-                <div class="flex gap-2 mt-2 pt-2 border-t border-slate-100">
-                    <button data-id="${c.id}" class="pv-corte-reimp flex-1 py-1.5 bg-white border border-slate-300 text-slate-700 rounded text-xs font-bold hover:bg-slate-50 transition">Re-imprimir</button>
-                </div>
-            </div>`;
-        }).join('');
-        cont.querySelectorAll('.pv-corte-reimp').forEach(b => b.addEventListener('click', () => { const c = _pvCortes.find(x => x.id === b.dataset.id); if (c) generarTicketCorte(c); }));
-    }
 
-    // ── Bitácora (historial de actualizaciones) en Reportes ──
-    let _pvLogItems = [];
-    function renderLogBitacora() {
-        const cont = document.getElementById('pvLogLista');
-        if (!cont) return;
-        const lista = _pvLogItems.slice().sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
-        if (!lista.length) { cont.innerHTML = '<p class="text-xs text-slate-400 text-center py-3">Sin actualizaciones registradas.</p>'; return; }
-        const colorTipo = { estado: 'bg-slate-400', entrega: 'bg-green-500', anular: 'bg-rose-500', corte: 'bg-purple-500', corte_eliminado: 'bg-purple-300', eliminar: 'bg-red-500' };
-        cont.innerHTML = lista.slice(0, 200).map(l => {
-            const f = l.fecha ? new Date(l.fecha) : null;
-            const fs = f ? `${f.toLocaleDateString('es-VE', { day: '2-digit', month: '2-digit' })} ${f.toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' })}` : '';
-            const dot = colorTipo[l.tipo] || 'bg-slate-300';
-            return `<div class="flex items-start gap-2 py-1.5 px-2 border-b border-slate-50">
-                <span class="w-1.5 h-1.5 rounded-full ${dot} mt-1.5 shrink-0"></span>
-                <div class="min-w-0 flex-1">
-                    <div class="text-[12px] text-slate-700 leading-snug">${l.descripcion || ''}</div>
-                    <div class="text-[10px] text-slate-400">${fs} · ${l.porNombre || ''}</div>
-                </div>
-            </div>`;
-        }).join('');
-    }
 
-    async function marcarCorteCargado(id) {
-        const c = _pvCortes.find(x => x.id === id);
-        if (!c) return;
-        _showModal('Marcar Cargado', `¿Marcar como <strong>Cargado</strong> los pedidos del Corte N°${c.numero} (${c.ruta})?<br><br>Solo se actualizan los que estén en pendiente o preparación; los ya entregados no se tocan.`, async () => {
-            _showModal('Progreso', 'Actualizando pedidos...');
-            try {
-                const snap = await _getDocs(_collection(_db, pathPedidos()));
-                const updates = []; let n = 0;
-                snap.docs.forEach(d => {
-                    const p = d.data();
-                    if (p.corteId === id && (p.estado === 'pendiente' || p.estado === 'preparacion')) {
-                        updates.push(_setDoc(_doc(_db, pathPedidos(), d.id), {
-                            estado: 'cargado',
-                            historialEstados: (p.historialEstados || []).concat([{ estado: 'cargado', fecha: new Date().toISOString(), por: _userId, nota: `Cargado por corte N°${c.numero}` }])
-                        }, { merge: true }));
-                        n++;
-                    }
-                });
-                await Promise.all(updates);
-                await _setDoc(_doc(_db, pathCortes(), id), { estado: 'cargado', fechaCargado: new Date().toISOString() }, { merge: true });
-                c.estado = 'cargado';
-                const modalC = document.getElementById('modalContainer'); if (modalC) modalC.classList.add('hidden');
-                setTimeout(() => { _showModal('Listo', `Se marcaron <strong>${n}</strong> pedido(s) como Cargado.`); renderCortes(); }, 200);
-            } catch (e) {
-                console.error('Error marcando corte cargado:', e);
-                _showModal('Error', 'No se pudo actualizar. Intenta de nuevo.');
-            }
-        }, 'Sí, marcar cargado', () => {});
-    }
 
-    async function showReportesPreventa() {
-        const _rolRep = window.userRole === 'user' ? 'vendedor' : window.userRole;
-        if (!['admin', 'despachador'].includes(_rolRep)) return;
-        _mainContent.innerHTML = `
-            <div class="p-2 sm:p-3 pt-5 w-full max-w-2xl mx-auto">
-                <div class="bg-white/95 backdrop-blur-sm p-3 sm:p-4 rounded-lg shadow-xl">
-                    <div class="flex items-center justify-between mb-3">
-                        <h2 class="text-lg font-bold text-gray-800">Reportes de Pre-Venta</h2>
-                        <button id="pvRepBack" class="px-3 py-1.5 bg-gray-400 text-white text-xs rounded hover:bg-gray-500 font-bold transition">Volver</button>
-                    </div>
-                    <div class="mb-4">
-                        <h3 class="text-sm font-bold text-slate-700 mb-2">Historial de actualizaciones</h3>
-                        <div id="pvLogLista" class="space-y-0 max-h-[45vh] overflow-y-auto border border-slate-100 rounded-lg mb-4"><p class="text-xs text-slate-400 text-center py-3">Cargando historial...</p></div>
-                        <h3 class="text-sm font-bold text-slate-700 mb-2">Cortes de Carga</h3>
-                        <div id="pvCortesLista" class="space-y-2 max-h-[40vh] overflow-y-auto"><p class="text-xs text-slate-400 text-center py-3">Cargando cortes...</p></div>
-                    </div>
-                    <hr class="my-3 border-slate-200">
-                    <h3 class="text-sm font-bold text-slate-700 mb-2">Pedidos por rango</h3>
-                    <div class="flex gap-1.5 mb-3">
-                        <select id="pvRepRango" class="flex-1 text-xs border border-slate-300 rounded p-1.5 bg-white outline-none">
-                            <option value="hoy">Hoy</option>
-                            <option value="semana">Últimos 7 días</option>
-                            <option value="mes">Últimos 30 días</option>
-                            <option value="anio">Este año</option>
-                            <option value="todos">Todos</option>
-                        </select>
-                        <button id="pvRepExcel" class="text-xs bg-green-600 text-white rounded px-3 py-1.5 font-bold hover:bg-green-700 transition">📊 Excel</button>
-                    </div>
-                    <div id="pvRepLoading" class="text-center py-8 text-gray-400 text-sm">
-                        <svg class="animate-spin h-6 w-6 mx-auto mb-2 text-slate-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path></svg>
-                        Cargando pedidos...
-                    </div>
-                    <div id="pvRepContenido" class="hidden space-y-3"></div>
-                </div>
-            </div>`;
-        document.getElementById('pvRepBack').addEventListener('click', () => window.showPreventaMenu());
-        document.getElementById('pvRepRango').addEventListener('change', (e) => { _pvRepRango = e.target.value; renderReportes(); });
-        document.getElementById('pvRepExcel').addEventListener('click', exportarReporteExcel);
 
-        try {
-            const snap = await _getDocs(_collection(_db, pathPedidos()));
-            _pvRepPedidos = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        } catch (e) {
-            console.error('Error cargando reportes:', e);
-            document.getElementById('pvRepLoading').innerHTML = '<span class="text-red-500">Error al cargar.</span>';
-            return;
-        }
-        document.getElementById('pvRepLoading').classList.add('hidden');
-        document.getElementById('pvRepContenido').classList.remove('hidden');
-        renderReportes();
 
-        // Cargar historial de cortes de carga
-        try {
-            const cs = await _getDocs(_collection(_db, pathCortes()));
-            _pvCortes = cs.docs.map(d => ({ id: d.id, ...d.data() }));
-        } catch (e) { _pvCortes = []; }
-        renderCortes();
-        try {
-            const ls = await _getDocs(_collection(_db, pathLog()));
-            _pvLogItems = ls.docs.map(d => ({ id: d.id, ...d.data() }));
-        } catch (e) { _pvLogItems = []; }
-        renderLogBitacora();
-    }
 
-    function _pvFiltrarPorRango(pedidos) {
-        if (_pvRepRango === 'todos') return pedidos;
-        const ahora = new Date();
-        let desde = new Date();
-        if (_pvRepRango === 'hoy') desde.setHours(0, 0, 0, 0);
-        else if (_pvRepRango === 'semana') desde.setDate(ahora.getDate() - 7);
-        else if (_pvRepRango === 'mes') desde.setDate(ahora.getDate() - 30);
-        else if (_pvRepRango === 'anio') { desde = new Date(ahora.getFullYear(), 0, 1); }
-        return pedidos.filter(p => {
-            if (!p.fechaCreacion) return false;
-            return new Date(p.fechaCreacion) >= desde;
-        });
-    }
-
-    function renderReportes() {
-        const cont = document.getElementById('pvRepContenido');
-        if (!cont) return;
-        const pedidos = _pvFiltrarPorRango(_pvRepPedidos);
-        const activos = pedidos.filter(p => p.estado !== 'anulado');
-
-        if (!pedidos.length) {
-            cont.innerHTML = '<p class="text-center text-gray-400 py-8 text-sm">No hay pedidos en este período.</p>';
-            return;
-        }
-
-        // 1. Resumen general
-        const totalMonto = activos.reduce((s, p) => s + (p.total || 0), 0);
-        const ticketProm = activos.length ? totalMonto / activos.length : 0;
-        const porEstado = {};
-        PV_ESTADOS.forEach(e => porEstado[e.key] = pedidos.filter(p => (p.estado || 'pendiente') === e.key).length);
-
-        // 2. Por vendedor
-        const porVend = {};
-        activos.forEach(p => {
-            const k = p.vendedorNombre || '—';
-            if (!porVend[k]) porVend[k] = { pedidos: 0, monto: 0, entregados: 0 };
-            porVend[k].pedidos++;
-            porVend[k].monto += p.total || 0;
-            if (p.estado === 'entregado') porVend[k].entregados++;
-        });
-
-        // 3. Por zona
-        const porZona = {};
-        activos.forEach(p => {
-            const k = p.zona || '—';
-            if (!porZona[k]) porZona[k] = { pedidos: 0, monto: 0 };
-            porZona[k].pedidos++;
-            porZona[k].monto += p.total || 0;
-        });
-
-        // 4. Productos más pedidos (por unidades totales estimadas y monto)
-        const porProd = {};
-        activos.forEach(p => (p.productos || []).forEach(pr => {
-            if (!porProd[pr.presentacion]) porProd[pr.presentacion] = { cajas: 0, monto: 0 };
-            porProd[pr.presentacion].cajas += (pr.cantCj || 0);
-            porProd[pr.presentacion].monto += (pr.subtotal || 0);
-        }));
-        const topProd = Object.entries(porProd).sort((a, b) => b[1].monto - a[1].monto).slice(0, 10);
-
-        // 5. Aumento en despacho
-        const editados = activos.filter(p => p.editadoEnDespacho && p.pedidoOriginal);
-        const montoOriginal = editados.reduce((s, p) => s + (p.pedidoOriginal.total || 0), 0);
-        const montoFinal = editados.reduce((s, p) => s + (p.total || 0), 0);
-        const aumento = montoFinal - montoOriginal;
-
-        const card = (titulo, contenido) => `
-            <div class="border border-gray-200 rounded-lg p-3">
-                <p class="text-[10px] font-bold text-slate-500 uppercase mb-2">${titulo}</p>
-                ${contenido}
-            </div>`;
-
-        const filaKV = (k, v, extra = '') => `<div class="flex justify-between items-center py-1 border-b border-gray-50 text-xs">
-            <span class="text-gray-600 truncate">${k}</span><span class="font-bold text-gray-800 shrink-0">${v}${extra}</span></div>`;
-
-        let html = '';
-
-        // Resumen
-        html += card('Resumen general', `
-            <div class="grid grid-cols-2 gap-2 mb-2">
-                <div class="bg-slate-50 rounded p-2 text-center"><div class="text-lg font-black text-slate-700">${activos.length}</div><div class="text-[9px] text-gray-500 uppercase">Pedidos</div></div>
-                <div class="bg-indigo-50 rounded p-2 text-center"><div class="text-lg font-black text-indigo-700">${_pvFmtUSD(totalMonto)}</div><div class="text-[9px] text-gray-500 uppercase">Monto total</div></div>
-            </div>
-            <div class="flex flex-wrap gap-1 mb-2">
-                ${PV_ESTADOS.map(e => porEstado[e.key] ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-${e.color}-100 text-${e.color}-700 font-bold">${porEstado[e.key]} ${e.label}</span>` : '').join('')}
-            </div>
-            ${filaKV('Ticket promedio', _pvFmtUSD(ticketProm))}`);
-
-        // Por vendedor
-        const vendRows = Object.entries(porVend).sort((a, b) => b[1].monto - a[1].monto)
-            .map(([k, v]) => filaKV(`${k} <span class="text-[9px] text-gray-400">(${v.entregados}/${v.pedidos} entreg.)</span>`, _pvFmtUSD(v.monto))).join('');
-        html += card('Por vendedor / ruta', vendRows || '<p class="text-xs text-gray-400">Sin datos</p>');
-
-        // Por zona
-        const zonaRows = Object.entries(porZona).sort((a, b) => b[1].monto - a[1].monto)
-            .map(([k, v]) => filaKV(`${k} <span class="text-[9px] text-gray-400">(${v.pedidos})</span>`, _pvFmtUSD(v.monto))).join('');
-        html += card('Por ruta', zonaRows || '<p class="text-xs text-gray-400">Sin datos</p>');
-
-        // Top productos
-        const prodRows = topProd.map(([k, v], i) => filaKV(`${i + 1}. ${k}`, _pvFmtUSD(v.monto))).join('');
-        html += card('Productos más pedidos', prodRows || '<p class="text-xs text-gray-400">Sin datos</p>');
-
-        // Aumento en despacho
-        if (editados.length) {
-            html += card('Aumento en despacho', `
-                ${filaKV('Pedidos editados', editados.length)}
-                ${filaKV('Monto original', _pvFmtUSD(montoOriginal))}
-                ${filaKV('Monto final', _pvFmtUSD(montoFinal))}
-                <div class="flex justify-between items-center py-1 text-xs font-bold">
-                    <span class="text-green-700">Aumento en despacho</span>
-                    <span class="text-green-700">+${_pvFmtUSD(aumento)}</span>
-                </div>`);
-        }
-
-        // Productos NO despachados por falta de stock (de los pedidos con ticket generado)
-        const noDesp = {};
-        pedidos.forEach(p => {
-            (p.noDespachado || []).forEach(nd => {
-                if (!nd.id) return;
-                if (!noDesp[nd.id]) noDesp[nd.id] = { presentacion: nd.presentacion || nd.id, marca: nd.marca || '', unidades: 0, veces: 0 };
-                noDesp[nd.id].unidades += (nd.unidadesFaltantes || 0);
-                noDesp[nd.id].veces += 1;
-            });
-        });
-        const noDespArr = Object.values(noDesp).filter(x => x.unidades > 0).sort((a, b) => b.unidades - a.unidades);
-        if (noDespArr.length) {
-            const rows = noDespArr.map(x => `
-                <div class="flex justify-between items-center py-1 border-b border-gray-100">
-                    <div class="min-w-0">
-                        <div class="text-xs font-medium text-gray-700 truncate">${x.presentacion} <span class="text-gray-400">${x.marca}</span></div>
-                        <div class="text-[10px] text-gray-400">solicitado sin stock ${x.veces} vez(ces)</div>
-                    </div>
-                    <span class="text-xs font-bold text-red-500 shrink-0">${x.unidades} und</span>
-                </div>`).join('');
-            html += card('No despachado por falta de stock', `
-                <p class="text-[10px] text-gray-400 mb-1">Productos que se pidieron pero no había stock al preparar. Útil para saber qué reponer.</p>
-                ${rows}`);
-        }
-
-        cont.innerHTML = html;
-    }
-
-    function exportarReporteExcel() {
-        const pedidos = _pvFiltrarPorRango(_pvRepPedidos);
-        if (!pedidos.length) { if (_showModal) _showModal('Aviso', 'No hay pedidos para exportar en este período.'); return; }
-        if (typeof XLSX === 'undefined') { if (_showModal) _showModal('Error', 'No se pudo generar el Excel.'); return; }
-
-        const fmtFecha = (iso) => iso ? new Date(iso).toLocaleDateString('es-VE') + ' ' + new Date(iso).toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' }) : '';
-        const headers = ['#', 'Fecha', 'Cliente', 'Zona', 'Vendedor', 'Estado', 'Nº Productos', 'Total $', 'Editado', 'Total Original $'];
-        const filas = pedidos.map((p, i) => [
-            i + 1, fmtFecha(p.fechaCreacion), p.clienteNombre || '', p.zona || '', p.vendedorNombre || '',
-            (pvEstadoInfo(p.estado || 'pendiente').label), (p.productos || []).length, (p.total || 0),
-            p.editadoEnDespacho ? 'Sí' : 'No', p.pedidoOriginal ? (p.pedidoOriginal.total || 0) : ''
-        ]);
-
-        const hoy = new Date();
-        const fechaStr = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`;
-        const rangoTxt = { hoy: 'Hoy', semana: 'Ultimos 7 dias', mes: 'Ultimos 30 dias', todos: 'Todos' }[_pvRepRango];
-
-        const aoa = [
-            ['DISTRIBUIDORA CASTILLO YAÑEZ - REPORTE DE PRE-VENTA'],
-            [`Período: ${rangoTxt}`, `Fecha: ${hoy.toLocaleDateString('es-VE')}`, `Total: ${pedidos.length} pedidos`],
-            [],
-            headers,
-            ...filas
-        ];
-        try {
-            const ws = XLSX.utils.aoa_to_sheet(aoa);
-            ws['!cols'] = [{ wch: 4 }, { wch: 16 }, { wch: 28 }, { wch: 16 }, { wch: 20 }, { wch: 14 }, { wch: 10 }, { wch: 10 }, { wch: 8 }, { wch: 14 }];
-            ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: headers.length - 1 } }];
-            const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, ws, 'Pedidos');
-            XLSX.writeFile(wb, `Reporte_Preventa_${fechaStr}.xlsx`);
-        } catch (e) {
-            console.error('Error Excel:', e);
-            if (_showModal) _showModal('Error', 'No se pudo generar el Excel.');
-        }
-    }
 
 })();
 
