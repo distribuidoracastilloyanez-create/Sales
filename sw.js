@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v107'; // v107: quitar Reportes; corte con vista compacta (clientes+fecha); impresion Carta via pagina limpia (window.open) para Epson; 80mm oculto
+const CACHE_NAME = 'ventas-app-cache-v108'; // v108: [fase 1] unificar getGlobalProductSortFunction (unica fuente: inventario.js; eliminada copia de catalogo.js)
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
