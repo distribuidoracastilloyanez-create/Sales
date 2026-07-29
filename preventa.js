@@ -2337,7 +2337,7 @@
         { const _l = document.getElementById('pvInvLoading'); if (!_l) return; _l.classList.add('hidden'); }
         document.getElementById('pvInvForm').classList.remove('hidden');
 
-        const vendedores = _pvUsuarios.filter(u => u.role === 'user');
+        const vendedores = _pvUsuarios.filter(u => u.role === 'user' || u.role === 'vendedor');
         const selV = document.getElementById('pvInvVendedor');
         selV.innerHTML = '<option value="">— Elige la ruta —</option>' +
             vendedores.map(u => `<option value="${u.id}">${_pvNombreVendedor(u)}${u.zonaPreventa ? ' · ' + u.zonaPreventa : ''}</option>`).join('');
