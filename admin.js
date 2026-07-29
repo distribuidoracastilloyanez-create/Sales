@@ -5,8 +5,6 @@
     let _obsequioProductId = null;
     let _inventarioParaImportar = [];
 
-    let _segmentoOrderCacheAdmin = null;
-    let _rubroOrderCacheAdmin = null;
 
     // --- CONFIGURACIÓN CENTRALIZADA ---
     const PUBLIC_DATA_ID = window.AppConfig.PUBLIC_DATA_ID;
@@ -317,8 +315,6 @@
         }
         
         // Limpiar cachés globales en memoria para que la UI se actualice
-        _rubroOrderCacheAdmin = null; 
-        _segmentoOrderCacheAdmin = null; 
         
         if(window.inventarioModule) {
             if (typeof window.inventarioModule.invalidateSegmentOrderCache === 'function') {
@@ -381,8 +377,6 @@
     }
 
     // --- Importar/Exportar Inventario ---
-    async function getRubroOrderMapAdmin() { if (_rubroOrderCacheAdmin) return _rubroOrderCacheAdmin; const map = {}; const ref = _collection(_db, `artifacts/${_appId}/users/${_userId}/rubros`); try { const snap = await _getDocs(ref); snap.docs.forEach(d => { const data = d.data(); map[data.name] = data.orden ?? 9999; }); _rubroOrderCacheAdmin = map; return map; } catch (e) { return {}; } }
-    async function getSegmentoOrderMapAdmin() { if (_segmentoOrderCacheAdmin) return _segmentoOrderCacheAdmin; const map = {}; const ref = _collection(_db, `artifacts/${_appId}/users/${_userId}/segmentos`); try { const snap = await _getDocs(ref); snap.docs.forEach(d => { const data = d.data(); map[data.name] = data.orden ?? 9999; }); _segmentoOrderCacheAdmin = map; return map; } catch (e) { return {}; } }
     
     function showImportExportInventarioView() {
         if (_floatingControls) _floatingControls.classList.add('hidden');
