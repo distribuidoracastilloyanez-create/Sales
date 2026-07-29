@@ -567,7 +567,7 @@
             </div> </div> </div>
         `;
         document.getElementById('backToMenuBtn').addEventListener('click', _showMainMenu); document.getElementById('userProfileForm').addEventListener('submit', handleSaveProfile);
-        try { const uDRef = _doc(_db, "users", _userId); const uDoc = await _getDoc(uDRef); if (uDoc.exists()) { const d = uDoc.data(); document.getElementById('profileNombre').value = d.nombre||''; document.getElementById('profileApellido').value = d.apellido||''; document.getElementById('profileCamion').value = d.camion||''; } } catch (error) { _showModal('Error', 'No se pudo cargar.'); }
+        try { const uDRef = _doc(_db, "users", _userId); const uDoc = await _getDoc(uDRef); if (uDoc.exists()) { const d = uDoc.data(); const _n = document.getElementById('profileNombre'), _a = document.getElementById('profileApellido'), _c = document.getElementById('profileCamion'); if (_n) _n.value = d.nombre||''; if (_a) _a.value = d.apellido||''; if (_c) _c.value = d.camion||''; } } catch (error) { _showModal('Error', 'No se pudo cargar.'); }
     }
     async function handleSaveProfile(e) {
         e.preventDefault(); const n=document.getElementById('profileNombre').value.trim(), a=document.getElementById('profileApellido').value.trim(), c=document.getElementById('profileCamion').value.trim(); if (!n||!a) { _showModal('Error', 'Requeridos.'); return; } 
