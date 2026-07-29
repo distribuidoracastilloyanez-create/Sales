@@ -256,7 +256,7 @@
                     const closingsRef = _collection(_db, `artifacts/${_appId}/users/${uid}/cierres`);
                     const q = _query(closingsRef, _where("fecha", ">=", fechaDesde), _where("fecha", "<=", fechaHasta));
                     const snapshot = await _getDocs(q);
-                    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    return snapshot.docs.map(doc => ({ id: doc.id, _ownerUid: uid, ...doc.data() }));
                 });
 
                 const results = await Promise.all(promises);
@@ -267,7 +267,7 @@
                 const closingsRef = _collection(_db, `artifacts/${_appId}/users/${selectedUserId}/cierres`);
                 let q = _query(closingsRef, _where("fecha", ">=", fechaDesde), _where("fecha", "<=", fechaHasta));
                 const snapshot = await _getDocs(q);
-                allClosings = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                allClosings = snapshot.docs.map(doc => ({ id: doc.id, _ownerUid: selectedUserId, ...doc.data() }));
             }
             
             window.tempClosingsData = allClosings; 
@@ -300,8 +300,9 @@
             let vLast = vendedorSnapshot.apellido;
             let vCamion = vendedorSnapshot.camion;
 
-            if (!vName && vendedorSnapshot.userId) {
-                const userFromCache = _usersMapCache.get(vendedorSnapshot.userId);
+            const _uidFila = vendedorSnapshot.userId || cierre._ownerUid;
+            if (!vName && _uidFila) {
+                const userFromCache = _usersMapCache.get(_uidFila);
                 if (userFromCache) {
                     vName = userFromCache.nombre || 'Usuario';
                     vLast = userFromCache.apellido || '';
@@ -698,8 +699,9 @@
 
             const vendedor = closingData.vendedorInfo || {};
             let vNameModal = vendedor.nombre || 'Desconocido';
-            if(!vendedor.nombre && vendedor.userId && _usersMapCache.has(vendedor.userId)){
-                 vNameModal = _usersMapCache.get(vendedor.userId).nombre;
+            const _uidModal = vendedor.userId || closingData._ownerUid;
+            if(!vendedor.nombre && _uidModal && _usersMapCache.has(_uidModal)){
+                 vNameModal = _usersMapCache.get(_uidModal).nombre;
             }
 
             const reportHTML = `<div class="text-left max-h-[80vh] overflow-auto"> <div class="mb-4"> <p><strong>Vendedor:</strong> ${vNameModal} ${vendedor.apellido||''}</p> <p><strong>Camión:</strong> ${vendedor.camion||'N/A'}</p> <p><strong>Fecha:</strong> ${closingData.fecha.toDate().toLocaleString('es-ES')}</p> </div> <h3 class="text-xl mb-4">Reporte Cierre</h3> <div class="overflow-auto border" style="max-height: 40vh;"> <table class="min-w-full bg-white text-xs"> <thead class="bg-gray-200">${hHTML}</thead> <tbody>${bHTML}</tbody> <tfoot>${fHTML}</tfoot> </table> </div> ${vHTML} </div>`;
