@@ -2106,10 +2106,6 @@
     };
 
     // Permite refrescar la caché si el usuario acaba de subir un archivo
-    window.invalidarCacheArchivosCliente = function(clienteId) {
-        if (clienteId) delete _cacheArchivosCliente[clienteId];
-        else Object.keys(_cacheArchivosCliente).forEach(k => delete _cacheArchivosCliente[k]);
-    };
 
     // Orquestador: evalúa y (si aplica) muestra el aviso. NO bloquea la operación.
     // Devuelve la lista de faltantes.
