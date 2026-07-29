@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v111'; // v111: [fase 4] guardas anti-crash en accesos al DOM tras await (preventa, admin, clientes, edit-inventario)
+const CACHE_NAME = 'ventas-app-cache-v112'; // v112: [fase 5] editar saldos de vacios incluye todas las claves existentes (evita saldos fantasma con merge)
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
