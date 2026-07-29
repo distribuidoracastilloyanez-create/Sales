@@ -174,7 +174,7 @@
             _pvSectores = sectoresSnap.docs.map(d => (d.data().name || '')).filter(Boolean).sort();
         } catch (e) {
             console.error('Error cargando vendedores/sectores:', e);
-            document.getElementById('pvVendLoading').innerHTML = '<span class="text-red-500">Error al cargar los datos.</span>';
+            { const _l = document.getElementById('pvVendLoading'); if (_l) _l.innerHTML = '<span class="text-red-500">Error al cargar los datos.</span>'; }
             return;
         }
 
@@ -183,6 +183,7 @@
 
     function renderPvVendedores() {
         const loading = document.getElementById('pvVendLoading');
+        if (!loading) return; // la pantalla cambió durante la carga
         const cont = document.getElementById('pvVendLista');
         if (!cont) return;
         loading.classList.add('hidden');
@@ -2329,11 +2330,11 @@
             if (usersSnap) _pvUsuarios = usersSnap.docs.map(d => ({ id: d.id, ...d.data() }));
         } catch (e) {
             console.error('Error cargando inv ruta:', e);
-            document.getElementById('pvInvLoading').innerHTML = '<span class="text-red-500">Error al cargar.</span>';
+            { const _l = document.getElementById('pvInvLoading'); if (_l) _l.innerHTML = '<span class="text-red-500">Error al cargar.</span>'; }
             return;
         }
 
-        document.getElementById('pvInvLoading').classList.add('hidden');
+        { const _l = document.getElementById('pvInvLoading'); if (!_l) return; _l.classList.add('hidden'); }
         document.getElementById('pvInvForm').classList.remove('hidden');
 
         const vendedores = _pvUsuarios.filter(u => u.role === 'user');
