@@ -278,14 +278,6 @@
 
         // ── Modal global ──────────────────────────────────────────────────────
         // Toast no intrusivo para feedback de guardado
-        window.showToast = function(msg, type = 'success') {
-            const colors = { success: 'bg-green-600', error: 'bg-red-600', info: 'bg-blue-600' };
-            const t = document.createElement('div');
-            t.className = `fixed bottom-20 left-1/2 -translate-x-1/2 z-[9999] px-4 py-2 rounded-full text-white text-sm font-semibold shadow-lg transition-all duration-300 ${colors[type] || colors.success}`;
-            t.textContent = msg;
-            document.body.appendChild(t);
-            setTimeout(() => { t.style.opacity = '0'; setTimeout(() => t.remove(), 300); }, 2500);
-        };
 
         window.showModal = function(title, message, onConfirm = null, confirmText = 'Confirmar', onCancel = null, triggerConfirmLogic = false) {
             modalContent.innerHTML = `
