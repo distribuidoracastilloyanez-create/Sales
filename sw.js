@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v109'; // v109: [fase 2] corte 100% efimero (no se guarda ni marca pedidos; solo Pendiente->Preparacion) + eliminado todo el codigo muerto de Reportes/bitacora/cortes en preventa.js
+const CACHE_NAME = 'ventas-app-cache-v110'; // v110: [fase 3] limpieza de codigo muerto en admin.js, clientes.js, index.html y facturacion.js
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
@@ -181,4 +181,3 @@ self.addEventListener('fetch', event => {
             })
     );
 });
-// deploy 1785326675
