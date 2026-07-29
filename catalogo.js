@@ -82,38 +82,8 @@
     // ==============================================================================
     // --- MOTOR DE ORDENAMIENTO (SINCRONIZADO CON INVENTARIO.JS) ---
     // ==============================================================================
-    window.getGlobalProductSortFunction = async () => {
-        return (a, b) => {
-            // 1. Nivel Rubro
-            const rStrA = (a.rubro || 'SIN RUBRO').toUpperCase();
-            const rStrB = (b.rubro || 'SIN RUBRO').toUpperCase();
-            if (rStrA !== rStrB) return rStrA.localeCompare(rStrB);
-
-            // 2. Nivel Segmento
-            const sOrdA = a.ordenSegmento ?? 9999;
-            const sOrdB = b.ordenSegmento ?? 9999;
-            if (sOrdA !== sOrdB) return sOrdA - sOrdB;
-            const sStrA = (a.segmento || 'SIN SEGMENTO').toUpperCase();
-            const sStrB = (b.segmento || 'SIN SEGMENTO').toUpperCase();
-            if (sStrA !== sStrB) return sStrA.localeCompare(sStrB);
-
-            // 3. Nivel Marca
-            const mOrdA = a.ordenMarca ?? 9999;
-            const mOrdB = b.ordenMarca ?? 9999;
-            if (mOrdA !== mOrdB) return mOrdA - mOrdB;
-            const mStrA = (a.marca || 'S/M').toUpperCase();
-            const mStrB = (b.marca || 'S/M').toUpperCase();
-            if (mStrA !== mStrB) return mStrA.localeCompare(mStrB);
-
-            // 4. Nivel Producto
-            const pOrdA = a.ordenProducto ?? 9999;
-            const pOrdB = b.ordenProducto ?? 9999;
-            if (pOrdA !== pOrdB) return pOrdA - pOrdB;
-            const pStrA = (a.presentacion || '').toUpperCase();
-            const pStrB = (b.presentacion || '').toUpperCase();
-            return pStrA.localeCompare(pStrB);
-        };
-    };
+    // El orden global de productos lo define window.getGlobalProductSortFunction en inventario.js (única fuente).
+    
 
     function showCatalogoView(title, bgImage) {
         _currentBgImage = bgImage; if (bgImage) { document.body.style.setProperty('--catalogo-bg-image', `url('${bgImage}')`); document.body.classList.add('catalogo-active'); } else { document.body.classList.remove('catalogo-active'); document.body.style.removeProperty('--catalogo-bg-image'); } _catalogoMonedaActual = 'USD';
