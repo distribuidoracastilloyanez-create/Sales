@@ -220,7 +220,11 @@
         `;
         
         _showModal('Editar Saldos', modalContent, async () => {
+            // Partir de TODAS las claves existentes del cliente en 0: como el guardado usa
+            // merge, una clave ausente NO se borra; incluirla en 0 evita saldos fantasma de
+            // tipos de vacío que ya no existan en TIPOS_VACIO.
             const newSaldos = {};
+            Object.keys(saldoVacios).forEach(t => { newSaldos[t] = 0; });
             document.querySelectorAll('.override-vacio-input').forEach(input => {
                 const tipo = input.dataset.tipo;
                 const val = parseInt(input.value, 10);
