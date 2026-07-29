@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v110'; // v110: [fase 3] limpieza de codigo muerto en admin.js, clientes.js, index.html y facturacion.js
+const CACHE_NAME = 'ventas-app-cache-v111'; // v111: [fase 4] guardas anti-crash en accesos al DOM tras await (preventa, admin, clientes, edit-inventario)
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
