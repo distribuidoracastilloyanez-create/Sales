@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v112'; // v112: [fase 5] editar saldos de vacios incluye todas las claves existentes (evita saldos fantasma con merge)
+const CACHE_NAME = 'ventas-app-cache-v113'; // v113: fix Cierres de Vendedores sin nombre (vendedorInfo siempre; fallback _ownerUid repara cierres historicos; filtro vendedores user||vendedor)
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
