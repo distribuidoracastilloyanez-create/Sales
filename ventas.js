@@ -908,12 +908,14 @@
 
             const { cargaParaExcel } = await calcularStockTeoricoExacto(_userId, ventas, obsequios);
 
-          let vendedorInfo = {};
-            if (window.userRole === 'user') {
+          // vendedorInfo SIEMPRE (antes dependía de userRole==='user', que tras la
+          // normalización a 'vendedor' nunca se cumplía y dejaba el cierre sin nombre)
+          let vendedorInfo = { userId: _userId };
+            try {
                  const uDoc = await _getDoc(_doc(_db, "users", _userId)); 
                  const uData = uDoc.exists() ? uDoc.data() : {};
                  vendedorInfo = { userId: _userId, nombre: uData.nombre || '', apellido: uData.apellido || '', camion: uData.camion || '', email: uData.email || '' };
-            }
+            } catch (e) {}
 
             const fechaCierre = new Date();
             let obsequiosTotal = 0;
@@ -1002,12 +1004,12 @@
             const rubrosKeys = Object.keys(rubrosMap).sort();
 
             // Info Vendedor
-            let vendedorInfo = {};
-            if (window.userRole === 'user') {
+            let vendedorInfo = { userId: _userId };
+            try {
                  const uDoc = await _getDoc(_doc(_db, "users", _userId));
                  const uData = uDoc.exists() ? uDoc.data() : {};
                  vendedorInfo = { userId: _userId, nombre: uData.nombre || '', apellido: uData.apellido || '', camion: uData.camion || '', email: uData.email || '' };
-            }
+            } catch (e) {}
             let vNameModal = vendedorInfo.nombre || 'Desconocido';
             if(!vendedorInfo.nombre && vendedorInfo.userId && window._usersMapCache && window._usersMapCache.has(vendedorInfo.userId)){
                  vNameModal = window._usersMapCache.get(vendedorInfo.userId).nombre;
@@ -1259,11 +1261,11 @@
 
               _showModal('Progreso', 'Generando Reporte y Finalizando...');
 
-              let vendedorInfo = {};
-                if (window.userRole === 'user') {
+              let vendedorInfo = { userId: _userId };
+                try {
                     const uDoc = await _getDoc(_doc(_db, "users", _userId)); 
-                    vendedorInfo = uDoc.exists() ? { userId:_userId, nombre:uDoc.data().nombre||'', apellido:uDoc.data().apellido||'', camion:uDoc.data().camion||'', email:uDoc.data().email||'' } : {};
-                }
+                    vendedorInfo = uDoc.exists() ? { userId:_userId, nombre:uDoc.data().nombre||'', apellido:uDoc.data().apellido||'', camion:uDoc.data().camion||'', email:uDoc.data().email||'' } : { userId: _userId };
+                } catch (e) {}
 
                 const fechaCierre = new Date();
                 let obsequiosTotal = 0;
