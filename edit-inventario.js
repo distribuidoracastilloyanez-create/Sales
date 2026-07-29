@@ -152,7 +152,7 @@
 
         } catch (e) {
             console.error(e);
-            document.getElementById('usersListContainer').innerHTML = `<p class="text-red-500">Error cargando usuarios: ${e.message}</p>`;
+            { const _l = document.getElementById('usersListContainer'); if (_l) _l.innerHTML = `<p class="text-red-500">Error cargando usuarios: ${e.message}</p>`; }
         }
     }
 
@@ -804,7 +804,7 @@
             const fecha = new Date(_currentDetalleRecarga.fecha).toLocaleString('es-ES', { dateStyle: 'full', timeStyle: 'short' });
             // Contar items reales
             const realItemsCount = (_currentDetalleRecarga.detalles || []).filter(d => (d.diferenciaUnidades || 0) > 0).length;
-            document.getElementById('detalleRecargaInfo').innerHTML = `Fecha: <b class="text-gray-800">${fecha}</b> <span class="mx-2 text-gray-300">|</span> Items: <b class="text-gray-800">${realItemsCount}</b>`;
+            { const _l = document.getElementById('detalleRecargaInfo'); if (_l) _l.innerHTML = `Fecha: <b class="text-gray-800">${fecha}</b> <span class="mx-2 text-gray-300">|</span> Items: <b class="text-gray-800">${realItemsCount}</b>`; }
 
             _detalleFilters = { search: '', rubro: '', segmento: '', marca: '' };
             await setupDetalleFilters();
