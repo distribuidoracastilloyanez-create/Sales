@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v108'; // v108: [fase 1] unificar getGlobalProductSortFunction (unica fuente: inventario.js; eliminada copia de catalogo.js)
+const CACHE_NAME = 'ventas-app-cache-v109'; // v109: [fase 2] corte 100% efimero (no se guarda ni marca pedidos; solo Pendiente->Preparacion) + eliminado todo el codigo muerto de Reportes/bitacora/cortes en preventa.js
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
@@ -181,4 +181,3 @@ self.addEventListener('fetch', event => {
             })
     );
 });
-// redeploy
