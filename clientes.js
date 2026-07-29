@@ -1979,11 +1979,11 @@
             _arClientes = snap.docs.map(d => ({ id: d.id, ...d.data() }));
         } catch (e) {
             console.error('Error cargando clientes para rutas:', e);
-            document.getElementById('arLoading').innerHTML = '<span class="text-red-500">Error al cargar.</span>';
+            { const _l = document.getElementById('arLoading'); if (_l) _l.innerHTML = '<span class="text-red-500">Error al cargar.</span>'; }
             return;
         }
 
-        document.getElementById('arLoading').classList.add('hidden');
+        { const _l = document.getElementById('arLoading'); if (!_l) return; _l.classList.add('hidden'); }
         document.getElementById('arCuerpo').classList.remove('hidden');
 
         // Poblar sectores
