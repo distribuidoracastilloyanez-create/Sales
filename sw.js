@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v113'; // v113: fix Cierres de Vendedores sin nombre (vendedorInfo siempre; fallback _ownerUid repara cierres historicos; filtro vendedores user||vendedor)
+const CACHE_NAME = 'ventas-app-cache-v114'; // v114: Analista de Clientes por Datos exporta ahora Documento/RIF y Correo en el Excel
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
