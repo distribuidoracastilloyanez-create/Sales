@@ -892,17 +892,18 @@
     function showVerClientesView() {
          _floatingControls.classList.add('hidden');
         _mainContent.innerHTML = `
-            <div class="p-4 pt-8 w-full max-w-6xl mx-auto flex flex-col h-screen">
-                <div class="bg-white/95 backdrop-blur-sm p-6 rounded-lg shadow-xl flex flex-col flex-grow overflow-hidden">
-                    <h2 class="text-2xl font-bold text-gray-800 mb-6 text-center border-b border-gray-200 pb-4">Buscador de Clientes</h2>
-                    
+            <div class="p-2 pt-3 w-full max-w-6xl mx-auto flex flex-col h-screen">
+                <div class="bg-white/95 backdrop-blur-sm p-3 rounded-lg shadow-xl flex flex-col flex-grow overflow-hidden">
+                    <div class="flex items-center justify-between mb-2">
+                        <h2 class="text-lg font-bold text-gray-800">Buscador de Clientes</h2>
+                        <button id="backToClientesBtn" class="px-3 py-1.5 bg-gray-200 text-gray-700 text-xs font-bold rounded-lg hover:bg-gray-300 transition">Volver al menú</button>
+                    </div>
+
                     ${getFiltrosHTML()}
-                    
-                    <div id="clientesListContainer" class="overflow-x-auto overflow-y-auto flex-grow border border-gray-200 rounded-lg shadow-inner bg-gray-50 mb-4">
+
+                    <div id="clientesListContainer" class="overflow-x-auto overflow-y-auto flex-grow border border-gray-200 rounded-lg shadow-inner bg-gray-50">
                         <p class="text-gray-500 text-center py-6 animate-pulse">Cargando datos del sistema...</p>
                     </div>
-                    
-                    <button id="backToClientesBtn" class="w-full px-6 py-3 bg-gray-500 text-white font-bold rounded-lg shadow-md hover:bg-gray-600 transition tracking-wide">VOLVER AL MENÚ</button>
                 </div>
             </div>
         `;
@@ -938,27 +939,15 @@
 
     function getFiltrosHTML() {
         return `
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4 p-4 border border-gray-300 rounded-lg bg-white shadow-sm">
-                <div class="md:col-span-2">
-                    <input type="text" id="search-input" placeholder="Buscar por Nombre, Doc/RIF o Código CEP..." class="w-full px-4 py-2 border border-gray-300 rounded bg-gray-50 outline-none focus:bg-white focus:ring-2 focus:ring-indigo-500 transition text-sm">
+            <div class="mb-2 space-y-2">
+                <div class="flex gap-2">
+                    <input type="text" id="search-input" placeholder="Buscar por Nombre, Doc/RIF o CEP..." class="flex-1 min-w-0 px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 outline-none focus:bg-white focus:ring-2 focus:ring-indigo-500 transition text-sm">
+                    <select id="filter-sector" class="w-32 sm:w-44 shrink-0 px-2 py-2 border border-gray-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500 bg-gray-50 focus:bg-white transition"><option value="">Sector: todos</option></select>
                 </div>
-                <div>
-                    <label for="filter-sector" class="text-xs font-bold text-gray-500 mb-1 block uppercase tracking-wider">Sector</label>
-                    <select id="filter-sector" class="w-full px-3 py-1.5 border border-gray-300 rounded text-sm outline-none focus:ring-2 focus:ring-indigo-500 bg-gray-50 focus:bg-white transition"><option value="">TODOS</option></select>
-                </div>
-                <div class="flex items-end">
-                    <button id="clear-filters-btn" class="w-full bg-gray-200 text-gray-700 text-sm font-bold rounded py-1.5 px-4 hover:bg-gray-300 transition border border-gray-300">LIMPIAR</button>
-                </div>
-                
-                <div class="md:col-span-2 flex flex-col sm:flex-row items-start sm:items-center gap-4 pt-3 border-t border-gray-100 mt-1">
-                    <div class="flex items-center">
-                        <input type="checkbox" id="filter-incompletos" class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer">
-                        <label for="filter-incompletos" class="ml-2 block text-sm text-gray-600 font-medium cursor-pointer select-none">Solo Incompletos</label>
-                    </div>
-                    <div class="flex items-center bg-blue-50 px-3 py-1 rounded border border-blue-200">
-                        <input type="checkbox" id="filter-adc" class="h-4 w-4 rounded border-blue-300 text-blue-600 focus:ring-blue-500 cursor-pointer">
-                        <label for="filter-adc" class="ml-2 block text-sm text-blue-800 font-bold cursor-pointer select-none">Con Equipo ADC</label>
-                    </div>
+                <div class="flex items-center gap-2 flex-wrap text-xs">
+                    <label class="flex items-center gap-1.5 cursor-pointer text-gray-600 font-medium select-none"><input type="checkbox" id="filter-incompletos" class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer">Solo incompletos</label>
+                    <label class="flex items-center gap-1.5 cursor-pointer text-blue-800 font-bold bg-blue-50 px-2 py-1 rounded border border-blue-200 select-none"><input type="checkbox" id="filter-adc" class="h-4 w-4 rounded border-blue-300 text-blue-600 focus:ring-blue-500 cursor-pointer">Con Equipo ADC</label>
+                    <button id="clear-filters-btn" class="ml-auto bg-gray-200 text-gray-600 font-bold rounded py-1 px-3 hover:bg-gray-300 transition">Limpiar</button>
                 </div>
             </div>
         `;
@@ -1519,7 +1508,10 @@
             _showModal('Progreso', 'Eliminando cliente...'); 
             try {
                 await _deleteDoc(_doc(_db, CLIENTES_COLLECTION_PATH, clienteId));
-                _showModal('Éxito', 'Cliente eliminado correctamente.', showVerClientesView, 'Volver a la lista');
+                // Volver a la lista PRIMERO y luego confirmar: así el usuario no queda
+                // atrapado en la ficha del cliente (el botón "Cerrar" del modal ya no estanca).
+                showVerClientesView();
+                _showModal('Éxito', 'Cliente eliminado correctamente.');
             } catch (error) {
                 console.error("Error al eliminar el cliente:", error);
                 _showModal('Error', 'Hubo un error al eliminar el cliente.');
