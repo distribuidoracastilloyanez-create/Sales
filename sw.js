@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v115'; // v115: al eliminar cliente vuelve a la lista + mensaje; buscador de clientes compactado (mas clientes visibles)
+const CACHE_NAME = 'ventas-app-cache-v116'; // v116: fix Editar Inventario - listar vendedores con role 'user' O 'vendedor' (antes solo 'user', omitia a los asignados por admin)
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
