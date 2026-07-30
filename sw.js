@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v114'; // v114: Analista de Clientes por Datos exporta ahora Documento/RIF y Correo en el Excel
+const CACHE_NAME = 'ventas-app-cache-v115'; // v115: al eliminar cliente vuelve a la lista + mensaje; buscador de clientes compactado (mas clientes visibles)
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
