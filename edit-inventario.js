@@ -125,7 +125,7 @@
 
         try {
             const usersRef = _collection(_db, 'users');
-            const q = _query(usersRef, _where('role', '==', 'user'));
+            const q = _query(usersRef, _where('role', 'in', ['user', 'vendedor']));
             const snap = await _getDocs(q);
             _usersCache = snap.docs.map(d => ({ id: d.id, ...d.data() }));
 
@@ -609,7 +609,7 @@
         if (_usersCache.length === 0) {
             try {
                 const usersRef = _collection(_db, 'users');
-                const q = _query(usersRef, _where('role', '==', 'user'));
+                const q = _query(usersRef, _where('role', 'in', ['user', 'vendedor']));
                 const snap = await _getDocs(q);
                 _usersCache = snap.docs.map(d => ({ id: d.id, ...d.data() }));
             } catch(e) { console.error("Error loading users", e); }
@@ -1107,7 +1107,7 @@
         if (_usersCache.length === 0) {
             try {
                 const usersRef = _collection(_db, 'users');
-                const q = _query(usersRef, _where('role', '==', 'user'));
+                const q = _query(usersRef, _where('role', 'in', ['user', 'vendedor']));
                 const snap = await _getDocs(q);
                 _usersCache = snap.docs.map(d => ({ id: d.id, ...d.data() }));
             } catch(e) { console.error("Error loading users", e); }
