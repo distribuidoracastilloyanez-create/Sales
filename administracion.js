@@ -2617,6 +2617,8 @@
                 nombrePersonal: cl.nombrePersonal || '',
                 zona: cl.sector || '',
                 telefono: tel,
+                documento: [cl.tipoDocumento, cl.numeroDocumento].filter(Boolean).join('-'),
+                correo: (cl.correo || '').toString().trim(),
                 codigoCEP: tieneCEP ? cep : '',
                 coordenadas: coord,
                 aplicaRetencion: !!cl.aplicaRetencion,
@@ -3196,10 +3198,11 @@
         {
             lista = filtrarEstado();
             hojaNombre = 'Datos y compra';
-            headers = ['#', 'Nombre Comercial', 'Nombre Personal', 'Zona', 'Teléfono', 'CEP',
+            headers = ['#', 'Nombre Comercial', 'Nombre Personal', 'Zona', 'Documento/RIF', 'Correo', 'Teléfono', 'CEP',
                        'GPS', 'ADC', 'Documentos', 'Fotos', 'Retención', 'Coordenadas', 'Completitud %', 'Última compra', 'Días sin comprar'];
             filas = lista.map((c, i) => [
-                i + 1, c.nombreComercial, c.nombrePersonal || '', c.zona || '', c.telefono || '',
+                i + 1, c.nombreComercial, c.nombrePersonal || '', c.zona || '',
+                c.documento || 'FALTA', c.correo || 'FALTA', c.telefono || '',
                 c.estados.cep ? c.codigoCEP : 'FALTA',
                 si(c.estados.gps), si(c.estados.adc), si(c.estados.doc), si(c.estados.foto),
                 si(c.aplicaRetencion), c.coordenadas || '', c.completitud,
@@ -3230,6 +3233,8 @@
                 if (idx === 0) return { wch: 4 };
                 if (idx === 1) return { wch: 32 };
                 if (idx === 2) return { wch: 22 };
+                if (h === 'Documento/RIF') return { wch: 18 };
+                if (h === 'Correo') return { wch: 26 };
                 if (h === 'Coordenadas') return { wch: 24 };
                 return { wch: 14 };
             });
