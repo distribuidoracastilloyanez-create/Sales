@@ -610,8 +610,8 @@
                 </div>
             </div>
             <div class="text-[10px] text-slate-300 text-center py-1 bg-slate-800/70 shrink-0">Arrastra para mover · pellizca o rueda para acercar · doble toque para ajustar</div>
-            <div id="zvViewport" class="flex-1 overflow-hidden relative" style="touch-action:none;cursor:grab;background:#e2e8f0;">
-                <div id="zvContent" style="position:absolute;top:0;left:0;transform-origin:0 0;background:#fff;padding:16px;border-radius:6px;box-shadow:0 4px 20px rgba(0,0,0,.3);">${innerHTML}</div>
+            <div id="zvViewport" class="flex-1 overflow-hidden relative" style="touch-action:none;cursor:grab;background:#fff;">
+                <div id="zvContent" style="position:absolute;top:0;left:0;transform-origin:0 0;background:#fff;padding:14px;">${innerHTML}</div>
             </div>`;
         document.body.appendChild(ov);
         const vp = ov.querySelector('#zvViewport');
@@ -619,12 +619,10 @@
         let scale = 1, tx = 0, ty = 0;
         const clampScale = v => Math.min(5, Math.max(0.15, v));
         const apply = () => { ct.style.transform = `translate(${tx}px,${ty}px) scale(${scale})`; };
-        const fit = () => {
-            const cw = ct.offsetWidth || 1, vw = vp.clientWidth;
-            scale = clampScale(Math.min(1, (vw - 16) / cw));
-            tx = Math.max(8, (vw - cw * scale) / 2); ty = 12;
-            apply();
-        };
+        // Vista inicial LEGIBLE (no encoge la tabla para caber): tamaño casi natural,
+        // un poco más pequeño para que entre más, anclado arriba-izquierda. El usuario
+        // se mueve con el dedo en cualquier dirección; puede pellizcar para acercar.
+        const fit = () => { scale = 0.85; tx = 8; ty = 8; apply(); };
         const zoomAt = (mx, my, factor) => {
             const ns = clampScale(scale * factor);
             tx = mx - (mx - tx) * (ns / scale);
