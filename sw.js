@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v123'; // v123: Config Factura movida al modulo Facturacion (solo admin) con picker de busqueda + filtros rubro/segmento/marca; sin emojis en facturacion
+const CACHE_NAME = 'ventas-app-cache-v124'; // v124: la Config Factura MANDA - filas fijas se llenan SOLO por asignacion del admin; heuristica predeterminada eliminada (lo no asignado va a OTROS PRODUCTOS)
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
