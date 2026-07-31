@@ -23,6 +23,30 @@
     let _esVentaSimulada     = false;
     let _simuladaItems       = {}; // { productoId: { cj, paq, und } }
 
+    // ── Config de filas fijas de la factura (asignación producto→fila por el admin) ──
+    // Doc: artifacts/{PUBLIC}/public/data/config/factura_filas
+    //   { alimentos: { "secKey:filaIdx": productoId, ... }, cerveceria: { ... } }
+    let _cfgFilasFactura = { alimentos: {}, cerveceria: {} };
+    let _cfgFilasInverso = { alimentos: {}, cerveceria: {} }; // productoId -> { key, idx }
+    async function _cargarCfgFilasFactura() {
+        try {
+            const pid = (window.AppConfig && window.AppConfig.PUBLIC_DATA_ID) || _appId;
+            const snap = await _getDoc(_doc(_db, `artifacts/${pid}/public/data/config/factura_filas`));
+            const d = snap.exists() ? snap.data() : {};
+            _cfgFilasFactura = { alimentos: d.alimentos || {}, cerveceria: d.cerveceria || {} };
+        } catch (e) { _cfgFilasFactura = { alimentos: {}, cerveceria: {} }; }
+        _cfgFilasInverso = { alimentos: {}, cerveceria: {} };
+        for (const fmtKey of ['alimentos', 'cerveceria']) {
+            const m = _cfgFilasFactura[fmtKey];
+            for (const filaKey in m) {
+                const prodId = m[filaKey];
+                if (!prodId) continue;
+                const [key, idxS] = filaKey.split(':');
+                _cfgFilasInverso[fmtKey][prodId] = { key, idx: parseInt(idxS, 10) };
+            }
+        }
+    }
+
     // ─────────────────────────────────────────────
     // INIT
     // ─────────────────────────────────────────────
@@ -945,7 +969,7 @@
     // ─────────────────────────────────────────────
     let _isGeneratingFactura = false;
 
-    function generarFacturaFiscal() {
+    async function generarFacturaFiscal() {
         if (_isGeneratingFactura) return;
 
         const tasaBs = parseFloat(document.getElementById('facValorTasa').value);
@@ -1027,6 +1051,7 @@
                     ivaTotal     += cantidad * (pvpUSD - baseUSD);
                 }
                 const linea = {
+                    productoId:       p.id || '',
                     descripcion:      descCorta,
                     unidades:         String(unidades),
                     contenido:        String(contenido),
@@ -1081,6 +1106,7 @@
             nombreMes:  _ventaParaFacturar.nombreMes || ''
         };
 
+        await _cargarCfgFilasFactura();
         const html = (_tipoFacturacion === 'cerveceria')
             ? buildFacturaCerveceriaHtml(datosFactura)
             : buildFacturaAlimentosHtml(datosFactura);
@@ -1394,6 +1420,24 @@
         return best;
     }
 
+    // Estructura de filas fijas para la pantalla "Config Factura" del admin
+    window.getFacturaLayouts = function () {
+        const lite = (arr, skipLast) => arr.slice(0, skipLast ? arr.length - 1 : arr.length).map(sec => ({
+            key: sec.key,
+            marca: (sec.marca || '').replace(/<br>/g, ' '),
+            filas: sec.filas.map((f, i) => ({
+                idx: i,
+                desc: f.desc || '',
+                unidades: f.unidades || '',
+                lts: f.lts || ''
+            })).filter(f => f.desc)
+        })).filter(sec => sec.filas.length);
+        return {
+            cerveceria: lite(FORMATO_CERVECERIA, true),
+            alimentos: lite(FORMATO_ALIMENTOS, true)
+        };
+    };
+
     function llenarFormatoCerveceria(lineas) {
         const fmt = FORMATO_CERVECERIA.map(sec => ({
             marca: sec.marca, sub: sec.sub, key: sec.key,
@@ -1406,6 +1450,21 @@
 
         lineas.forEach(l => {
             const texto = [l.marca, l.segmento, l.presentacion, l.descripcion].filter(Boolean).join(' ');
+
+            // 1º: asignación directa configurada por el admin (producto → fila exacta)
+            const asigC = l.productoId && _cfgFilasInverso.cerveceria[l.productoId];
+            if (asigC) {
+                const secA = fmt.find(x => x.key === asigC.key);
+                const fA = secA && secA.filas[asigC.idx];
+                if (fA) {
+                    fA.cantidad += l.cantidad;
+                    fA.unidad    = l.unidadMedida;
+                    fA.precioBs  = l.precioUnitarioBs;
+                    fA.montoBs  += l.totalBs;
+                    return;
+                }
+            }
+
             const secIdx = matchSeccionCerveceria(texto);
             const sec = fmt[secIdx];
 
@@ -1558,6 +1617,22 @@
 
         lineas.forEach(l => {
             const texto = [l.marca, l.segmento, l.presentacion, l.descripcion].filter(Boolean).join(' ');
+
+            // 1º: asignación directa configurada por el admin (producto → fila exacta)
+            const asigA = l.productoId && _cfgFilasInverso.alimentos[l.productoId];
+            if (asigA) {
+                const secA = fmt.find(x => x.key === asigA.key);
+                const fA = secA && secA.filas[asigA.idx];
+                if (fA) {
+                    fA.cantidad += l.cantidad;
+                    fA.precioBs  = l.precioUnitarioBs;
+                    fA.montoBs  += l.totalBs;
+                    fA.exento    = l.exento;
+                    fA.alicuota  = l.alicuota;
+                    return;
+                }
+            }
+
             const secIdx = matchSeccionAlimentos(texto);
             const sec = fmt[secIdx];
 
