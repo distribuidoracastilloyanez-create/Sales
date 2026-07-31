@@ -599,11 +599,12 @@
         ov.id = 'detalleCierreOverlay';
         ov.className = 'fixed inset-0 z-[9999] bg-white flex flex-col';
         ov.innerHTML = `
+            <style>#detalleCierreOverlay .dc-scroll{scrollbar-width:none;-ms-overflow-style:none;} #detalleCierreOverlay .dc-scroll::-webkit-scrollbar{width:0;height:0;display:none;}</style>
             <div class="flex items-center justify-between px-4 py-2 bg-slate-800 text-white shrink-0">
                 <span class="font-semibold text-sm truncate">${titulo}</span>
                 <button id="dcClose" class="text-xs bg-red-500/90 hover:bg-red-500 rounded px-4 py-1.5 font-bold shrink-0">Cerrar</button>
             </div>
-            <div class="flex-1 overflow-auto p-3" style="-webkit-overflow-scrolling:touch;">${innerHTML}</div>`;
+            <div class="dc-scroll flex-1 overflow-auto p-3" style="-webkit-overflow-scrolling:touch;">${innerHTML}</div>`;
         document.body.appendChild(ov);
         ov.querySelector('#dcClose').addEventListener('click', () => ov.remove());
     }
@@ -622,9 +623,15 @@
                     cargaInicialHistorica, 
                     closingData.vendedorInfo.userId
                 );
-            
+
+            // Ocultar productos que no tuvieron NI UNA venta en ningún cliente (evita columnas vacías)
+            const _prodCol = finalProductOrder.filter(p => sortedClients.some(cli => {
+                const q = (clientData[cli] && clientData[cli].products) ? (clientData[cli].products[p.id] || 0) : 0;
+                return q > 0;
+            }));
+
             let hHTML = `<tr class="sticky top-0 z-20 bg-gray-200"><th class="p-1 border sticky left-0 z-30 bg-gray-200">Cliente</th>`;
-            finalProductOrder.forEach(p => { hHTML += `<th class="p-1 border whitespace-nowrap text-xs" title="${p.marca||''} - ${p.segmento||''}">${p.presentacion}</th>`; });
+            _prodCol.forEach(p => { hHTML += `<th class="p-1 border whitespace-nowrap text-xs" title="${p.marca||''} - ${p.segmento||''}">${p.presentacion}</th>`; });
             hHTML += `<th class="p-1 border sticky right-0 z-30 bg-gray-200">Total Cliente</th></tr>`;
             
             let bHTML=''; 
@@ -638,7 +645,7 @@
                 if (esSoloConsignacion) rowClass = 'bg-orange-50 hover:bg-orange-100 text-orange-900';
                 
                 bHTML+=`<tr class="${rowClass}"><td class="p-1 border font-medium bg-white sticky left-0 z-10">${cli}</td>`; 
-                finalProductOrder.forEach(p=>{
+                _prodCol.forEach(p=>{
                     const qU=cCli.products[p.id]||0; 
                     const qtyDisplay = getDisplayQty(qU, p);
                     
@@ -657,7 +664,7 @@
             });
 
             let fHTML='<tr class="bg-gray-200 font-bold"><td class="p-1 border sticky left-0 z-10">TOTALES</td>'; 
-            finalProductOrder.forEach(p=>{
+            _prodCol.forEach(p=>{
                 let tQ=0; sortedClients.forEach(cli=>tQ+=clientData[cli].products[p.id]||0); 
                 const qtyDisplay = getDisplayQty(tQ, p);
                 let dT = tQ > 0 ? (typeof qtyDisplay.value === 'number' ? `${qtyDisplay.value} ${qtyDisplay.unit}` : qtyDisplay.value) : '';
@@ -673,7 +680,7 @@
             
             if (cliVacios.length > 0) { 
                 vHTML = `
-                    <h3 class="text-lg font-bold text-gray-800 mt-6 mb-2 border-t pt-4">Resumen de Envases (Vacíos)</h3>
+                    <h3 class="text-lg font-bold text-gray-800 mt-6 mb-2 border-t pt-4">Reporte de Vacíos</h3>
                     <div class="overflow-hidden border border-gray-300 rounded-lg shadow-sm">
                         <table class="min-w-full bg-white text-sm">
                             <thead class="bg-gray-800 text-white">
@@ -699,7 +706,7 @@
                             let netoText = neto;
                             if (neto > 0) netoText = `+${neto} (Debe)`;
                             else if (neto < 0) netoText = `${neto} (A favor)`;
-                            else netoText = `0 (Solvente)`;
+                            else netoText = `0 (al día)`;
 
                             vHTML += `
                                 <tr class="hover:bg-gray-50">
@@ -1539,7 +1546,7 @@
                     .map(([k,v]) => `${k}: ${v}`)
                     .join(' | ');
             }
-            if(!saldoVaciosStr) saldoVaciosStr = 'Solvente';
+            if(!saldoVaciosStr) saldoVaciosStr = 'al día';
 
             return {
                 'Sector': c.sector || 'S/S',
