@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v117'; // v117: cierres - filtro de fechas en GMT-4 (incluye todo el dia seleccionado) + detalle del cierre con visor de zoom/arrastre (sin scrolls)
+const CACHE_NAME = 'ventas-app-cache-v118'; // v118: visor del detalle de cierre arranca a tamano legible (0.85) anclado arriba-izquierda, pantalla completa, se mueve con el dedo sin encoger
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
