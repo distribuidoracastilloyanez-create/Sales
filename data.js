@@ -591,6 +591,26 @@
         return { clientData, clientTotals, grandTotalValue, sortedClients, finalProductOrder, vaciosMovementsPorTipo, finalData, userInfo, acDescuentosPorCliente };
     }
 
+    // Forzar orientación HORIZONTAL (landscape) en móvil. Requiere pantalla completa
+    // y debe iniciarse dentro del gesto del usuario (el clic en "Ver").
+    function _entrarHorizontal() {
+        try {
+            const el = document.documentElement;
+            const req = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen;
+            const lock = () => { try { if (screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(() => {}); } catch (e) {} };
+            if (req) { const p = req.call(el); if (p && p.then) p.then(lock).catch(() => {}); else lock(); }
+            else lock();
+        } catch (e) {}
+    }
+    function _salirHorizontal() {
+        try { if (screen.orientation && screen.orientation.unlock) screen.orientation.unlock(); } catch (e) {}
+        try {
+            if (document.fullscreenElement || document.webkitFullscreenElement) {
+                (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+            }
+        } catch (e) {}
+    }
+
     // Detalle del cierre a PANTALLA COMPLETA: forma tabular de siempre, letra un poco
     // más pequeña, con scroll (horizontal para la tabla ancha y vertical si hace falta).
     function _mostrarDetalleCierre(titulo, innerHTML) {
@@ -606,12 +626,13 @@
             </div>
             <div class="dc-scroll flex-1 overflow-auto p-3" style="-webkit-overflow-scrolling:touch;">${innerHTML}</div>`;
         document.body.appendChild(ov);
-        ov.querySelector('#dcClose').addEventListener('click', () => ov.remove());
+        ov.querySelector('#dcClose').addEventListener('click', () => { _salirHorizontal(); ov.remove(); });
     }
 
     async function showClosingDetail(closingId) {
         const closingData = window.tempClosingsData?.find(c => c.id === closingId);
         if (!closingData) { _showModal('Error', 'No se cargaron detalles.'); return; }
+        _entrarHorizontal(); // debe ir en el gesto del clic (antes de cualquier await)
         _showModal('Progreso', 'Generando reporte detallado...');
         try {
             const cargaInicialHistorica = closingData.cargaInicialInventario || closingData.inventario || closingData.productos || [];
