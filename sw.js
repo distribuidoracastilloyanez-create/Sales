@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v120'; // v120: detalle cierre sin barras de scroll (tactil), oculta productos sin ventas, 'Reporte de Vacios' y 'al dia' en vez de 'Solvente'
+const CACHE_NAME = 'ventas-app-cache-v121'; // v121: el detalle de cierre (Ver) se abre forzado en horizontal (landscape) en movil, y vuelve al cerrar
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
