@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v121'; // v121: el detalle de cierre (Ver) se abre forzado en horizontal (landscape) en movil, y vuelve al cerrar
+const CACHE_NAME = 'ventas-app-cache-v122'; // v122: Config Factura (admin asigna producto del catalogo a cada fila fija de los formatos alimentos/cerveceria; fallback automatico)
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
