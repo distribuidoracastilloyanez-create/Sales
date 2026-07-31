@@ -7,7 +7,7 @@
 //  · Plantilla rediseñada al formato "FACTURA GUÍA" de la hoja física
 
 (function () {
-    let _db, _userId, _userRole, _appId, _mainContent, _floatingControls;
+    let _db, _userId, _userRole, _appId, _mainContent, _floatingControls, _setDoc;
     let _showMainMenu, _showModal, _collection, _getDocs, _query, _where, _getDoc, _doc, _orderBy, _limit;
 
     const PUBLIC_DATA_ID = window.AppConfig.PUBLIC_DATA_ID;
@@ -61,6 +61,7 @@
         _showModal        = deps.showModal;
         _collection       = deps.collection;
         _getDocs          = deps.getDocs;
+        _setDoc           = deps.setDoc;
         _query            = deps.query;
         _where            = deps.where;
         _getDoc           = deps.getDoc;
@@ -97,15 +98,18 @@
                 <div class="bg-white/95 backdrop-blur-sm p-4 sm:p-6 rounded-lg shadow-xl flex flex-col flex-grow border-t-4 border-blue-800">
 
                     <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-5 gap-3">
-                        <h2 class="text-xl sm:text-2xl font-black text-gray-800 tracking-tight">🧾 Simulador de Facturación</h2>
-                        <button id="btnVolverFacturacion" class="w-full sm:w-auto px-4 py-2 bg-gray-500 text-white font-bold rounded shadow hover:bg-gray-600 transition">Volver al Menú</button>
+                        <h2 class="text-xl sm:text-2xl font-black text-gray-800 tracking-tight">Simulador de Facturación</h2>
+                        <div class="flex gap-2 w-full sm:w-auto">
+                            ${_userRole === 'admin' ? '<button id="btnConfigFactura" class="flex-1 sm:flex-none px-4 py-2 bg-indigo-600 text-white font-bold rounded shadow hover:bg-indigo-700 transition text-sm">Config Factura</button>' : ''}
+                            <button id="btnVolverFacturacion" class="flex-1 sm:flex-none px-4 py-2 bg-gray-500 text-white font-bold rounded shadow hover:bg-gray-600 transition">Volver al Menú</button>
+                        </div>
                     </div>
 
                     <!-- Simular Venta (armar venta desde cero) -->
                     <div class="mb-4">
                         <button id="btnSimularVenta"
                             class="w-full px-4 py-3 bg-purple-600 text-white font-bold rounded-lg shadow hover:bg-purple-700 transition flex items-center justify-center gap-2 text-sm">
-                            🧪 Simular Venta <span class="text-xs font-normal opacity-80">(armar una venta de prueba)</span>
+                            Simular Venta <span class="text-xs font-normal opacity-80">(armar una venta de prueba)</span>
                         </button>
                     </div>
 
@@ -137,7 +141,7 @@
                         <div class="grid grid-cols-2 gap-3">
                             <button id="btnTipoIndividual"
                                 class="fac-tipo-btn px-3 py-3 rounded-lg border-2 border-gray-300 bg-white text-gray-700 font-bold text-sm transition hover:border-blue-400">
-                                📄 Venta Individual
+                                Venta Individual
                             </button>
                             <button id="btnTipoMensual"
                                 class="fac-tipo-btn px-3 py-3 rounded-lg border-2 border-gray-300 bg-white text-gray-700 font-bold text-sm transition hover:border-blue-400">
@@ -198,7 +202,7 @@
                             <div class="sm:col-span-2 md:col-span-1">
                                 <button id="btnGenerarFactura"
                                     class="w-full bg-green-600 text-white py-2.5 rounded-md shadow hover:bg-green-700 font-bold transition text-sm flex items-center justify-center gap-2">
-                                    <span>📄</span> Generar Factura
+                                    Generar Factura
                                 </button>
                             </div>
                         </div>
@@ -221,6 +225,7 @@
             </div>`;
 
         // ── Eventos ──────────────────────────────────────
+        document.getElementById('btnConfigFactura')?.addEventListener('click', showConfigFacturaView);
         document.getElementById('btnVolverFacturacion').addEventListener('click', _showMainMenu);
         document.getElementById('btnSimularVenta').addEventListener('click', abrirSimuladorVenta);
 
@@ -306,7 +311,7 @@
 
         const bSim = document.getElementById('btnSimularVenta');
         if (bSim) {
-            bSim.innerHTML = '📄 Venta recuperada desde CXC — <span class="text-xs font-normal opacity-80">' +
+            bSim.innerHTML = 'Venta recuperada desde CXC — <span class="text-xs font-normal opacity-80">' +
                 productos.length + ' producto(s) · $' + (v.total || 0).toFixed(2) + '</span>';
             bSim.classList.remove('bg-purple-600', 'hover:bg-purple-700');
             bSim.classList.add('bg-blue-700');
@@ -324,7 +329,7 @@
         // Restaurar botón y paneles de venta real
         const bSim = document.getElementById('btnSimularVenta');
         if (bSim) {
-            bSim.innerHTML = '🧪 Simular Venta <span class="text-xs font-normal opacity-80">(armar una venta de prueba)</span>';
+            bSim.innerHTML = 'Simular Venta <span class="text-xs font-normal opacity-80">(armar una venta de prueba)</span>';
             bSim.classList.remove('bg-purple-800');
             bSim.classList.add('bg-purple-600', 'hover:bg-purple-700');
         }
@@ -414,7 +419,7 @@
             v.fechaObj.getFullYear() === y && (v.fechaObj.getMonth() + 1) === m);
 
         if (!ventasMes.length) {
-            resumen.textContent = '⚠️ No hay ventas registradas para este mes.';
+            resumen.textContent = 'No hay ventas registradas para este mes.';
             resumen.className = 'text-xs text-amber-600 mt-2 font-semibold';
             _ventaParaFacturar = null;
             ocultarEmisionYDetalle();
@@ -459,7 +464,7 @@
             numVentas: ventasMes.length
         };
 
-        resumen.textContent = `✅ ${ventasMes.length} venta(s) en ${nombreMes} · Total: $${totalMes.toFixed(2)}`;
+        resumen.textContent = `${ventasMes.length} venta(s) en ${nombreMes} · Total: $${totalMes.toFixed(2)}`;
         resumen.className = 'text-xs text-green-700 mt-2 font-semibold';
         mostrarPanelTipoFact();
     }
@@ -494,7 +499,7 @@
         }
 
         if (!productosDetalle.length && !productosOmitidos.length) {
-            body.innerHTML = '<p class="p-4 text-center text-xs text-amber-600 font-semibold">⚠️ La venta seleccionada no contiene productos.</p>';
+            body.innerHTML = '<p class="p-4 text-center text-xs text-amber-600 font-semibold">La venta seleccionada no contiene productos.</p>';
             panel.classList.remove('hidden');
             return;
         }
@@ -554,7 +559,7 @@
             ${productosOmitidos.length ? `
             <div class="border-t-2 border-amber-300 bg-amber-50 px-3 py-3">
                 <p class="text-[11px] font-black text-amber-800 uppercase tracking-wider mb-2 flex items-center gap-1">
-                    ⚠️ Se omitirán al generar (${_tipoFacturacion === 'cerveceria' ? 'no son de Cervecería' : 'Cervecería y Vinos'}) — ${productosOmitidos.length}
+                    Se omitirán al generar (${_tipoFacturacion === 'cerveceria' ? 'no son de Cervecería' : 'Cervecería y Vinos'}) — ${productosOmitidos.length}
                 </p>
                 <ul class="space-y-1">
                     ${productosOmitidos.map(p => {
@@ -600,7 +605,7 @@
         overlay.innerHTML = `
             <div class="bg-white w-full sm:max-w-2xl h-[92vh] sm:h-[85vh] rounded-t-2xl sm:rounded-2xl shadow-2xl flex flex-col overflow-hidden">
                 <div class="bg-purple-600 text-white px-4 py-3 flex items-center justify-between shrink-0">
-                    <h3 class="font-bold text-base flex items-center gap-2">🧪 Simular Venta</h3>
+                    <h3 class="font-bold text-base flex items-center gap-2">Simular Venta</h3>
                     <button id="simClose" class="text-white text-2xl leading-none font-black px-2 hover:opacity-70">&times;</button>
                 </div>
 
@@ -781,7 +786,7 @@
         document.getElementById('facSepOr')?.classList.add('hidden');
         document.getElementById('facPanelTipo')?.classList.add('hidden');
         document.getElementById('btnSimularVenta').innerHTML =
-            '✅ Venta simulada lista — <span class="text-xs font-normal opacity-80">' +
+            'Venta simulada lista — <span class="text-xs font-normal opacity-80">' +
             productos.length + ' producto(s) · $' + total.toFixed(2) + '</span>';
         document.getElementById('btnSimularVenta').classList.remove('bg-purple-600', 'hover:bg-purple-700');
         document.getElementById('btnSimularVenta').classList.add('bg-purple-800');
@@ -1190,10 +1195,10 @@
 </style>
 
 <div id="facTopBar">
-    <span class="fac-tit">🧾 ${_clienteSeleccionado.nombreComercial}</span>
+    <span class="fac-tit">${_clienteSeleccionado.nombreComercial}</span>
     <div class="fac-bw">
         <button class="fac-b comp" id="btnFacComp">📤 Compartir</button>
-        <button class="fac-b desc" id="btnFacDesc">⬇️ Guardar</button>
+        <button class="fac-b desc" id="btnFacDesc">⬇Guardar</button>
         <button class="fac-b cerr" id="btnFacCerrar">✕</button>
     </div>
 </div>
@@ -1418,6 +1423,164 @@
             }
         });
         return best;
+    }
+
+    // ═════════════════════════════════════════════════════════════
+    // CONFIG FACTURA (solo admin): asignar producto del catálogo a cada
+    // fila fija. Picker con búsqueda y filtros rubro/segmento/marca.
+    // ═════════════════════════════════════════════════════════════
+    let _cfgFactProds = [];
+    let _cfgFactSel = { alimentos: {}, cerveceria: {} }; // "key:idx" -> productoId
+
+    async function showConfigFacturaView() {
+        _mainContent.innerHTML = `
+            <div class="p-3 pt-6 w-full max-w-3xl mx-auto">
+                <div class="bg-white/95 backdrop-blur-sm p-4 rounded-lg shadow-xl border-t-4 border-indigo-700">
+                    <div class="flex items-center justify-between mb-1">
+                        <h2 class="text-lg font-bold text-gray-800">Config Factura</h2>
+                        <button id="cfgFactVolver" class="px-3 py-1.5 bg-gray-200 text-gray-700 text-xs font-bold rounded-lg hover:bg-gray-300">Volver</button>
+                    </div>
+                    <p class="text-gray-500 mb-3 text-xs">Toca una fila para asignarle el producto del catálogo. "Automático" usa la detección por nombre.</p>
+                    <div id="cfgFactCont" class="space-y-4 max-h-[62vh] overflow-y-auto"><p class="text-sm text-gray-400 text-center py-4">Cargando...</p></div>
+                    <button id="cfgFactGuardar" class="w-full mt-4 px-6 py-3 bg-indigo-600 text-white rounded-lg shadow-md hover:bg-indigo-700 font-bold">Guardar Config Factura</button>
+                </div>
+            </div>`;
+        document.getElementById('cfgFactVolver').addEventListener('click', showFacturacionView);
+        document.getElementById('cfgFactGuardar').addEventListener('click', guardarConfigFactura);
+        try {
+            const pid = (window.AppConfig && window.AppConfig.PUBLIC_DATA_ID) || _appId;
+            const catSnap = await _getDocs(_collection(_db, `artifacts/${pid}/public/data/productos`));
+            _cfgFactProds = catSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+            try { if (window.getGlobalProductSortFunction) { const fn = await window.getGlobalProductSortFunction(); if (fn) _cfgFactProds.sort(fn); } } catch (e) {}
+            _cfgFactSel = { alimentos: {}, cerveceria: {} };
+            try {
+                const cs = await _getDoc(_doc(_db, `artifacts/${pid}/public/data/config/factura_filas`));
+                if (cs.exists()) { const d = cs.data(); _cfgFactSel = { alimentos: { ...(d.alimentos || {}) }, cerveceria: { ...(d.cerveceria || {}) } }; }
+            } catch (e) {}
+            _cfgFactRender();
+        } catch (e) {
+            console.error('config factura:', e);
+            const c = document.getElementById('cfgFactCont');
+            if (c) c.innerHTML = '<p class="text-sm text-red-500 text-center py-4">Error al cargar.</p>';
+        }
+    }
+
+    function _cfgFactNombreProd(id) {
+        const p = _cfgFactProds.find(x => x.id === id);
+        return p ? [p.marca, p.segmento, p.presentacion].filter(Boolean).join(' · ') : '(producto no encontrado)';
+    }
+
+    function _cfgFactRender() {
+        const cont = document.getElementById('cfgFactCont');
+        if (!cont || !window.getFacturaLayouts) return;
+        const layouts = window.getFacturaLayouts();
+        const bloque = (titulo, fmtKey, secs) => `
+            <div>
+                <h3 class="text-xs font-black text-indigo-700 uppercase tracking-wide mb-1.5">${titulo}</h3>
+                ${secs.map(sec => `
+                    <div class="border border-gray-200 rounded-lg p-2.5 mb-2">
+                        <div class="text-xs font-bold text-gray-700 mb-1.5">${sec.marca}</div>
+                        ${sec.filas.map(fl => {
+                            const fk = sec.key + ':' + fl.idx;
+                            const asignado = _cfgFactSel[fmtKey][fk];
+                            return `
+                            <div class="flex items-center gap-2 mb-1.5">
+                                <div class="w-36 shrink-0 text-[11px] text-gray-500 leading-tight">${fl.desc}${fl.unidades ? ' · ' + fl.unidades + ' und' : ''}${fl.lts ? ' · ' + fl.lts : ''}</div>
+                                <button data-fmt="${fmtKey}" data-fila="${fk}" class="cfg-fact-btn flex-1 min-w-0 text-left px-2.5 py-2 border rounded-lg text-[11px] transition ${asignado ? 'border-indigo-300 bg-indigo-50 text-indigo-800 font-semibold' : 'border-gray-300 bg-gray-50 text-gray-400'}">
+                                    ${asignado ? _cfgFactNombreProd(asignado) : '— Automático —'}
+                                </button>
+                                ${asignado ? `<button data-fmt="${fmtKey}" data-fila="${fk}" class="cfg-fact-quitar shrink-0 w-7 h-7 rounded bg-gray-100 text-gray-500 hover:bg-red-100 hover:text-red-600 text-sm font-bold" title="Volver a automático">&times;</button>` : ''}
+                            </div>`;
+                        }).join('')}
+                    </div>`).join('')}
+            </div>`;
+        cont.innerHTML = bloque('Alimentos', 'alimentos', layouts.alimentos) + bloque('Cervecería', 'cerveceria', layouts.cerveceria);
+        cont.querySelectorAll('.cfg-fact-btn').forEach(b => b.addEventListener('click', () => _cfgFactAbrirPicker(b.dataset.fmt, b.dataset.fila)));
+        cont.querySelectorAll('.cfg-fact-quitar').forEach(b => b.addEventListener('click', () => { delete _cfgFactSel[b.dataset.fmt][b.dataset.fila]; _cfgFactRender(); }));
+    }
+
+    // Picker de producto: búsqueda por texto + filtros en cascada rubro/segmento/marca
+    function _cfgFactAbrirPicker(fmtKey, filaKey) {
+        document.getElementById('cfgFactPicker')?.remove();
+        const ov = document.createElement('div');
+        ov.id = 'cfgFactPicker';
+        ov.className = 'fixed inset-0 z-[9999] bg-slate-900/50 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4';
+        ov.innerHTML = `
+            <div class="bg-white w-full max-w-md rounded-t-xl sm:rounded-xl shadow-2xl overflow-hidden max-h-[92vh] flex flex-col border border-slate-200">
+                <div class="bg-indigo-700 text-white px-4 py-3 shrink-0">
+                    <div class="text-[10px] uppercase tracking-wider text-indigo-200 font-semibold">Asignar producto a la fila</div>
+                    <input id="cfpBuscar" type="text" placeholder="Buscar producto..." class="mt-2 w-full px-3 py-2 rounded-lg text-sm text-gray-800 outline-none">
+                    <div class="grid grid-cols-3 gap-1.5 mt-2">
+                        <select id="cfpRubro" class="px-1.5 py-1.5 rounded text-[11px] text-gray-800 outline-none"><option value="">Rubro: todos</option></select>
+                        <select id="cfpSegmento" class="px-1.5 py-1.5 rounded text-[11px] text-gray-800 outline-none"><option value="">Segmento: todos</option></select>
+                        <select id="cfpMarca" class="px-1.5 py-1.5 rounded text-[11px] text-gray-800 outline-none"><option value="">Marca: todas</option></select>
+                    </div>
+                </div>
+                <div id="cfpLista" class="overflow-y-auto flex-1 divide-y divide-gray-100"></div>
+                <div class="p-3 border-t border-slate-100 shrink-0">
+                    <button id="cfpCancelar" class="w-full py-2.5 text-slate-400 hover:text-slate-600 font-medium text-sm">Cancelar</button>
+                </div>
+            </div>`;
+        document.body.appendChild(ov);
+        ov.addEventListener('click', e => { if (e.target === ov) ov.remove(); });
+        document.getElementById('cfpCancelar').addEventListener('click', () => ov.remove());
+
+        const $b = document.getElementById('cfpBuscar'), $r = document.getElementById('cfpRubro'),
+              $s = document.getElementById('cfpSegmento'), $m = document.getElementById('cfpMarca'),
+              $l = document.getElementById('cfpLista');
+        const uniq = arr => [...new Set(arr.filter(Boolean))].sort((a, b) => a.localeCompare(b));
+        const llenar = (sel, valores, etiqueta) => {
+            const prev = sel.value;
+            sel.innerHTML = `<option value="">${etiqueta}</option>` + valores.map(v => `<option value="${v}" ${v === prev ? 'selected' : ''}>${v}</option>`).join('');
+        };
+        const filtrar = () => {
+            const q = ($b.value || '').toLowerCase().trim();
+            return _cfgFactProds.filter(p =>
+                (!$r.value || p.rubro === $r.value) &&
+                (!$s.value || p.segmento === $s.value) &&
+                (!$m.value || p.marca === $m.value) &&
+                (!q || [p.marca, p.segmento, p.presentacion, p.rubro].filter(Boolean).join(' ').toLowerCase().includes(q))
+            );
+        };
+        const render = () => {
+            // Filtros en cascada: cada selector se llena según lo ya filtrado por los otros
+            const base = _cfgFactProds;
+            llenar($r, uniq(base.map(p => p.rubro)), 'Rubro: todos');
+            llenar($s, uniq(base.filter(p => !$r.value || p.rubro === $r.value).map(p => p.segmento)), 'Segmento: todos');
+            llenar($m, uniq(base.filter(p => (!$r.value || p.rubro === $r.value) && (!$s.value || p.segmento === $s.value)).map(p => p.marca)), 'Marca: todas');
+            const res = filtrar();
+            $l.innerHTML = res.length ? res.slice(0, 300).map(p => `
+                <button data-id="${p.id}" class="cfp-item w-full text-left px-4 py-2.5 hover:bg-indigo-50 transition">
+                    <div class="text-sm font-medium text-gray-800">${p.presentacion || ''}</div>
+                    <div class="text-[11px] text-gray-400">${[p.rubro, p.segmento, p.marca].filter(Boolean).join(' · ')}</div>
+                </button>`).join('') : '<p class="text-sm text-gray-400 text-center py-6">Sin resultados.</p>';
+            $l.querySelectorAll('.cfp-item').forEach(el => el.addEventListener('click', () => {
+                _cfgFactSel[fmtKey][filaKey] = el.dataset.id;
+                ov.remove();
+                _cfgFactRender();
+            }));
+        };
+        $b.addEventListener('input', render);
+        $r.addEventListener('change', () => { $s.value = ''; $m.value = ''; render(); });
+        $s.addEventListener('change', () => { $m.value = ''; render(); });
+        $m.addEventListener('change', render);
+        render();
+        setTimeout(() => $b.focus(), 100);
+    }
+
+    async function guardarConfigFactura() {
+        const cfg = {
+            alimentos: { ..._cfgFactSel.alimentos },
+            cerveceria: { ..._cfgFactSel.cerveceria }
+        };
+        _showModal('Progreso', 'Guardando...');
+        try {
+            const pid = (window.AppConfig && window.AppConfig.PUBLIC_DATA_ID) || _appId;
+            // setDoc SIN merge: reemplaza limpio (evita asignaciones fantasma)
+            await _setDoc(_doc(_db, `artifacts/${pid}/public/data/config/factura_filas`), cfg);
+            _showModal('Éxito', 'Config Factura guardada.');
+            showFacturacionView();
+        } catch (e) { console.error(e); _showModal('Error', 'No se pudo guardar.'); }
     }
 
     // Estructura de filas fijas para la pantalla "Config Factura" del admin
