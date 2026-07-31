@@ -1351,79 +1351,7 @@
         return (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
     }
 
-    function matchSeccionCerveceria(texto) {
-        const s = _nrm(texto);
-        if (s.includes('pilsen')) return 0;
-        if (s.includes('solera') && s.includes('light')) return 2;
-        if (s.includes('solera')) return 3;
-        if (s.includes('light')) return 1;
-        if (s.includes('sangria') || s.includes('carore')) return 4;
-        return 5; // OTROS PRODUCTOS
-    }
 
-    function matchFilaSeccion(sec, texto) {
-        // Mapeo de las presentaciones del inventario a las filas fijas de la hoja física:
-        //   1/4  → 36 botellas retornables (0,222 Lts)
-        //   1/3  → 24 botellas retornables (0,330 Lts, solo en Pilsen)
-        //   1.75 Lts (en Sangría) → 6 PET
-        //   latas por litraje (250 / 355 ml)
-        const t = _nrm(texto);
-
-        // Detección de la presentación de origen
-        const es14   = /\b1\s*\/\s*4\b/.test(t) || t.includes('1 4') || /\b1\.?/.test(t) && t.includes('/4');
-        const es13   = /\b1\s*\/\s*3\b/.test(t) || t.includes('1 3');
-        const esPet  = t.includes('pet') || /1[.,]?75\s*lt/.test(t) || t.includes('1.75') || t.includes('1,75');
-        const esLata = t.includes('lata') || /\blta\b/.test(t) || t.includes('lat');
-        const c355   = /355|0[.,]?355/.test(t);
-        const cTinto = t.includes('tinto') || t.includes('verano');
-        // Retornable genérico (cuando no dice 1/4 ni 1/3 explícito pero es botella/ret)
-        const esRet  = es14 || es13 || /\bret/.test(t) || t.includes('retornable') || t.includes('botella');
-
-        // ¿La sección tiene una única fila retornable? (caso Sangría: solo tinto verano)
-        const filasRet = sec.filas.filter(f => f.desc &&
-            (_nrm(f.desc).includes('botella') || _nrm(f.desc).includes('ret')));
-        const unicaFilaRet = filasRet.length === 1;
-
-        let best = -1;
-        sec.filas.forEach((f, i) => {
-            if (!f.desc) return;
-            const fd = _nrm(f.desc);
-            const fEs36 = fd.includes('36') && (fd.includes('botella') || fd.includes('ret'));
-            const fEs24Ret = fd.includes('24') && (fd.includes('botella') || fd.includes('ret'));
-            const fEsRet = fd.includes('botella') || fd.includes('ret');
-            const fEsPet = fd.includes('pet');
-            const fEsLata = fd.includes('lata');
-            const fEsTinto = fd.includes('tinto') || fd.includes('verano');
-
-            // ── PET / 1.75 Lts ──
-            if (esPet && fEsPet) { if (best < 0) best = i; return; }
-
-            // ── Retornables ──
-            if (esRet && fEsRet) {
-                // Si la sección solo tiene una fila retornable (Sangría), cualquier
-                // retornable de esa marca va ahí sin importar el "tinto verano".
-                if (unicaFilaRet) { best = i; return; }
-                // Tinto verano explícito
-                if (cTinto && fEsTinto) { best = i; return; }
-                if (fEsTinto && !cTinto) return; // no mezclar tinto con no-tinto
-                // 1/3 → 24 botellas retornables
-                if (es13 && fEs24Ret) { best = i; return; }
-                // 1/4 → 36 botellas retornables
-                if (es14 && fEs36) { best = i; return; }
-                // Sin especificar → 36 botellas por defecto
-                if (!es13 && !es14 && fEs36 && best < 0) best = i;
-                return;
-            }
-
-            // ── Latas ──
-            if (esLata && fEsLata) {
-                if (c355 && (f.lts || '').includes('355')) { best = i; return; }
-                if (!c355 && (f.lts || '').includes('250')) { best = i; return; }
-                if (best < 0) best = i;
-            }
-        });
-        return best;
-    }
 
     // ═════════════════════════════════════════════════════════════
     // CONFIG FACTURA (solo admin): asignar producto del catálogo a cada
@@ -1612,9 +1540,8 @@
         const otros = fmt[fmt.length - 1];
 
         lineas.forEach(l => {
-            const texto = [l.marca, l.segmento, l.presentacion, l.descripcion].filter(Boolean).join(' ');
-
-            // 1º: asignación directa configurada por el admin (producto → fila exacta)
+            // Las filas fijas se llenan SOLO por la asignación del admin (Config Factura).
+            // Todo producto NO asignado va a "OTROS PRODUCTOS" con su descripción escrita.
             const asigC = l.productoId && _cfgFilasInverso.cerveceria[l.productoId];
             if (asigC) {
                 const secA = fmt.find(x => x.key === asigC.key);
@@ -1627,30 +1554,12 @@
                     return;
                 }
             }
-
-            const secIdx = matchSeccionCerveceria(texto);
-            const sec = fmt[secIdx];
-
-            let target = null;
-            if (secIdx < fmt.length - 1) {
-                const fIdx = matchFilaSeccion(sec, texto);
-                if (fIdx >= 0) {
-                    const f = sec.filas[fIdx];
-                    if (f.cantidad === 0 || f.unidad === l.unidadMedida) target = f;
-                }
-            }
+            let target = otros.filas.find(f => f.cantidad === 0 && !f.desc && !f.descOverride);
             if (!target) {
-                target = sec.filas.find(f => !f.desc && f.cantidad === 0);
-                if (target) target.descOverride = (l.descripcion || '').toUpperCase();
+                otros.filas.push({ desc: '', lts: '', ltsCaja: '', cantidad: 0, unidad: '', precioBs: 0, montoBs: 0, descOverride: '' });
+                target = otros.filas[otros.filas.length - 1];
             }
-            if (!target) {
-                target = otros.filas.find(f => f.cantidad === 0 && !f.desc);
-                if (!target) {
-                    otros.filas.push({ desc: '', lts: '', ltsCaja: '', cantidad: 0, unidad: '', precioBs: 0, montoBs: 0, descOverride: '' });
-                    target = otros.filas[otros.filas.length - 1];
-                }
-                target.descOverride = (l.descripcion || '').toUpperCase();
-            }
+            target.descOverride = (l.descripcion || '').toUpperCase();
             target.cantidad += l.cantidad;
             target.unidad    = l.unidadMedida;
             target.precioBs  = l.precioUnitarioBs;
@@ -1689,84 +1598,8 @@
     ];
 
     // ¿A qué sección de la hoja de alimentos pertenece el producto?
-    function matchSeccionAlimentos(texto) {
-        const s = _nrm(texto);
-        if (s.includes('maltin') || s.includes('malta')) return 0;
-        // Refrescos: segmento "refresco(s)" o marcas conocidas
-        const esRefresco = s.includes('refresco') || s.includes('pepsi') || s.includes('golden') ||
-                           s.includes('cola') || s.includes('hit') || s.includes('chinotto') ||
-                           s.includes('7up') || s.includes('seven') || s.includes('teem') ||
-                           s.includes('gaseosa') || s.includes('soda') || s.includes('frescolita') ||
-                           s.includes('uva') || s.includes('naranja') || s.includes('manzana');
-        if (esRefresco) {
-            // PET = presentaciones 1 LTS, 1.5 LTS, 2 LTS (o si dice PET/desechable)
-            const esPet = s.includes('pet') || s.includes('desechable') ||
-                          /\b1\s*lts?\b/.test(s) || /\b1[.,]5\s*lts?\b/.test(s) || /\b2\s*lts?\b/.test(s) ||
-                          /\b1000\b/.test(s) || /\b1500\b/.test(s) || /\b2000\b/.test(s);
-            if (esPet) return 2;
-            // Retornable = RET 350ML u otras retornables/vidrio
-            if (s.includes('ret') || s.includes('retornable') || s.includes('vidrio') ||
-                /\b350\s*ml\b/.test(s) || /\b1[.,]25\b/.test(s)) return 1;
-            // Refresco sin especificar → retornable por defecto
-            return 1;
-        }
-        return 3; // OTROS PRODUCTOS (alimentos varios)
-    }
 
     // Mapea la presentación del inventario a la fila fija correspondiente.
-    function matchFilaAlimentos(sec, texto) {
-        const t = _nrm(texto);
-        if (sec.key === 'maltin') {
-            const es14  = /\b1\s*\/\s*4\b/.test(t) || t.includes('1 4');
-            const esNR  = /\bn\s*\/?\s*r\b/.test(t) || /\b1\s*\/\s*3\b/.test(t) || t.includes('nr');
-            const es15  = /1[.,]5/.test(t) || t.includes('1 5');
-            const esLata = t.includes('lata') || /\blta\b/.test(t) || t.includes('lat');
-            const c355  = /355/.test(t);
-            let best = -1;
-            sec.filas.forEach((f, i) => {
-                if (!f.desc) return;
-                const fd = _nrm(f.desc);
-                if (esLata && fd.includes('lata')) {
-                    if (c355 && (f.lts || '').includes('355')) best = i;
-                    else if (!c355 && (f.lts || '').includes('250')) best = i;
-                    else if (best < 0) best = i;
-                } else if (es14 && fd === '1/4') best = i;
-                else if (esNR && fd === 'n/r') best = i;
-                else if (es15 && fd === '1.5') best = i;
-            });
-            return best;
-        }
-        if (sec.key === 'refrescos_ret') {
-            // RET 350ML → fila 24u/0,350 ; 1,25L → fila 6u/1,250
-            const c125 = /1[.,]25|1250/.test(t);
-            const c350 = /350\s*ml/.test(t) || /0[.,]?350/.test(t);
-            let best = -1;
-            sec.filas.forEach((f, i) => {
-                if (!f.desc) return;
-                if (c125 && (f.lts || '').includes('1,250')) best = i;
-                else if ((c350 || !c125) && (f.lts || '').includes('0,350')) best = i;
-                else if (best < 0) best = i;
-            });
-            return best;
-        }
-        if (sec.key === 'refrescos_pet') {
-            // Presentaciones exactas del inventario: 1 LTS, 1.5 LTS, 2 LTS
-            // (con tolerancia a 1000/1500/2000 ml y variantes L/LT)
-            const c15 = /1[.,]5\s*lts?/.test(t) || /1500/.test(t) || /1[.,]5\s*l\b/.test(t);
-            const c2  = /\b2\s*lts?/.test(t) || /2000/.test(t) || /\b2\s*l\b/.test(t) || /2[.,]0/.test(t);
-            let best = -1;
-            sec.filas.forEach((f, i) => {
-                if (!f.desc) return;
-                // Prioridad: 1.5 y 2 son específicas; 1 LTS es el caso base
-                if (c15 && (f.lts || '').includes('1,500')) best = i;
-                else if (c2 && (f.lts || '').includes('2,000')) best = i;
-                else if (!c15 && !c2 && (f.lts || '').includes('1,000')) best = i;
-                else if (best < 0) best = i;
-            });
-            return best;
-        }
-        return -1;
-    }
 
     function llenarFormatoAlimentos(lineas) {
         const fmt = FORMATO_ALIMENTOS.map(sec => ({
@@ -1779,9 +1612,8 @@
         const otros = fmt[fmt.length - 1];
 
         lineas.forEach(l => {
-            const texto = [l.marca, l.segmento, l.presentacion, l.descripcion].filter(Boolean).join(' ');
-
-            // 1º: asignación directa configurada por el admin (producto → fila exacta)
+            // Las filas fijas se llenan SOLO por la asignación del admin (Config Factura).
+            // Todo producto NO asignado va a "OTROS PRODUCTOS" con su descripción escrita.
             const asigA = l.productoId && _cfgFilasInverso.alimentos[l.productoId];
             if (asigA) {
                 const secA = fmt.find(x => x.key === asigA.key);
@@ -1795,36 +1627,18 @@
                     return;
                 }
             }
-
-            const secIdx = matchSeccionAlimentos(texto);
-            const sec = fmt[secIdx];
-
-            let target = null;
-            if (secIdx < fmt.length - 1) {
-                const fIdx = matchFilaAlimentos(sec, texto);
-                if (fIdx >= 0) {
-                    const f = sec.filas[fIdx];
-                    if (f.cantidad === 0 || f.descOverride === '') target = f;
-                }
-            }
-            // Si no cayó en fila fija, va a "otros productos" con descripción escrita
+            let target = otros.filas.find(f => f.cantidad === 0 && !f.desc && !f.descOverride);
             if (!target) {
-                target = otros.filas.find(f => f.cantidad === 0 && !f.desc && !f.descOverride);
-                if (!target) {
-                    otros.filas.push({ desc: '', unidades: '', lts: '', cantidad: 0, precioBs: 0, montoBs: 0, exento: false, alicuota: '', descOverride: '' });
-                    target = otros.filas[otros.filas.length - 1];
-                }
-                // Se incluye la MARCA para distinguir productos iguales de marcas
-                // distintas (ej. dos margarinas de 500GR). No se repite si ya viene
-                // en el texto ni si la marca no es válida (S/M, sin marca...).
-                const descBase = (l.descripcion || l.presentacion || '').toUpperCase().trim();
-                const marcaTxt = (l.marca || '').toUpperCase().trim();
-                const marcaValida = marcaTxt && !['S/M', 'S/S', 'SIN MARCA', 'VARIOS', 'N/A'].includes(marcaTxt);
-                target.descOverride = (marcaValida && !descBase.includes(marcaTxt))
-                    ? `${descBase} ${marcaTxt}`.trim()
-                    : descBase;
-                target.unidades = String(l.unidades || '');
+                otros.filas.push({ desc: '', unidades: '', lts: '', cantidad: 0, precioBs: 0, montoBs: 0, exento: false, alicuota: '', descOverride: '' });
+                target = otros.filas[otros.filas.length - 1];
             }
+            const descBase = (l.descripcion || l.presentacion || '').toUpperCase().trim();
+            const marcaTxt = (l.marca || '').toUpperCase().trim();
+            const marcaValida = marcaTxt && !['S/M', 'S/S', 'SIN MARCA', 'VARIOS', 'N/A'].includes(marcaTxt);
+            target.descOverride = (marcaValida && !descBase.includes(marcaTxt))
+                ? `${descBase} ${marcaTxt}`.trim()
+                : descBase;
+            target.unidades = String(l.unidades || '');
             target.cantidad += l.cantidad;
             target.precioBs  = l.precioUnitarioBs;
             target.montoBs  += l.totalBs;
