@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v122'; // v122: Config Factura (admin asigna producto del catalogo a cada fila fija de los formatos alimentos/cerveceria; fallback automatico)
+const CACHE_NAME = 'ventas-app-cache-v123'; // v123: Config Factura movida al modulo Facturacion (solo admin) con picker de busqueda + filtros rubro/segmento/marca; sin emojis en facturacion
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
