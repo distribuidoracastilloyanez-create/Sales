@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v116'; // v116: fix Editar Inventario - listar vendedores con role 'user' O 'vendedor' (antes solo 'user', omitia a los asignados por admin)
+const CACHE_NAME = 'ventas-app-cache-v117'; // v117: cierres - filtro de fechas en GMT-4 (incluye todo el dia seleccionado) + detalle del cierre con visor de zoom/arrastre (sin scrolls)
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
@@ -181,4 +181,3 @@ self.addEventListener('fetch', event => {
             })
     );
 });
-// deploy 1785425048
