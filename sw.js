@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v124'; // v124: la Config Factura MANDA - filas fijas se llenan SOLO por asignacion del admin; heuristica predeterminada eliminada (lo no asignado va a OTROS PRODUCTOS)
+const CACHE_NAME = 'ventas-app-cache-v125'; // v125: Simular Venta muestra solo la unidad mayor (cj/paq); la fila de unidades solo si el producto se vende unicamente por unidad
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
@@ -181,4 +181,3 @@ self.addEventListener('fetch', event => {
             })
     );
 });
-// deploy 1785502404
