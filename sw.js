@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v118'; // v118: visor del detalle de cierre arranca a tamano legible (0.85) anclado arriba-izquierda, pantalla completa, se mueve con el dedo sin encoger
+const CACHE_NAME = 'ventas-app-cache-v119'; // v119: detalle de cierre a pantalla completa, forma tabular de siempre, letra un poco mas pequena, con scroll horizontal/vertical
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
