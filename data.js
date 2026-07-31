@@ -591,91 +591,21 @@
         return { clientData, clientTotals, grandTotalValue, sortedClients, finalProductOrder, vaciosMovementsPorTipo, finalData, userInfo, acDescuentosPorCliente };
     }
 
-    // Visor con zoom + desplazamiento (pinch/arrastre, tipo imagen en Android).
-    // Reemplaza los scrolls del detalle: el contenido va a tamaño natural y se navega
-    // acercando y moviendo con el dedo (o rueda + arrastre en escritorio).
-    function _mostrarDetalleZoom(titulo, innerHTML) {
-        document.getElementById('zoomViewerOverlay')?.remove();
+    // Detalle del cierre a PANTALLA COMPLETA: forma tabular de siempre, letra un poco
+    // más pequeña, con scroll (horizontal para la tabla ancha y vertical si hace falta).
+    function _mostrarDetalleCierre(titulo, innerHTML) {
+        document.getElementById('detalleCierreOverlay')?.remove();
         const ov = document.createElement('div');
-        ov.id = 'zoomViewerOverlay';
-        ov.className = 'fixed inset-0 z-[9999] bg-slate-900/85 flex flex-col';
+        ov.id = 'detalleCierreOverlay';
+        ov.className = 'fixed inset-0 z-[9999] bg-white flex flex-col';
         ov.innerHTML = `
             <div class="flex items-center justify-between px-4 py-2 bg-slate-800 text-white shrink-0">
                 <span class="font-semibold text-sm truncate">${titulo}</span>
-                <div class="flex items-center gap-2 shrink-0">
-                    <button id="zvOut" class="w-8 h-8 bg-white/10 hover:bg-white/20 rounded text-lg font-bold leading-none">−</button>
-                    <button id="zvIn" class="w-8 h-8 bg-white/10 hover:bg-white/20 rounded text-lg font-bold leading-none">+</button>
-                    <button id="zvReset" class="text-xs bg-white/10 hover:bg-white/20 rounded px-2 py-1.5">Ajustar</button>
-                    <button id="zvClose" class="text-xs bg-red-500/80 hover:bg-red-500 rounded px-3 py-1.5 font-bold">Cerrar</button>
-                </div>
+                <button id="dcClose" class="text-xs bg-red-500/90 hover:bg-red-500 rounded px-4 py-1.5 font-bold shrink-0">Cerrar</button>
             </div>
-            <div class="text-[10px] text-slate-300 text-center py-1 bg-slate-800/70 shrink-0">Arrastra para mover · pellizca o rueda para acercar · doble toque para ajustar</div>
-            <div id="zvViewport" class="flex-1 overflow-hidden relative" style="touch-action:none;cursor:grab;background:#fff;">
-                <div id="zvContent" style="position:absolute;top:0;left:0;transform-origin:0 0;background:#fff;padding:14px;">${innerHTML}</div>
-            </div>`;
+            <div class="flex-1 overflow-auto p-3" style="-webkit-overflow-scrolling:touch;">${innerHTML}</div>`;
         document.body.appendChild(ov);
-        const vp = ov.querySelector('#zvViewport');
-        const ct = ov.querySelector('#zvContent');
-        let scale = 1, tx = 0, ty = 0;
-        const clampScale = v => Math.min(5, Math.max(0.15, v));
-        const apply = () => { ct.style.transform = `translate(${tx}px,${ty}px) scale(${scale})`; };
-        // Vista inicial LEGIBLE (no encoge la tabla para caber): tamaño casi natural,
-        // un poco más pequeño para que entre más, anclado arriba-izquierda. El usuario
-        // se mueve con el dedo en cualquier dirección; puede pellizcar para acercar.
-        const fit = () => { scale = 0.85; tx = 8; ty = 8; apply(); };
-        const zoomAt = (mx, my, factor) => {
-            const ns = clampScale(scale * factor);
-            tx = mx - (mx - tx) * (ns / scale);
-            ty = my - (my - ty) * (ns / scale);
-            scale = ns; apply();
-        };
-        setTimeout(fit, 40);
-        ov.querySelector('#zvClose').addEventListener('click', () => ov.remove());
-        ov.querySelector('#zvReset').addEventListener('click', fit);
-        ov.querySelector('#zvIn').addEventListener('click', () => zoomAt(vp.clientWidth / 2, vp.clientHeight / 2, 1.25));
-        ov.querySelector('#zvOut').addEventListener('click', () => zoomAt(vp.clientWidth / 2, vp.clientHeight / 2, 0.8));
-        const pointers = new Map();
-        let panStart = null, startDist = 0, startScale = 1, startMid = { x: 0, y: 0 }, startTx = 0, startTy = 0, lastTap = 0;
-        vp.addEventListener('pointerdown', e => {
-            vp.setPointerCapture(e.pointerId);
-            pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-            if (pointers.size === 1) {
-                panStart = { x: e.clientX, y: e.clientY, tx, ty };
-                vp.style.cursor = 'grabbing';
-                const now = Date.now(); if (now - lastTap < 300) fit(); lastTap = now;
-            } else if (pointers.size === 2) {
-                const p = [...pointers.values()];
-                startDist = Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y) || 1;
-                startScale = scale;
-                const r = vp.getBoundingClientRect();
-                startMid = { x: (p[0].x + p[1].x) / 2 - r.left, y: (p[0].y + p[1].y) / 2 - r.top };
-                startTx = tx; startTy = ty; panStart = null;
-            }
-        });
-        vp.addEventListener('pointermove', e => {
-            if (!pointers.has(e.pointerId)) return;
-            pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-            if (pointers.size === 1 && panStart) {
-                tx = panStart.tx + (e.clientX - panStart.x);
-                ty = panStart.ty + (e.clientY - panStart.y);
-                apply();
-            } else if (pointers.size === 2) {
-                const p = [...pointers.values()];
-                const dist = Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y) || 1;
-                const ns = clampScale(startScale * (dist / startDist));
-                tx = startMid.x - (startMid.x - startTx) * (ns / startScale);
-                ty = startMid.y - (startMid.y - startTy) * (ns / startScale);
-                scale = ns; apply();
-            }
-        });
-        const up = e => { pointers.delete(e.pointerId); if (pointers.size === 0) { panStart = null; vp.style.cursor = 'grab'; } };
-        vp.addEventListener('pointerup', up);
-        vp.addEventListener('pointercancel', up);
-        vp.addEventListener('wheel', e => {
-            e.preventDefault();
-            const r = vp.getBoundingClientRect();
-            zoomAt(e.clientX - r.left, e.clientY - r.top, e.deltaY < 0 ? 1.12 : 0.89);
-        }, { passive: false });
+        ov.querySelector('#dcClose').addEventListener('click', () => ov.remove());
     }
 
     async function showClosingDetail(closingId) {
@@ -793,14 +723,14 @@
                  vNameModal = _usersMapCache.get(_uidModal).nombre;
             }
 
-            const reportInner = `<div class="text-left" style="width:max-content;max-width:none;">
-                <div class="mb-3 text-sm"> <p><strong>Vendedor:</strong> ${vNameModal} ${vendedor.apellido||''}</p> <p><strong>Camión:</strong> ${vendedor.camion||'N/A'}</p> <p><strong>Fecha:</strong> ${closingData.fecha.toDate().toLocaleString('es-ES')}</p> </div>
-                <h3 class="text-lg font-bold mb-2">Reporte Cierre</h3>
-                <table class="bg-white text-xs border border-gray-300" style="border-collapse:collapse;"> <thead class="bg-gray-200">${hHTML}</thead> <tbody>${bHTML}</tbody> <tfoot>${fHTML}</tfoot> </table>
+            const reportInner = `<div class="text-left text-[11px]" style="width:max-content;max-width:none;">
+                <div class="mb-2 text-xs"> <p><strong>Vendedor:</strong> ${vNameModal} ${vendedor.apellido||''}</p> <p><strong>Camión:</strong> ${vendedor.camion||'N/A'}</p> <p><strong>Fecha:</strong> ${closingData.fecha.toDate().toLocaleString('es-ES')}</p> </div>
+                <h3 class="text-sm font-bold mb-1">Reporte Cierre</h3>
+                <table class="bg-white text-[11px] border border-gray-300" style="border-collapse:collapse;"> <thead class="bg-gray-200">${hHTML}</thead> <tbody>${bHTML}</tbody> <tfoot>${fHTML}</tfoot> </table>
                 <div class="mt-5">${vHTML}</div>
             </div>`;
             const _mc = document.getElementById('modalContainer'); if (_mc) _mc.classList.add('hidden');
-            _mostrarDetalleZoom('Detalle Cierre', reportInner);
+            _mostrarDetalleCierre('Detalle Cierre', reportInner);
         } catch (error) { console.error("Error generando detalle:", error); _showModal('Error', `No se pudo generar: ${error.message}`); }
     }
 
