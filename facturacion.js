@@ -703,7 +703,9 @@
                     html += createRow('paq', it.paq || 0, precios.paq || 0, `${prod.presentacion} (Paq/${uPaq} und)`);
                     filas++;
                 }
-                if (vp.und) {
+                // Solo la unidad MAYOR: si el producto se vende por caja o paquete,
+                // no se muestra la fila de unidades (se simula como en venta real).
+                if (vp.und && !vp.cj && !vp.paq) {
                     html += createRow('und', it.und || 0, precios.und || prod.precioPorUnidad || 0, `${prod.presentacion} (Und)`);
                     filas++;
                 }
