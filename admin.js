@@ -68,6 +68,7 @@
                         <div class="space-y-4">
                             <button id="userManagementBtn" class="w-full px-6 py-3 bg-blue-600 text-white rounded-lg shadow-md hover:bg-blue-700">Gestión Usuarios</button>
                             <button id="obsequioConfigBtn" class="w-full px-6 py-3 bg-purple-600 text-white rounded-lg shadow-md hover:bg-purple-700">Config Obsequio</button>
+                            <button id="facturaFilasBtn" class="w-full px-6 py-3 bg-indigo-600 text-white rounded-lg shadow-md hover:bg-indigo-700">Config Factura</button>
                             <button id="importExportInventarioBtn" class="w-full px-6 py-3 bg-teal-600 text-white rounded-lg shadow-md hover:bg-teal-700">Importar/Exportar Inventario</button>
                             <button id="deepCleanBtn" class="w-full px-6 py-3 bg-red-700 text-white rounded-lg shadow-md hover:bg-red-800">Limpieza Profunda</button>
                             <button id="backToMenuBtn" class="w-full px-6 py-3 bg-gray-400 text-white rounded-lg shadow-md hover:bg-gray-500">Volver Menú</button>
@@ -78,6 +79,7 @@
         `;
         document.getElementById('userManagementBtn').addEventListener('click', showUserManagementView);
         document.getElementById('obsequioConfigBtn').addEventListener('click', showObsequioConfigView);
+        document.getElementById('facturaFilasBtn').addEventListener('click', showConfigFacturaView);
         document.getElementById('importExportInventarioBtn').addEventListener('click', showImportExportInventarioView);
         document.getElementById('deepCleanBtn').addEventListener('click', showDeepCleanView);
         document.getElementById('backToMenuBtn').addEventListener('click', _showMainMenu);
@@ -575,6 +577,75 @@
     }
 
     // --- Obsequio Config ---
+    // ── Config Factura: asignar un producto del catálogo a cada fila fija ──
+    async function showConfigFacturaView() {
+        _mainContent.innerHTML = `
+            <div class="p-4 pt-8 w-full max-w-3xl mx-auto">
+                <div class="bg-white/95 backdrop-blur-sm p-5 rounded-lg shadow-xl">
+                    <h2 class="text-xl font-bold text-gray-800 mb-1 text-center">Config Factura</h2>
+                    <p class="text-gray-500 mb-4 text-center text-sm">Asigna el producto del catálogo que corresponde a cada fila fija del formato. "Automático" usa la detección por nombre (como antes).</p>
+                    <div id="cfgFactCont" class="space-y-5 max-h-[62vh] overflow-y-auto"><p class="text-sm text-gray-400 text-center py-4">Cargando...</p></div>
+                    <div class="mt-4 space-y-2">
+                        <button id="cfgFactGuardar" class="w-full px-6 py-3 bg-indigo-600 text-white rounded-lg shadow-md hover:bg-indigo-700 font-bold">Guardar Config Factura</button>
+                        <button id="cfgFactVolver" class="w-full px-6 py-2.5 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 text-sm font-bold">Volver</button>
+                    </div>
+                </div>
+            </div>`;
+        document.getElementById('cfgFactVolver').addEventListener('click', showAdminSubMenuView);
+        document.getElementById('cfgFactGuardar').addEventListener('click', guardarConfigFactura);
+
+        const cont = document.getElementById('cfgFactCont');
+        try {
+            if (!window.getFacturaLayouts) { cont.innerHTML = '<p class="text-sm text-red-500 text-center py-4">Módulo de facturación no cargado.</p>'; return; }
+            const layouts = window.getFacturaLayouts();
+            const catRef = _collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/productos`);
+            const catSnap = await _getDocs(catRef);
+            let prods = catSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+            try { if (window.getGlobalProductSortFunction) { const fn = await window.getGlobalProductSortFunction(); if (fn) prods.sort(fn); } } catch (e) {}
+            let cfg = { alimentos: {}, cerveceria: {} };
+            try {
+                const cs = await _getDoc(_doc(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/config/factura_filas`));
+                if (cs.exists()) { const d = cs.data(); cfg = { alimentos: d.alimentos || {}, cerveceria: d.cerveceria || {} }; }
+            } catch (e) {}
+
+            const _cont2 = document.getElementById('cfgFactCont');
+            if (!_cont2) return;
+            const opciones = sel => '<option value="">— Automático —</option>' +
+                prods.map(p => `<option value="${p.id}" ${sel === p.id ? 'selected' : ''}>${[p.marca, p.segmento, p.presentacion].filter(Boolean).join(' · ')}</option>`).join('');
+            const bloque = (titulo, fmtKey, secs) => `
+                <div>
+                    <h3 class="text-sm font-black text-indigo-700 uppercase tracking-wide mb-2">${titulo}</h3>
+                    ${secs.map(sec => `
+                        <div class="border border-gray-200 rounded-lg p-3 mb-2">
+                            <div class="text-xs font-bold text-gray-700 mb-2">${sec.marca}</div>
+                            ${sec.filas.map(fl => `
+                                <div class="flex items-center gap-2 mb-1.5">
+                                    <div class="w-40 shrink-0 text-[11px] text-gray-500">${fl.desc}${fl.unidades ? ' · ' + fl.unidades + ' und' : ''}${fl.lts ? ' · ' + fl.lts : ''}</div>
+                                    <select data-fmt="${fmtKey}" data-fila="${sec.key}:${fl.idx}" class="cfg-fact-sel flex-1 min-w-0 px-2 py-1.5 border border-gray-300 rounded text-xs bg-white outline-none focus:ring-2 focus:ring-indigo-500">${opciones(cfg[fmtKey][sec.key + ':' + fl.idx] || '')}</select>
+                                </div>`).join('')}
+                        </div>`).join('')}
+                </div>`;
+            _cont2.innerHTML = bloque('Alimentos', 'alimentos', layouts.alimentos) + bloque('Cervecería', 'cerveceria', layouts.cerveceria);
+        } catch (e) {
+            console.error('config factura:', e);
+            if (cont) cont.innerHTML = '<p class="text-sm text-red-500 text-center py-4">Error al cargar.</p>';
+        }
+    }
+
+    async function guardarConfigFactura() {
+        const cfg = { alimentos: {}, cerveceria: {} };
+        document.querySelectorAll('.cfg-fact-sel').forEach(sel => {
+            if (sel.value) cfg[sel.dataset.fmt][sel.dataset.fila] = sel.value;
+        });
+        _showModal('Progreso', 'Guardando...');
+        try {
+            // setDoc SIN merge: reemplaza limpio (evita asignaciones fantasma de filas des-seleccionadas)
+            await _setDoc(_doc(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/config/factura_filas`), cfg);
+            _showModal('Éxito', 'Config Factura guardada.');
+            showAdminSubMenuView();
+        } catch (e) { _showModal('Error', 'No se pudo guardar.'); }
+    }
+
     async function showObsequioConfigView() {
          if (_floatingControls) _floatingControls.classList.add('hidden');
         _mainContent.innerHTML = `
