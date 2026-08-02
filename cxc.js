@@ -1426,6 +1426,12 @@
                     const tableHeaderIndex = rows.findIndex(r => r[0] && r[0].toString().toUpperCase().includes('FECHA'));
                     if (tableHeaderIndex !== -1) {
                         startRowIndex = tableHeaderIndex + 1;
+                    } else if (headerRowIndex !== -1) {
+                        // La fila de encabezados 'FECHA' viene corrupta (columna A vacía por la
+                        // conversión PDF→Excel). Sin este ajuste, el barrido arrancaba en la fila 0,
+                        // re-procesaba la fila CLIENTE como "cliente embutido" y DUPLICABA al
+                        // cliente: una entrada sin historial y otra con él (caso Doris Caicedo).
+                        startRowIndex = headerRowIndex + 1;
                     }
 
                     // Helper para parsear un número de una celda (número o texto)
