@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v125'; // v125: Simular Venta muestra solo la unidad mayor (cj/paq); la fila de unidades solo si el producto se vende unicamente por unidad
+const CACHE_NAME = 'ventas-app-cache-v126'; // v126: CXC - no marcar actualizado si falla subida de datos (aviso solo-local); consignaciones eligen mejor candidato; sin emojis en todo el modulo
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
