@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v127'; // v127: CXC - detectar hojas de continuacion con fechas sin cero a la izquierda (22/5/2026); recupera historiales truncados (Sevillana, Figueredo, Bayona)
+const CACHE_NAME = 'ventas-app-cache-v128'; // v128: CXC - hoja con fila FECHA corrupta duplicaba al cliente (una entrada sin historial); barrido arranca tras la cabecera CLIENTE
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
