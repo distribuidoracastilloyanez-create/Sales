@@ -101,7 +101,7 @@
                                 <button id="backToMenuBtn" class="px-4 py-1.5 bg-gray-400 text-white rounded shadow hover:bg-gray-500 text-sm font-semibold transition">Volver</button>
                                 ${_userRole === 'admin' ? `
                                 <button id="manageTasasBtn" class="px-3 py-1.5 bg-purple-600 text-white rounded shadow hover:bg-purple-700 text-sm font-bold flex items-center gap-1 transition">
-                                    <span>💵</span> Tasas BCV
+                                    Tasas BCV
                                 </button>
                                 ` : ''}
                             </div>
@@ -202,7 +202,7 @@
             <div class="p-3 pt-8 w-full max-w-lg mx-auto">
                 <div class="bg-white/95 backdrop-blur-sm p-4 sm:p-6 rounded-lg shadow-xl">
                     <div class="flex items-center justify-between mb-4">
-                        <h2 class="text-xl font-bold text-gray-800 flex items-center gap-2">💵 Tasas BCV${_calSoloLectura ? ' <span class="text-[10px] bg-gray-200 text-gray-500 px-1.5 py-0.5 rounded font-bold uppercase">Solo lectura</span>' : ''}</h2>
+                        <h2 class="text-xl font-bold text-gray-800 flex items-center gap-2">Tasas BCV${_calSoloLectura ? ' <span class="text-[10px] bg-gray-200 text-gray-500 px-1.5 py-0.5 rounded font-bold uppercase">Solo lectura</span>' : ''}</h2>
                         ${btnVolver}
                     </div>
                     <p class="text-xs text-gray-500 mb-4">${_calSoloLectura ? 'Consulta los valores históricos de la tasa BCV. Los días con tasa aparecen resaltados.' : 'Toca un día para registrar o editar su tasa. Los días con tasa aparecen resaltados.'}</p>
@@ -227,7 +227,7 @@
                     <!-- Resumen del mes -->
                     <div id="calResumen" class="mt-4 pt-3 border-t border-gray-200 text-xs text-gray-500 text-center"></div>
 
-                    <button id="calHoy" class="w-full mt-3 bg-purple-100 text-purple-700 py-2 rounded-lg hover:bg-purple-200 font-bold text-sm transition">📅 Ir al mes actual</button>
+                    <button id="calHoy" class="w-full mt-3 bg-purple-100 text-purple-700 py-2 rounded-lg hover:bg-purple-200 font-bold text-sm transition">Ir al mes actual</button>
                 </div>
             </div>
         `;
@@ -353,7 +353,7 @@
                         class="w-full p-3 border-2 border-purple-200 rounded-lg text-lg font-bold text-purple-900 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none text-center">
                     <div class="flex gap-2 mt-4">
                         ${existente !== undefined ? `
-                        <button id="tasaEditorDelete" class="px-4 py-2.5 bg-red-100 text-red-700 font-bold rounded-lg hover:bg-red-200 transition text-sm">🗑️ Borrar</button>` : ''}
+                        <button id="tasaEditorDelete" class="px-4 py-2.5 bg-red-100 text-red-700 font-bold rounded-lg hover:bg-red-200 transition text-sm">Borrar</button>` : ''}
                         <button id="tasaEditorCancel" class="flex-1 px-4 py-2.5 bg-gray-100 text-gray-600 font-bold rounded-lg hover:bg-gray-200 transition text-sm">Cancelar</button>
                         <button id="tasaEditorSave" class="flex-1 px-4 py-2.5 bg-green-600 text-white font-bold rounded-lg hover:bg-green-700 transition text-sm">Guardar</button>
                     </div>
@@ -399,7 +399,7 @@
                     renderCalendario();
                 } catch (err) {
                     _showModal('Error', err.message);
-                    delBtn.textContent = '🗑️ Borrar'; delBtn.disabled = false;
+                    delBtn.textContent = 'Borrar'; delBtn.disabled = false;
                 }
             });
         }
@@ -416,7 +416,7 @@
         if (localData) {
             _cxcDataCache = localData;
             updateUI(localDateStr ? new Date(localDateStr) : new Date());
-            if (statusLabel) statusLabel.textContent = "⚡ Datos locales (Verificando...)";
+            if (statusLabel) statusLabel.textContent = "Datos locales (verificando...)";
         }
 
         try {
@@ -428,7 +428,7 @@
                 const localDate = localDateStr ? new Date(localDateStr) : new Date(0);
 
                 if (serverDate && serverDate > localDate) {
-                    if (statusLabel) statusLabel.textContent = "📥 Descargando actualización...";
+                    if (statusLabel) statusLabel.textContent = "Descargando actualización...";
                     
                     const listRef = _doc(_db, CXC_COLLECTION_PATH, 'list');
                     const listSnap = await _getDoc(listRef);
@@ -440,11 +440,11 @@
                         await saveToLocalDB(_cxcDataCache);
                         localStorage.setItem(LS_KEY_DATE, serverDate.toISOString());
                         
-                        if (statusLabel) statusLabel.textContent = "✅ Datos actualizados.";
+                        if (statusLabel) statusLabel.textContent = "Datos actualizados.";
                         updateUI(serverDate);
                     }
                 } else {
-                    if (statusLabel) statusLabel.textContent = "✅ Al día.";
+                    if (statusLabel) statusLabel.textContent = "Al día.";
                 }
             }
         } catch (error) {
@@ -452,7 +452,7 @@
             if (!localData) {
                 renderError("Sin conexión y sin datos locales.");
             } else if (statusLabel) {
-                statusLabel.textContent = "📡 Offline (Datos guardados).";
+                statusLabel.textContent = "Offline (datos guardados).";
             }
         }
     }
@@ -581,12 +581,12 @@
                 let retenHtml = '';
 
                 if (t.type === 'F') {
-                    typeLabel = '🛒 Venta';
+                    typeLabel = 'Venta';
                     // El botón busca por el FACTURADO (deuda + retención) para que el ticket coincida
                     actionButton = `
                         <button onclick="window.cxcModule.searchSaleDetails('${safeClientName}', '${t.date}', ${facturado})" 
                             class="p-1 bg-blue-100 text-blue-700 rounded-full border border-blue-200 hover:bg-blue-200 flex-shrink-0 transition-colors ml-1" title="Ver Detalle de Venta">
-                            🔍
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
                         </button>
                     `;
                     // Recuadro de detalle: retención y neto (el facturado ya se ve grande arriba)
@@ -594,12 +594,12 @@
                         const neto = t.amount;
                         retenHtml = `<div class="text-[10px] text-gray-500 font-normal leading-snug mt-1 text-right bg-gray-50 rounded px-1.5 py-0.5 border border-gray-200 inline-block">Retención: <span class="font-bold text-purple-700">-$${reten.toFixed(2)}</span> · Neto: <span class="font-bold text-gray-700">$${neto.toFixed(2)}</span></div>`;
                     }
-                } else if (t.type === 'T') typeLabel = '🏦 Transf';
-                else if (t.type === 'E') typeLabel = '💵 Efectivo';
-                else if (t.type === 'R') typeLabel = '🧾 Retenc';
-                else if (t.type === '%') typeLabel = '📉 Dscto';
+                } else if (t.type === 'T') typeLabel = 'Transf';
+                else if (t.type === 'E') typeLabel = 'Efectivo';
+                else if (t.type === 'R') typeLabel = 'Retenc';
+                else if (t.type === '%') typeLabel = 'Dscto';
                 else if (t.type === 'C') { 
-                    typeLabel = '📦 Consignación';
+                    typeLabel = 'Consignación';
                     // Nota: Aquí quitamos la lupa individual para las consignaciones.
                     // Ahora la lupa de consignación estará UNIFICADA arriba.
                     actionButton = ``;
@@ -680,7 +680,7 @@
                             <div class="flex items-center gap-2">
                                 <span class="font-black text-lg text-orange-600">$${totalConsignado.toLocaleString('en-US', {minimumFractionDigits: 2})}</span>
                                 <button onclick="window.cxcModule.searchConsolidatedConsignments('${safeClientName}')" class="bg-orange-200 hover:bg-orange-300 text-orange-800 rounded-full p-1.5 shadow-sm transition" title="Ver detalle de consignaciones">
-                                    🔍
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
                                 </button>
                             </div>
                         </div>
@@ -691,7 +691,7 @@
                 <!-- SIMULADOR DE ABONO -->
                 <div class="bg-emerald-50 border border-emerald-200 p-3 rounded-lg mb-4 shadow-sm">
                     <div class="flex items-center justify-between mb-2">
-                        <p class="text-[11px] text-emerald-800 uppercase tracking-wider font-bold">🧮 Simulador de Pago</p>
+                        <p class="text-[11px] text-emerald-800 uppercase tracking-wider font-bold">Simulador de Pago</p>
                         <span class="text-[9px] text-gray-400">solo cálculo, no modifica el CXC</span>
                     </div>
                     <div class="flex gap-2 items-stretch">
@@ -798,38 +798,48 @@
                 const endRange = new Date(searchDate); endRange.setDate(endRange.getDate() + 2); endRange.setHours(23,59,59,999);
 
                 let foundVenta = null;
+                // Igual que en la lupa de ventas: se recogen TODOS los candidatos y se
+                // elige el mejor (nombre más parecido; a igual nombre, monto más cercano),
+                // en vez de quedarse con el primero que aparezca.
+                const candidatosC = [];
 
                 for (const uid of userIds) {
-                    if (foundVenta) break;
                     try {
                         const cierresRef = _collection(_db, `artifacts/${_appId}/users/${uid}/cierres`);
                         const q = _query(cierresRef, _where("fecha", ">=", startRange), _where("fecha", "<=", endRange));
                         const cierresSnap = await _getDocs(q);
                         for (const doc of cierresSnap.docs) {
                             const cierre = doc.data();
-                            const match = (cierre.ventas || []).find(v => {
-                                const isAmountMatch = Math.abs(Math.abs(v.total || 0) - Math.abs(tx.amount)) <= 1.0;
-                                const isNameMatch = puntajeNombreCliente(clientName, v.clienteNombre) >= PUNTAJE_MINIMO_NOMBRE;
-                                return isAmountMatch && isNameMatch;
+                            (cierre.ventas || []).forEach(v => {
+                                const difMonto = Math.abs(Math.abs(v.total || 0) - Math.abs(tx.amount));
+                                if (difMonto > 1.0) return;
+                                const puntaje = puntajeNombreCliente(clientName, v.clienteNombre);
+                                if (puntaje < PUNTAJE_MINIMO_NOMBRE) return;
+                                candidatosC.push({ venta: v, puntaje, difMonto });
                             });
-                            if (match) { foundVenta = match; break; }
                         }
                     } catch(e){}
                 }
 
-                if(!foundVenta) {
+                if (!candidatosC.length) {
                     for (const uid of userIds) {
-                        if (foundVenta) break;
                         try {
                             const ventasActivasSnap = await _getDocs(_collection(_db, `artifacts/${_appId}/users/${uid}/ventas`));
                             for (const doc of ventasActivasSnap.docs) {
                                 const vData = doc.data();
-                                const isAmountMatch = Math.abs(Math.abs(vData.total || 0) - Math.abs(tx.amount)) <= 1.0;
-                                const isNameMatch = puntajeNombreCliente(clientName, vData.clienteNombre) >= PUNTAJE_MINIMO_NOMBRE;
-                                if (isAmountMatch && isNameMatch) { foundVenta = vData; break; }
+                                const difMonto = Math.abs(Math.abs(vData.total || 0) - Math.abs(tx.amount));
+                                if (difMonto > 1.0) continue;
+                                const puntaje = puntajeNombreCliente(clientName, vData.clienteNombre);
+                                if (puntaje < PUNTAJE_MINIMO_NOMBRE) continue;
+                                candidatosC.push({ venta: vData, puntaje, difMonto });
                             }
                         } catch(e){}
                     }
+                }
+
+                if (candidatosC.length) {
+                    candidatosC.sort((a, b) => (b.puntaje - a.puntaje) || (a.difMonto - b.difMonto));
+                    foundVenta = candidatosC[0].venta;
                 }
 
                 if(foundVenta && foundVenta.productos) {
@@ -1173,12 +1183,12 @@
             let rowColor = '';
             let bsAmount = '';
 
-            if (type === 'F') { typeLabel = '🛒 Venta'; rowColor = 'text-red-600'; }
-            else if (type === 'T') { typeLabel = '🏦 Transf'; rowColor = 'text-green-600'; }
-            else if (type === 'E') { typeLabel = '💵 Efectivo'; rowColor = 'text-green-600'; }
-            else if (type === 'R') { typeLabel = '🧾 Retenc'; rowColor = 'text-green-600'; }
-            else if (type === '%') { typeLabel = '📉 Dscto'; rowColor = 'text-blue-600'; }
-            else if (type === 'C') { typeLabel = '📦 Consignación'; rowColor = 'text-orange-600'; } 
+            if (type === 'F') { typeLabel = 'Venta'; rowColor = 'text-red-600'; }
+            else if (type === 'T') { typeLabel = 'Transf'; rowColor = 'text-green-600'; }
+            else if (type === 'E') { typeLabel = 'Efectivo'; rowColor = 'text-green-600'; }
+            else if (type === 'R') { typeLabel = 'Retenc'; rowColor = 'text-green-600'; }
+            else if (type === '%') { typeLabel = 'Dscto'; rowColor = 'text-blue-600'; }
+            else if (type === 'C') { typeLabel = 'Consignación'; rowColor = 'text-orange-600'; } 
 
             if (type === 'T' || type === 'E') {
                 const parts = t.date.split('/');
@@ -1555,10 +1565,25 @@
             localStorage.setItem(LS_KEY_DATE, updateDate.toISOString());
 
             const listRef = _doc(_db, CXC_COLLECTION_PATH, 'list');
+            let listSubida = true;
             try {
                 await _setDoc(listRef, { clients: clients });
             } catch (docError) {
+                listSubida = false;
                 console.warn("No se pudo subir la lista completa a Firestore.", docError);
+            }
+
+            // Si la lista NO subió, NO se actualiza metadata: de lo contrario los demás
+            // dispositivos verían "hay datos nuevos", bajarían la lista VIEJA y quedarían
+            // marcados como al día con datos desactualizados (inconsistencia silenciosa).
+            if (!listSubida) {
+                _showModal('Atención',
+                    `Los datos se procesaron y quedaron guardados <strong>solo en este dispositivo</strong>.<br><br>` +
+                    `No se pudieron subir al servidor (revisa la conexión). Los demás teléfonos ` +
+                    `<strong>NO verán esta actualización</strong>. Vuelve a presionar "Cargar Excel CXC" ` +
+                    `cuando tengas conexión para reintentar la subida.`,
+                    showCXCView);
+                return;
             }
 
             const metaRef = _doc(_db, CXC_COLLECTION_PATH, 'metadata');
@@ -1571,7 +1596,7 @@
                 _showModal('Carga con avisos',
                     `Base de datos actualizada con <strong>${clients.length}</strong> cliente(s).<br><br>` +
                     `<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:8px;text-align:left;">` +
-                    `<strong style="color:#b45309;">⚠️ ${sinNombre.length} hoja(s) no se pudieron leer</strong><br>` +
+                    `<strong style="color:#b45309;">${sinNombre.length} hoja(s) no se pudieron leer</strong><br>` +
                     `<span style="font-size:11px;color:#78350f;">Parecen de cliente pero no tienen un nombre legible en la fila 1 (columna B). No se cargaron:</span><br>` +
                     `<span style="font-size:11px;color:#92400e;font-weight:700;">${sinNombre.join(', ')}</span><br>` +
                     `<span style="font-size:10px;color:#a16207;">Revisa esas hojas en el Excel y vuelve a subirlo.</span></div>`,
@@ -1603,7 +1628,7 @@
         // Sin tasa de hoy → pedir que la actualicen
         if (tasaHoy === undefined || tasaHoy === null || !(tasaHoy > 0)) {
             out.innerHTML = `<div class="bg-amber-100 border border-amber-300 rounded p-2 text-amber-800 text-[11px] font-semibold">
-                ⚠️ No hay tasa BCV registrada para hoy (${h.toLocaleDateString('es-VE')}).<br>
+                No hay tasa BCV registrada para hoy (${h.toLocaleDateString('es-VE')}).<br>
                 Actualiza la tasa del día para poder simular el abono.</div>`;
             return;
         }
