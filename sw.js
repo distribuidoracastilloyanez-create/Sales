@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v126'; // v126: CXC - no marcar actualizado si falla subida de datos (aviso solo-local); consignaciones eligen mejor candidato; sin emojis en todo el modulo
+const CACHE_NAME = 'ventas-app-cache-v127'; // v127: CXC - detectar hojas de continuacion con fechas sin cero a la izquierda (22/5/2026); recupera historiales truncados (Sevillana, Figueredo, Bayona)
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
