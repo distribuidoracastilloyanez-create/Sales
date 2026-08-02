@@ -1389,7 +1389,11 @@
                         const looksLikeDataSheet = rows.slice(0, 5).some(r => {
                             if (!r || !r[0]) return false;
                             const val = r[0].toString().trim();
-                            const esFecha = val.match(/^\d{4}-\d{2}-\d{2}/) || val.match(/^\d{2}\/\d{2}\/\d{4}/);
+                            // Acepta días/meses de 1 o 2 dígitos: la conversión PDF→Excel
+                            // produce fechas como "22/5/2026" o "1/6/2026" (sin cero a la
+                            // izquierda). La regex estricta dd/mm/aaaa descartaba hojas de
+                            // continuación enteras (p.ej. Sevillana perdía mayo-julio 2026).
+                            const esFecha = val.match(/^\d{4}-\d{2}-\d{2}/) || val.match(/^\d{1,2}\/\d{1,2}\/\d{2,4}/);
                             if (!esFecha) return false;
                             const tipo = (r[1] || '').toString().trim().toUpperCase();
                             return /^[FETRCP]$/.test(tipo);
