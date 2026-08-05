@@ -975,33 +975,46 @@
                 return;
             }
 
-            const startRange = new Date(searchDate); startRange.setDate(startRange.getDate() - 3); startRange.setHours(0,0,0,0);
-            const endRange = new Date(searchDate); endRange.setDate(endRange.getDate() + 3); endRange.setHours(23,59,59,999);
-
             let foundVenta = null;
-            // Se recogen TODOS los candidatos y se elige el mejor (nombre y monto),
-            // en vez de quedarse con el primero que aparezca.
+            // Se recogen TODOS los candidatos y se elige el mejor (nombre y monto).
+            // IMPORTANTE: NO se filtra por fecha en la consulta. El filtro por fecha
+            // comparaba el Timestamp del cierre contra límites en hora local, lo que
+            // (por la diferencia horaria GMT-4 y el momento exacto de guardado del cierre)
+            // podía excluir el cierre correcto. Ahora se buscan TODOS los cierres y se
+            // cruza por monto + nombre, que es específico y no depende del horario.
             const candidatos = [];
+            // Diagnóstico: guarda los montos más cercanos aunque no pasen el filtro,
+            // para poder explicar al usuario por qué no encontró el recibo.
+            const cercanos = [];
+            let cierresRevisados = 0, ventasRevisadas = 0;
+
+            const registrarCercano = (nombreV, totalV, origen) => {
+                const dif = Math.abs(Math.abs(totalV || 0) - Math.abs(amount));
+                if (dif <= 15) cercanos.push({ nombre: nombreV || '(sin nombre)', total: totalV || 0, dif, origen });
+            };
 
             for (const uid of userIds) {
                 try {
                     const cierresRef = _collection(_db, `artifacts/${_appId}/users/${uid}/cierres`);
-                    const q = _query(cierresRef, _where("fecha", ">=", startRange), _where("fecha", "<=", endRange));
-                    const cierresSnap = await _getDocs(q);
+                    const cierresSnap = await _getDocs(cierresRef);
 
                     for (const doc of cierresSnap.docs) {
                         const cierre = doc.data();
                         const ventas = cierre.ventas || [];
+                        cierresRevisados++;
 
                         ventas.forEach(v => {
+                            ventasRevisadas++;
                             const difMonto = Math.abs(Math.abs(v.total || 0) - Math.abs(amount));
-                            if (difMonto > 1.0) return;
                             const puntaje = _puntajeNombre(v.clienteNombre);
-                            if (puntaje < PUNTAJE_MINIMO_NOMBRE) return;
-                            candidatos.push({
-                                venta: { ...v, vendedorId: uid, cierreFecha: cierre.fecha },
-                                puntaje, difMonto
-                            });
+                            if (difMonto <= 1.0 && puntaje >= PUNTAJE_MINIMO_NOMBRE) {
+                                candidatos.push({
+                                    venta: { ...v, vendedorId: uid, cierreFecha: cierre.fecha },
+                                    puntaje, difMonto
+                                });
+                            } else if (puntaje >= PUNTAJE_MINIMO_NOMBRE || difMonto <= 5) {
+                                registrarCercano(v.clienteNombre, v.total, 'cierre');
+                            }
                         });
                     }
                 } catch (err) { }
@@ -1022,14 +1035,17 @@
 
                         for (const doc of ventasActivasSnap.docs) {
                              const vData = doc.data();
+                             ventasRevisadas++;
                              const difMonto = Math.abs(Math.abs(vData.total || 0) - Math.abs(amount));
-                             if (difMonto > 1.0) continue;
                              const puntaje = _puntajeNombre(vData.clienteNombre);
-                             if (puntaje < PUNTAJE_MINIMO_NOMBRE) continue;
-                             candidatosActivas.push({
-                                 venta: { ...vData, id: doc.id, isActiva: true },
-                                 puntaje, difMonto
-                             });
+                             if (difMonto <= 1.0 && puntaje >= PUNTAJE_MINIMO_NOMBRE) {
+                                 candidatosActivas.push({
+                                     venta: { ...vData, id: doc.id, isActiva: true },
+                                     puntaje, difMonto
+                                 });
+                             } else if (puntaje >= PUNTAJE_MINIMO_NOMBRE || difMonto <= 5) {
+                                 registrarCercano(vData.clienteNombre, vData.total, 'venta activa');
+                             }
                         }
                     } catch (err) { }
                 }
@@ -1156,7 +1172,28 @@
                     _showModal('Error', 'El módulo de interfaz de ventas no está cargado.');
                 }
             } else {
-                _showModal('Sin resultados', `No se encontró un ticket en la base de datos para el cliente <b>${(clientName || '').toUpperCase()}</b> por <b>$${amount}</b> en las fechas cercanas a <b>${searchDate.toLocaleDateString()}</b>.<br><br>Revise que el monto y la fecha del Excel coincidan con la venta real.`);
+                // Diagnóstico: mostrar por qué no encontró (montos más cercanos hallados).
+                cercanos.sort((a, b) => a.dif - b.dif);
+                const vistos = new Set();
+                const topCercanos = cercanos.filter(c => {
+                    const k = c.nombre + '|' + c.total.toFixed(2);
+                    if (vistos.has(k)) return false; vistos.add(k); return true;
+                }).slice(0, 6);
+                const nombresBuscados = personName && personName !== clientName
+                    ? `<b>${(clientName || '').toUpperCase()}</b> o <b>${personName.toUpperCase()}</b>`
+                    : `<b>${(clientName || '').toUpperCase()}</b>`;
+                let detalle = '';
+                if (topCercanos.length) {
+                    detalle = `<br><br><span class="text-xs text-gray-500">Ventas parecidas encontradas (nombre o monto cercano):</span><div class="mt-1 text-xs text-left max-h-40 overflow-y-auto">` +
+                        topCercanos.map(c => `<div class="border-b border-gray-100 py-1">${c.nombre} — <b>$${c.total.toFixed(2)}</b> <span class="text-gray-400">(${c.origen}${c.dif > 1 ? ', dif $' + c.dif.toFixed(2) : ''})</span></div>`).join('') +
+                        `</div>`;
+                } else {
+                    detalle = `<br><br><span class="text-xs text-gray-500">No se hallaron ventas con nombre ni monto parecido. Es posible que el vendedor tenga la lectura restringida, o que la venta no esté en el sistema.</span>`;
+                }
+                _showModal('Sin resultados',
+                    `No encontré una venta de <b>$${Number(amount).toFixed(2)}</b> a nombre de ${nombresBuscados}.` +
+                    `<br><span class="text-xs text-gray-400">(Revisé ${ventasRevisadas} ventas en ${cierresRevisados} cierres, sin filtrar por fecha.)</span>` +
+                    detalle);
             }
         } catch (error) {
             console.error("Search error:", error);
