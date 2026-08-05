@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v130'; // v130: lupa CXC ya no filtra cierres por fecha (evita exclusion por horario GMT-4); cruza por monto+nombre en todos los cierres; diagnostico cuando no encuentra
+const CACHE_NAME = 'ventas-app-cache-v131'; // v131: lupa CXC agrupa y SUMA las ventas del mismo cliente en el cierre (venta partida por rubro); recibo combinado; mensaje simple sin diagnostico
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
