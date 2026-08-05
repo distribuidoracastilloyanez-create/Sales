@@ -976,82 +976,86 @@
             }
 
             let foundVenta = null;
-            // Se recogen TODOS los candidatos y se elige el mejor (nombre y monto).
-            // IMPORTANTE: NO se filtra por fecha en la consulta. El filtro por fecha
-            // comparaba el Timestamp del cierre contra límites en hora local, lo que
-            // (por la diferencia horaria GMT-4 y el momento exacto de guardado del cierre)
-            // podía excluir el cierre correcto. Ahora se buscan TODOS los cierres y se
-            // cruza por monto + nombre, que es específico y no depende del horario.
+            // La venta de un cliente puede estar guardada como VARIOS registros dentro de un
+            // mismo cierre (uno por rubro). Por eso se AGRUPAN las ventas por cliente dentro de
+            // cada cierre y se compara la SUMA de sus totales contra el monto buscado. Así se
+            // encuentra tanto si es un solo registro como si viene partido en varios.
+            // NO se filtra por fecha (evita desfases por horario); el cruce monto+nombre es específico.
             const candidatos = [];
-            // Diagnóstico: guarda los montos más cercanos aunque no pasen el filtro,
-            // para poder explicar al usuario por qué no encontró el recibo.
-            const cercanos = [];
-            let cierresRevisados = 0, ventasRevisadas = 0;
 
-            const registrarCercano = (nombreV, totalV, origen) => {
-                const dif = Math.abs(Math.abs(totalV || 0) - Math.abs(amount));
-                if (dif <= 15) cercanos.push({ nombre: nombreV || '(sin nombre)', total: totalV || 0, dif, origen });
+            const procesarGrupo = (ventasGrupo, meta) => {
+                // Agrupa por nombre de cliente normalizado
+                const grupos = {};
+                ventasGrupo.forEach(v => {
+                    const punt = _puntajeNombre(v.clienteNombre);
+                    if (punt < PUNTAJE_MINIMO_NOMBRE) return;
+                    const k = normalizeStr(v.clienteNombre);
+                    if (!grupos[k]) grupos[k] = { ventas: [], total: 0, puntaje: punt, nombre: v.clienteNombre };
+                    grupos[k].ventas.push(v);
+                    grupos[k].total += (v.total || 0);
+                    grupos[k].puntaje = Math.max(grupos[k].puntaje, punt);
+                });
+                for (const k in grupos) {
+                    const g = grupos[k];
+                    const difMonto = Math.abs(Math.abs(g.total) - Math.abs(amount));
+                    if (difMonto > 1.0) continue;
+                    // Combinar en una sola venta: se concatenan productos y vacíos.
+                    const productos = [];
+                    const vaciosComb = {};
+                    let tipoOperacion = null;
+                    g.ventas.forEach(v => {
+                        (v.productos || []).forEach(p => productos.push(p));
+                        const vd = v.vaciosDevueltosPorTipo || {};
+                        for (const t in vd) vaciosComb[t] = (vaciosComb[t] || 0) + (vd[t] || 0);
+                        tipoOperacion = tipoOperacion || v.tipoOperacion || v.origen;
+                    });
+                    const base = g.ventas[0];
+                    candidatos.push({
+                        venta: {
+                            ...base,
+                            clienteNombre: g.nombre,
+                            total: g.total,
+                            productos,
+                            vaciosDevueltosPorTipo: vaciosComb,
+                            tipoOperacion,
+                            ...meta
+                        },
+                        puntaje: g.puntaje,
+                        difMonto
+                    });
+                }
             };
 
             for (const uid of userIds) {
                 try {
                     const cierresRef = _collection(_db, `artifacts/${_appId}/users/${uid}/cierres`);
                     const cierresSnap = await _getDocs(cierresRef);
-
                     for (const doc of cierresSnap.docs) {
                         const cierre = doc.data();
-                        const ventas = cierre.ventas || [];
-                        cierresRevisados++;
-
-                        ventas.forEach(v => {
-                            ventasRevisadas++;
-                            const difMonto = Math.abs(Math.abs(v.total || 0) - Math.abs(amount));
-                            const puntaje = _puntajeNombre(v.clienteNombre);
-                            if (difMonto <= 1.0 && puntaje >= PUNTAJE_MINIMO_NOMBRE) {
-                                candidatos.push({
-                                    venta: { ...v, vendedorId: uid, cierreFecha: cierre.fecha },
-                                    puntaje, difMonto
-                                });
-                            } else if (puntaje >= PUNTAJE_MINIMO_NOMBRE || difMonto <= 5) {
-                                registrarCercano(v.clienteNombre, v.total, 'cierre');
-                            }
-                        });
+                        procesarGrupo(cierre.ventas || [], { vendedorId: uid, cierreFecha: cierre.fecha });
                     }
                 } catch (err) { }
             }
 
             if (candidatos.length) {
-                // Mejor nombre primero; si empatan, el monto más cercano
                 candidatos.sort((a, b) => (b.puntaje - a.puntaje) || (a.difMonto - b.difMonto));
                 foundVenta = candidatos[0].venta;
             }
 
             if (!foundVenta) {
-                const candidatosActivas = [];
+                // Respaldo: ventas activas (aún no cerradas), también agrupadas por cliente.
+                const activas = [];
                 for (const uid of userIds) {
                     try {
-                        const ventasActivasRef = _collection(_db, `artifacts/${_appId}/users/${uid}/ventas`);
-                        const ventasActivasSnap = await _getDocs(ventasActivasRef);
-
-                        for (const doc of ventasActivasSnap.docs) {
-                             const vData = doc.data();
-                             ventasRevisadas++;
-                             const difMonto = Math.abs(Math.abs(vData.total || 0) - Math.abs(amount));
-                             const puntaje = _puntajeNombre(vData.clienteNombre);
-                             if (difMonto <= 1.0 && puntaje >= PUNTAJE_MINIMO_NOMBRE) {
-                                 candidatosActivas.push({
-                                     venta: { ...vData, id: doc.id, isActiva: true },
-                                     puntaje, difMonto
-                                 });
-                             } else if (puntaje >= PUNTAJE_MINIMO_NOMBRE || difMonto <= 5) {
-                                 registrarCercano(vData.clienteNombre, vData.total, 'venta activa');
-                             }
-                        }
+                        const ventasActivasSnap = await _getDocs(_collection(_db, `artifacts/${_appId}/users/${uid}/ventas`));
+                        ventasActivasSnap.docs.forEach(d => activas.push({ ...d.data(), id: d.id, isActiva: true }));
                     } catch (err) { }
                 }
-                if (candidatosActivas.length) {
-                    candidatosActivas.sort((a, b) => (b.puntaje - a.puntaje) || (a.difMonto - b.difMonto));
-                    foundVenta = candidatosActivas[0].venta;
+                const antes = candidatos.length;
+                procesarGrupo(activas, { isActiva: true });
+                if (candidatos.length > antes) {
+                    candidatos.sort((a, b) => (b.puntaje - a.puntaje) || (a.difMonto - b.difMonto));
+                    foundVenta = candidatos[0].venta;
                 }
             }
 
@@ -1172,28 +1176,11 @@
                     _showModal('Error', 'El módulo de interfaz de ventas no está cargado.');
                 }
             } else {
-                // Diagnóstico: mostrar por qué no encontró (montos más cercanos hallados).
-                cercanos.sort((a, b) => a.dif - b.dif);
-                const vistos = new Set();
-                const topCercanos = cercanos.filter(c => {
-                    const k = c.nombre + '|' + c.total.toFixed(2);
-                    if (vistos.has(k)) return false; vistos.add(k); return true;
-                }).slice(0, 6);
                 const nombresBuscados = personName && personName !== clientName
-                    ? `<b>${(clientName || '').toUpperCase()}</b> o <b>${personName.toUpperCase()}</b>`
+                    ? `<b>${(clientName || '').toUpperCase()}</b> (${personName.toUpperCase()})`
                     : `<b>${(clientName || '').toUpperCase()}</b>`;
-                let detalle = '';
-                if (topCercanos.length) {
-                    detalle = `<br><br><span class="text-xs text-gray-500">Ventas parecidas encontradas (nombre o monto cercano):</span><div class="mt-1 text-xs text-left max-h-40 overflow-y-auto">` +
-                        topCercanos.map(c => `<div class="border-b border-gray-100 py-1">${c.nombre} — <b>$${c.total.toFixed(2)}</b> <span class="text-gray-400">(${c.origen}${c.dif > 1 ? ', dif $' + c.dif.toFixed(2) : ''})</span></div>`).join('') +
-                        `</div>`;
-                } else {
-                    detalle = `<br><br><span class="text-xs text-gray-500">No se hallaron ventas con nombre ni monto parecido. Es posible que el vendedor tenga la lectura restringida, o que la venta no esté en el sistema.</span>`;
-                }
                 _showModal('Sin resultados',
-                    `No encontré una venta de <b>$${Number(amount).toFixed(2)}</b> a nombre de ${nombresBuscados}.` +
-                    `<br><span class="text-xs text-gray-400">(Revisé ${ventasRevisadas} ventas en ${cierresRevisados} cierres, sin filtrar por fecha.)</span>` +
-                    detalle);
+                    `No se encontró el recibo de ${nombresBuscados} por <b>$${Number(amount).toFixed(2)}</b>.<br><br>Verifique que la venta esté registrada en el sistema.`);
             }
         } catch (error) {
             console.error("Search error:", error);
