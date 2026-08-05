@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v129'; // v129: cierre exportado usa precio GUARDADO (no el actual); lupa CXC busca por razon social Y nombre personal, ventana +-3 dias
+const CACHE_NAME = 'ventas-app-cache-v130'; // v130: lupa CXC ya no filtra cierres por fecha (evita exclusion por horario GMT-4); cruza por monto+nombre en todos los cierres; diagnostico cuando no encuentra
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
