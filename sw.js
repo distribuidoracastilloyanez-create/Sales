@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v128'; // v128: CXC - hoja con fila FECHA corrupta duplicaba al cliente (una entrada sin historial); barrido arranca tras la cabecera CLIENTE
+const CACHE_NAME = 'ventas-app-cache-v129'; // v129: cierre exportado usa precio GUARDADO (no el actual); lupa CXC busca por razon social Y nombre personal, ventana +-3 dias
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
