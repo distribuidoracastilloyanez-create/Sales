@@ -424,7 +424,10 @@
                 (venta.productos || []).forEach(p => {
                     const prodPrivado = inventarioMap.get(p.id) || {};
                     const prodMaestro = masterMap.get(p.id) || {};
-                    const prodComp = { ...p, ...prodPrivado, ...prodMaestro, id: p.id }; 
+                    // El PRECIO debe ser el GUARDADO en la venta (foto del momento del cierre),
+                    // NO el del catálogo actual: un cierre es inmutable. Lo estructural (rubro,
+                    // unidadesPorCaja, marca, etc.) sí se toma del maestro actual.
+                    const prodComp = { ...p, ...prodPrivado, ...prodMaestro, id: p.id, precios: (p.precios || prodMaestro.precios || prodPrivado.precios || { und: 0, paq: 0, cj: 0 }) }; 
                     const rubro = prodComp.rubro || 'SIN RUBRO';
                     
                     if (!dataByRubro[rubro]) {
