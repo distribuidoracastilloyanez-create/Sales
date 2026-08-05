@@ -543,6 +543,7 @@
         if (!client) return;
 
         const safeClientName = client.name.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+        const safePersonName = (client.personName || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
         let rowsHTML = '';
         
         // 1. EXTRAER TRANSACCIONES
@@ -584,7 +585,7 @@
                     typeLabel = 'Venta';
                     // El botón busca por el FACTURADO (deuda + retención) para que el ticket coincida
                     actionButton = `
-                        <button onclick="window.cxcModule.searchSaleDetails('${safeClientName}', '${t.date}', ${facturado})" 
+                        <button onclick="window.cxcModule.searchSaleDetails('${safeClientName}', '${t.date}', ${facturado}, '${safePersonName}')" 
                             class="p-1 bg-blue-100 text-blue-700 rounded-full border border-blue-200 hover:bg-blue-200 flex-shrink-0 transition-colors ml-1" title="Ver Detalle de Venta">
                             <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
                         </button>
@@ -927,8 +928,14 @@
         }
     }
 
-    async function searchSaleDetails(clientName, dateStr, amount) {
+    async function searchSaleDetails(clientName, dateStr, amount, personName = '') {
         _showModal('Buscando', `Buscando el recibo original...`, null, '', null, false);
+        // La venta pudo guardarse bajo la razón social ("LA VAQUERITA BURGUER") o el
+        // nombre personal ("ALIRIO MONCADA"); se toma el mejor puntaje de ambos.
+        const _puntajeNombre = (nombreVenta) => Math.max(
+            puntajeNombreCliente(clientName, nombreVenta),
+            personName ? puntajeNombreCliente(personName, nombreVenta) : 0
+        );
         try {
             // 1. OBTENER USUARIOS
             let userIds = [_userId]; 
@@ -968,8 +975,8 @@
                 return;
             }
 
-            const startRange = new Date(searchDate); startRange.setDate(startRange.getDate() - 2); startRange.setHours(0,0,0,0);
-            const endRange = new Date(searchDate); endRange.setDate(endRange.getDate() + 2); endRange.setHours(23,59,59,999);
+            const startRange = new Date(searchDate); startRange.setDate(startRange.getDate() - 3); startRange.setHours(0,0,0,0);
+            const endRange = new Date(searchDate); endRange.setDate(endRange.getDate() + 3); endRange.setHours(23,59,59,999);
 
             let foundVenta = null;
             // Se recogen TODOS los candidatos y se elige el mejor (nombre y monto),
@@ -989,7 +996,7 @@
                         ventas.forEach(v => {
                             const difMonto = Math.abs(Math.abs(v.total || 0) - Math.abs(amount));
                             if (difMonto > 1.0) return;
-                            const puntaje = puntajeNombreCliente(clientName, v.clienteNombre);
+                            const puntaje = _puntajeNombre(v.clienteNombre);
                             if (puntaje < PUNTAJE_MINIMO_NOMBRE) return;
                             candidatos.push({
                                 venta: { ...v, vendedorId: uid, cierreFecha: cierre.fecha },
@@ -1017,7 +1024,7 @@
                              const vData = doc.data();
                              const difMonto = Math.abs(Math.abs(vData.total || 0) - Math.abs(amount));
                              if (difMonto > 1.0) continue;
-                             const puntaje = puntajeNombreCliente(clientName, vData.clienteNombre);
+                             const puntaje = _puntajeNombre(vData.clienteNombre);
                              if (puntaje < PUNTAJE_MINIMO_NOMBRE) continue;
                              candidatosActivas.push({
                                  venta: { ...vData, id: doc.id, isActiva: true },
@@ -1406,7 +1413,9 @@
                             return; 
                         }
                     } else if (isClientSheet && clientName) {
-                        currentClientData = { name: clientName, amount: 0, sheetName: sheetName, transactions: [] };
+                        const _nrow = rows.find(r => r[0] && r[0].toString().toUpperCase().trim() === 'NOMBRE');
+                        const _pname = (_nrow && _nrow[1]) ? _nrow[1].toString().trim() : '';
+                        currentClientData = { name: clientName, personName: _pname, amount: 0, sheetName: sheetName, transactions: [] };
                         allClients.push(currentClientData);
                     }
 
@@ -1471,7 +1480,7 @@
                                     }
                                 }
                                 // Cerrar cliente actual, abrir el nuevo
-                                currentClientData = { name: nuevoNombre, amount: nuevoTotal, sheetName: sheetName, transactions: [] };
+                                currentClientData = { name: nuevoNombre, personName: '', amount: nuevoTotal, sheetName: sheetName, transactions: [] };
                                 allClients.push(currentClientData);
                                 // Saltar hasta después de la fila FECHA de este nuevo cliente
                                 let salto = i + 1;
