@@ -802,7 +802,7 @@
             const [snapClientes, snapTasas, snapProductos] = await Promise.all([
                 _getDocs(_collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/clientes`)),
                 _getDocs(_collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/tasas_bcv`)),
-                _getDocs(_collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/productos`))
+                (window.getCatalogoSnapshot ? window.getCatalogoSnapshot() : _getDocs(_collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/productos`)))
             ]);
             _clientesCache = snapClientes.docs.map(d => ({ id: d.id, ...d.data() }));
             _tasasCache    = {};
@@ -1379,7 +1379,7 @@
         document.getElementById('cfgFactGuardar').addEventListener('click', guardarConfigFactura);
         try {
             const pid = (window.AppConfig && window.AppConfig.PUBLIC_DATA_ID) || _appId;
-            const catSnap = await _getDocs(_collection(_db, `artifacts/${pid}/public/data/productos`));
+            const catSnap = (window.getCatalogoSnapshot ? await window.getCatalogoSnapshot() : await _getDocs(_collection(_db, `artifacts/${pid}/public/data/productos`)));
             _cfgFactProds = catSnap.docs.map(d => ({ id: d.id, ...d.data() }));
             try { if (window.getGlobalProductSortFunction) { const fn = await window.getGlobalProductSortFunction(); if (fn) _cfgFactProds.sort(fn); } } catch (e) {}
             _cfgFactSel = { alimentos: {}, cerveceria: {} };
