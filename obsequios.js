@@ -160,7 +160,7 @@
 
     async function _loadInventarioHibrido() {
         try {
-            const masterSnap = await _getDocs(_collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/productos`));
+            const masterSnap = (window.getCatalogoSnapshot ? await window.getCatalogoSnapshot() : await _getDocs(_collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/productos`)));
             const masterMap = {};
             masterSnap.docs.forEach(d => masterMap[d.id] = { id: d.id, ...d.data() });
 
