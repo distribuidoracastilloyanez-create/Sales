@@ -29,7 +29,7 @@
 
     async function loadMasterCatalog() {
         if (Object.keys(_masterMapCache).length > 0) return _masterMapCache;
-        const snap = await _getDocs(_collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/productos`));
+        const snap = (window.getCatalogoSnapshot ? await window.getCatalogoSnapshot() : await _getDocs(_collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/productos`)));
         _masterMapCache = {};
         snap.forEach(d => { _masterMapCache[d.id] = { id: d.id, ...d.data() }; });
         return _masterMapCache;
