@@ -641,6 +641,7 @@
                 } catch (eTomb) { console.warn("No se pudo archivar el producto eliminado (tombstone):", eTomb); }
                 // Si el dato es null, es un borrado
                 await _deleteDoc(masterRef);
+                window.invalidarCatalogo?.(); // el catálogo cambió: refrescar el caché global
                 console.log("🗑️ Eliminado del Catálogo Maestro");
             } else {
                 // SEPARACIÓN DE RESPONSABILIDADES:
@@ -650,6 +651,7 @@
                 masterData.lastUpdated = new Date(); 
                 
                 await _setDoc(masterRef, masterData, { merge: true });
+                window.invalidarCatalogo?.(); // el catálogo cambió: refrescar el caché global
                 console.log("✅ Sincronizado con Catálogo Maestro");
             }
         } catch (e) {
