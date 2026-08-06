@@ -1315,7 +1315,7 @@
     async function ensureHybridCacheLoaded() {
         try {
             const [masterSnap, stockSnap] = await Promise.all([
-                _getDocs(_collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/productos`)),
+                (window.getCatalogoSnapshot ? window.getCatalogoSnapshot() : _getDocs(_collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/productos`))),
                 _getDocs(_collection(_db, `artifacts/${_appId}/users/${_userId}/inventario`))
             ]);
             
