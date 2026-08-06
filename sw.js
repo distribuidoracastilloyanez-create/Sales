@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v131'; // v131: lupa CXC agrupa y SUMA las ventas del mismo cliente en el cierre (venta partida por rubro); recibo combinado; mensaje simple sin diagnostico
+const CACHE_NAME = 'ventas-app-cache-v132'; // v132: RENDIMIENTO - cache global del catalogo maestro compartido entre modulos (TTL 5min + invalidacion al editar); lupa CXC filtra cierres por fecha +-10 dias UTC
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
