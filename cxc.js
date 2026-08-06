@@ -978,9 +978,15 @@
             let foundVenta = null;
             // La venta de un cliente puede estar guardada como VARIOS registros dentro de un
             // mismo cierre (uno por rubro). Por eso se AGRUPAN las ventas por cliente dentro de
-            // cada cierre y se compara la SUMA de sus totales contra el monto buscado. Así se
-            // encuentra tanto si es un solo registro como si viene partido en varios.
-            // NO se filtra por fecha (evita desfases por horario); el cruce monto+nombre es específico.
+            // cada cierre y se compara la SUMA de sus totales contra el monto buscado.
+            //
+            // RENDIMIENTO: se filtra por fecha con un margen AMPLIO de ±10 días, calculado en
+            // UTC puro. El margen es tan holgado que ningún desfase de horario (GMT-4) ni un
+            // cierre guardado con retraso puede quedar fuera, pero evita descargar el histórico
+            // completo de cierres en cada búsqueda.
+            const MARGEN_DIAS = 10;
+            const startRange = new Date(Date.UTC(searchDate.getFullYear(), searchDate.getMonth(), searchDate.getDate() - MARGEN_DIAS, 0, 0, 0, 0));
+            const endRange   = new Date(Date.UTC(searchDate.getFullYear(), searchDate.getMonth(), searchDate.getDate() + MARGEN_DIAS, 23, 59, 59, 999));
             const candidatos = [];
 
             const procesarGrupo = (ventasGrupo, meta) => {
@@ -1026,16 +1032,25 @@
                 }
             };
 
-            for (const uid of userIds) {
-                try {
-                    const cierresRef = _collection(_db, `artifacts/${_appId}/users/${uid}/cierres`);
-                    const cierresSnap = await _getDocs(cierresRef);
-                    for (const doc of cierresSnap.docs) {
-                        const cierre = doc.data();
-                        procesarGrupo(cierre.ventas || [], { vendedorId: uid, cierreFecha: cierre.fecha });
-                    }
-                } catch (err) { }
-            }
+            const barrerCierres = async (conFiltroFecha) => {
+                for (const uid of userIds) {
+                    try {
+                        const cierresRef = _collection(_db, `artifacts/${_appId}/users/${uid}/cierres`);
+                        const snap = conFiltroFecha
+                            ? await _getDocs(_query(cierresRef, _where("fecha", ">=", startRange), _where("fecha", "<=", endRange)))
+                            : await _getDocs(cierresRef);
+                        for (const doc of snap.docs) {
+                            const cierre = doc.data();
+                            procesarGrupo(cierre.ventas || [], { vendedorId: uid, cierreFecha: cierre.fecha });
+                        }
+                    } catch (err) { }
+                }
+            };
+
+            await barrerCierres(true);
+            // Red de seguridad: si con el margen de ±10 días no apareció, se repasa sin filtro.
+            // Solo ocurre en el caso raro, así que no penaliza la búsqueda normal.
+            if (!candidatos.length) await barrerCierres(false);
 
             if (candidatos.length) {
                 candidatos.sort((a, b) => (b.puntaje - a.puntaje) || (a.difMonto - b.difMonto));
