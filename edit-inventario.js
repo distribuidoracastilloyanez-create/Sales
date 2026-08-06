@@ -168,7 +168,7 @@
 
             const [userSnap, masterSnap] = await Promise.all([
                 _getDocs(userInvRef),
-                _getDocs(masterRef)
+                (window.getCatalogoSnapshot ? window.getCatalogoSnapshot() : _getDocs(masterRef))
             ]);
 
             const masterMap = {};
