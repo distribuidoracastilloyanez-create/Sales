@@ -377,52 +377,6 @@
             }
         };
 
-        // ── Caché global del catálogo maestro ─────────────────────────────────
-        // El catálogo lo consultan casi todos los módulos (venta, inventario, factura,
-        // calculadora, obsequios, supervisión...). Antes cada uno lo descargaba y
-        // re-procesaba por separado cada vez que se abría la pantalla. Ahora se lee una
-        // sola vez y se comparte; se refresca solo si pasó el TTL o si alguien edita
-        // el catálogo (window.invalidarCatalogo()).
-        let _catalogoCache = null;
-        let _catalogoCacheTs = 0;
-        let _catalogoPendiente = null;
-        const CATALOGO_TTL_MS = 5 * 60 * 1000;
-
-        window.invalidarCatalogo = function () {
-            _catalogoCache = null;
-            _catalogoCacheTs = 0;
-            _catalogoPendiente = null;
-        };
-
-        // Devuelve un objeto compatible con un snapshot de Firestore (.docs / .forEach)
-        // para que los módulos no tengan que cambiar su forma de leerlo.
-        window.getCatalogoSnapshot = async function (forzar = false) {
-            const vigente = _catalogoCache && (Date.now() - _catalogoCacheTs) < CATALOGO_TTL_MS;
-            if (!forzar && vigente) return _catalogoCache;
-            // Si ya hay una carga en curso, se reutiliza (evita descargas simultáneas
-            // cuando varias partes de la pantalla piden el catálogo a la vez).
-            if (!forzar && _catalogoPendiente) return _catalogoPendiente;
-
-            _catalogoPendiente = (async () => {
-                const snap = await getDocs(collection(db, `artifacts/${PUBLIC_DATA_ID}/public/data/productos`));
-                const items = snap.docs.map(d => {
-                    const data = d.data();
-                    return { id: d.id, data: () => data };
-                });
-                const fake = {
-                    docs: items,
-                    size: items.length,
-                    empty: items.length === 0,
-                    forEach: (cb) => items.forEach(cb)
-                };
-                _catalogoCache = fake;
-                _catalogoCacheTs = Date.now();
-                _catalogoPendiente = null;
-                return fake;
-            })();
-            return _catalogoPendiente;
-        };
-
         // ── Pre-carga de datos para offline ───────────────────────────────────
         async function preloadAllData() {
             const collectionsToPreload = [
