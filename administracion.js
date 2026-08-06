@@ -89,7 +89,7 @@
 
     async function loadMaster() {
         if (Object.keys(_masterCache).length) return _masterCache;
-        const snap = await _getDocs(_collection(_db, `artifacts/${getPublicDataId()}/public/data/productos`));
+        const snap = (window.getCatalogoSnapshot ? await window.getCatalogoSnapshot() : await _getDocs(_collection(_db, `artifacts/${getPublicDataId()}/public/data/productos`)));
         _masterCache = {};
         snap.docs.forEach(d => { _masterCache[d.id] = { id: d.id, ...d.data() }; });
         return _masterCache;
