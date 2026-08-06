@@ -862,6 +862,7 @@
                 // 2. REDUCIR BATCH Y DAR UN RESPIRO A LA RED
                 if (totalOps >= 250) { 
                     await batch.commit();
+                    window.invalidarCatalogo?.(); // se escribió en el catálogo maestro
                     await new Promise(resolve => setTimeout(resolve, 300)); // Respiro de 300ms para la red
                     batch = _writeBatch(_db);
                     totalOps = 0;
@@ -870,6 +871,7 @@
             
             if (totalOps > 0) {
                 await batch.commit();
+                window.invalidarCatalogo?.(); // se escribió en el catálogo maestro
             }
 
             invalidateSegmentOrderCache(); 
@@ -917,6 +919,7 @@
                         // 2. REDUCIR BATCH Y DAR RESPIRO A LA RED
                         if (totalOps >= 250) { 
                             await batch.commit(); 
+                            window.invalidarCatalogo?.(); // se escribió en el catálogo maestro
                             await new Promise(resolve => setTimeout(resolve, 300)); 
                             batch = _writeBatch(_db); 
                             totalOps = 0; 
@@ -924,6 +927,7 @@
                     }
                 }
                 if (totalOps > 0) await batch.commit();
+                window.invalidarCatalogo?.(); // se escribió en el catálogo maestro
                 
                 invalidateSegmentOrderCache();
                 
