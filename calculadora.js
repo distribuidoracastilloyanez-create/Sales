@@ -93,7 +93,7 @@
     // ─── CARGA DE DATOS ───────────────────────────────────────────────────────
     async function _loadData() {
         try {
-            const prodSnap = await _getDocs(_collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/productos`));
+            const prodSnap = (window.getCatalogoSnapshot ? await window.getCatalogoSnapshot() : await _getDocs(_collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/productos`)));
             const raw = prodSnap.docs.map(d => ({ id: d.id, ...d.data() })).filter(p => p.presentacion);
             _productosCache = _sortProductos(raw);
 
