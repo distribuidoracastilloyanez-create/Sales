@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v134'; // v134: el cierre ya NO genera la hoja de un rubro sin ventas ni existencias (elimina la hoja fantasma SIN RUBRO)
+const CACHE_NAME = 'ventas-app-cache-v135'; // v135: Acuerdo Comercial - descuentos por varios productos/rubro/marca/segmento/total de venta, con vigencia (proxima venta, X ventas, indefinido), sin solapamientos; aplica en venta directa y preventa; UI slate profesional
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
