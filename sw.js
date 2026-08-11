@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v135'; // v135: Acuerdo Comercial - descuentos por varios productos/rubro/marca/segmento/total de venta, con vigencia (proxima venta, X ventas, indefinido), sin solapamientos; aplica en venta directa y preventa; UI slate profesional
+const CACHE_NAME = 'ventas-app-cache-v136'; // v136: AC - los campos de descuento aparecen tras elegir el producto y solo con las presentaciones que ese producto vende
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
