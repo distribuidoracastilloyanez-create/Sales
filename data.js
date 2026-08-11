@@ -549,7 +549,11 @@
         const sortFunction = await getGlobalProductSortFunction();
         const finalProductOrder = Array.from(allProductsMap.values()).sort(sortFunction);
 
-        const finalData = { rubros: {}, vaciosMovementsPorTipo: vaciosMovementsPorTipo, clientTotals: clientTotals, grandTotalValue: grandTotalValue, acDescuentosPorCliente: acDescuentosPorCliente };
+        // Mapa productoId -> unidades en stock del vendedor (lo usa el export para
+        // decidir si una hoja de rubro tiene contenido real).
+        const _stockActualPorId = {};
+        inventarioMap.forEach((v, k) => { _stockActualPorId[k] = v.cantidadUnidades || 0; });
+        const finalData = { rubros: {}, vaciosMovementsPorTipo: vaciosMovementsPorTipo, clientTotals: clientTotals, grandTotalValue: grandTotalValue, acDescuentosPorCliente: acDescuentosPorCliente, stockActualPorId: _stockActualPorId };
 
         for (const rubroName of Array.from(allRubros).sort()) {
             const rubroData = dataByRubro[rubroName];
@@ -843,7 +847,15 @@
             for (const rubroName in finalData.rubros) {
                 const rubroData = finalData.rubros[rubroName];
                 const { products: sortedProducts, sortedClients, clients: clientData, productTotals, totalValue: rubroTotalValue, obsequiosMap } = rubroData;
-                
+
+                // No generar la hoja de un rubro que no tuvo NI ventas NI existencias.
+                // Evita la hoja fantasma "SIN RUBRO" que producen los productos huérfanos
+                // (registros de inventario cuyo producto ya no está en el catálogo maestro).
+                const _hayMovimiento = (sortedClients && sortedClients.length > 0)
+                    || Math.abs(rubroTotalValue || 0) > 0.001
+                    || (sortedProducts || []).some(p => ((finalData.stockActualPorId || {})[p.id] || 0) !== 0);
+                if (!_hayMovimiento) continue;
+
                 const sheetName = rubroName.replace(/[\/\\?*\[\]]/g, '').substring(0, 31);
                 const worksheet = workbook.addWorksheet(sheetName);
 
