@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v133'; // v133: Diagnostico de Inventarios (solo admin) - detecta productos huerfanos que generan la hoja SIN RUBRO y permite limpiar los que estan en 0
+const CACHE_NAME = 'ventas-app-cache-v134'; // v134: el cierre ya NO genera la hoja de un rubro sin ventas ni existencias (elimina la hoja fantasma SIN RUBRO)
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
