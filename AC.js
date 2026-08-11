@@ -245,7 +245,7 @@
 
                                 <div id="acPctWrap" class="bg-slate-50 border border-slate-200 rounded-lg p-2.5 mb-2"></div>
 
-                                <div class="bg-slate-50 border border-slate-200 rounded-lg p-2.5 mb-3">
+                                <div id="acVigenciaWrap" class="hidden bg-slate-50 border border-slate-200 rounded-lg p-2.5 mb-3">
                                     <p class="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Vigencia</p>
                                     <div class="flex flex-wrap gap-1.5">
                                         <label class="flex items-center gap-1.5 text-xs cursor-pointer bg-white border border-slate-300 rounded-md px-2.5 py-1.5 has-[:checked]:border-slate-800 has-[:checked]:bg-slate-800 has-[:checked]:text-white transition">
@@ -261,7 +261,7 @@
                                     </div>
                                 </div>
 
-                                <button id="acGuardar" class="w-full py-2.5 bg-slate-800 text-white rounded-lg font-semibold text-sm hover:bg-slate-900 transition disabled:opacity-30">Guardar descuento</button>
+                                <button id="acGuardar" class="hidden w-full py-2.5 bg-slate-800 text-white rounded-lg font-semibold text-sm hover:bg-slate-900 transition disabled:opacity-30">Guardar descuento</button>
                             </div>
                         </div>
                     </div>
@@ -319,6 +319,7 @@
             _nuevaRegla.porcentajes = {};
             renderSelectorAlcance();
             renderCamposPct();
+        _actualizarVisibilidadPaso2();
         });
         document.querySelectorAll('input[name="acTemp"]').forEach(r =>
             r.addEventListener('change', () => {
@@ -328,6 +329,7 @@
         document.getElementById('acGuardar').addEventListener('click', guardarRegla);
         renderSelectorAlcance();
         renderCamposPct();
+        _actualizarVisibilidadPaso2();
     };
 
     async function seleccionarCliente(id) {
@@ -440,7 +442,8 @@
             </select>`;
             document.getElementById('acValorUnico').addEventListener('change', (e) => {
                 _nuevaRegla.valores = e.target.value ? [e.target.value] : [];
-                renderCamposPct();
+                renderCamposPct(); _actualizarVisibilidadPaso2();
+        _actualizarVisibilidadPaso2();
             });
             return;
         }
@@ -487,7 +490,7 @@
                 } else {
                     _nuevaRegla.valores = [id];
                 }
-                pintar(); renderCamposPct();
+                pintar(); renderCamposPct(); _actualizarVisibilidadPaso2();
             }));
             document.getElementById('acProdSel').textContent = _nuevaRegla.valores.length
                 ? `${_nuevaRegla.valores.length} producto(s) seleccionado(s)` : '';
@@ -498,10 +501,36 @@
     }
 
     // ── Campos de porcentaje ──
+    // Presentaciones que realmente vende el/los producto(s) del alcance elegido.
+    // Para rubro/marca/segmento o varios productos, es la unión de todas.
+    function _presentacionesDelAlcance() {
+        const tipo = _nuevaRegla.tipo;
+        const vals = _nuevaRegla.valores || [];
+        if (!vals.length) return [];
+        let prods;
+        if (tipo === 'producto' || tipo === 'productos') {
+            prods = _acProductos.filter(p => vals.includes(p.id));
+        } else {
+            prods = _acProductos.filter(p => vals.includes(p[tipo]));
+        }
+        const set = new Set();
+        prods.forEach(p => {
+            const v = p.ventaPor || {};
+            const pr = p.precios || {};
+            // Se ofrece la presentación si el producto la vende o tiene precio para ella
+            if (v.cj || pr.cj) set.add('cj');
+            if (v.paq || pr.paq) set.add('paq');
+            if (v.und || pr.und || p.precioPorUnidad) set.add('und');
+        });
+        return ['cj', 'paq', 'und'].filter(k => set.has(k));
+    }
+
     function renderCamposPct() {
         const wrap = document.getElementById('acPctWrap');
         if (!wrap) return;
+
         if (_nuevaRegla.tipo === 'total') {
+            wrap.classList.remove('hidden');
             wrap.innerHTML = `<div class="flex items-center gap-2">
                 <span class="text-[11px] text-slate-600">Descuento sobre el total</span>
                 <input type="number" id="acPctTotal" min="0" max="100" step="0.5" value="${_nuevaRegla.pctTotal || 0}" class="w-20 p-1 text-center border border-slate-300 rounded-md text-sm font-semibold outline-none">
@@ -509,19 +538,60 @@
             document.getElementById('acPctTotal').addEventListener('input', e => { _nuevaRegla.pctTotal = parseFloat(e.target.value) || 0; });
             return;
         }
-        wrap.innerHTML = `<p class="text-[10px] text-slate-500 mb-1.5">Descuento por presentación (deja en 0 la que no aplique):</p>
-            <div class="space-y-1.5">
-            ${[['cj', 'Caja'], ['paq', 'Paquete'], ['und', 'Unidad']].map(([k, l]) => `
-                <div class="flex items-center gap-2">
-                    <span class="text-[11px] text-slate-600 w-16">${l}</span>
-                    <input type="number" min="0" max="100" step="0.5" value="${_nuevaRegla.porcentajes[k] || 0}" data-tipo="${k}"
-                           class="ac-pct w-16 p-1 text-center border border-slate-300 rounded-md text-sm font-semibold outline-none">
-                    <span class="text-[11px] text-slate-500">%</span>
-                </div>`).join('')}
-            </div>`;
+
+        // Todavía no se eligió a qué aplica: no tiene sentido pedir porcentajes.
+        if (!(_nuevaRegla.valores || []).length) {
+            wrap.classList.add('hidden');
+            wrap.innerHTML = '';
+            return;
+        }
+
+        const tipos = _presentacionesDelAlcance();
+        const etiquetas = { cj: 'Caja', paq: 'Paquete', und: 'Unidad' };
+
+        if (!tipos.length) {
+            wrap.classList.remove('hidden');
+            wrap.innerHTML = '<p class="text-[11px] text-slate-500">La selección no tiene presentaciones con precio configurado.</p>';
+            return;
+        }
+
+        // Solo una presentación: se pide un único porcentaje, sin lista.
+        if (tipos.length === 1) {
+            const k = tipos[0];
+            wrap.classList.remove('hidden');
+            wrap.innerHTML = `<div class="flex items-center gap-2">
+                <span class="text-[11px] text-slate-600">Descuento por ${etiquetas[k].toLowerCase()}</span>
+                <input type="number" min="0" max="100" step="0.5" value="${_nuevaRegla.porcentajes[k] || 0}" data-tipo="${k}"
+                       class="ac-pct w-20 p-1 text-center border border-slate-300 rounded-md text-sm font-semibold outline-none">
+                <span class="text-[11px] text-slate-500">%</span></div>`;
+        } else {
+            wrap.classList.remove('hidden');
+            wrap.innerHTML = `<p class="text-[10px] text-slate-500 mb-1.5">Descuento por presentación (deja en 0 la que no aplique):</p>
+                <div class="space-y-1.5">
+                ${tipos.map(k => `
+                    <div class="flex items-center gap-2">
+                        <span class="text-[11px] text-slate-600 w-16">${etiquetas[k]}</span>
+                        <input type="number" min="0" max="100" step="0.5" value="${_nuevaRegla.porcentajes[k] || 0}" data-tipo="${k}"
+                               class="ac-pct w-16 p-1 text-center border border-slate-300 rounded-md text-sm font-semibold outline-none">
+                        <span class="text-[11px] text-slate-500">%</span>
+                    </div>`).join('')}
+                </div>`;
+        }
+
+        // Limpiar porcentajes de presentaciones que ya no aplican
+        Object.keys(_nuevaRegla.porcentajes).forEach(k => { if (!tipos.includes(k)) delete _nuevaRegla.porcentajes[k]; });
+
         wrap.querySelectorAll('.ac-pct').forEach(i => i.addEventListener('input', () => {
             _nuevaRegla.porcentajes[i.dataset.tipo] = parseFloat(i.value) || 0;
         }));
+    }
+
+    // La vigencia y el botón de guardar solo tienen sentido cuando ya se eligió
+    // a qué aplica el descuento.
+    function _actualizarVisibilidadPaso2() {
+        const listo = (_nuevaRegla.tipo === 'total') || (_nuevaRegla.valores || []).length > 0;
+        document.getElementById('acVigenciaWrap')?.classList.toggle('hidden', !listo);
+        document.getElementById('acGuardar')?.classList.toggle('hidden', !listo);
     }
 
     // ── Detección de conflictos: no se permiten descuentos que se solapen ──
@@ -641,6 +711,7 @@
             renderListaDescuentos();
             renderSelectorAlcance();
             renderCamposPct();
+        _actualizarVisibilidadPaso2();
             _showModal('Descuento guardado', `<strong>${regla.alcance.etiqueta}</strong> para <strong>${_acCliente.nombreComercial}</strong>.`);
         } catch (e) {
             console.error('AC: error guardando', e);
