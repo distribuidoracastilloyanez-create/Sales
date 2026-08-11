@@ -214,6 +214,7 @@
                             <button id="recargaProductosBtn" class="w-full px-6 py-3 bg-teal-500 text-white font-semibold rounded-lg shadow-md hover:bg-teal-600">Recarga de Productos</button>
                             ${isAdmin ? `<button id="ordenarSegmentosBtn" class="w-full px-6 py-3 bg-purple-500 text-white font-semibold rounded-lg shadow-md hover:bg-purple-600">Ordenar Segmentos y Marcas</button>` : ''}
                             ${isAdmin ? `<button id="modificarDatosBtn" class="w-full px-6 py-3 bg-yellow-500 text-gray-800 font-semibold rounded-lg shadow-md hover:bg-yellow-600">Modificar Datos Maestros</button>` : ''}
+                            ${isAdmin ? `<button id="diagnosticoInvBtn" class="w-full px-6 py-3 bg-rose-600 text-white font-semibold rounded-lg shadow-md hover:bg-rose-700">Diagnóstico de Inventarios</button>` : ''}
                             <button id="backToMenuBtn" class="w-full px-6 py-3 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500">Volver al Menú Principal</button>
                         </div>
                     </div>
@@ -229,12 +230,155 @@
             document.getElementById('agregarProductoBtn')?.addEventListener('click', showAgregarProductoView);
             document.getElementById('ordenarSegmentosBtn')?.addEventListener('click', showOrdenarSegmentosMarcasView);
             document.getElementById('modificarDatosBtn')?.addEventListener('click', showModificarDatosView);
+            document.getElementById('diagnosticoInvBtn')?.addEventListener('click', showDiagnosticoInventariosView);
         }
         document.getElementById('recargaProductosBtn').addEventListener('click', showRecargaProductosView);
         document.getElementById('backToMenuBtn').addEventListener('click', () => {
             _listenersUnsubscribes.forEach(u => u());
             _showMainMenu();
         });
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // DIAGNÓSTICO DE INVENTARIOS (solo admin)
+    // Detecta "productos huérfanos": documentos en el inventario de un vendedor
+    // cuyo ID ya NO existe en el catálogo maestro (producto eliminado o recreado).
+    // Son los que producen la hoja "SIN RUBRO" en los cierres.
+    // Se cruzan contra 'productos_eliminados' para poder decir QUÉ producto era.
+    // ═══════════════════════════════════════════════════════════════════════
+    let _diagHuerfanos = []; // [{uid, vendedor, productoId, cantidad, nombre, fechaEliminado, eliminadoPor}]
+
+    async function showDiagnosticoInventariosView() {
+        if (_userRole !== 'admin') { _showModal('Acceso denegado', 'Solo los administradores pueden usar esta herramienta.'); return; }
+        _mainContent.innerHTML = `
+            <div class="p-3 pt-6 w-full max-w-3xl mx-auto">
+                <div class="bg-white/95 backdrop-blur-sm p-4 rounded-lg shadow-xl border-t-4 border-rose-600">
+                    <div class="flex items-center justify-between mb-1">
+                        <h2 class="text-lg font-bold text-gray-800">Diagnóstico de Inventarios</h2>
+                        <button id="diagVolver" class="px-3 py-1.5 bg-gray-200 text-gray-700 text-xs font-bold rounded-lg hover:bg-gray-300">Volver</button>
+                    </div>
+                    <p class="text-gray-500 mb-3 text-xs">Busca productos que quedaron en el inventario de los vendedores pero que ya no existen en el catálogo maestro. Son los que generan la hoja "SIN RUBRO" en los cierres.</p>
+                    <div id="diagCont"><p class="text-sm text-gray-400 text-center py-6 animate-pulse">Revisando inventarios de todos los vendedores...</p></div>
+                </div>
+            </div>`;
+        document.getElementById('diagVolver').addEventListener('click', window.showInventarioSubMenu);
+
+        try {
+            // 1. Catálogo maestro (IDs vigentes)
+            const masterSnap = window.getCatalogoSnapshot
+                ? await window.getCatalogoSnapshot(true)
+                : await _getDocs(_collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/productos`));
+            const idsVigentes = new Set(masterSnap.docs.map(d => d.id));
+
+            // 2. Archivo de productos eliminados (para saber qué era cada huérfano)
+            const tumbas = {};
+            try {
+                const tSnap = await _getDocs(_collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/productos_eliminados`));
+                tSnap.docs.forEach(d => { tumbas[d.id] = d.data(); });
+            } catch (e) { }
+
+            // 3. Vendedores (rol legado: 'user' o 'vendedor')
+            const usersSnap = await _getDocs(_query(_collection(_db, 'users'), _where('role', 'in', ['user', 'vendedor'])));
+            const vendedores = usersSnap.docs.map(d => ({ uid: d.id, ...d.data() }));
+
+            // 4. Revisar el inventario de cada vendedor
+            _diagHuerfanos = [];
+            for (const v of vendedores) {
+                const nombreVend = [v.nombre, v.apellido].filter(Boolean).join(' ') || v.email || v.uid;
+                try {
+                    const invSnap = await _getDocs(_collection(_db, `artifacts/${_appId}/users/${v.uid}/inventario`));
+                    invSnap.docs.forEach(d => {
+                        if (idsVigentes.has(d.id)) return; // producto vigente, todo bien
+                        const data = d.data() || {};
+                        const t = tumbas[d.id] || {};
+                        _diagHuerfanos.push({
+                            uid: v.uid,
+                            vendedor: nombreVend,
+                            productoId: d.id,
+                            cantidad: data.cantidadUnidades || 0,
+                            nombre: [t.marca, t.segmento, t.presentacion].filter(Boolean).join(' · ') || '(sin registro del producto)',
+                            rubro: t.rubro || '',
+                            fechaEliminado: t.fechaEliminado && t.fechaEliminado.toDate ? t.fechaEliminado.toDate().toLocaleDateString('es-ES') : '',
+                            eliminadoPor: t.eliminadoPor || ''
+                        });
+                    });
+                } catch (e) { }
+            }
+            _diagRender(vendedores.length);
+        } catch (e) {
+            console.error('diagnóstico:', e);
+            const c = document.getElementById('diagCont');
+            if (c) c.innerHTML = '<p class="text-sm text-red-500 text-center py-6">Error al revisar los inventarios.</p>';
+        }
+    }
+
+    function _diagRender(totalVendedores) {
+        const cont = document.getElementById('diagCont');
+        if (!cont) return;
+        if (!_diagHuerfanos.length) {
+            cont.innerHTML = `<div class="text-center py-8">
+                <p class="text-emerald-700 font-bold">Todo en orden</p>
+                <p class="text-xs text-gray-500 mt-1">No se encontraron productos huérfanos en los ${totalVendedores} vendedores revisados.</p>
+            </div>`;
+            return;
+        }
+        const vacios = _diagHuerfanos.filter(h => !h.cantidad);
+        const conStock = _diagHuerfanos.filter(h => h.cantidad);
+        const fila = (h) => `
+            <div class="flex items-center gap-2 py-2 border-b border-gray-100">
+                <div class="flex-1 min-w-0">
+                    <div class="text-xs font-semibold text-gray-800 truncate">${h.nombre}</div>
+                    <div class="text-[10px] text-gray-500 truncate">${h.vendedor}${h.fechaEliminado ? ' · eliminado el ' + h.fechaEliminado : ''}</div>
+                    <div class="text-[9px] text-gray-300 truncate">${h.productoId}</div>
+                </div>
+                <div class="shrink-0 text-right">
+                    <div class="text-xs font-black ${h.cantidad ? 'text-amber-600' : 'text-gray-400'}">${h.cantidad} und</div>
+                </div>
+            </div>`;
+        cont.innerHTML = `
+            <div class="bg-rose-50 border border-rose-200 rounded-lg p-3 mb-3">
+                <div class="text-sm font-bold text-rose-800">${_diagHuerfanos.length} producto(s) huérfano(s)</div>
+                <div class="text-[11px] text-rose-700 mt-0.5">${vacios.length} sin existencias (se pueden limpiar) · ${conStock.length} con existencias (requieren decisión)</div>
+            </div>
+
+            ${conStock.length ? `
+            <div class="mb-4">
+                <h3 class="text-xs font-black text-amber-700 uppercase tracking-wide mb-1">Con existencias — revisar antes de borrar</h3>
+                <p class="text-[10px] text-gray-500 mb-1">Estas unidades pueden ser mercancía real que el vendedor aún tiene. Descárgala o ajústala antes de eliminar el registro.</p>
+                <div class="max-h-56 overflow-y-auto">${conStock.map(fila).join('')}</div>
+            </div>` : ''}
+
+            ${vacios.length ? `
+            <div class="mb-4">
+                <h3 class="text-xs font-black text-gray-600 uppercase tracking-wide mb-1">Sin existencias — limpieza segura</h3>
+                <div class="max-h-56 overflow-y-auto">${vacios.map(fila).join('')}</div>
+                <button id="diagLimpiar" class="w-full mt-2 px-4 py-2.5 bg-rose-600 text-white text-sm font-bold rounded-lg shadow hover:bg-rose-700">Eliminar los ${vacios.length} registros en 0</button>
+            </div>` : ''}
+        `;
+        document.getElementById('diagLimpiar')?.addEventListener('click', () => _diagLimpiarVacios(vacios));
+    }
+
+    async function _diagLimpiarVacios(lista) {
+        if (!lista.length) return;
+        _showModal('Confirmar limpieza',
+            `Se eliminarán <b>${lista.length}</b> registros de productos que ya no existen en el catálogo y que están en <b>0 unidades</b>.<br><br>No afecta ventas ni cierres anteriores (cada venta guarda su propia copia de los datos del producto).`,
+            async () => {
+                _showModal('Progreso', 'Limpiando registros...');
+                try {
+                    let batch = _writeBatch(_db);
+                    let ops = 0, hechos = 0;
+                    for (const h of lista) {
+                        batch.delete(_doc(_db, `artifacts/${_appId}/users/${h.uid}/inventario`, h.productoId));
+                        ops++; hechos++;
+                        if (ops >= 400) { await batch.commit(); batch = _writeBatch(_db); ops = 0; }
+                    }
+                    if (ops > 0) await batch.commit();
+                    _showModal('Listo', `Se eliminaron ${hechos} registros huérfanos.`, showDiagnosticoInventariosView, 'Ver de nuevo');
+                } catch (e) {
+                    console.error(e);
+                    _showModal('Error', 'No se pudo completar la limpieza.');
+                }
+            }, 'Sí, eliminar', null, true);
     }
 
     function getFiltrosHTML(prefix) {
