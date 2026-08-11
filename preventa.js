@@ -23,6 +23,26 @@
     let _pvUsuarios = [];
     let _pvSectores = [];
     let _pvClientes = [];         // cache de clientes (solo lectura)
+    let _pvAcuerdo = null;        // Acuerdo Comercial del cliente del pedido en curso
+
+    // Precios del producto con el descuento del Acuerdo Comercial aplicado.
+    // Sin acuerdo devuelve los precios tal cual (comportamiento de siempre).
+    function _pvPrecios(prod) {
+        const base = prod.precios || { und: prod.precioPorUnidad || 0 };
+        try {
+            if (!_pvAcuerdo || !window.acAplicarDescuento) return base;
+            const r = window.acAplicarDescuento(_pvAcuerdo, prod, base);
+            return (r && r.aplicado && r.aplicado.length) ? r.precios : base;
+        } catch (e) { return base; }
+    }
+    // Ids de reglas aplicadas a un producto (para consumir la temporalidad)
+    function _pvReglasDe(prod) {
+        try {
+            if (!_pvAcuerdo || !window.acAplicarDescuento) return [];
+            const r = window.acAplicarDescuento(_pvAcuerdo, prod, prod.precios || {});
+            return (r && r.aplicado || []).map(a => a.reglaId).filter(Boolean);
+        } catch (e) { return []; }
+    }
     let _pvProductos = [];        // cache del catálogo maestro (solo lectura)
     // Estado del pedido en construcción
     let _pedidoActual = { vendedor: null, cliente: null, productos: {} };
@@ -552,6 +572,13 @@
         const c = _pvClientes.find(x => x.id === id);
         if (!c) return;
         _pedidoActual.cliente = c;
+        // Acuerdo Comercial del cliente (si falla, el pedido sigue con precios normales)
+        _pvAcuerdo = null;
+        if (window.acGetAcuerdoCliente) {
+            window.acGetAcuerdoCliente(c.id)
+                .then(a => { _pvAcuerdo = a; if (typeof renderPedidoProductos === 'function') { try { renderPedidoProductos(); } catch (e) {} } })
+                .catch(() => { _pvAcuerdo = null; });
+        }
 
         document.getElementById('pvClientSearchWrap').classList.add('hidden');
         const disp = document.getElementById('pvClientDisplay');
@@ -644,7 +671,7 @@
             }
             const vPor = prod.ventaPor || { und: true };
             const pa = _pedidoActual.productos[prod.id] || {};
-            const precios = prod.precios || { und: prod.precioPorUnidad || 0 };
+            const precios = _pvPrecios(prod); // incluye descuento del Acuerdo Comercial
 
             // DISPONIBLE = stock del vendedor − unidades ya apartadas por sus pedidos.
             // Es lo que realmente queda para pedir (Tomar Pedido muestra solo el disponible).
@@ -693,7 +720,9 @@
             _pedidoActual.productos[pid] = {
                 id: prod.id, presentacion: prod.presentacion, marca: prod.marca || null,
                 rubro: prod.rubro || null, segmento: prod.segmento || null,
-                precios: prod.precios || { und: prod.precioPorUnidad || 0 },
+                precios: _pvPrecios(prod), // precios con el descuento del Acuerdo aplicado
+                preciosOriginales: prod.precios || { und: prod.precioPorUnidad || 0 },
+                acReglas: _pvReglasDe(prod),
                 unidadesPorCaja: prod.unidadesPorCaja || 1, unidadesPorPaquete: prod.unidadesPorPaquete || 1,
                 manejaModelos: !!prod.manejaModelos, modelos: prod.modelos || [],
                 cantCj: 0, cantPaq: 0, cantUnd: 0
@@ -854,19 +883,41 @@
                 return;
             }
 
+            // Acuerdo Comercial: descuento sobre el TOTAL del pedido (si hay regla vigente)
+            let _totalFinal = total, _pctTotal = 0, _reglaTotalId = null;
+            try {
+                if (_pvAcuerdo && window.acReglaTotalVenta) {
+                    const rT = window.acReglaTotalVenta(_pvAcuerdo);
+                    const p = rT ? (Number(rT.pctTotal) || 0) : 0;
+                    if (rT && p > 0) { _pctTotal = p; _reglaTotalId = rT.id; _totalFinal = total * (1 - p / 100); }
+                }
+            } catch (e) { }
+
             const pedido = {
                 clienteId: c.id, clienteNombre: c.nombreComercial || '',
                 clienteNombrePersonal: c.nombrePersonal || '', clienteSector: c.sector || '',
                 vendedorId: v.id, vendedorNombre: _pvNombreVendedor(v), ruta: v.zonaPreventa || c.ruta || '', zona: v.zonaPreventa || c.ruta || c.sector || '',
                 productos: productosDoc,
-                total: total, estado: 'pendiente', fechaCreacion: new Date().toISOString(),
+                total: _totalFinal,
+                totalSinDescuento: _pctTotal > 0 ? total : null,
+                descuentoTotalAC: _pctTotal > 0 ? { porcentaje: _pctTotal, reglaId: _reglaTotalId } : null,
+                estado: 'pendiente', fechaCreacion: new Date().toISOString(),
                 creadoPor: _userId,
                 historialEstados: [{ estado: 'pendiente', fecha: new Date().toISOString(), por: _userId }]
             };
             await _addDoc(_collection(_db, pathPedidos()), pedido);
+            // Consumir la temporalidad de las reglas aplicadas (próxima venta / X ventas)
+            try {
+                if (window.acRegistrarUsoReglas) {
+                    const ids = [];
+                    (productosDoc || []).forEach(p => (p.acReglas || []).forEach(r => ids.push(r)));
+                    if (_reglaTotalId) ids.push(_reglaTotalId);
+                    if (ids.length) window.acRegistrarUsoReglas(c.id, ids);
+                }
+            } catch (e) { }
             if (window.invalidarComprometidoCache) window.invalidarComprometidoCache();
             if (_showModal) _showModal('Pedido guardado',
-                `Pedido de <strong>${pedido.clienteNombre}</strong> por <strong>$${total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong> registrado. Queda pendiente para despacho.`);
+                `Pedido de <strong>${pedido.clienteNombre}</strong> por <strong>$${_totalFinal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong> registrado.${_pctTotal > 0 ? ` (incluye ${_pctTotal}% de descuento)` : ''} Queda pendiente para despacho.`);
             showTomarPedido();
         } catch (e) {
             console.error('Error guardando pedido:', e);
