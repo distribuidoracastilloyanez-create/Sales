@@ -31,13 +31,42 @@
     function aplicarAcuerdo(prod) {
         if (!prod || !_acuerdoCliente || !window.acAplicarDescuento) return prod;
         try {
-            const r = window.acAplicarDescuento(_acuerdoCliente, prod.id, prod.precios);
+            const r = window.acAplicarDescuento(_acuerdoCliente, prod, prod.precios); // producto completo: permite reglas por rubro/marca/segmento
             if (!r || !r.aplicado || !r.aplicado.length) return prod;
             return { ...prod, precios: r.precios, _acDescuento: r.aplicado, _acPreciosOriginales: prod.precios };
         } catch (e) {
             console.warn('AC: no se pudo aplicar el descuento, se usa el precio normal.', e);
             return prod;
         }
+    }
+
+    let _acReglaTotalUsada = null; // regla de total aplicada en la venta en curso
+
+    // Aplica el descuento de "total de la venta" (Acuerdo Comercial) al monto final.
+    // Devuelve { total, pct, reglaId }. Sin regla vigente devuelve el total intacto.
+    function aplicarDescuentoTotal(total) {
+        try {
+            if (!_acuerdoCliente || !window.acReglaTotalVenta) return { total, pct: 0, reglaId: null };
+            const r = window.acReglaTotalVenta(_acuerdoCliente);
+            const pct = r ? (Number(r.pctTotal) || 0) : 0;
+            if (!r || pct <= 0) return { total, pct: 0, reglaId: null };
+            return { total: total * (1 - pct / 100), pct, reglaId: r.id };
+        } catch (e) { return { total, pct: 0, reglaId: null }; }
+    }
+
+    // Registra el consumo de las reglas que SÍ se aplicaron en esta venta
+    // (las de temporalidad 'próxima venta' o 'X ventas' van descontando).
+    async function registrarUsoAcuerdo(clienteId, itemsVenta, reglaTotalId) {
+        try {
+            if (!window.acRegistrarUsoReglas) return;
+            const ids = [];
+            (itemsVenta || []).forEach(it => {
+                (it._acDescuento || []).forEach(a => { if (a.reglaId) ids.push(a.reglaId); });
+                if (it._acReglaId) ids.push(it._acReglaId);
+            });
+            if (reglaTotalId) ids.push(reglaTotalId);
+            if (ids.length) await window.acRegistrarUsoReglas(clienteId, ids);
+        } catch (e) { console.warn('AC: no se pudo registrar el uso.', e); }
     }
 
     // Carga el acuerdo de un cliente. Ante cualquier fallo deja null (venta normal).
@@ -603,12 +632,16 @@
                 }
           }
 
+          // Acuerdo Comercial: descuento sobre el TOTAL de la factura (si hay regla vigente)
+          const _dt1 = aplicarDescuentoTotal(totalVenta);
           const ventaDataToSave = {
               clienteId: _ventaActual.cliente.id,
               clienteNombre: _ventaActual.cliente.nombreComercial || _ventaActual.cliente.nombrePersonal,
               clienteNombrePersonal: _ventaActual.cliente.nombrePersonal,
               fecha: new Date(),
-              total: totalVenta,
+              total: _dt1.total,
+              totalSinDescuento: _dt1.pct > 0 ? totalVenta : null,
+              descuentoTotalAC: _dt1.pct > 0 ? { porcentaje: _dt1.pct, reglaId: _dt1.reglaId } : null,
               productos: itemsVenta,
               vaciosDevueltosPorTipo: _ventaActual.vaciosDevueltosPorTipo,
               origen: "offline",
@@ -618,6 +651,8 @@
           batch.set(ventaRef, ventaDataToSave);
 
           await batch.commit();
+          // Consumir la temporalidad de las reglas aplicadas (próxima venta / X ventas)
+          registrarUsoAcuerdo(_ventaActual.cliente.id, itemsVenta, _dt1.reglaId);
 
           return { venta: ventaDataToSave, productos: itemsVenta, vaciosDevueltosPorTipo: ventaDataToSave.vaciosDevueltosPorTipo };
 
@@ -697,12 +732,17 @@
                       transaction.update(clientRef, { saldoVacios: sVac });
                   }
 
+                  // Acuerdo Comercial: descuento sobre el TOTAL de la factura
+                  const _dt2 = aplicarDescuentoTotal(totalVenta);
+                  _acReglaTotalUsada = _dt2.reglaId;
                   const ventaDataToSave = {
                       clienteId: _ventaActual.cliente.id,
                       clienteNombre: _ventaActual.cliente.nombreComercial || _ventaActual.cliente.nombrePersonal,
                       clienteNombrePersonal: _ventaActual.cliente.nombrePersonal,
                       fecha: new Date(),
-                      total: totalVenta,
+                      total: _dt2.total,
+                      totalSinDescuento: _dt2.pct > 0 ? totalVenta : null,
+                      descuentoTotalAC: _dt2.pct > 0 ? { porcentaje: _dt2.pct, reglaId: _dt2.reglaId } : null,
                       productos: itemsVenta,
                       vaciosDevueltosPorTipo: _ventaActual.vaciosDevueltosPorTipo,
                       origen: "offline",
@@ -713,6 +753,9 @@
                   
                   return { venta: ventaDataToSave, productos: itemsVenta, vaciosDevueltosPorTipo: ventaDataToSave.vaciosDevueltosPorTipo }; 
               });
+                // Consumir la temporalidad de las reglas aplicadas (próxima venta / X ventas)
+                registrarUsoAcuerdo(_ventaActual.cliente.id, savedData && savedData.productos, _acReglaTotalUsada);
+                _acReglaTotalUsada = null;
                 return savedData;
             } catch (e) {
                 console.error("Transaction failed: ", e);
