@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v132'; // v132: RENDIMIENTO - cache global del catalogo maestro compartido entre modulos (TTL 5min + invalidacion al editar); lupa CXC filtra cierres por fecha +-10 dias UTC
+const CACHE_NAME = 'ventas-app-cache-v133'; // v133: Diagnostico de Inventarios (solo admin) - detecta productos huerfanos que generan la hoja SIN RUBRO y permite limpiar los que estan en 0
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
@@ -181,4 +181,3 @@ self.addEventListener('fetch', event => {
             })
     );
 });
-// deploy 1786024295
