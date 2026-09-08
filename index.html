@@ -190,6 +190,7 @@
     <script src="administracion.js" defer></script>
     <script src="preventa.js" defer></script>
     <script src="AC.js" defer></script>
+    <script src="seguimiento.js" defer></script>
     <script src="archivos.js" defer></script>
 
     <script type="module"> 
@@ -512,6 +513,7 @@
                             ${isAdmin ? `<button id="supervisionBtn" class="w-full ${bpad} bg-sky-700 text-white rounded-lg shadow-md hover:bg-sky-800 font-bold transition transform hover:-translate-y-1">${isAdmin ? 'Supervisión' : 'Supervisión y Auditoría'}</button>` : ''}
                             ${isAdmin ? `<button id="administracionBtn" class="w-full ${bpad} bg-blue-700 text-white rounded-lg shadow-md hover:bg-blue-800 font-bold transition transform hover:-translate-y-1">Administración</button>` : ''}
                             ${isAdmin ? `<button id="acuerdoComercialBtn" class="w-full ${bpad} bg-amber-700 text-white rounded-lg shadow-md hover:bg-amber-800 font-bold transition transform hover:-translate-y-1">Acuerdo Comercial</button>` : ''}
+                            ${isAdmin ? `<button id="seguimientoProductoBtn" class="w-full ${bpad} bg-teal-700 text-white rounded-lg shadow-md hover:bg-teal-800 font-bold transition transform hover:-translate-y-1">Seguimiento de Producto</button>` : ''}
                         </div>
                         <div class="mt-8 pt-4 border-t flex items-center justify-center space-x-3">
                              <span id="offline-toggle-text" class="text-sm font-medium text-gray-700">Online (Manual)</span>
@@ -548,6 +550,7 @@
             document.getElementById('supervisionBtn')?.addEventListener('click',   () => safeNav(window.showSupervisionMenu,         'Supervisión'));
             document.getElementById('administracionBtn')?.addEventListener('click', () => safeNav(window.showAdministracionMenu,      'Administración'));
             document.getElementById('acuerdoComercialBtn')?.addEventListener('click', () => safeNav(window.showAcuerdoComercial,   'Acuerdo Comercial'));
+            document.getElementById('seguimientoProductoBtn')?.addEventListener('click', () => safeNav(window.showSeguimientoProducto, 'Seguimiento de Producto'));
 
             // Navegación entre sistemas (solo admin): Venta Tradicional / Pre-Venta
             document.getElementById('preventaMenuBtn')?.addEventListener('click', () => {
@@ -659,6 +662,7 @@
                     if (window.initAdministracion) window.initAdministracion(deps); else console.warn("Módulo Administración no encontrado");
                     if (window.initPreventa)      window.initPreventa(deps);      else console.warn("Módulo Pre-Venta no encontrado");
                     if (window.initAC)            window.initAC(deps);            else console.warn("Módulo Acuerdo Comercial no encontrado");
+                    if (window.initSeguimiento)   window.initSeguimiento(deps);   else console.warn("Módulo Seguimiento de Producto no encontrado");
 
                     // ── Mostrar menú principal ────────────────────────────────
                     showMainMenu();
