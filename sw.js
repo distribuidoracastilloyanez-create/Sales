@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v136'; // v136: AC - los campos de descuento aparecen tras elegir el producto y solo con las presentaciones que ese producto vende
+const CACHE_NAME = 'ventas-app-cache-v137'; // v137: nuevo modulo Seguimiento de Producto (solo admin) - historial diario por vendedor y producto: recargas, ventas, correcciones y pedidos
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
@@ -22,6 +22,7 @@ const urlsToCache = [
     './administracion.js',
     './preventa.js',
     './AC.js',
+  './seguimiento.js',
     './archivos.js',
     './calculadora.js',
     // --- Librerías Externas ---
