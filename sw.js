@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v137'; // v137: nuevo modulo Seguimiento de Producto (solo admin) - historial diario por vendedor y producto: recargas, ventas, correcciones y pedidos
+const CACHE_NAME = 'ventas-app-cache-v138'; // v138: OFFLINE prioridad 1 - guardar venta/pedido ya no se cuelga sin senal (no se espera confirmacion del servidor), modo offline manual se aplica al arrancar, preventa con manejo offline
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
