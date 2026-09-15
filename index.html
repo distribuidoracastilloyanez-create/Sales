@@ -436,10 +436,21 @@
                 { path: `artifacts/${PUBLIC_DATA_ID}/public/data/sectores` },
                 { path: `artifacts/${PUBLIC_DATA_ID}/public/data/config/obsequio` }
             ];
-            await Promise.allSettled(collectionsToPreload.map(col => {
+            const cargas = Promise.allSettled(collectionsToPreload.map(col => {
                 if (col.path.includes('/config/')) return getDoc(doc(db, col.path));
                 return getDocs(collection(db, col.path));
             }));
+
+            // Límite de tiempo: sin señal (o con señal falsa) estas consultas podían
+            // tardar muchísimo y la app se quedaba congelada en "Sincronizando Base de
+            // Datos...". Ahora se espera un máximo de 6 segundos y el menú abre con lo
+            // que haya en caché; la descarga sigue sola en segundo plano.
+            const limite = new Promise(resolve => setTimeout(() => resolve('timeout'), 6000));
+            const resultado = await Promise.race([cargas, limite]);
+            if (resultado === 'timeout') {
+                console.warn('[Inicio] Precarga lenta: se continúa con los datos locales.');
+                cargas.then(() => console.log('[Inicio] Precarga completada en segundo plano.'));
+            }
         }
 
         // ── Menú principal ────────────────────────────────────────────────────
@@ -642,13 +653,31 @@
 
                 if (user) {
                     userId = user.uid;
-                    const userDoc   = await getDoc(doc(db, "users", userId));
-                    window.userRole = userDoc.exists() ? userDoc.data().role : 'user';
+                    // El rol se lee con límite de tiempo y respaldo local: si la señal es
+                    // mala, antes la app se quedaba bloqueada aquí sin llegar al menú.
+                    let userDoc = null;
+                    try {
+                        userDoc = await Promise.race([
+                            getDoc(doc(db, "users", userId)),
+                            new Promise(resolve => setTimeout(() => resolve(null), 6000))
+                        ]);
+                    } catch (e) { userDoc = null; }
+
+                    if (userDoc && userDoc.exists()) {
+                        window.userRole = userDoc.data().role;
+                        try { localStorage.setItem('ultimoRol_' + userId, window.userRole); } catch (e) {}
+                    } else {
+                        // Sin respuesta: se usa el último rol conocido de este usuario.
+                        let rolGuardado = null;
+                        try { rolGuardado = localStorage.getItem('ultimoRol_' + userId); } catch (e) {}
+                        window.userRole = rolGuardado || 'user';
+                        console.warn('[Inicio] Rol tomado de la memoria local:', window.userRole);
+                    }
                     // 'user' (rol antiguo) equivale a 'vendedor' por compatibilidad
                     if (window.userRole === 'user') window.userRole = 'vendedor';
-                    window.userZona = userDoc.exists() ? (userDoc.data().zonaPreventa || '') : '';
+                    window.userZona = (userDoc && userDoc.exists()) ? (userDoc.data().zonaPreventa || '') : '';
                     // Nombre del usuario logueado (para "Cargado por" en el ticket)
-                    if (userDoc.exists()) {
+                    if (userDoc && userDoc.exists()) {
                         const _ud = userDoc.data();
                         const _nom = [(_ud.nombre || ''), (_ud.apellido || '')].filter(Boolean).join(' ').trim();
                         window.userNombre = _nom || _ud.email || 'Usuario';
@@ -657,7 +686,7 @@
                     document.getElementById('loginContent').classList.add('hidden');
                     document.getElementById('registerContent').classList.add('hidden');
                     mainContent.classList.remove('hidden');
-                    mainContent.innerHTML = `<div class="p-8 text-center text-white font-bold text-xl drop-shadow-md">Sincronizando Base de Datos...</div>`;
+                    mainContent.innerHTML = `<div class="p-8 text-center text-white font-bold text-xl drop-shadow-md">Sincronizando Base de Datos...<div class="text-sm font-normal mt-2 opacity-80">Si no hay señal, se abrirá con los datos guardados.</div></div>`;
                     
                     await preloadAllData();
                     
