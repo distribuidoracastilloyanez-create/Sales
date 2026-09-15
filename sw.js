@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v138'; // v138: OFFLINE prioridad 1 - guardar venta/pedido ya no se cuelga sin senal (no se espera confirmacion del servidor), modo offline manual se aplica al arrancar, preventa con manejo offline
+const CACHE_NAME = 'ventas-app-cache-v139'; // v139: OFFLINE prioridad 2 - App Shell con cache primero (abre rapido con senal mala) + limite de tiempo en precarga y lectura de rol al arrancar
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
@@ -156,11 +156,56 @@ self.addEventListener('fetch', event => {
         return;
     }
 
-    // ── 5. ESTRATEGIA: Network First (Red primero, caché como respaldo) ───────
+    // ── 5. ESTRATEGIA ─────────────────────────────────────────────────────────
+    //
+    // Antes se usaba "red primero": cada archivo esperaba a la red y solo si fallaba
+    // se leía la copia local. Con señal intermitente (hay barras pero no llega nada),
+    // el navegador tarda muchísimo en rendirse, así que la app arrancaba lentísima
+    // AUNQUE todo estuviera cacheado.
+    //
+    // Ahora, para los archivos propios de la app (el "App Shell": html, js, css,
+    // imágenes) se usa CACHÉ PRIMERO con actualización en segundo plano:
+    //   1. Se responde al instante con la copia local  → la app abre siempre rápido.
+    //   2. En paralelo se pide la versión nueva y se guarda para el próximo arranque.
+    // El control de versiones lo sigue dando CACHE_NAME: al publicar una versión
+    // nueva, el SW instala la caché nueva y borra la anterior.
+    //
+    // Para todo lo demás (peticiones externas) se mantiene "red primero".
+
+    const esAppShell = (req, url) => {
+        if (url.origin !== self.location.origin) return false;
+        const ruta = url.pathname;
+        return /\.(html|js|css|png|jpg|jpeg|svg|webp|ico|json|woff2?)$/i.test(ruta)
+            || ruta === '/' || ruta.endsWith('/');
+    };
+
+    if (esAppShell(event.request, url)) {
+        event.respondWith(
+            caches.match(event.request).then(cacheada => {
+                // Revalidación en segundo plano (no bloquea la respuesta)
+                const enRed = fetch(event.request)
+                    .then(resp => {
+                        if (resp && resp.status === 200 && resp.type === 'basic') {
+                            const copia = resp.clone();
+                            caches.open(CACHE_NAME)
+                                .then(cache => cache.put(event.request, copia))
+                                .catch(err => console.warn('[SW] Falló escritura en caché:', err));
+                        }
+                        return resp;
+                    })
+                    .catch(() => null);
+
+                // Si hay copia local se devuelve YA; si no, se espera a la red.
+                return cacheada || enRed.then(r => r || caches.match('./index.html'));
+            })
+        );
+        return;
+    }
+
+    // ── 6. Resto de peticiones: Red primero, caché como respaldo ──────────────
     event.respondWith(
         fetch(event.request)
             .then(networkResponse => {
-                // Guardar copia fresca en caché si la respuesta es válida
                 if (
                     networkResponse &&
                     networkResponse.status === 200 &&
@@ -176,7 +221,6 @@ self.addEventListener('fetch', event => {
                 return networkResponse;
             })
             .catch(() => {
-                // Sin red → servir desde caché (modo offline)
                 console.log('[SW] Offline: sirviendo desde caché →', event.request.url);
                 return caches.match(event.request);
             })
