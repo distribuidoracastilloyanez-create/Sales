@@ -587,15 +587,29 @@
             const toggle = document.getElementById('offline-toggle');
             toggle.checked = localStorage.getItem('manualOfflineMode') === 'true';
             toggle.addEventListener('change', async () => {
-                manualOffline = toggle.checked;
-                if (toggle.checked) {
-                    await disableNetwork(db);
-                    localStorage.setItem('manualOfflineMode', 'true');
-                    updateConnectionDisplay(false);
-                } else {
-                    await enableNetwork(db);
-                    localStorage.setItem('manualOfflineMode', 'false');
-                    updateConnectionDisplay(navigator.onLine);
+                const quiereOffline = toggle.checked;
+                toggle.disabled = true;
+                try {
+                    if (quiereOffline) {
+                        await disableNetwork(db);
+                        manualOffline = true;
+                        localStorage.setItem('manualOfflineMode', 'true');
+                        updateConnectionDisplay(false);
+                    } else {
+                        await enableNetwork(db);
+                        manualOffline = false;
+                        localStorage.setItem('manualOfflineMode', 'false');
+                        updateConnectionDisplay(navigator.onLine);
+                    }
+                } catch (err) {
+                    // Si el cambio falla, se revierte el interruptor: antes quedaba mostrando
+                    // un estado que no correspondía con el real.
+                    console.warn('[Offline] No se pudo cambiar el modo:', err);
+                    toggle.checked = manualOffline;
+                    updateConnectionDisplay(manualOffline ? false : navigator.onLine);
+                    if (window.showModal) window.showModal('Aviso', 'No se pudo cambiar el modo de conexión. Inténtalo de nuevo.');
+                } finally {
+                    toggle.disabled = false;
                 }
             });
         };
@@ -612,6 +626,16 @@
 
             storage = getStorage(app);
             auth    = getAuth(app);
+
+            // Si el usuario dejó activo el "Modo Offline (Manual)", hay que APLICARLO de
+            // verdad al abrir la app. Antes solo se marcaba el interruptor en pantalla,
+            // así que Firestore seguía intentando conectarse y con mala señal la app
+            // se sentía trabada justo cuando se quería evitar eso.
+            if (manualOffline) {
+                disableNetwork(db)
+                    .then(() => console.log('[Offline] Modo manual restaurado al iniciar.'))
+                    .catch(err => console.warn('[Offline] No se pudo restaurar el modo manual:', err));
+            }
 
             onAuthStateChanged(auth, async (user) => {
                 cleanupListeners();
