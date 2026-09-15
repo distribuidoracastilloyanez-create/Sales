@@ -76,6 +76,8 @@
             if (_showModal) _showModal('Acceso restringido', 'Esta función es solo para administradores.');
             return;
         }
+        // Consulta inventarios, ventas y recargas de otros usuarios: necesita servidor.
+        if (window.requiereConexion && !window.requiereConexion('El Seguimiento de Producto')) return;
         _selVend = new Set(); _selProd = new Set(); _dias = 15;
 
         _mainContent.innerHTML = `
