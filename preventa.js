@@ -25,6 +25,18 @@
     let _pvClientes = [];         // cache de clientes (solo lectura)
     let _pvAcuerdo = null;        // Acuerdo Comercial del cliente del pedido en curso
 
+    // ¿Estamos sin conexión (real o modo manual)?
+    const _pvSinRed = () => !navigator.onLine || localStorage.getItem('manualOfflineMode') === 'true';
+    // Guarda esperando confirmación SOLO si hay red. Offline, Firestore ya escribió en el
+    // teléfono: esperar el servidor dejaría la pantalla congelada para siempre.
+    async function _pvGuardar(promesa, etiqueta) {
+        if (_pvSinRed()) {
+            promesa.catch(err => console.warn(`${etiqueta}: guardado local, pendiente de sincronizar.`, err));
+            return;
+        }
+        await promesa;
+    }
+
     // Precios del producto con el descuento del Acuerdo Comercial aplicado.
     // Sin acuerdo devuelve los precios tal cual (comportamiento de siempre).
     function _pvPrecios(prod) {
@@ -874,11 +886,12 @@
                     productos: productosDoc, total: total,
                     editadoPor: _userId, editadoFecha: new Date().toISOString()
                 };
-                await _setDoc(_doc(_db, pathPedidos(), _pedidoEnEdicion.id), cambios, { merge: true });
+                await _pvGuardar(_setDoc(_doc(_db, pathPedidos(), _pedidoEnEdicion.id), cambios, { merge: true }), 'Edición de pedido');
                 if (window.invalidarComprometidoCache) window.invalidarComprometidoCache();
                 const nombreG = cambios.clienteNombre;
+                const _offEdit = _pvSinRed();
                 _pedidoEnEdicion = null;
-                if (_showModal) _showModal('Cambios guardados', `El pedido de <strong>${nombreG}</strong> se actualizó a <strong>$${total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>.`);
+                if (_showModal) _showModal('Cambios guardados', `El pedido de <strong>${nombreG}</strong> se actualizó a <strong>$${total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>.` + (_offEdit ? '<br><br><strong>Guardado en este dispositivo.</strong> Se enviará al servidor cuando haya conexión.' : ''));
                 showListaPedidos();
                 return;
             }
@@ -905,7 +918,18 @@
                 creadoPor: _userId,
                 historialEstados: [{ estado: 'pendiente', fecha: new Date().toISOString(), por: _userId }]
             };
-            await _addDoc(_collection(_db, pathPedidos()), pedido);
+            // Sin conexión, Firestore guarda el pedido en el teléfono al instante, pero la
+            // promesa de addDoc NO se resuelve hasta que el servidor confirme. Si se
+            // esperara con "await", la pantalla quedaría congelada en "Guardando..." y el
+            // vendedor registraría el pedido dos veces. Por eso offline no se espera.
+            const _sinRed = !navigator.onLine || localStorage.getItem('manualOfflineMode') === 'true';
+            const _guardar = _addDoc(_collection(_db, pathPedidos()), pedido);
+            if (_sinRed) {
+                _guardar.catch(err => console.warn('Pedido guardado localmente; se sincronizará luego.', err));
+            } else {
+                await _guardar;
+            }
+
             // Consumir la temporalidad de las reglas aplicadas (próxima venta / X ventas)
             try {
                 if (window.acRegistrarUsoReglas) {
@@ -917,7 +941,8 @@
             } catch (e) { }
             if (window.invalidarComprometidoCache) window.invalidarComprometidoCache();
             if (_showModal) _showModal('Pedido guardado',
-                `Pedido de <strong>${pedido.clienteNombre}</strong> por <strong>$${_totalFinal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong> registrado.${_pctTotal > 0 ? ` (incluye ${_pctTotal}% de descuento)` : ''} Queda pendiente para despacho.`);
+                `Pedido de <strong>${pedido.clienteNombre}</strong> por <strong>$${_totalFinal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong> registrado.${_pctTotal > 0 ? ` (incluye ${_pctTotal}% de descuento)` : ''} Queda pendiente para despacho.` +
+                (_sinRed ? `<br><br><strong>Guardado en este dispositivo.</strong> Se enviará al servidor cuando haya conexión. No lo registres de nuevo.` : ''));
             showTomarPedido();
         } catch (e) {
             console.error('Error guardando pedido:', e);
@@ -1909,10 +1934,10 @@
         const nuevoHist = (p.historialEstados || []).concat([{ estado: nuevoEstado, fecha: new Date().toISOString(), por: _userId }]);
         try {
             if (window.invalidarComprometidoCache) window.invalidarComprometidoCache();
-            await _setDoc(_doc(_db, pathPedidos(), id), {
+            await _pvGuardar(_setDoc(_doc(_db, pathPedidos(), id), {
                 estado: nuevoEstado,
                 historialEstados: nuevoHist
-            }, { merge: true });
+            }, { merge: true }), 'Cambio de estado');
             document.getElementById('pvPedDetOverlay')?.remove();
             // El onSnapshot refresca la lista automáticamente
         } catch (e) {
@@ -1987,7 +2012,7 @@
                 cambios.historialEstados = (pedido.historialEstados || []).concat([{ estado: nuevoEstado, fecha: new Date().toISOString(), por: _userId }]);
             }
             if (window.invalidarComprometidoCache) window.invalidarComprometidoCache();
-            await _setDoc(_doc(_db, pathPedidos(), pedido.id), cambios, { merge: true });
+            await _pvGuardar(_setDoc(_doc(_db, pathPedidos(), pedido.id), cambios, { merge: true }), 'Entrega de pedido');
             // Actualizar copia local para el render
             Object.assign(pedido, cambios);
         } catch (e) {
@@ -2311,7 +2336,7 @@
         }
 
         try {
-            await _setDoc(_doc(_db, pathPedidos(), pedidoOriginal.id), cambios, { merge: true });
+            await _pvGuardar(_setDoc(_doc(_db, pathPedidos(), pedidoOriginal.id), cambios, { merge: true }), 'Cambio de estado');
             if (window.invalidarComprometidoCache) window.invalidarComprometidoCache();
             document.getElementById('pvEditOverlay')?.remove();
             document.getElementById('pvPedDetOverlay')?.remove();
