@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v139'; // v139: OFFLINE prioridad 2 - App Shell con cache primero (abre rapido con senal mala) + limite de tiempo en precarga y lectura de rol al arrancar
+const CACHE_NAME = 'ventas-app-cache-v140'; // v140: OFFLINE prioridad 3 - indicador de registros sin subir, aviso al cerrar sesion con pendientes y mensajes claros en funciones que requieren conexion
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
