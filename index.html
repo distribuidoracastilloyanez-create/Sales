@@ -160,6 +160,7 @@
 
         <div id="floating-controls" class="fixed bottom-4 right-4 space-y-2 z-40 hidden">
              <span id="connectionStatusFloating" class="block text-xs font-bold px-3 py-2 rounded-full shadow-lg transition-colors duration-300 bg-gray-200 text-gray-600">Conectando...</span>
+             <span id="syncStatusFloating" class="hidden text-xs font-bold px-3 py-2 rounded-full shadow-lg transition-colors duration-300"></span>
             <button id="logoutBtn" class="w-12 h-12 bg-red-500 text-white font-semibold rounded-full shadow-lg hover:bg-red-600 transition duration-300 flex items-center justify-center transform hover:scale-110" title="Cerrar Sesión">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
@@ -276,6 +277,88 @@
         window.addEventListener('online',  () => updateConnectionDisplay(true));
         window.addEventListener('offline', () => updateConnectionDisplay(false));
         updateConnectionDisplay(navigator.onLine);
+
+        // ── Pendientes de sincronizar ─────────────────────────────────────────
+        // El vendedor necesita saber si su trabajo ya subió o sigue solo en el
+        // teléfono. Se usa la metadata de Firestore (hasPendingWrites), que es la
+        // fuente real y se corrige sola al recargar la app.
+        const syncStatusEl = document.getElementById('syncStatusFloating');
+        window.pendientesSync = { ventas: 0, pedidos: 0 };
+
+        window.totalPendientesSync = function () {
+            const p = window.pendientesSync || {};
+            return (p.ventas || 0) + (p.pedidos || 0);
+        };
+
+        function actualizarIndicadorSync() {
+            if (!syncStatusEl) return;
+            const total = window.totalPendientesSync();
+            if (total > 0) {
+                syncStatusEl.textContent = `${total} SIN SUBIR`;
+                syncStatusEl.className = "block text-xs font-bold px-3 py-2 rounded-full shadow-lg transition-colors duration-300 bg-orange-500 text-white";
+                syncStatusEl.title = 'Hay registros guardados solo en este dispositivo. Se subirán al recuperar la conexión.';
+            } else {
+                syncStatusEl.className = "hidden";
+                syncStatusEl.textContent = '';
+            }
+        }
+
+        // Funciones que NO pueden funcionar sin conexión (consultan datos de otros
+        // usuarios o del servidor). Antes devolvían vacío o fallaban en silencio y
+        // parecía un error del sistema. Devuelve true si se puede continuar.
+        window.requiereConexion = function (nombreFuncion) {
+            const sinRed = !navigator.onLine || localStorage.getItem('manualOfflineMode') === 'true';
+            if (!sinRed) return true;
+            const manual = localStorage.getItem('manualOfflineMode') === 'true';
+            window.showModal('Se necesita conexión',
+                `<strong>${nombreFuncion}</strong> necesita consultar el servidor, así que no está disponible sin internet.<br><br>` +
+                (manual
+                    ? 'Estás en <strong>Modo Offline (Manual)</strong>. Desactívalo desde el menú principal para usar esta función.'
+                    : 'Vuelve a intentarlo cuando tengas señal.'));
+            return false;
+        };
+
+        // Se guardan APARTE de activeListeners: esos se cancelan al volver al menú
+        // principal, y la vigilancia debe seguir viva durante toda la sesión.
+        let _unsubsSync = [];
+        window.detenerVigilanciaSync = function () {
+            _unsubsSync.forEach(u => { try { u(); } catch (e) {} });
+            _unsubsSync = [];
+            window.pendientesSync = { ventas: 0, pedidos: 0 };
+            actualizarIndicadorSync();
+        };
+
+        window.iniciarVigilanciaSync = function (db, userId, appId, PUBLIC_DATA_ID, deps) {
+            window.detenerVigilanciaSync();
+            try {
+                const { collection, onSnapshot, query, where } = deps;
+                // Ventas propias del vendedor
+                const unsubV = onSnapshot(
+                    collection(db, `artifacts/${appId}/users/${userId}/ventas`),
+                    { includeMetadataChanges: true },
+                    snap => {
+                        window.pendientesSync.ventas = snap.docs.filter(d => d.metadata.hasPendingWrites).length;
+                        actualizarIndicadorSync();
+                    },
+                    err => console.warn('[Sync] Vigilancia de ventas no disponible:', err)
+                );
+                _unsubsSync.push(unsubV);
+
+                // Pedidos de pre-venta creados por este usuario
+                const unsubP = onSnapshot(
+                    query(collection(db, `artifacts/${PUBLIC_DATA_ID}/public/data/preventa_pedidos`), where('creadoPor', '==', userId)),
+                    { includeMetadataChanges: true },
+                    snap => {
+                        window.pendientesSync.pedidos = snap.docs.filter(d => d.metadata.hasPendingWrites).length;
+                        actualizarIndicadorSync();
+                    },
+                    err => console.warn('[Sync] Vigilancia de pedidos no disponible:', err)
+                );
+                _unsubsSync.push(unsubP);
+            } catch (e) {
+                console.warn('[Sync] No se pudo iniciar la vigilancia:', e);
+            }
+        };
 
         // ── Modal global ──────────────────────────────────────────────────────
         // Toast no intrusivo para feedback de guardado
@@ -699,6 +782,11 @@
                         increment 
                     };
                     
+                    // Vigilar registros que aún no han subido al servidor
+                    if (window.iniciarVigilanciaSync) {
+                        window.iniciarVigilanciaSync(db, userId, appId, PUBLIC_DATA_ID, { collection, onSnapshot, query, where });
+                    }
+
                     if (window.initData)          window.initData(deps);          else console.warn("Módulo Data no encontrado");
                     if (window.initAdmin)         window.initAdmin(deps);         else console.warn("Módulo Admin no encontrado");
                     if (window.initInventario)    window.initInventario(deps);    else console.warn("Módulo Inventario no encontrado");
@@ -726,6 +814,7 @@
                     if (window.checkAndHandleShareTarget) window.checkAndHandleShareTarget();
 
                 } else {
+                    if (window.detenerVigilanciaSync) window.detenerVigilanciaSync();
                     document.getElementById('loginContent').classList.remove('hidden');
                     mainContent.classList.add('hidden');
                     floatingControls.classList.add('hidden');
@@ -762,6 +851,17 @@
         });
 
         document.getElementById('logoutBtn')?.addEventListener('click', () => {
+            // Advertir si queda trabajo guardado solo en el teléfono: cerrar sesión
+            // sin haber sincronizado puede dejar esos registros sin subir.
+            const pend = window.totalPendientesSync ? window.totalPendientesSync() : 0;
+            if (pend > 0) {
+                window.showModal('Hay trabajo sin subir',
+                    `Tienes <strong>${pend} registro(s)</strong> guardados solo en este dispositivo que todavía no llegan al servidor.<br><br>` +
+                    `Lo recomendable es <strong>conectarte a internet y esperar</strong> a que el aviso naranja desaparezca antes de cerrar sesión.<br><br>` +
+                    `¿Cerrar sesión de todos modos?`,
+                    () => signOut(auth), 'Cerrar sesión de todos modos');
+                return;
+            }
             window.showModal('Cerrar Sesión', '¿Estás seguro?', () => signOut(auth));
         });
 
