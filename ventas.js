@@ -558,7 +558,11 @@
             const snapshotDoc = await _getDoc(snapshotRef);
             if (!snapshotDoc.exists()) {
                  if (_inventarioCache && _inventarioCache.length > 0) {
-                     await _setDoc(snapshotRef, { inventario: _inventarioCache, fecha: new Date() });
+                     // Sin "await": offline, setDoc guarda en el teléfono al instante pero su
+                     // promesa no se resuelve hasta que el servidor confirme. Esperarla aquí
+                     // impediría que la venta siquiera comenzara a procesarse.
+                     _setDoc(snapshotRef, { inventario: _inventarioCache, fecha: new Date() })
+                         .catch(err => console.warn('Snapshot de auditoría pendiente de sincronizar.', err));
                  }
             }
         } catch (e) { console.warn("Snapshot check failed (non-blocking)", e); }
@@ -650,11 +654,19 @@
 
           batch.set(ventaRef, ventaDataToSave);
 
-          await batch.commit();
+          // OFFLINE: Firestore escribe en el disco del teléfono al instante, pero la
+          // promesa de commit() SOLO se resuelve cuando el servidor confirma. Si aquí
+          // se hiciera "await", sin señal la pantalla quedaría congelada en "Procesando..."
+          // para siempre, aunque la venta ya esté guardada — y el vendedor la registraría
+          // dos veces. Por eso NO se espera: se deja sincronizando en segundo plano.
+          batch.commit()
+              .then(() => { console.log('Venta sincronizada con el servidor.'); })
+              .catch(err => { console.warn('Venta guardada localmente; se sincronizará luego.', err); });
+
           // Consumir la temporalidad de las reglas aplicadas (próxima venta / X ventas)
           registrarUsoAcuerdo(_ventaActual.cliente.id, itemsVenta, _dt1.reglaId);
 
-          return { venta: ventaDataToSave, productos: itemsVenta, vaciosDevueltosPorTipo: ventaDataToSave.vaciosDevueltosPorTipo };
+          return { venta: ventaDataToSave, productos: itemsVenta, vaciosDevueltosPorTipo: ventaDataToSave.vaciosDevueltosPorTipo, _guardadaLocal: true };
 
       } else {
             if (!_runTransaction) throw new Error("Dependencia crítica 'runTransaction' no disponible.");
@@ -802,7 +814,16 @@
                         savedData.productos, 
                       savedData.vaciosDevueltosPorTipo, 
                       'Nota de Entrega',
-                      () => { _showModal('Éxito', 'Operación registrada y ticket generado/compartido.', showNuevaVentaView); },
+                      () => {
+                          // Sin conexión la venta queda guardada en el teléfono y sube sola
+                          // después; se le dice al vendedor para que no la registre otra vez.
+                          const _sinRed = !navigator.onLine || localStorage.getItem('manualOfflineMode') === 'true';
+                          _showModal('Éxito',
+                              _sinRed
+                                  ? 'Operación registrada y ticket generado.<br><br><strong>Guardada en este dispositivo.</strong> Se enviará automáticamente al servidor cuando haya conexión. No la registres de nuevo.'
+                                  : 'Operación registrada y ticket generado/compartido.',
+                              showNuevaVentaView);
+                      },
                       savedData.venta.tipoOperacion
                     );
                 }, 300);
