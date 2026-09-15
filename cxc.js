@@ -764,7 +764,9 @@
     }
     const PUNTAJE_MINIMO_NOMBRE = 60;
 
+    // Igual que la lupa de ventas: consulta datos de otros vendedores.
     async function searchConsolidatedConsignments(clientName) {
+        if (window.requiereConexion && !window.requiereConexion('La búsqueda de consignaciones')) return;
         _showModal('Buscando', 'Consolidando inventario en consignación...', null, '', null, false);
         try {
             const client = _cxcDataCache.find(c => c.name === clientName);
@@ -929,6 +931,9 @@
     }
 
     async function searchSaleDetails(clientName, dateStr, amount, personName = '') {
+        // Busca en cierres y ventas de todos los vendedores: sin conexión devolvería
+        // vacío y parecería que el recibo no existe.
+        if (window.requiereConexion && !window.requiereConexion('La búsqueda del recibo original')) return;
         _showModal('Buscando', `Buscando el recibo original...`, null, '', null, false);
         // La venta pudo guardarse bajo la razón social ("LA VAQUERITA BURGUER") o el
         // nombre personal ("ALIRIO MONCADA"); se toma el mejor puntaje de ambos.
