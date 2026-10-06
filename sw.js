@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v140'; // v140: OFFLINE prioridad 3 - indicador de registros sin subir, aviso al cerrar sesion con pendientes y mensajes claros en funciones que requieren conexion
+const CACHE_NAME = 'ventas-app-cache-v141'; // v141: Recargar Productos muestra el precio del producto (por la unidad en que se recarga) entre Producto y Stock; marca en rojo los que no tienen precio
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
