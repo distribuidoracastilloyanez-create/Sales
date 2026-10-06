@@ -1597,6 +1597,7 @@
                 <thead class="bg-gray-800 text-white sticky top-0 z-10 shadow-md">
                     <tr>
                         <th class="py-3 px-4 border-b text-left">Producto</th>
+                        <th class="py-3 px-4 border-b text-center w-28">Precio</th>
                         <th class="py-3 px-4 border-b text-center w-32">Stock Actual</th>
                         <th class="py-3 px-4 border-b text-center w-40">Cantidad a Recargar</th>
                     </tr>
@@ -1612,8 +1613,8 @@
                 lastHeader = currentHeaderValue; 
                 tableHTML += `
                     <tr class="bg-blue-50/90 border-t-2 border-blue-200">
-                        <td colspan="3" class="py-2.5 px-4 font-extrabold text-blue-900 sticky top-[44px] z-10 backdrop-blur-sm shadow-sm tracking-wide">
-                            📁 ${lastHeader}
+                        <td colspan="4" class="py-2.5 px-4 font-extrabold text-blue-900 sticky top-[44px] z-10 backdrop-blur-sm shadow-sm tracking-wide">
+                            ${lastHeader}
                         </td>
                     </tr>`; 
             }
@@ -1634,6 +1635,21 @@
                 unitLabel = 'Cj';
             }
 
+            // Precio de la MISMA unidad en la que se recarga (Und/Paq/Cj), para que el
+            // vendedor detecte precios mal cargados al momento de hacer la recarga.
+            const _pre = p.precios || { und: p.precioPorUnidad || 0 };
+            let _precioUnidad = 0;
+            if (unitLabel === 'Und')      _precioUnidad = _pre.und || p.precioPorUnidad || 0;
+            else if (unitLabel === 'Paq') _precioUnidad = _pre.paq || 0;
+            else if (unitLabel === 'Cj')  _precioUnidad = _pre.cj  || 0;
+
+            const _precioOk = Number(_precioUnidad) > 0;
+            const _precioHtml = _precioOk
+                ? `<p class="font-bold text-gray-800">$${Number(_precioUnidad).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                   <p class="text-[10px] font-semibold uppercase text-gray-400">por ${unitLabel}</p>`
+                : `<p class="font-bold text-red-600">Sin precio</p>
+                   <p class="text-[10px] font-semibold uppercase text-red-400">avisar al admin</p>`;
+
             const currentDisplayStockHtml = formatStockDisplay(p);
 
             let inputValue = '';
@@ -1646,6 +1662,9 @@
                     <td class="py-3 px-4">
                         <p class="font-bold text-gray-800">${p.presentacion}</p>
                         <p class="text-[11px] font-semibold uppercase text-gray-500">${p.marca||'S/M'}</p>
+                    </td>
+                    <td class="py-3 px-4 text-center align-middle ${_precioOk ? '' : 'bg-red-50'}">
+                        ${_precioHtml}
                     </td>
                     <td class="py-3 px-4 text-center align-middle">
                         ${currentDisplayStockHtml}
