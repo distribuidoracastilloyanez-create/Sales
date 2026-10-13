@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v143'; // v143: Archivos con subfunciones + nuevo modulo Gestion de ADC (registro propio de equipos, busqueda por codigo en mayusculas, rubro/tipo editable, SCS Connect Track y bandeja por regularizar)
+const CACHE_NAME = 'ventas-app-cache-v144'; // v144: ADC se maneja solo en Gestion de ADC (busqueda por codigo o cliente, fotos al registrar); Archivos de Cliente queda solo con documentos e imagenes
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
