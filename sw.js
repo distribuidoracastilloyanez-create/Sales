@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v146'; // v146: ADC - cliente es el primer paso y su buscador se oculta al elegir; fotos suben a clientes/{id}/adc/... (ruta ya permitida en Storage)
+const CACHE_NAME = 'ventas-app-cache-v147'; // v147: fix subida de fotos ADC - ruta con la misma forma que Archivos (4 niveles) y mensajes de error claros
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
