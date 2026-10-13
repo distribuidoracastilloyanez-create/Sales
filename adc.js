@@ -54,7 +54,8 @@
     let _equipos = [];
     let _tipos = [];
     let _clientes = [];
-    let _filtro = { rubro: '', tipo: '', gps: '', estado: '' };
+    let _filtro = { rubro: '', tipo: '', gps: '', estado: '', texto: '' };
+    let _vistaActual = 'lista';
 
     // ── Carga de datos ──
     async function cargarTipos() {
@@ -105,15 +106,13 @@
                     <div class="p-4">
                         <div class="mb-3">
                             <label class="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Buscar equipo</label>
-                            <div class="flex gap-2 mt-1">
-                                <input type="text" id="adcBuscar" placeholder="Código del equipo o nombre del cliente" autocomplete="off"
-                                       class="flex-1 min-w-0 px-3 py-2.5 border border-slate-300 rounded-lg text-sm font-semibold outline-none focus:ring-2 focus:ring-slate-400 transition">
-                                <button id="adcBuscarBtn" class="px-4 py-2.5 bg-slate-800 text-white text-sm font-bold rounded-lg hover:bg-slate-900 transition">Buscar</button>
+                            <div class="relative mt-1">
+                                <input type="text" id="adcBuscar" placeholder="Código del equipo, cliente o CEP" autocomplete="off"
+                                       class="w-full px-3 py-2.5 pr-8 border border-slate-300 rounded-lg text-sm font-semibold outline-none focus:ring-2 focus:ring-slate-400 transition">
+                                <button id="adcBuscarLimpiar" class="hidden absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 text-lg leading-none font-bold">&times;</button>
                             </div>
-                            <p class="text-[10px] text-slate-400 mt-1">Puedes escribir el código (se busca en mayúsculas) o el nombre del cliente.</p>
+                            <p class="text-[10px] text-slate-400 mt-1">La lista se filtra mientras escribes: código, nombre del cliente o código CEP.</p>
                         </div>
-
-                        <div id="adcResultado" class="mb-3"></div>
 
                         <div class="flex gap-1.5 mb-3">
                             <button data-v="lista" class="adc-vista flex-1 py-1.5 rounded text-[11px] font-bold border bg-slate-800 text-white border-slate-800">Todos</button>
@@ -143,8 +142,19 @@
             else if (window.showArchivosView) window.showArchivosView(true);
         });
         const inp = document.getElementById('adcBuscar');
-        inp.addEventListener('keydown', e => { if (e.key === 'Enter') buscarEquipo(); });
-        document.getElementById('adcBuscarBtn').addEventListener('click', buscarEquipo);
+        const btnLimpiar = document.getElementById('adcBuscarLimpiar');
+        // Filtrado EN VIVO: no hay que presionar buscar, la lista se reduce al escribir.
+        inp.addEventListener('input', () => {
+            _filtro.texto = inp.value.trim();
+            btnLimpiar.classList.toggle('hidden', !_filtro.texto);
+            renderLista(_vistaActual);
+        });
+        btnLimpiar.addEventListener('click', () => {
+            inp.value = ''; _filtro.texto = '';
+            btnLimpiar.classList.add('hidden');
+            renderLista(_vistaActual);
+            inp.focus();
+        });
         document.getElementById('adcNuevo').addEventListener('click', () => formularioEquipo(null));
         document.getElementById('adcTipos')?.addEventListener('click', administrarTipos);
 
@@ -154,17 +164,17 @@
         const selT = document.getElementById('adcFTipo');
         if (selT) selT.innerHTML = '<option value="">Tipo: todos</option>' + _tipos.map(t => `<option value="${t}">${t}</option>`).join('');
 
-        let vista = 'lista';
+        _vistaActual = 'lista';
         const pintarVista = () => {
             document.querySelectorAll('.adc-vista').forEach(b => {
-                const act = b.dataset.v === vista;
+                const act = b.dataset.v === _vistaActual;
                 b.className = `adc-vista flex-1 py-1.5 rounded text-[11px] font-bold border ${act ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-700 border-slate-300'}`;
             });
-            renderLista(vista);
+            renderLista(_vistaActual);
         };
-        document.querySelectorAll('.adc-vista').forEach(b => b.addEventListener('click', () => { vista = b.dataset.v; pintarVista(); }));
-        document.getElementById('adcFRubro').addEventListener('change', e => { _filtro.rubro = e.target.value; renderLista(vista); });
-        document.getElementById('adcFTipo').addEventListener('change', e => { _filtro.tipo = e.target.value; renderLista(vista); });
+        document.querySelectorAll('.adc-vista').forEach(b => b.addEventListener('click', () => { _vistaActual = b.dataset.v; pintarVista(); }));
+        document.getElementById('adcFRubro').addEventListener('change', e => { _filtro.rubro = e.target.value; renderLista(_vistaActual); });
+        document.getElementById('adcFTipo').addEventListener('change', e => { _filtro.tipo = e.target.value; renderLista(_vistaActual); });
         pintarVista();
     };
 
@@ -204,72 +214,6 @@
         } catch (e) { console.warn('ADC: migración omitida', e); }
     }
 
-    // ═══════════════ BÚSQUEDA POR CÓDIGO ═══════════════
-    async function buscarEquipo() {
-        const crudo = (document.getElementById('adcBuscar').value || '').trim();
-        const cod = normCod(crudo);
-        const cont = document.getElementById('adcResultado');
-        if (!cod) { cont.innerHTML = ''; return; }
-        const eq = _equipos.find(e => e.codigo === cod);
-
-        // Si no hay coincidencia exacta de código, se busca por CLIENTE
-        if (!eq) {
-            const t = crudo.toLowerCase();
-            const clientesCoinciden = _clientes.filter(c =>
-                (c.nombreComercial || '').toLowerCase().includes(t) ||
-                (c.nombrePersonal || '').toLowerCase().includes(t));
-            const idsCli = new Set(clientesCoinciden.map(c => c.id));
-            const porCliente = _equipos.filter(e => e.clienteId && idsCli.has(e.clienteId));
-            // También códigos que contengan el texto (búsqueda parcial)
-            const porCodigo = _equipos.filter(e => e.codigo.includes(cod) && !porCliente.includes(e));
-            const hallados = porCliente.concat(porCodigo);
-
-            if (hallados.length) {
-                cont.innerHTML = `
-                    <div class="border border-slate-200 rounded-lg overflow-hidden">
-                        <div class="bg-slate-50 px-3 py-1.5 text-[10px] font-semibold text-slate-500 uppercase tracking-wider">${hallados.length} equipo(s) encontrado(s)</div>
-                        <div class="divide-y divide-slate-100 max-h-56 overflow-y-auto">
-                            ${hallados.map(e => `
-                                <button type="button" data-cod="${e.codigo}" class="adc-hit w-full text-left px-3 py-2 hover:bg-slate-50 transition">
-                                    <div class="flex items-center justify-between gap-2">
-                                        <span class="text-xs font-black text-slate-800">${e.codigo}</span>
-                                        <span class="flex gap-1 shrink-0">
-                                            ${e.gpsTrack ? '<span class="text-[9px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded font-bold">TRACK</span>' : ''}
-                                            ${e.porRegularizar ? '<span class="text-[9px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-bold">REGULARIZAR</span>' : ''}
-                                        </span>
-                                    </div>
-                                    <div class="text-[10px] text-slate-500 truncate">${e.tipo || 'Sin tipo'}${e.rubro ? ' · ' + e.rubro : ''}</div>
-                                    <div class="text-[10px] text-slate-400 truncate">${e.clienteId ? nombreCliente(e.clienteId) : 'Sin cliente asignado'}</div>
-                                </button>`).join('')}
-                        </div>
-                    </div>`;
-                cont.querySelectorAll('.adc-hit').forEach(b => b.addEventListener('click', () => {
-                    const x = _equipos.find(q => q.codigo === b.dataset.cod);
-                    if (x) verEquipo(x);
-                }));
-                return;
-            }
-        }
-
-        if (!eq) {
-            // No está registrado: permitir registrarlo o dejarlo marcado para gestión
-            cont.innerHTML = `
-                <div class="border border-amber-300 bg-amber-50 rounded-lg p-3">
-                    <div class="text-xs font-bold text-amber-800">El equipo ${cod} no está registrado</div>
-                    <p class="text-[11px] text-amber-700 mt-0.5">Puedes registrarlo ahora o marcarlo para que la compañía lo regularice.</p>
-                    <div class="flex gap-2 mt-2">
-                        <button id="adcRegNuevo" class="flex-1 py-2 bg-slate-800 text-white text-xs font-bold rounded-lg">Registrar equipo</button>
-                        <button id="adcMarcarReg" class="flex-1 py-2 bg-amber-600 text-white text-xs font-bold rounded-lg">Marcar por regularizar</button>
-                    </div>
-                </div>`;
-            document.getElementById('adcRegNuevo').addEventListener('click', () => formularioEquipo(null, cod));
-            document.getElementById('adcMarcarReg').addEventListener('click', () => marcarPorRegularizar(cod));
-            return;
-        }
-        cont.innerHTML = '';
-        verEquipo(eq);
-    }
-
     async function marcarPorRegularizar(cod, equipoExistente) {
         const nota = prompt('Nota para la gestión (opcional):', '') || '';
         try {
@@ -281,7 +225,6 @@
             await _setDoc(_doc(_db, pathEquipos(), cod), datos, { merge: true });
             _showModal('Marcado', `El equipo <strong>${cod}</strong> quedó en la lista <strong>Por regularizar</strong>.`);
             await cargarEquipos();
-            document.getElementById('adcResultado').innerHTML = '';
             renderLista('regular');
         } catch (e) { _showModal('Error', 'No se pudo marcar el equipo.'); }
     }
@@ -295,10 +238,33 @@
         if (vista === 'gps') lista = lista.filter(e => e.gpsTrack);
         if (_filtro.rubro) lista = lista.filter(e => e.rubro === _filtro.rubro);
         if (_filtro.tipo)  lista = lista.filter(e => e.tipo === _filtro.tipo);
+
+        // Filtro de texto EN VIVO: código del equipo, nombre del cliente o código CEP
+        const txt = (_filtro.texto || '').trim();
+        if (txt) {
+            const t = txt.toLowerCase();
+            const tCod = normCod(txt);
+            lista = lista.filter(e => {
+                if (e.codigo.includes(tCod)) return true;
+                const c = _clientes.find(x => x.id === e.clienteId);
+                if (!c) return false;
+                return (c.nombreComercial || '').toLowerCase().includes(t)
+                    || (c.nombrePersonal || '').toLowerCase().includes(t)
+                    || (c.codigoCEP || '').toString().toLowerCase().includes(t);
+            });
+        }
         lista.sort((a, b) => a.codigo.localeCompare(b.codigo));
 
         if (!lista.length) {
-            cont.innerHTML = '<p class="text-xs text-slate-400 text-center py-6">No hay equipos que coincidan.</p>';
+            cont.innerHTML = txt
+                ? `<div class="text-center py-5">
+                       <p class="text-xs text-slate-400">Ningún equipo coincide con "${txt}".</p>
+                       <button id="adcSinResReg" class="mt-2 px-3 py-1.5 bg-slate-800 text-white text-[11px] font-bold rounded-lg">Registrar ${normCod(txt)}</button>
+                       <button id="adcSinResMarc" class="mt-2 ml-1 px-3 py-1.5 bg-amber-600 text-white text-[11px] font-bold rounded-lg">Marcar por regularizar</button>
+                   </div>`
+                : '<p class="text-xs text-slate-400 text-center py-6">No hay equipos que coincidan.</p>';
+            document.getElementById('adcSinResReg')?.addEventListener('click', () => formularioEquipo(null, normCod(txt)));
+            document.getElementById('adcSinResMarc')?.addEventListener('click', () => marcarPorRegularizar(normCod(txt)));
             return;
         }
         cont.innerHTML = lista.map(e => `
