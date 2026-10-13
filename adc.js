@@ -41,6 +41,18 @@
     const pathArchivos = () => `artifacts/${PUB()}/public/data/archivos_clientes`;
 
     const esAdmin = () => (window.userRole || _userRole) === 'admin';
+
+    // Traduce los errores de Firebase a algo accionable (sobre todo permisos).
+    function explicarError(e) {
+        const code = (e && (e.code || e.message) || '').toString();
+        if (/storage\/unauthorized|permission|insufficient/i.test(code)) {
+            return 'El servidor rechazó la subida por permisos. Avisa al administrador: hay que revisar las reglas de Storage en Firebase.';
+        }
+        if (/storage\/quota-exceeded/i.test(code)) return 'No hay espacio disponible en el almacenamiento.';
+        if (/storage\/retry-limit-exceeded|network/i.test(code)) return 'La conexión falló durante la subida. Inténtalo de nuevo con mejor señal.';
+        if (/storage\/unauthenticated/i.test(code)) return 'La sesión expiró. Cierra sesión y vuelve a entrar.';
+        return 'No se pudo completar la operación. Detalle: ' + code;
+    }
     // Normaliza el código: mayúsculas y sin espacios, para registro Y búsqueda.
     const normCod = (s) => (s || '').toString().trim().toUpperCase().replace(/\s+/g, '');
 
@@ -346,11 +358,13 @@
             try {
                 const subidas = [];
                 for (let i = 0; i < files.length; i++) {
-                    const nombre = `${Date.now()}_${i}_${files[i].name}`;
-                    // Se usa la misma raíz que el resto de la app ("clientes/...") porque
-                    // es la ruta que las reglas de Storage ya tienen permitida.
+                    // La ruta debe tener EXACTAMENTE la misma forma que la del resto de la
+                    // app (clientes/{clienteId}/{categoria}/{archivo}); un nivel de carpetas
+                    // adicional no coincide con las reglas de Storage y la subida se rechaza.
+                    // Por eso el código del equipo va dentro del NOMBRE del archivo.
+                    const nombre = `ADC_${eq.codigo}_${Date.now()}_${i}_${files[i].name}`;
                     const baseCli = eq.clienteId || 'sin-cliente';
-                    const ruta = `clientes/${baseCli}/adc/${eq.codigo}/${nombre}`;
+                    const ruta = `clientes/${baseCli}/imagenes/${nombre}`;
                     const r = window.firebaseStorageFunctions.ref(_storage, ruta);
                     await window.firebaseStorageFunctions.uploadBytes(r, files[i]);
                     const url = await window.firebaseStorageFunctions.getDownloadURL(r);
@@ -361,7 +375,7 @@
                 eq.fotos = nuevas;
                 _showModal('Listo', 'Fotos actualizadas.');
                 ov.remove(); verEquipo(eq);
-            } catch (e) { console.error(e); _showModal('Error', 'No se pudieron subir las fotos.'); }
+            } catch (e) { console.error('ADC subir fotos:', e); _showModal('Error al subir las fotos', explicarError(e)); }
         });
     }
 
@@ -491,9 +505,11 @@
                 // Las fotos del equipo se guardan en su propia carpeta de ADC
                 let fotos = edit ? (eq.fotos || []).slice() : [];
                 for (let i = 0; i < files.length; i++) {
-                    const nombre = `${Date.now()}_${i}_${files[i].name}`;
+                    // Misma forma de ruta que usa Archivos (4 niveles), para respetar las
+                    // reglas de Storage. El código del equipo va en el nombre del archivo.
+                    const nombre = `ADC_${cod}_${Date.now()}_${i}_${files[i].name}`;
                     const baseCli = clienteSel || 'sin-cliente';
-                    const ruta = `clientes/${baseCli}/adc/${cod}/${nombre}`;
+                    const ruta = `clientes/${baseCli}/imagenes/${nombre}`;
                     const r = window.firebaseStorageFunctions.ref(_storage, ruta);
                     await window.firebaseStorageFunctions.uploadBytes(r, files[i]);
                     const url = await window.firebaseStorageFunctions.getDownloadURL(r);
@@ -509,7 +525,8 @@
                 await cargarEquipos();
                 renderLista('lista');
             } catch (e) {
-                console.error(e); _showModal('Error', 'No se pudo guardar el equipo.');
+                console.error('ADC guardar equipo:', e);
+                _showModal('Error al guardar', explicarError(e));
                 btnG.disabled = false; btnG.textContent = 'Guardar';
             }
         });
