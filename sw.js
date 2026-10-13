@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v147'; // v147: fix subida de fotos ADC - ruta con la misma forma que Archivos (4 niveles) y mensajes de error claros
+const CACHE_NAME = 'ventas-app-cache-v148'; // v148: ADC - tipo de equipo Froster disponible al registrar
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
