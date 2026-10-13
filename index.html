@@ -192,6 +192,7 @@
     <script src="preventa.js" defer></script>
     <script src="AC.js" defer></script>
     <script src="seguimiento.js" defer></script>
+    <script src="adc.js" defer></script>
     <script src="archivos.js" defer></script>
 
     <script type="module"> 
@@ -804,6 +805,7 @@
                     if (window.initPreventa)      window.initPreventa(deps);      else console.warn("Módulo Pre-Venta no encontrado");
                     if (window.initAC)            window.initAC(deps);            else console.warn("Módulo Acuerdo Comercial no encontrado");
                     if (window.initSeguimiento)   window.initSeguimiento(deps);   else console.warn("Módulo Seguimiento de Producto no encontrado");
+                    if (window.initADC)           window.initADC(deps);           else console.warn("Módulo Gestión de ADC no encontrado");
 
                     // ── Mostrar menú principal ────────────────────────────────
                     showMainMenu();
