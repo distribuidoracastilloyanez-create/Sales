@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v144'; // v144: ADC se maneja solo en Gestion de ADC (busqueda por codigo o cliente, fotos al registrar); Archivos de Cliente queda solo con documentos e imagenes
+const CACHE_NAME = 'ventas-app-cache-v145'; // v145: Gestion de ADC filtra la lista EN VIVO mientras se escribe (codigo, cliente o codigo CEP), sin boton buscar
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
