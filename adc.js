@@ -104,13 +104,13 @@
 
                     <div class="p-4">
                         <div class="mb-3">
-                            <label class="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Buscar equipo por código</label>
+                            <label class="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Buscar equipo</label>
                             <div class="flex gap-2 mt-1">
-                                <input type="text" id="adcBuscar" placeholder="Ej: ADC-12345" autocomplete="off"
-                                       class="flex-1 min-w-0 px-3 py-2.5 border border-slate-300 rounded-lg text-sm uppercase font-semibold outline-none focus:ring-2 focus:ring-slate-400 transition">
+                                <input type="text" id="adcBuscar" placeholder="Código del equipo o nombre del cliente" autocomplete="off"
+                                       class="flex-1 min-w-0 px-3 py-2.5 border border-slate-300 rounded-lg text-sm font-semibold outline-none focus:ring-2 focus:ring-slate-400 transition">
                                 <button id="adcBuscarBtn" class="px-4 py-2.5 bg-slate-800 text-white text-sm font-bold rounded-lg hover:bg-slate-900 transition">Buscar</button>
                             </div>
-                            <p class="text-[10px] text-slate-400 mt-1">El código se guarda y se busca siempre en mayúsculas.</p>
+                            <p class="text-[10px] text-slate-400 mt-1">Puedes escribir el código (se busca en mayúsculas) o el nombre del cliente.</p>
                         </div>
 
                         <div id="adcResultado" class="mb-3"></div>
@@ -143,7 +143,6 @@
             else if (window.showArchivosView) window.showArchivosView(true);
         });
         const inp = document.getElementById('adcBuscar');
-        inp.addEventListener('input', () => { inp.value = inp.value.toUpperCase(); });
         inp.addEventListener('keydown', e => { if (e.key === 'Enter') buscarEquipo(); });
         document.getElementById('adcBuscarBtn').addEventListener('click', buscarEquipo);
         document.getElementById('adcNuevo').addEventListener('click', () => formularioEquipo(null));
@@ -207,10 +206,50 @@
 
     // ═══════════════ BÚSQUEDA POR CÓDIGO ═══════════════
     async function buscarEquipo() {
-        const cod = normCod(document.getElementById('adcBuscar').value);
+        const crudo = (document.getElementById('adcBuscar').value || '').trim();
+        const cod = normCod(crudo);
         const cont = document.getElementById('adcResultado');
         if (!cod) { cont.innerHTML = ''; return; }
         const eq = _equipos.find(e => e.codigo === cod);
+
+        // Si no hay coincidencia exacta de código, se busca por CLIENTE
+        if (!eq) {
+            const t = crudo.toLowerCase();
+            const clientesCoinciden = _clientes.filter(c =>
+                (c.nombreComercial || '').toLowerCase().includes(t) ||
+                (c.nombrePersonal || '').toLowerCase().includes(t));
+            const idsCli = new Set(clientesCoinciden.map(c => c.id));
+            const porCliente = _equipos.filter(e => e.clienteId && idsCli.has(e.clienteId));
+            // También códigos que contengan el texto (búsqueda parcial)
+            const porCodigo = _equipos.filter(e => e.codigo.includes(cod) && !porCliente.includes(e));
+            const hallados = porCliente.concat(porCodigo);
+
+            if (hallados.length) {
+                cont.innerHTML = `
+                    <div class="border border-slate-200 rounded-lg overflow-hidden">
+                        <div class="bg-slate-50 px-3 py-1.5 text-[10px] font-semibold text-slate-500 uppercase tracking-wider">${hallados.length} equipo(s) encontrado(s)</div>
+                        <div class="divide-y divide-slate-100 max-h-56 overflow-y-auto">
+                            ${hallados.map(e => `
+                                <button type="button" data-cod="${e.codigo}" class="adc-hit w-full text-left px-3 py-2 hover:bg-slate-50 transition">
+                                    <div class="flex items-center justify-between gap-2">
+                                        <span class="text-xs font-black text-slate-800">${e.codigo}</span>
+                                        <span class="flex gap-1 shrink-0">
+                                            ${e.gpsTrack ? '<span class="text-[9px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded font-bold">TRACK</span>' : ''}
+                                            ${e.porRegularizar ? '<span class="text-[9px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-bold">REGULARIZAR</span>' : ''}
+                                        </span>
+                                    </div>
+                                    <div class="text-[10px] text-slate-500 truncate">${e.tipo || 'Sin tipo'}${e.rubro ? ' · ' + e.rubro : ''}</div>
+                                    <div class="text-[10px] text-slate-400 truncate">${e.clienteId ? nombreCliente(e.clienteId) : 'Sin cliente asignado'}</div>
+                                </button>`).join('')}
+                        </div>
+                    </div>`;
+                cont.querySelectorAll('.adc-hit').forEach(b => b.addEventListener('click', () => {
+                    const x = _equipos.find(q => q.codigo === b.dataset.cod);
+                    if (x) verEquipo(x);
+                }));
+                return;
+            }
+        }
 
         if (!eq) {
             // No está registrado: permitir registrarlo o dejarlo marcado para gestión
@@ -402,6 +441,11 @@
                         <span class="text-xs font-bold text-slate-700">SCS Connect Track</span>
                         <span class="text-[10px] text-slate-400">(rastreo GPS)</span>
                     </label>
+                    <div>
+                        <label class="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Fotos del equipo</label>
+                        <input type="file" id="fFotos" accept="image/*" multiple class="w-full text-xs mt-1 file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-slate-800 file:text-white">
+                        <p id="fFotosInfo" class="text-[10px] text-slate-400 mt-1">${edit ? 'Las fotos que agregues se suman a las existentes.' : 'Puedes subir las fotos ahora o después.'}</p>
+                    </div>
                 </div>
                 <div class="p-3 border-t shrink-0 grid grid-cols-2 gap-2">
                     <button id="fGuardar" class="py-2.5 bg-slate-800 text-white rounded-lg font-bold text-sm">Guardar</button>
@@ -440,17 +484,33 @@
             if (!cod) { _showModal('Aviso', 'Indica el código del equipo.'); return; }
             if (!rubro || !tipo) { _showModal('Aviso', 'Selecciona el rubro y el tipo de equipo.'); return; }
             if (!edit && _equipos.some(e => e.codigo === cod)) { _showModal('Aviso', `Ya existe un equipo con el código <strong>${cod}</strong>.`); return; }
+            const files = Array.from(document.getElementById('fFotos').files || []);
+            const btnG = document.getElementById('fGuardar');
+            btnG.disabled = true; btnG.textContent = files.length ? 'Subiendo fotos...' : 'Guardando...';
             try {
+                // Las fotos del equipo se guardan en su propia carpeta de ADC
+                let fotos = edit ? (eq.fotos || []).slice() : [];
+                for (let i = 0; i < files.length; i++) {
+                    const nombre = `${Date.now()}_${i}_${files[i].name}`;
+                    const ruta = `adc/${cod}/${nombre}`;
+                    const r = window.firebaseStorageFunctions.ref(_storage, ruta);
+                    await window.firebaseStorageFunctions.uploadBytes(r, files[i]);
+                    const url = await window.firebaseStorageFunctions.getDownloadURL(r);
+                    fotos.push({ url, storagePath: ruta });
+                }
                 await _setDoc(_doc(_db, pathEquipos(), cod), {
-                    rubro, tipo, clienteId: clienteSel, gpsTrack: gps,
-                    ...(edit ? {} : { fotos: [], porRegularizar: false, creado: new Date().toISOString() }),
+                    rubro, tipo, clienteId: clienteSel, gpsTrack: gps, fotos,
+                    ...(edit ? {} : { porRegularizar: false, creado: new Date().toISOString() }),
                     actualizado: new Date().toISOString(), actualizadoPor: _userId
                 }, { merge: true });
                 ov.remove();
-                _showModal('Guardado', `Equipo <strong>${cod}</strong> guardado.`);
+                _showModal('Guardado', `Equipo <strong>${cod}</strong> guardado${files.length ? ` con ${files.length} foto(s)` : ''}.`);
                 await cargarEquipos();
                 renderLista('lista');
-            } catch (e) { console.error(e); _showModal('Error', 'No se pudo guardar el equipo.'); }
+            } catch (e) {
+                console.error(e); _showModal('Error', 'No se pudo guardar el equipo.');
+                btnG.disabled = false; btnG.textContent = 'Guardar';
+            }
         });
 
         document.getElementById('fEliminar')?.addEventListener('click', () => {
