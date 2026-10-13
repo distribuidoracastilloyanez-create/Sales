@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v145'; // v145: Gestion de ADC filtra la lista EN VIVO mientras se escribe (codigo, cliente o codigo CEP), sin boton buscar
+const CACHE_NAME = 'ventas-app-cache-v146'; // v146: ADC - cliente es el primer paso y su buscador se oculta al elegir; fotos suben a clientes/{id}/adc/... (ruta ya permitida en Storage)
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
