@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v142'; // v142: Analista de Clientes por Compras y Pagos - historial unificado de compras (ventas del sistema) y pagos (CXC) reordenado por fecha real
+const CACHE_NAME = 'ventas-app-cache-v143'; // v143: Archivos con subfunciones + nuevo modulo Gestion de ADC (registro propio de equipos, busqueda por codigo en mayusculas, rubro/tipo editable, SCS Connect Track y bandeja por regularizar)
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
@@ -23,6 +23,7 @@ const urlsToCache = [
     './preventa.js',
     './AC.js',
   './seguimiento.js',
+  './adc.js',
     './archivos.js',
     './calculadora.js',
     // --- Librerías Externas ---
