@@ -223,6 +223,99 @@
         return _ultimaCompraMap;
     }
 
+    // ─── HISTORIAL DE COMPRAS DE UN CLIENTE (desde las ventas del sistema) ───
+    // Recorre ventas y cierres de todos los vendedores y devuelve las compras de
+    // ese cliente. Se cachea por cliente para no releer en cada consulta.
+    const _histComprasCache = new Map();
+
+    async function cargarHistorialCompras(clienteId, nombreCliente) {
+        const clave = clienteId || ('nombre:' + normNombre(nombreCliente || ''));
+        if (_histComprasCache.has(clave)) return _histComprasCache.get(clave);
+
+        const nomNorm = normNombre(nombreCliente || '');
+        const compras = [];
+        const coincide = (v) => {
+            if (clienteId && v.clienteId === clienteId) return true;
+            if (!nomNorm) return false;
+            const n1 = normNombre(v.clienteNombre || '');
+            const n2 = normNombre(v.clienteNombrePersonal || '');
+            return (n1 && (n1 === nomNorm || n1.includes(nomNorm) || nomNorm.includes(n1)))
+                || (n2 && (n2 === nomNorm || n2.includes(nomNorm) || nomNorm.includes(n2)));
+        };
+
+        for (const u of _usersCache) {
+            try {
+                const [ventasSnap, cierresSnap] = await Promise.all([
+                    _getDocs(_collection(_db, `artifacts/${_appId}/users/${u.id}/ventas`)),
+                    _getDocs(_collection(_db, `artifacts/${_appId}/users/${u.id}/cierres`))
+                ]);
+                const vendedor = [u.nombre, u.apellido].filter(Boolean).join(' ') || u.email || u.id;
+                const proc = (v) => {
+                    if (!coincide(v)) return;
+                    const f = v.fecha?.toDate ? v.fecha.toDate() : (v.fecha ? new Date(v.fecha) : null);
+                    if (!f || isNaN(f.getTime())) return;
+                    compras.push({
+                        fecha: f,
+                        monto: Number(v.total) || 0,
+                        vendedor,
+                        items: (v.productos || []).length,
+                        tipoOperacion: v.tipoOperacion || ''
+                    });
+                };
+                ventasSnap.docs.forEach(d => proc(d.data()));
+                cierresSnap.docs.forEach(dc => (dc.data().ventas || []).forEach(proc));
+            } catch (e) { console.warn('Historial compras: error leyendo', u.id, e); }
+        }
+        compras.sort((a, b) => a.fecha - b.fecha);
+        _histComprasCache.set(clave, compras);
+        return compras;
+    }
+
+    // Construye una LÍNEA DE TIEMPO unificada: compras (ventas del sistema) +
+    // pagos (CXC), ordenada por la FECHA REAL del movimiento.
+    // En el CXC los pagos a veces se reportan a destiempo y quedan listados fuera
+    // de orden (un pago del 15-10 después de una venta del 20-10); aquí se
+    // reordena todo por fecha para que la lectura sea cronológica de verdad.
+    function construirLineaTiempo(compras, cxcClient) {
+        const eventos = [];
+
+        (compras || []).forEach(c => {
+            eventos.push({
+                fecha: c.fecha,
+                clase: 'compra',
+                etiqueta: 'Compra',
+                monto: c.monto,
+                detalle: c.vendedor ? `Vendedor: ${c.vendedor}` : '',
+                origen: 'Sistema'
+            });
+        });
+
+        const TIPOS = {
+            E: 'Pago en efectivo', T: 'Transferencia', P: 'Pago',
+            R: 'Retención', D: 'Descuento', C: 'Consignación', F: 'Factura CXC'
+        };
+        ((cxcClient && cxcClient.transactions) || []).forEach(t => {
+            const fecha = parseFechaCXC(t.date);
+            if (!fecha) return;
+            const tipo = (t.type || '').toUpperCase();
+            const monto = Number(t.amount) || 0;
+            if (tipo === 'F') return;            // la compra ya viene del sistema
+            if (monto >= 0 && tipo !== 'R' && tipo !== 'D' && tipo !== 'C') return;
+            eventos.push({
+                fecha,
+                clase: (tipo === 'R' || tipo === 'D' || tipo === 'C') ? 'otro' : 'pago',
+                etiqueta: TIPOS[tipo] || 'Movimiento',
+                monto: Math.abs(monto),
+                detalle: '',
+                origen: 'CXC'
+            });
+        });
+
+        // ORDEN CRONOLÓGICO REAL (lo más reciente primero)
+        eventos.sort((a, b) => b.fecha - a.fecha);
+        return eventos;
+    }
+
     // Resuelve el clienteId a partir de un nombre CXC (o null si no hay match)
     function idDesdeNombreCXC(nombreCXC) {
         if (!_indiceNombres) return null;
@@ -2470,6 +2563,111 @@
         document.getElementById('cliExportPago').addEventListener('click', () => exportarClientesExcel(listaFull, null, 'pago'));
     }
 
+    // ─── HISTORIAL UNIFICADO: compras del sistema + pagos del CXC ───
+    async function mostrarHistorialCliente(c) {
+        document.getElementById('cliHistOverlay')?.remove();
+        const ov = document.createElement('div');
+        ov.id = 'cliHistOverlay';
+        ov.className = 'fixed inset-0 z-[9999] bg-black/60 flex items-end sm:items-center justify-center p-0 sm:p-4';
+        ov.innerHTML = `
+            <div class="bg-white w-full max-w-lg rounded-t-2xl sm:rounded-2xl shadow-2xl overflow-hidden max-h-[92vh] flex flex-col">
+                <div class="bg-slate-800 text-white px-4 py-3 shrink-0">
+                    <div class="font-bold text-sm">${c.nombre}</div>
+                    <div class="text-[11px] text-slate-300">Compras y pagos en orden cronológico</div>
+                </div>
+                <div class="px-4 pt-3 shrink-0 flex gap-1.5">
+                    <button data-f="todo"   class="hist-f flex-1 py-1.5 rounded text-[11px] font-bold border bg-slate-800 text-white border-slate-800">Todo</button>
+                    <button data-f="compra" class="hist-f flex-1 py-1.5 rounded text-[11px] font-bold border bg-white text-slate-700 border-slate-300">Compras</button>
+                    <button data-f="pago"   class="hist-f flex-1 py-1.5 rounded text-[11px] font-bold border bg-white text-slate-700 border-slate-300">Pagos</button>
+                </div>
+                <div id="histCuerpo" class="p-4 overflow-y-auto flex-1">
+                    <p class="text-sm text-slate-400 text-center py-8 animate-pulse">Reuniendo compras y pagos...</p>
+                </div>
+                <div class="p-3 border-t shrink-0">
+                    <button id="histCerrar" class="w-full py-2 bg-gray-100 text-gray-600 rounded font-bold text-sm">Cerrar</button>
+                </div>
+            </div>`;
+        document.body.appendChild(ov);
+        ov.addEventListener('click', e => { if (e.target === ov) ov.remove(); });
+        document.getElementById('histCerrar').addEventListener('click', () => ov.remove());
+
+        try {
+            const clienteId = (c.id && !String(c.id).startsWith('nombre:')) ? c.id : idDesdeNombreCXC(c.nombre);
+            const compras = await cargarHistorialCompras(clienteId, c.nombre);
+            const cxcClient = (_cxcCache || []).find(x => {
+                const idc = idDesdeNombreCXC(x.name);
+                return (clienteId && idc === clienteId) || normNombre(x.name) === normNombre(c.nombre);
+            });
+            const eventos = construirLineaTiempo(compras, cxcClient);
+            let filtro = 'todo';
+
+            const pintar = () => {
+                const cuerpo = document.getElementById('histCuerpo');
+                if (!cuerpo) return;
+                const lista = eventos.filter(e => filtro === 'todo' ? true : e.clase === filtro);
+                if (!lista.length) {
+                    cuerpo.innerHTML = '<p class="text-sm text-slate-400 text-center py-8">Sin movimientos para mostrar.</p>';
+                    return;
+                }
+                const totC = eventos.filter(e => e.clase === 'compra').reduce((s, e) => s + e.monto, 0);
+                const totP = eventos.filter(e => e.clase === 'pago').reduce((s, e) => s + e.monto, 0);
+
+                // Agrupar por mes para que se lea fácil
+                let htmlFilas = '';
+                let mesActual = null;
+                lista.forEach(e => {
+                    const mes = e.fecha.toLocaleDateString('es-VE', { month: 'long', year: 'numeric' });
+                    if (mes !== mesActual) {
+                        mesActual = mes;
+                        htmlFilas += `<div class="text-[10px] font-black text-slate-400 uppercase tracking-wider mt-3 mb-1 capitalize">${mes}</div>`;
+                    }
+                    const esCompra = e.clase === 'compra';
+                    const esPago = e.clase === 'pago';
+                    const color = esCompra ? 'text-slate-800' : (esPago ? 'text-emerald-700' : 'text-amber-600');
+                    const signo = esCompra ? '' : '−';
+                    const borde = esCompra ? 'border-slate-300' : (esPago ? 'border-emerald-400' : 'border-amber-400');
+                    htmlFilas += `
+                        <div class="flex items-start gap-2 py-1.5 border-l-2 ${borde} pl-2 mb-1">
+                            <div class="w-14 shrink-0 text-[11px] text-slate-500 font-semibold">${e.fecha.toLocaleDateString('es-VE', { day: '2-digit', month: '2-digit' })}</div>
+                            <div class="flex-1 min-w-0">
+                                <div class="text-xs font-semibold ${color}">${e.etiqueta}</div>
+                                ${e.detalle ? `<div class="text-[10px] text-slate-400 truncate">${e.detalle}</div>` : ''}
+                            </div>
+                            <div class="shrink-0 text-xs font-black ${color}">${signo}$${e.monto.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                        </div>`;
+                });
+
+                cuerpo.innerHTML = `
+                    <div class="grid grid-cols-2 gap-2 mb-2 text-center">
+                        <div class="bg-slate-50 rounded p-2">
+                            <div class="text-sm font-black text-slate-800">$${totC.toLocaleString('en-US', { maximumFractionDigits: 0 })}</div>
+                            <div class="text-[9px] text-slate-500 uppercase">Total comprado</div>
+                        </div>
+                        <div class="bg-emerald-50 rounded p-2">
+                            <div class="text-sm font-black text-emerald-700">$${totP.toLocaleString('en-US', { maximumFractionDigits: 0 })}</div>
+                            <div class="text-[9px] text-emerald-600 uppercase">Total pagado</div>
+                        </div>
+                    </div>
+                    <p class="text-[9px] text-slate-400 mb-1">Ordenado por la fecha real del movimiento, sin importar cuándo se reportó en el CXC.</p>
+                    ${htmlFilas}`;
+            };
+
+            pintar();
+            ov.querySelectorAll('.hist-f').forEach(b => b.addEventListener('click', () => {
+                filtro = b.dataset.f;
+                ov.querySelectorAll('.hist-f').forEach(x => {
+                    const act = x.dataset.f === filtro;
+                    x.className = `hist-f flex-1 py-1.5 rounded text-[11px] font-bold border ${act ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-700 border-slate-300'}`;
+                });
+                pintar();
+            }));
+        } catch (e) {
+            console.error('Historial cliente:', e);
+            const cuerpo = document.getElementById('histCuerpo');
+            if (cuerpo) cuerpo.innerHTML = '<p class="text-sm text-red-500 text-center py-8">No se pudo construir el historial.</p>';
+        }
+    }
+
     function mostrarDetallePago(c) {
         document.getElementById('cliDetalleOverlay')?.remove();
         const ov = document.createElement('div');
@@ -2518,13 +2716,15 @@
                     <p class="text-[10px] text-gray-500 mt-1">Último pago: <strong>${c.compromiso && c.compromiso.diasDesdeUltimoAbono !== null && c.compromiso.diasDesdeUltimoAbono !== undefined ? 'hace ' + c.compromiso.diasDesdeUltimoAbono + ' día(s)' : 'sin abonos registrados'}</strong></p>
                 </div>
                 <div class="p-3 border-t shrink-0 flex gap-2">
-                    <button id="cliDetCXC" class="flex-1 py-2 bg-teal-600 text-white rounded font-bold text-sm hover:bg-teal-700 transition">📄 Ver en CXC</button>
+                    <button id="cliDetHist" class="flex-1 py-2 bg-purple-600 text-white rounded font-bold text-sm hover:bg-purple-700 transition">Historial</button>
+                    <button id="cliDetCXC" class="flex-1 py-2 bg-teal-600 text-white rounded font-bold text-sm hover:bg-teal-700 transition">Ver en CXC</button>
                     <button id="cliDetCerrar" class="flex-1 py-2 bg-gray-100 text-gray-600 rounded font-bold text-sm">Cerrar</button>
                 </div>
             </div>`;
         document.body.appendChild(ov);
         ov.addEventListener('click', e => { if (e.target === ov) ov.remove(); });
         document.getElementById('cliDetCerrar').addEventListener('click', () => ov.remove());
+        document.getElementById('cliDetHist').addEventListener('click', () => mostrarHistorialCliente(c));
         document.getElementById('cliDetCXC').addEventListener('click', () => {
             ov.remove();
             if (window.abrirCXCCliente) window.abrirCXCCliente(c.nombre);
