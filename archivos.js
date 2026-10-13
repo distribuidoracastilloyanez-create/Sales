@@ -155,7 +155,7 @@
                     </div>`;
             }
             const ext  = f.name.split('.').pop().toUpperCase();
-            const icon = { PDF:'🔴', DOC:'🔵', DOCX:'🔵', XLS:'🟢', XLSX:'🟢' }[ext] || '📄';
+            const icon = { PDF:'', DOC:'', DOCX:'', XLS:'', XLSX:'' }[ext] || '';
             return `
                 <div class="flex flex-col items-center justify-center rounded border border-gray-200 bg-gray-50 p-3 gap-1 aspect-square">
                     <span class="text-3xl">${icon}</span>
@@ -168,10 +168,10 @@
             <div class="mb-4 rounded-lg border border-teal-200 bg-teal-50 overflow-hidden shadow-sm">
                 <div class="flex items-center justify-between px-4 py-2 bg-teal-600 text-white">
                     <div class="flex items-center gap-2">
-                        <span class="text-lg">📤</span>
+                        <span class="text-lg"></span>
                         <span class="font-bold text-sm">${_sharedFiles.length} archivo(s) recibido(s)</span>
                     </div>
-                    <button id="btnCancelarShare" class="text-teal-200 hover:text-white text-sm font-bold">✕ Cancelar</button>
+                    <button id="btnCancelarShare" class="text-teal-200 hover:text-white text-sm font-bold">Cancelar</button>
                 </div>
                 <div class="p-3 grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
                     ${items}
@@ -185,7 +185,45 @@
     // ─────────────────────────────────────────────────────────────────────────
     // VISTA PRINCIPAL
     // ─────────────────────────────────────────────────────────────────────────
+    // ── MENÚ DE ARCHIVOS: subfunciones ──
+    // Si llega un archivo compartido desde otra app se entra directo a la
+    // pantalla de archivos de cliente, para no estorbar ese flujo.
     window.showArchivosView = async function (resetShare = false) {
+        if (resetShare) { _sharedFiles = []; _isShareMode = false; }
+        if (_isShareMode) return window.showArchivosClienteView(resetShare);
+        if (_floatingControls) _floatingControls.classList.add('hidden');
+
+        _mainContent.innerHTML = `
+            <div class="p-3 pt-8 w-full max-w-lg mx-auto">
+                <div class="bg-white rounded-xl shadow-2xl overflow-hidden border border-slate-200">
+                    <div class="bg-slate-800 px-4 py-3 flex items-center justify-between">
+                        <div>
+                            <h2 class="text-base font-semibold text-white tracking-tight">Archivos</h2>
+                            <p class="text-[10px] text-slate-400 mt-0.5">Documentos de clientes y equipos de la compañía</p>
+                        </div>
+                        <button id="arcMenuVolver" class="px-3 py-1.5 bg-white/10 text-slate-100 text-xs rounded-md hover:bg-white/20 font-medium transition">Volver</button>
+                    </div>
+                    <div class="p-4 space-y-2">
+                        <button id="arcSubCliente" class="w-full text-left px-4 py-4 bg-slate-50 border border-slate-200 rounded-lg hover:bg-slate-100 transition">
+                            <span class="block font-bold text-slate-800 text-sm">Archivos de Cliente</span>
+                            <span class="block text-xs text-slate-500 mt-0.5">Documentos e imágenes guardados por cliente</span>
+                        </button>
+                        <button id="arcSubADC" class="w-full text-left px-4 py-4 bg-slate-50 border border-slate-200 rounded-lg hover:bg-slate-100 transition">
+                            <span class="block font-bold text-slate-800 text-sm">Gestión de ADC</span>
+                            <span class="block text-xs text-slate-500 mt-0.5">Buscar equipo por código, rastreo y regularización</span>
+                        </button>
+                    </div>
+                </div>
+            </div>`;
+        document.getElementById('arcMenuVolver').addEventListener('click', () => _showMainMenu());
+        document.getElementById('arcSubCliente').addEventListener('click', () => window.showArchivosClienteView(false));
+        document.getElementById('arcSubADC').addEventListener('click', () => {
+            if (window.showGestionADC) window.showGestionADC(() => window.showArchivosView(false));
+            else _showModal('Aviso', 'El módulo de ADC no está disponible.');
+        });
+    };
+
+    window.showArchivosClienteView = async function (resetShare = false) {
         if (resetShare) { _sharedFiles = []; _isShareMode = false; }
         if (_floatingControls) _floatingControls.classList.add('hidden');
 
@@ -194,8 +232,8 @@
                 <div class="bg-white/95 backdrop-blur-sm p-4 sm:p-6 rounded-lg shadow-xl flex flex-col flex-grow overflow-y-auto border-t-4 border-teal-600">
 
                     <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3">
-                        <h2 class="text-xl sm:text-2xl font-black text-gray-800 tracking-tight">📁 Archivos y Equipos (ADC)</h2>
-                        <button id="btnVolverArchivos" class="w-full sm:w-auto px-4 py-2 bg-gray-500 text-white font-bold rounded shadow hover:bg-gray-600 transition">Volver al Menú</button>
+                        <h2 class="text-xl sm:text-2xl font-black text-gray-800 tracking-tight">Archivos de Cliente</h2>
+                        <button id="btnVolverArchivos" class="w-full sm:w-auto px-4 py-2 bg-gray-500 text-white font-bold rounded shadow hover:bg-gray-600 transition">Volver</button>
                     </div>
 
                     <!-- Banner de archivos compartidos (solo en share mode) -->
@@ -222,9 +260,9 @@
 
                         <!-- Pestañas de categoría -->
                         <div class="flex border-b border-gray-200 mb-4">
-                            <button class="arc-tab-btn flex-1 py-2 font-bold text-sm border-b-2 border-teal-600 text-teal-600" data-cat="documentos">📄 Documentos</button>
-                            <button class="arc-tab-btn flex-1 py-2 font-bold text-sm border-b-2 border-transparent text-gray-500 hover:text-teal-500 transition" data-cat="imagenes">🖼️ Imágenes</button>
-                            <button class="arc-tab-btn flex-1 py-2 font-bold text-sm border-b-2 border-transparent text-gray-500 hover:text-teal-500 transition" data-cat="adc">❄️ Equipos ADC</button>
+                            <button class="arc-tab-btn flex-1 py-2 font-bold text-sm border-b-2 border-teal-600 text-teal-600" data-cat="documentos">Documentos</button>
+                            <button class="arc-tab-btn flex-1 py-2 font-bold text-sm border-b-2 border-transparent text-gray-500 hover:text-teal-500 transition" data-cat="imagenes">Imágenes</button>
+                            <button class="arc-tab-btn flex-1 py-2 font-bold text-sm border-b-2 border-transparent text-gray-500 hover:text-teal-500 transition" data-cat="adc">Equipos ADC</button>
                         </div>
 
                         <!-- Encabezado del área + botón agregar -->
@@ -296,7 +334,7 @@
 
                                     <button type="submit" id="btnSubirArchivo"
                                         class="w-full sm:w-auto px-6 py-2.5 bg-teal-600 text-white font-bold rounded shadow hover:bg-teal-700 transition flex items-center justify-center gap-2 whitespace-nowrap">
-                                        <span>💾</span> <span id="btnSubirArchivoText">Guardar</span>
+                                        <span></span> <span id="btnSubirArchivoText">Guardar</span>
                                     </button>
                                 </div>
                             </form>
@@ -324,8 +362,11 @@
 
         // ── Event Listeners ──────────────────────────────────────────────────
         document.getElementById('btnVolverArchivos').addEventListener('click', () => {
+            const eraShare = _isShareMode;
             _isShareMode = false; _sharedFiles = [];
-            _showMainMenu();
+            // Si se entró por un archivo compartido se sale al menú principal;
+            // si no, se vuelve al menú de Archivos (sus subfunciones).
+            if (eraShare) _showMainMenu(); else window.showArchivosView(false);
         });
 
         document.getElementById('arcClientSearch').addEventListener('input', e => {
@@ -401,7 +442,7 @@
             // Chips con nombres de archivos
             chipsContainer.innerHTML = _sharedFiles.map(f => {
                 const isImg = f.type.startsWith('image/');
-                const icon  = isImg ? '🖼️' : '📄';
+                const icon  = isImg ? '' : '';
                 return `<span class="inline-flex items-center gap-1 bg-teal-100 text-teal-800 text-[10px] font-bold px-2 py-1 rounded border border-teal-200">
                             ${icon} <span class="max-w-[100px] truncate">${f.name}</span>
                         </span>`;
@@ -502,7 +543,7 @@
             fileInput.removeAttribute('multiple');
             multiHint.classList.add('hidden');
             adcFields.classList.add('hidden');
-            title.textContent     = '📄 Documentos Guardados';
+            title.textContent     = 'Documentos Guardados';
             btnAddText.textContent = _isShareMode ? `Subir como Documento` : 'Agregar Documento';
             formTitle.textContent  = _isShareMode ? 'Subir archivos recibidos como Documento' : 'Subir Nuevo Documento';
 
@@ -511,7 +552,7 @@
             fileInput.setAttribute('multiple', 'true');
             multiHint.classList.remove('hidden');
             adcFields.classList.add('hidden');
-            title.textContent     = '🖼️ Registros Fotográficos Generales';
+            title.textContent     = 'Registros Fotográficos Generales';
             btnAddText.textContent = _isShareMode ? `Subir como Imágenes` : 'Agregar Registro de Imágenes';
             formTitle.textContent  = _isShareMode ? 'Subir imágenes recibidas' : 'Subir Nuevo Lote de Imágenes';
 
@@ -520,7 +561,7 @@
             fileInput.setAttribute('multiple', 'true');
             multiHint.classList.remove('hidden');
             adcFields.classList.remove('hidden');
-            title.textContent     = '❄️ Equipos ADC Asignados';
+            title.textContent     = 'Equipos ADC Asignados';
             btnAddText.textContent = _isShareMode ? `Subir como Equipo ADC` : 'Registrar Equipo ADC';
             formTitle.textContent  = _isShareMode ? 'Registrar Equipo ADC con archivos recibidos' : 'Registrar Nuevo Equipo y sus Fotos';
             document.getElementById('adcDivision').required = true;
@@ -712,7 +753,7 @@
                         <div class="bg-white p-3 rounded-lg shadow border border-gray-200 flex flex-col">
                             ${imagesHTML}
                             <div class="flex-grow">
-                                <p class="text-[11px] text-gray-500 font-mono">📅 ${fechaFormat}</p>
+                                <p class="text-[11px] text-gray-500 font-mono">${fechaFormat}</p>
                                 ${metaHTML}
                             </div>
                             <button onclick="window.archivosModule.eliminarArchivo('${arc.id}')"
@@ -724,13 +765,13 @@
                     html += `
                         <div class="bg-white p-4 rounded-lg shadow border border-gray-200 flex items-center justify-between gap-3 hover:bg-teal-50 transition">
                             <div class="flex items-center gap-3 overflow-hidden">
-                                <div class="text-3xl">📄</div>
+                                <div class="text-3xl"></div>
                                 <div class="overflow-hidden">
                                     <p class="text-[11px] text-gray-500 font-mono">${fechaFormat}</p>
                                     <a href="${arc.url}" target="_blank" class="text-sm font-bold text-teal-700 hover:underline truncate block" title="${arc.fileName}">${arc.fileName}</a>
                                 </div>
                             </div>
-                            <button onclick="window.archivosModule.eliminarArchivo('${arc.id}')" class="p-2 text-gray-400 hover:text-red-600 transition" title="Eliminar">🗑️</button>
+                            <button onclick="window.archivosModule.eliminarArchivo('${arc.id}')" class="p-2 text-gray-400 hover:text-red-600 transition" title="Eliminar"></button>
                         </div>`;
                 }
             });
