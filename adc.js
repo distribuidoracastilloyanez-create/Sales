@@ -60,6 +60,7 @@
     const TIPOS_DEFAULT = [
         'Visicooler 1 puerta', 'Visicooler 2 puertas',
         'Cervecero 1 puerta', 'Cervecero 2 puertas', 'Cervecero 3 puertas',
+        'Froster',
         'Babycooler'
     ];
 
@@ -75,6 +76,9 @@
             const snap = await _getDoc(_doc(_db, pathTipos()));
             const d = snap.exists() ? snap.data() : null;
             _tipos = (d && Array.isArray(d.tipos) && d.tipos.length) ? d.tipos : TIPOS_DEFAULT.slice();
+            // Froster se incorporó después: si la lista guardada aún no lo tiene, se
+            // agrega para que esté disponible al registrar.
+            if (!_tipos.some(t => /froster/i.test(t))) _tipos.push('Froster');
         } catch (e) { _tipos = TIPOS_DEFAULT.slice(); }
         return _tipos;
     }
@@ -206,7 +210,8 @@
                 const puertas = Number(info.puertas) || 1;
                 let tipo = info.modelo || '';
                 if (/visicooler/i.test(tipo)) tipo = `Visicooler ${puertas} puerta${puertas > 1 ? 's' : ''}`;
-                else if (/froster|cervec/i.test(tipo)) tipo = `Cervecero ${puertas} puerta${puertas > 1 ? 's' : ''}`;
+                else if (/froster/i.test(tipo)) tipo = 'Froster';
+                else if (/cervec/i.test(tipo)) tipo = `Cervecero ${puertas} puerta${puertas > 1 ? 's' : ''}`;
                 else if (/baby/i.test(tipo)) tipo = 'Babycooler';
                 nuevos.push({
                     codigo: cod, rubro, tipo,
