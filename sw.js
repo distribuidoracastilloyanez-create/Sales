@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v141'; // v141: Recargar Productos muestra el precio del producto (por la unidad en que se recarga) entre Producto y Stock; marca en rojo los que no tienen precio
+const CACHE_NAME = 'ventas-app-cache-v142'; // v142: Analista de Clientes por Compras y Pagos - historial unificado de compras (ventas del sistema) y pagos (CXC) reordenado por fecha real
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
