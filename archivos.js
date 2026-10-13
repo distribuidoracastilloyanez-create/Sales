@@ -262,7 +262,6 @@
                         <div class="flex border-b border-gray-200 mb-4">
                             <button class="arc-tab-btn flex-1 py-2 font-bold text-sm border-b-2 border-teal-600 text-teal-600" data-cat="documentos">Documentos</button>
                             <button class="arc-tab-btn flex-1 py-2 font-bold text-sm border-b-2 border-transparent text-gray-500 hover:text-teal-500 transition" data-cat="imagenes">Imágenes</button>
-                            <button class="arc-tab-btn flex-1 py-2 font-bold text-sm border-b-2 border-transparent text-gray-500 hover:text-teal-500 transition" data-cat="adc">Equipos ADC</button>
                         </div>
 
                         <!-- Encabezado del área + botón agregar -->
@@ -281,35 +280,6 @@
                                 <div class="flex justify-between items-center border-b border-gray-200 pb-2 mb-3">
                                     <h4 class="font-bold text-gray-800" id="arcFormTitle">Subir Nuevo Archivo</h4>
                                     <button type="button" id="btnCancelAdd" class="text-gray-400 hover:text-red-500 font-bold text-sm">&times; Cancelar</button>
-                                </div>
-
-                                <!-- Metadatos ADC -->
-                                <div id="adcMetadataFields" class="hidden grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 p-3 bg-blue-50 border border-blue-200 rounded">
-                                    <div>
-                                        <label class="block text-xs font-bold text-blue-800 mb-1">División:</label>
-                                        <select id="adcDivision" class="w-full p-2 border rounded text-sm outline-none focus:ring-1 focus:ring-blue-500">
-                                            <option value="">Seleccione...</option>
-                                            <option value="PCV (Pepsi)">PCV (Pepsi)</option>
-                                            <option value="CMYV (Cervecería)">CMYV (Cervecería)</option>
-                                        </select>
-                                    </div>
-                                    <div>
-                                        <label class="block text-xs font-bold text-blue-800 mb-1">Código del Activo:</label>
-                                        <input type="text" id="adcCodigo" class="w-full p-2 border rounded text-sm outline-none focus:ring-1 focus:ring-blue-500 uppercase" placeholder="Ej: ADC-12345">
-                                    </div>
-                                    <div>
-                                        <label class="block text-xs font-bold text-blue-800 mb-1">Modelo:</label>
-                                        <select id="adcModelo" class="w-full p-2 border rounded text-sm outline-none focus:ring-1 focus:ring-blue-500">
-                                            <option value="">Seleccione...</option>
-                                            <option value="Visicooler">Visicooler</option>
-                                            <option value="Froster">Froster</option>
-                                            <option value="Babycooler">Babycooler</option>
-                                        </select>
-                                    </div>
-                                    <div>
-                                        <label class="block text-xs font-bold text-blue-800 mb-1">Cant. Puertas:</label>
-                                        <input type="number" id="adcPuertas" min="1" class="w-full p-2 border rounded text-sm outline-none focus:ring-1 focus:ring-blue-500" placeholder="Ej: 1 o 2">
-                                    </div>
                                 </div>
 
                                 <!-- Input de archivo (oculto en share mode, reemplazado por preview) -->
@@ -526,48 +496,29 @@
     // ─────────────────────────────────────────────────────────────────────────
     function actualizarInterfazPorCategoria() {
         const fileInput  = document.getElementById('arcFileInput');
-        const adcFields  = document.getElementById('adcMetadataFields');
         const title      = document.getElementById('arcGalleryTitle');
         const btnAddText = document.getElementById('btnShowAddFormText');
         const formTitle  = document.getElementById('arcFormTitle');
         const multiHint  = document.getElementById('multiFileHint');
 
-        // Limpiar required en campos ADC antes de resetear
-        document.getElementById('adcDivision').required = false;
-        document.getElementById('adcCodigo').required   = false;
-        document.getElementById('adcModelo').required   = false;
-        document.getElementById('adcPuertas').required  = false;
-
+        // Los equipos ADC ya NO se manejan aquí: tienen su propio módulo
+        // (Archivos > Gestión de ADC). Esta pantalla es solo documentos e imágenes.
         if (_categoriaActual === 'documentos') {
             fileInput.accept = '.pdf,.doc,.docx,.xls,.xlsx';
             fileInput.removeAttribute('multiple');
             multiHint.classList.add('hidden');
-            adcFields.classList.add('hidden');
             title.textContent     = 'Documentos Guardados';
             btnAddText.textContent = _isShareMode ? `Subir como Documento` : 'Agregar Documento';
             formTitle.textContent  = _isShareMode ? 'Subir archivos recibidos como Documento' : 'Subir Nuevo Documento';
 
-        } else if (_categoriaActual === 'imagenes') {
+        } else {
+            _categoriaActual = 'imagenes';
             fileInput.accept = 'image/png, image/jpeg, image/jpg';
             fileInput.setAttribute('multiple', 'true');
             multiHint.classList.remove('hidden');
-            adcFields.classList.add('hidden');
-            title.textContent     = 'Registros Fotográficos Generales';
+            title.textContent     = 'Registros Fotográficos del Cliente';
             btnAddText.textContent = _isShareMode ? `Subir como Imágenes` : 'Agregar Registro de Imágenes';
             formTitle.textContent  = _isShareMode ? 'Subir imágenes recibidas' : 'Subir Nuevo Lote de Imágenes';
-
-        } else if (_categoriaActual === 'adc') {
-            fileInput.accept = 'image/png, image/jpeg, image/jpg';
-            fileInput.setAttribute('multiple', 'true');
-            multiHint.classList.remove('hidden');
-            adcFields.classList.remove('hidden');
-            title.textContent     = 'Equipos ADC Asignados';
-            btnAddText.textContent = _isShareMode ? `Subir como Equipo ADC` : 'Registrar Equipo ADC';
-            formTitle.textContent  = _isShareMode ? 'Registrar Equipo ADC con archivos recibidos' : 'Registrar Nuevo Equipo y sus Fotos';
-            document.getElementById('adcDivision').required = true;
-            document.getElementById('adcCodigo').required   = true;
-            document.getElementById('adcModelo').required   = true;
-            document.getElementById('adcPuertas').required  = true;
         }
     }
 
@@ -594,28 +545,13 @@
             filesToUpload = Array.from(fileInput.files);
         }
 
-        // ── Validar metadatos ADC si corresponde ─────────────────────────────
-        let metadataADC = null;
-        if (_categoriaActual === 'adc') {
-            const division = document.getElementById('adcDivision').value;
-            const codigo   = document.getElementById('adcCodigo').value.trim().toUpperCase();
-            const modelo   = document.getElementById('adcModelo').value;
-            const puertas  = parseInt(document.getElementById('adcPuertas').value, 10);
-
-            if (!division || !codigo || !modelo || !puertas) {
-                _showModal('Aviso', 'Complete todos los campos del equipo ADC antes de guardar.');
-                return;
-            }
-            metadataADC = { division, codigo, modelo, puertas };
-        }
-
         _showModal('Subiendo...', `Subiendo ${filesToUpload.length} archivo(s)...`, null, '', null, false);
 
         try {
             const exactMomentMs  = Date.now();
             const exactMomentISO = new Date(exactMomentMs).toISOString();
 
-            if (_categoriaActual === 'adc' || _categoriaActual === 'imagenes') {
+            if (_categoriaActual === 'imagenes') {
                 // SUBIDA MÚLTIPLE AGRUPADA
                 const uploadPromises = filesToUpload.map(async (file, index) => {
                     const uniqueName  = `${exactMomentMs}_${index}_${file.name}`;
@@ -635,7 +571,6 @@
                     fechaCreacion: exactMomentISO,
                     subidoPor:    _userId
                 };
-                if (metadataADC) docData.adcInfo = metadataADC;
 
                 await _addDoc(_collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/archivos_clientes`), docData);
 
@@ -722,7 +657,7 @@
                 const d           = new Date(arc.fechaCreacion);
                 const fechaFormat = d.toLocaleDateString('es-ES') + ' ' + d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
 
-                if (_categoriaActual === 'adc' || _categoriaActual === 'imagenes') {
+                if (_categoriaActual === 'imagenes') {
                     const arrayFotos    = arc.archivos || [{ url: arc.url, fileName: arc.fileName, storagePath: arc.storagePath }];
                     const gridColsClass = arrayFotos.length > 1 ? 'grid-cols-2' : 'grid-cols-1';
 
