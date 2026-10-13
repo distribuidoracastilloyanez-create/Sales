@@ -347,7 +347,10 @@
                 const subidas = [];
                 for (let i = 0; i < files.length; i++) {
                     const nombre = `${Date.now()}_${i}_${files[i].name}`;
-                    const ruta = `adc/${eq.codigo}/${nombre}`;
+                    // Se usa la misma raíz que el resto de la app ("clientes/...") porque
+                    // es la ruta que las reglas de Storage ya tienen permitida.
+                    const baseCli = eq.clienteId || 'sin-cliente';
+                    const ruta = `clientes/${baseCli}/adc/${eq.codigo}/${nombre}`;
                     const r = window.firebaseStorageFunctions.ref(_storage, ruta);
                     await window.firebaseStorageFunctions.uploadBytes(r, files[i]);
                     const url = await window.firebaseStorageFunctions.getDownloadURL(r);
@@ -376,31 +379,37 @@
                     <div class="font-semibold text-sm">${edit ? 'Editar equipo' : 'Registrar equipo'}</div>
                 </div>
                 <div class="p-4 overflow-y-auto flex-1 space-y-3">
+                    <div id="fCliBloque">
+                        <label class="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">1. Cliente donde está instalado</label>
+                        <div id="fCliBuscador" class="${edit && eq.clienteId ? 'hidden' : ''}">
+                            <input type="text" id="fCliente" placeholder="Buscar cliente por nombre o CEP..." autocomplete="off"
+                                   class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm outline-none mt-1">
+                            <div id="fCliDrop" class="hidden border border-slate-200 rounded-lg max-h-40 overflow-y-auto mt-1"></div>
+                        </div>
+                        <div id="fCliElegido" class="${edit && eq.clienteId ? '' : 'hidden'} mt-1 flex items-center justify-between gap-2 bg-slate-50 border border-slate-200 rounded-lg p-2.5">
+                            <span id="fCliNombre" class="text-xs font-bold text-slate-800 truncate">${edit && eq.clienteId ? nombreCliente(eq.clienteId) : ''}</span>
+                            <button type="button" id="fCliCambiar" class="text-[10px] text-slate-500 hover:text-slate-800 underline shrink-0">Cambiar</button>
+                        </div>
+                    </div>
+
                     <div>
-                        <label class="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Código</label>
+                        <label class="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">2. Código del equipo</label>
                         <input type="text" id="fCodigo" value="${edit ? eq.codigo : (codigoSugerido || '')}" ${edit ? 'disabled' : ''}
                                class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm uppercase font-semibold outline-none mt-1 ${edit ? 'bg-slate-100' : ''}">
                     </div>
                     <div>
-                        <label class="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Rubro</label>
+                        <label class="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">3. Rubro</label>
                         <select id="fRubro" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white outline-none mt-1">
                             <option value="">Seleccione...</option>
                             ${RUBROS.map(r => `<option value="${r}" ${edit && eq.rubro === r ? 'selected' : ''}>${r === 'CERVECERIA' ? 'ADC de Cervecería' : 'ADC de Pepsi'}</option>`).join('')}
                         </select>
                     </div>
                     <div>
-                        <label class="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Tipo de equipo</label>
+                        <label class="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">4. Tipo de equipo</label>
                         <select id="fTipo" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white outline-none mt-1">
                             <option value="">Seleccione...</option>
                             ${_tipos.map(t => `<option value="${t}" ${edit && eq.tipo === t ? 'selected' : ''}>${t}</option>`).join('')}
                         </select>
-                    </div>
-                    <div>
-                        <label class="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Cliente donde está instalado</label>
-                        <input type="text" id="fCliente" placeholder="Buscar cliente..." autocomplete="off"
-                               class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm outline-none mt-1">
-                        <div id="fCliDrop" class="hidden border border-slate-200 rounded-lg max-h-36 overflow-y-auto mt-1"></div>
-                        <p id="fCliSel" class="text-[11px] text-slate-600 mt-1">${edit && eq.clienteId ? 'Actual: <strong>' + nombreCliente(eq.clienteId) + '</strong>' : ''}</p>
                     </div>
                     <label class="flex items-center gap-2 cursor-pointer bg-slate-50 border border-slate-200 rounded-lg p-2.5">
                         <input type="checkbox" id="fGps" class="w-4 h-4 accent-emerald-600" ${edit && eq.gpsTrack ? 'checked' : ''}>
@@ -408,7 +417,7 @@
                         <span class="text-[10px] text-slate-400">(rastreo GPS)</span>
                     </label>
                     <div>
-                        <label class="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Fotos del equipo</label>
+                        <label class="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">5. Fotos del equipo</label>
                         <input type="file" id="fFotos" accept="image/*" multiple class="w-full text-xs mt-1 file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-slate-800 file:text-white">
                         <p id="fFotosInfo" class="text-[10px] text-slate-400 mt-1">${edit ? 'Las fotos que agregues se suman a las existentes.' : 'Puedes subir las fotos ahora o después.'}</p>
                     </div>
@@ -427,19 +436,43 @@
         fc.addEventListener('input', () => { fc.value = fc.value.toUpperCase(); });
 
         let clienteSel = edit ? (eq.clienteId || '') : '';
-        const inpCli = document.getElementById('fCliente');
+        const inpCli   = document.getElementById('fCliente');
+        const bloqueBus = document.getElementById('fCliBuscador');
+        const bloqueSel = document.getElementById('fCliElegido');
+        const dropCli  = document.getElementById('fCliDrop');
+
+        // Al elegir el cliente se OCULTA el buscador y queda la selección visible,
+        // con opción de cambiarla.
+        const fijarCliente = (id) => {
+            clienteSel = id;
+            document.getElementById('fCliNombre').textContent = nombreCliente(id);
+            dropCli.classList.add('hidden');
+            inpCli.value = '';
+            bloqueBus.classList.add('hidden');
+            bloqueSel.classList.remove('hidden');
+        };
+        document.getElementById('fCliCambiar').addEventListener('click', () => {
+            clienteSel = '';
+            bloqueSel.classList.add('hidden');
+            bloqueBus.classList.remove('hidden');
+            inpCli.focus();
+        });
+
         inpCli.addEventListener('input', () => {
             const t = inpCli.value.toLowerCase().trim();
-            const drop = document.getElementById('fCliDrop');
-            if (!t) { drop.classList.add('hidden'); return; }
-            const res = _clientes.filter(c => (c.nombreComercial || '').toLowerCase().includes(t) || (c.nombrePersonal || '').toLowerCase().includes(t)).slice(0, 20);
-            drop.innerHTML = res.map(c => `<button type="button" data-id="${c.id}" class="fcli w-full text-left px-2 py-1.5 text-xs hover:bg-slate-50 border-b border-slate-100">${c.nombreComercial || c.nombrePersonal}</button>`).join('') || '<p class="text-[11px] text-slate-400 p-2">Sin resultados</p>';
-            drop.classList.remove('hidden');
-            drop.querySelectorAll('.fcli').forEach(b => b.addEventListener('click', () => {
-                clienteSel = b.dataset.id;
-                document.getElementById('fCliSel').innerHTML = 'Seleccionado: <strong>' + nombreCliente(clienteSel) + '</strong>';
-                drop.classList.add('hidden'); inpCli.value = '';
-            }));
+            if (!t) { dropCli.classList.add('hidden'); return; }
+            const res = _clientes.filter(c =>
+                (c.nombreComercial || '').toLowerCase().includes(t) ||
+                (c.nombrePersonal || '').toLowerCase().includes(t) ||
+                (c.codigoCEP || '').toString().toLowerCase().includes(t)
+            ).slice(0, 20);
+            dropCli.innerHTML = res.map(c => `
+                <button type="button" data-id="${c.id}" class="fcli w-full text-left px-2 py-1.5 text-xs hover:bg-slate-50 border-b border-slate-100">
+                    <span class="font-semibold text-slate-800">${c.nombreComercial || c.nombrePersonal || '(sin nombre)'}</span>
+                    <span class="block text-[10px] text-slate-400">${c.codigoCEP ? 'CEP ' + c.codigoCEP : ''}${c.sector ? ' · ' + c.sector : ''}</span>
+                </button>`).join('') || '<p class="text-[11px] text-slate-400 p-2">Sin resultados</p>';
+            dropCli.classList.remove('hidden');
+            dropCli.querySelectorAll('.fcli').forEach(b => b.addEventListener('click', () => fijarCliente(b.dataset.id)));
         });
 
         document.getElementById('fGuardar').addEventListener('click', async () => {
@@ -447,6 +480,7 @@
             const rubro = document.getElementById('fRubro').value;
             const tipo = document.getElementById('fTipo').value;
             const gps = document.getElementById('fGps').checked;
+            if (!clienteSel) { _showModal('Aviso', 'Primero selecciona el cliente donde está instalado el equipo.'); return; }
             if (!cod) { _showModal('Aviso', 'Indica el código del equipo.'); return; }
             if (!rubro || !tipo) { _showModal('Aviso', 'Selecciona el rubro y el tipo de equipo.'); return; }
             if (!edit && _equipos.some(e => e.codigo === cod)) { _showModal('Aviso', `Ya existe un equipo con el código <strong>${cod}</strong>.`); return; }
@@ -458,7 +492,8 @@
                 let fotos = edit ? (eq.fotos || []).slice() : [];
                 for (let i = 0; i < files.length; i++) {
                     const nombre = `${Date.now()}_${i}_${files[i].name}`;
-                    const ruta = `adc/${cod}/${nombre}`;
+                    const baseCli = clienteSel || 'sin-cliente';
+                    const ruta = `clientes/${baseCli}/adc/${cod}/${nombre}`;
                     const r = window.firebaseStorageFunctions.ref(_storage, ruta);
                     await window.firebaseStorageFunctions.uploadBytes(r, files[i]);
                     const url = await window.firebaseStorageFunctions.getDownloadURL(r);
