@@ -214,6 +214,7 @@
                             <button id="recargaProductosBtn" class="w-full px-6 py-3 bg-teal-500 text-white font-semibold rounded-lg shadow-md hover:bg-teal-600">Recarga de Productos</button>
                             ${isAdmin ? `<button id="ordenarSegmentosBtn" class="w-full px-6 py-3 bg-purple-500 text-white font-semibold rounded-lg shadow-md hover:bg-purple-600">Ordenar Segmentos y Marcas</button>` : ''}
                             ${isAdmin ? `<button id="modificarDatosBtn" class="w-full px-6 py-3 bg-yellow-500 text-gray-800 font-semibold rounded-lg shadow-md hover:bg-yellow-600">Modificar Datos Maestros</button>` : ''}
+                            ${isAdmin ? `<button id="edicionCodigosBtn" class="w-full px-6 py-3 bg-slate-700 text-white font-semibold rounded-lg shadow-md hover:bg-slate-800">Edición de Códigos</button>` : ''}
                             ${isAdmin ? `<button id="diagnosticoInvBtn" class="w-full px-6 py-3 bg-rose-600 text-white font-semibold rounded-lg shadow-md hover:bg-rose-700">Diagnóstico de Inventarios</button>` : ''}
                             <button id="backToMenuBtn" class="w-full px-6 py-3 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500">Volver al Menú Principal</button>
                         </div>
@@ -230,6 +231,7 @@
             document.getElementById('agregarProductoBtn')?.addEventListener('click', showAgregarProductoView);
             document.getElementById('ordenarSegmentosBtn')?.addEventListener('click', showOrdenarSegmentosMarcasView);
             document.getElementById('modificarDatosBtn')?.addEventListener('click', showModificarDatosView);
+            document.getElementById('edicionCodigosBtn')?.addEventListener('click', showEdicionCodigosView);
             document.getElementById('diagnosticoInvBtn')?.addEventListener('click', showDiagnosticoInventariosView);
         }
         document.getElementById('recargaProductosBtn').addEventListener('click', showRecargaProductosView);
@@ -237,6 +239,196 @@
             _listenersUnsubscribes.forEach(u => u());
             _showMainMenu();
         });
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // EDICIÓN DE CÓDIGOS (solo admin)
+    // Permite cargar el "Cod P." (Código Polar) de muchos productos de una vez,
+    // en vez de entrar a editar producto por producto. El código se guarda
+    // SIEMPRE en mayúsculas y debe ser ÚNICO: si se repite, se avisa.
+    // ═══════════════════════════════════════════════════════════════════════
+    let _codProds = [];
+    let _codCambios = {};   // productoId -> código nuevo
+
+    async function showEdicionCodigosView() {
+        if (_userRole !== 'admin') return;
+        if (_floatingControls) _floatingControls.classList.add('hidden');
+        _codCambios = {};
+
+        _mainContent.innerHTML = `
+            <div class="p-2 sm:p-3 pt-5 w-full max-w-3xl mx-auto">
+                <div class="bg-white rounded-xl shadow-2xl overflow-hidden border border-slate-200">
+                    <div class="bg-slate-800 px-4 py-3 flex items-center justify-between">
+                        <div>
+                            <h2 class="text-base font-semibold text-white tracking-tight">Edición de Códigos</h2>
+                            <p class="text-[10px] text-slate-400 mt-0.5">Cod P. (Código Polar) de los productos</p>
+                        </div>
+                        <button id="codVolver" class="px-3 py-1.5 bg-white/10 text-slate-100 text-xs rounded-md hover:bg-white/20 font-medium transition">Volver</button>
+                    </div>
+                    <div class="p-4">
+                        <div id="codAvance" class="mb-2"></div>
+                        <div class="grid grid-cols-3 gap-1.5 mb-1.5">
+                            <select id="codFRubro" class="text-xs border border-slate-300 rounded-md p-1.5 bg-white outline-none"><option value="">Rubro</option></select>
+                            <select id="codFSegmento" class="text-xs border border-slate-300 rounded-md p-1.5 bg-white outline-none"><option value="">Segmento</option></select>
+                            <select id="codFMarca" class="text-xs border border-slate-300 rounded-md p-1.5 bg-white outline-none"><option value="">Marca</option></select>
+                        </div>
+                        <div class="flex gap-1.5 mb-2">
+                            <input type="text" id="codBuscar" placeholder="Buscar producto..." class="flex-1 min-w-0 text-xs border border-slate-300 rounded-md p-2 outline-none focus:ring-2 focus:ring-slate-400">
+                            <select id="codFEstado" class="w-32 text-xs border border-slate-300 rounded-md p-1.5 bg-white outline-none">
+                                <option value="">Todos</option>
+                                <option value="sin">Sin código</option>
+                                <option value="con">Con código</option>
+                            </select>
+                        </div>
+                        <div id="codLista" class="max-h-[50vh] overflow-y-auto border border-slate-200 rounded-lg divide-y divide-slate-100">
+                            <p class="text-xs text-slate-400 text-center py-6 animate-pulse">Cargando productos...</p>
+                        </div>
+                        <button id="codGuardar" class="w-full mt-3 py-2.5 bg-slate-800 text-white rounded-lg font-semibold text-sm hover:bg-slate-900 transition disabled:opacity-40" disabled>Guardar cambios</button>
+                    </div>
+                </div>
+            </div>`;
+        document.getElementById('codVolver').addEventListener('click', showInventarioSubMenu);
+        document.getElementById('codGuardar').addEventListener('click', guardarCodigos);
+
+        try {
+            const snap = window.getCatalogoSnapshot
+                ? await window.getCatalogoSnapshot(true)
+                : await _getDocs(_collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/productos`));
+            _codProds = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+            try { const fn = window.getGlobalProductSortFunction ? await window.getGlobalProductSortFunction() : null; if (fn) _codProds.sort(fn); } catch (e) {}
+        } catch (e) {
+            document.getElementById('codLista').innerHTML = '<p class="text-xs text-red-500 text-center py-6">Error al cargar el catálogo.</p>';
+            return;
+        }
+
+        const uniq = (arr) => [...new Set(arr.filter(Boolean))].sort((a, b) => a.localeCompare(b));
+        document.getElementById('codFRubro').innerHTML = '<option value="">Rubro</option>' + uniq(_codProds.map(p => p.rubro)).map(v => `<option>${v}</option>`).join('');
+        ['codFRubro', 'codFSegmento', 'codFMarca', 'codFEstado'].forEach(id =>
+            document.getElementById(id).addEventListener('change', renderCodLista));
+        document.getElementById('codBuscar').addEventListener('input', renderCodLista);
+        renderCodLista();
+    }
+
+    function renderCodLista() {
+        const cont = document.getElementById('codLista');
+        if (!cont) return;
+        const uniq = (arr) => [...new Set(arr.filter(Boolean))].sort((a, b) => a.localeCompare(b));
+        const rv = document.getElementById('codFRubro').value;
+        const sv = document.getElementById('codFSegmento').value;
+        const mv = document.getElementById('codFMarca').value;
+        const est = document.getElementById('codFEstado').value;
+        const q = (document.getElementById('codBuscar').value || '').toLowerCase().trim();
+
+        // Filtros en cascada
+        document.getElementById('codFSegmento').innerHTML = '<option value="">Segmento</option>' +
+            uniq(_codProds.filter(p => !rv || p.rubro === rv).map(p => p.segmento)).map(v => `<option ${v === sv ? 'selected' : ''}>${v}</option>`).join('');
+        document.getElementById('codFMarca').innerHTML = '<option value="">Marca</option>' +
+            uniq(_codProds.filter(p => (!rv || p.rubro === rv) && (!sv || p.segmento === sv)).map(p => p.marca)).map(v => `<option ${v === mv ? 'selected' : ''}>${v}</option>`).join('');
+
+        const valorDe = (p) => (_codCambios[p.id] !== undefined ? _codCambios[p.id] : (p.codigoPolar || ''));
+
+        let lista = _codProds.filter(p =>
+            (!rv || p.rubro === rv) && (!sv || p.segmento === sv) && (!mv || p.marca === mv) &&
+            (!q || [p.presentacion, p.marca, p.segmento].filter(Boolean).join(' ').toLowerCase().includes(q)));
+        if (est === 'sin') lista = lista.filter(p => !valorDe(p));
+        if (est === 'con') lista = lista.filter(p => !!valorDe(p));
+
+        // Avance global
+        const conCod = _codProds.filter(p => valorDe(p)).length;
+        const avance = document.getElementById('codAvance');
+        if (avance) {
+            const pct = _codProds.length ? Math.round(conCod * 100 / _codProds.length) : 0;
+            avance.innerHTML = `
+                <div class="bg-slate-50 border border-slate-200 rounded-lg p-2">
+                    <div class="flex justify-between text-[11px] font-semibold text-slate-600">
+                        <span>${conCod} de ${_codProds.length} productos con Cod P.</span>
+                        <span>${pct}%</span>
+                    </div>
+                    <div class="h-1.5 bg-slate-200 rounded mt-1 overflow-hidden"><div class="h-full bg-slate-700" style="width:${pct}%"></div></div>
+                </div>`;
+        }
+
+        if (!lista.length) {
+            cont.innerHTML = '<p class="text-xs text-slate-400 text-center py-6">Sin productos que coincidan.</p>';
+            return;
+        }
+        cont.innerHTML = lista.map(p => {
+            const val = valorDe(p);
+            const cambiado = _codCambios[p.id] !== undefined;
+            return `
+            <div class="flex items-center gap-2 px-2.5 py-1.5 ${cambiado ? 'bg-amber-50' : ''}">
+                <div class="flex-1 min-w-0">
+                    <div class="text-xs font-semibold text-slate-800 truncate">${p.presentacion || ''}</div>
+                    <div class="text-[10px] text-slate-400 truncate">${[p.rubro, p.segmento, p.marca].filter(Boolean).join(' · ')}</div>
+                </div>
+                <input type="text" value="${val}" data-id="${p.id}" placeholder="Cod P."
+                       class="cod-inp w-28 shrink-0 px-2 py-1.5 border border-slate-300 rounded text-xs font-bold text-center uppercase outline-none focus:ring-2 focus:ring-slate-400">
+            </div>`;
+        }).join('');
+
+        cont.querySelectorAll('.cod-inp').forEach(i => i.addEventListener('input', () => {
+            i.value = i.value.toUpperCase();
+            const id = i.dataset.id;
+            const orig = (_codProds.find(p => p.id === id)?.codigoPolar || '');
+            const nuevo = i.value.trim().toUpperCase();
+            if (nuevo === orig) delete _codCambios[id]; else _codCambios[id] = nuevo;
+            document.getElementById('codGuardar').disabled = Object.keys(_codCambios).length === 0;
+            document.getElementById('codGuardar').textContent = Object.keys(_codCambios).length
+                ? `Guardar ${Object.keys(_codCambios).length} cambio(s)` : 'Guardar cambios';
+            // Aviso inmediato si el código ya está en uso por otro producto
+            const dup = nuevo && _codProds.some(p => p.id !== id &&
+                ((_codCambios[p.id] !== undefined ? _codCambios[p.id] : (p.codigoPolar || '')) === nuevo));
+            i.classList.toggle('border-red-500', !!dup);
+            i.classList.toggle('bg-red-50', !!dup);
+            i.title = dup ? 'Este código ya está asignado a otro producto' : '';
+        }));
+    }
+
+    async function guardarCodigos() {
+        const ids = Object.keys(_codCambios);
+        if (!ids.length) return;
+
+        // Validar unicidad antes de guardar
+        const mapa = {};
+        const repetidos = [];
+        _codProds.forEach(p => {
+            const v = (_codCambios[p.id] !== undefined ? _codCambios[p.id] : (p.codigoPolar || '')).trim().toUpperCase();
+            if (!v) return;
+            if (mapa[v]) repetidos.push({ codigo: v, a: mapa[v], b: p.presentacion || p.id });
+            else mapa[v] = p.presentacion || p.id;
+        });
+        if (repetidos.length) {
+            _showModal('Códigos repetidos',
+                `El Cod P. debe ser único. Se encontraron códigos asignados a más de un producto:<br><br>` +
+                repetidos.slice(0, 6).map(r => `<div class="text-xs"><strong>${r.codigo}</strong>: ${r.a} / ${r.b}</div>`).join('') +
+                `<br>Corrige esos códigos antes de guardar.`);
+            return;
+        }
+
+        const btn = document.getElementById('codGuardar');
+        btn.disabled = true; btn.textContent = 'Guardando...';
+        try {
+            let batch = _writeBatch(_db);
+            let ops = 0;
+            for (const id of ids) {
+                batch.set(_doc(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/productos`, id),
+                          { codigoPolar: _codCambios[id], lastUpdated: new Date() }, { merge: true });
+                ops++;
+                if (ops >= 400) { await batch.commit(); batch = _writeBatch(_db); ops = 0; }
+            }
+            if (ops > 0) await batch.commit();
+            // Reflejar en memoria y refrescar el caché global del catálogo
+            ids.forEach(id => { const p = _codProds.find(x => x.id === id); if (p) p.codigoPolar = _codCambios[id]; });
+            window.invalidarCatalogo?.();
+            _codCambios = {};
+            btn.textContent = 'Guardar cambios';
+            renderCodLista();
+            _showModal('Guardado', `Se actualizaron ${ids.length} código(s).`);
+        } catch (e) {
+            console.error('Códigos:', e);
+            _showModal('Error', 'No se pudieron guardar los códigos.');
+            btn.disabled = false; btn.textContent = 'Guardar cambios';
+        }
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -566,7 +758,7 @@
             return;
         }
 
-        const numCols = readOnly ? 6 : 7;
+        const numCols = readOnly ? 7 : 8; // +1 por la columna Cod P.
 
         // Aviso de negativos: si hay productos con stock físico negativo, ofrecer corregirlos.
         const hayNegativos = _inventarioCache.filter(p => (p.cantidadUnidades || 0) < 0).length;
@@ -587,6 +779,7 @@
                     <tr>
                         <th class="py-3 px-4 uppercase font-semibold tracking-wider">Presentación</th>
                         <th class="py-3 px-4 uppercase font-semibold tracking-wider hidden sm:table-cell">Marca</th>
+                        <th class="py-3 px-4 uppercase font-semibold tracking-wider text-center">Cod P.</th>
                         <th class="py-3 px-4 uppercase font-semibold tracking-wider text-right">Precio</th>
                         <th class="py-3 px-4 uppercase font-semibold tracking-wider text-center">Stock</th>
                         <th class="py-3 px-4 uppercase font-semibold tracking-wider text-center">Pedidos</th>
@@ -649,6 +842,7 @@
                         ${p.manejaModelos && p.modelos && p.modelos.length ? `<div class="text-[10px] text-indigo-600 font-normal mt-0.5">Modelos: ${p.modelos.map(m => `${m} <b>${(p.modelosStock && p.modelosStock[m]) || 0}</b>`).join(' · ')}</div>` : ''}
                     </td>
                     <td class="py-3 px-4 text-gray-600 hidden sm:table-cell">${p.marca || 'S/M'}</td>
+                    <td class="py-3 px-4 text-center">${p.codigoPolar ? `<span class="font-bold text-gray-700">${p.codigoPolar}</span>` : '<span class="text-gray-300">—</span>'}</td>
                     <td class="py-3 px-4 font-bold text-gray-900 text-right">${labelPrecio}</td>
                     <td class="py-3 px-4 text-center text-gray-500">
                         ${stockDisplayHtml}
@@ -1092,7 +1286,7 @@
         if (_userRole !== 'admin') return;
         if (_floatingControls) _floatingControls.classList.add('hidden');
         
-        _mainContent.innerHTML = `<div class="p-4 pt-8"> <div class="container mx-auto max-w-2xl"> <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl text-center"> <h2 class="text-2xl font-bold mb-6">Agregar Nuevo Producto</h2> <form id="addProductoForm" class="space-y-4 text-left"> <div class="grid grid-cols-1 md:grid-cols-2 gap-4"> <div> <label for="rubro">Rubro:</label> <div class="flex items-center space-x-2"> <select id="rubro" class="w-full px-4 py-2 border rounded-lg" required></select> <button type="button" onclick="window.inventarioModule.showAddCategoryModal('rubros','Rubro')" class="px-3 py-2 bg-blue-500 text-white rounded-lg text-xs hover:bg-blue-600">+</button> </div> </div> <div> <label for="segmento">Segmento:</label> <div class="flex items-center space-x-2"> <select id="segmento" class="w-full px-4 py-2 border rounded-lg" required></select> <button type="button" onclick="window.inventarioModule.showAddCategoryModal('segmentos','Segmento')" class="px-3 py-2 bg-blue-500 text-white rounded-lg text-xs hover:bg-blue-600">+</button> </div> </div> <div> <label for="marca">Marca:</label> <div class="flex items-center space-x-2"> <select id="marca" class="w-full px-4 py-2 border rounded-lg" required></select> <button type="button" onclick="window.inventarioModule.showAddCategoryModal('marcas','Marca')" class="px-3 py-2 bg-blue-500 text-white rounded-lg text-xs hover:bg-blue-600">+</button> </div> </div> <div> <label for="presentacion">Presentación:</label> <input type="text" id="presentacion" class="w-full px-4 py-2 border rounded-lg" required> </div> </div> <div class="border-t pt-4 mt-4"> <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4"> <div> <label class="block mb-2 font-medium">Venta por:</label> <div id="ventaPorContainer" class="flex space-x-4"> <label class="flex items-center"><input type="checkbox" id="ventaPorUnd" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> <span class="ml-2">Und.</span></label> <label class="flex items-center"><input type="checkbox" id="ventaPorPaq" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> <span class="ml-2">Paq.</span></label> <label class="flex items-center"><input type="checkbox" id="ventaPorCj" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> <span class="ml-2">Cj.</span></label> </div> </div> <div class="mt-4 md:mt-0"> <label class="flex items-center cursor-pointer"> <input type="checkbox" id="manejaVaciosCheck" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> <span class="ml-2 font-medium">Maneja Vacío</span> </label> <div id="tipoVacioContainer" class="mt-2 hidden"> <label for="tipoVacioSelect" class="block text-sm font-medium">Tipo:</label> <select id="tipoVacioSelect" class="w-full mt-1 px-2 py-1 border rounded-lg text-sm bg-gray-50"> <option value="">Seleccione...</option> <option value="1/4 - 1/3">1/4 - 1/3</option> <option value="ret 350 ml">Ret 350 ml</option> <option value="ret 1.25 Lts">Ret 1.25 Lts</option> </select> </div> </div> </div> <div id="manejaModelosBlock" class="mt-4 border-t pt-4"> <label class="flex items-center cursor-pointer"> <input type="checkbox" id="manejaModelosCheck" class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"> <span class="ml-2 font-medium">Maneja modelos (ej: plumita, tornillo, vermicelli, dedal)</span> </label> <div id="modelosContainer" class="mt-2 hidden"> <div class="flex items-center gap-2"> <input type="text" id="modeloInput" placeholder="Nombre del modelo" class="flex-1 px-3 py-2 border rounded-lg text-sm"> <button type="button" id="modeloAddBtn" class="px-4 py-2 bg-indigo-500 text-white rounded-lg text-sm font-bold hover:bg-indigo-600">+</button> </div> <div id="modelosLista" class="flex flex-wrap gap-2 mt-2"></div> <p class="text-[10px] text-gray-500 mt-1">Agrega cada modelo y presiona +. El stock por modelo se asigna en la Recarga.</p> </div> </div> <div id="empaquesContainer" class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4"></div> <div id="preciosContainer" class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4"></div> </div> <div class="border-t pt-4 mt-4"> <div class="grid grid-cols-1 md:grid-cols-2 gap-4"> <div> <label for="cantidadActual" class="block font-medium">Stock Inicial (Und. Base):</label> <input type="number" id="cantidadActual" value="0" class="w-full mt-1 px-4 py-2 border rounded-lg bg-gray-100 text-gray-500 cursor-not-allowed" readonly title="El stock se gestiona en 'Recarga de Productos'"> <p class="text-[10px] text-gray-500 mt-1">El stock se asigna en "Recarga de Productos" tras crear el ítem.</p> </div> <div> <label for="ivaTipo" class="block font-medium">IVA:</label> <select id="ivaTipo" class="w-full mt-1 px-4 py-2 border rounded-lg bg-white" required> <option value="16">16%</option> <option value="0">Exento 0%</option> </select> </div> </div> </div> <button type="submit" class="w-full px-6 py-3 bg-green-500 text-white font-semibold rounded-lg shadow-md hover:bg-green-600 transition duration-150">Agregar Producto</button> </form> <button id="backToMenuBtn" class="mt-4 w-full px-6 py-3 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500 transition duration-150">Volver</button> </div> </div> </div>`;
+        _mainContent.innerHTML = `<div class="p-4 pt-8"> <div class="container mx-auto max-w-2xl"> <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl text-center"> <h2 class="text-2xl font-bold mb-6">Agregar Nuevo Producto</h2> <form id="addProductoForm" class="space-y-4 text-left"> <div class="grid grid-cols-1 md:grid-cols-2 gap-4"> <div> <label for="rubro">Rubro:</label> <div class="flex items-center space-x-2"> <select id="rubro" class="w-full px-4 py-2 border rounded-lg" required></select> <button type="button" onclick="window.inventarioModule.showAddCategoryModal('rubros','Rubro')" class="px-3 py-2 bg-blue-500 text-white rounded-lg text-xs hover:bg-blue-600">+</button> </div> </div> <div> <label for="segmento">Segmento:</label> <div class="flex items-center space-x-2"> <select id="segmento" class="w-full px-4 py-2 border rounded-lg" required></select> <button type="button" onclick="window.inventarioModule.showAddCategoryModal('segmentos','Segmento')" class="px-3 py-2 bg-blue-500 text-white rounded-lg text-xs hover:bg-blue-600">+</button> </div> </div> <div> <label for="marca">Marca:</label> <div class="flex items-center space-x-2"> <select id="marca" class="w-full px-4 py-2 border rounded-lg" required></select> <button type="button" onclick="window.inventarioModule.showAddCategoryModal('marcas','Marca')" class="px-3 py-2 bg-blue-500 text-white rounded-lg text-xs hover:bg-blue-600">+</button> </div> </div> <div> <label for="presentacion">Presentación:</label> <input type="text" id="presentacion" class="w-full px-4 py-2 border rounded-lg" required> </div> <div> <label for="codigoPolar">Cod P. (Código Polar):</label> <input type="text" id="codigoPolar" placeholder="Opcional" class="w-full px-4 py-2 border rounded-lg uppercase"> <p class="text-[10px] text-gray-500 mt-1">Se guarda en mayúsculas.</p> </div> </div> <div class="border-t pt-4 mt-4"> <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4"> <div> <label class="block mb-2 font-medium">Venta por:</label> <div id="ventaPorContainer" class="flex space-x-4"> <label class="flex items-center"><input type="checkbox" id="ventaPorUnd" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> <span class="ml-2">Und.</span></label> <label class="flex items-center"><input type="checkbox" id="ventaPorPaq" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> <span class="ml-2">Paq.</span></label> <label class="flex items-center"><input type="checkbox" id="ventaPorCj" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> <span class="ml-2">Cj.</span></label> </div> </div> <div class="mt-4 md:mt-0"> <label class="flex items-center cursor-pointer"> <input type="checkbox" id="manejaVaciosCheck" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> <span class="ml-2 font-medium">Maneja Vacío</span> </label> <div id="tipoVacioContainer" class="mt-2 hidden"> <label for="tipoVacioSelect" class="block text-sm font-medium">Tipo:</label> <select id="tipoVacioSelect" class="w-full mt-1 px-2 py-1 border rounded-lg text-sm bg-gray-50"> <option value="">Seleccione...</option> <option value="1/4 - 1/3">1/4 - 1/3</option> <option value="ret 350 ml">Ret 350 ml</option> <option value="ret 1.25 Lts">Ret 1.25 Lts</option> </select> </div> </div> </div> <div id="manejaModelosBlock" class="mt-4 border-t pt-4"> <label class="flex items-center cursor-pointer"> <input type="checkbox" id="manejaModelosCheck" class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"> <span class="ml-2 font-medium">Maneja modelos (ej: plumita, tornillo, vermicelli, dedal)</span> </label> <div id="modelosContainer" class="mt-2 hidden"> <div class="flex items-center gap-2"> <input type="text" id="modeloInput" placeholder="Nombre del modelo" class="flex-1 px-3 py-2 border rounded-lg text-sm"> <button type="button" id="modeloAddBtn" class="px-4 py-2 bg-indigo-500 text-white rounded-lg text-sm font-bold hover:bg-indigo-600">+</button> </div> <div id="modelosLista" class="flex flex-wrap gap-2 mt-2"></div> <p class="text-[10px] text-gray-500 mt-1">Agrega cada modelo y presiona +. El stock por modelo se asigna en la Recarga.</p> </div> </div> <div id="empaquesContainer" class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4"></div> <div id="preciosContainer" class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4"></div> </div> <div class="border-t pt-4 mt-4"> <div class="grid grid-cols-1 md:grid-cols-2 gap-4"> <div> <label for="cantidadActual" class="block font-medium">Stock Inicial (Und. Base):</label> <input type="number" id="cantidadActual" value="0" class="w-full mt-1 px-4 py-2 border rounded-lg bg-gray-100 text-gray-500 cursor-not-allowed" readonly title="El stock se gestiona en 'Recarga de Productos'"> <p class="text-[10px] text-gray-500 mt-1">El stock se asigna en "Recarga de Productos" tras crear el ítem.</p> </div> <div> <label for="ivaTipo" class="block font-medium">IVA:</label> <select id="ivaTipo" class="w-full mt-1 px-4 py-2 border rounded-lg bg-white" required> <option value="16">16%</option> <option value="0">Exento 0%</option> </select> </div> </div> </div> <button type="submit" class="w-full px-6 py-3 bg-green-500 text-white font-semibold rounded-lg shadow-md hover:bg-green-600 transition duration-150">Agregar Producto</button> </form> <button id="backToMenuBtn" class="mt-4 w-full px-6 py-3 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500 transition duration-150">Volver</button> </div> </div> </div>`;
 
         const setupDropdowns = async () => {
             await Promise.all([
@@ -1152,6 +1346,8 @@
         updateDynamicInputs();
 
         _setupModelosUI([]);
+        const _cpInp_addProductoForm = document.getElementById('codigoPolar');
+        if (_cpInp_addProductoForm) _cpInp_addProductoForm.addEventListener('input', () => { _cpInp_addProductoForm.value = _cpInp_addProductoForm.value.toUpperCase(); });
         document.getElementById('addProductoForm').addEventListener('submit', handleAddProducto);
         document.getElementById('backToMenuBtn').addEventListener('click', showInventarioSubMenu);
     }
@@ -1296,8 +1492,12 @@
 
         const ivaTipo = parseInt(document.getElementById('ivaTipo').value);
         
+        // Cod P. (Código Polar): dato opcional, SIEMPRE en mayúsculas para que coincida
+        // con el formato de la compañía. Nace vacío y no afecta ningún flujo de venta.
+        const codigoPolar = (document.getElementById('codigoPolar')?.value || '').trim().toUpperCase();
+
         const data = {
-            rubro, segmento, marca, presentacion,
+            rubro, segmento, marca, presentacion, codigoPolar,
             ventaPor, unidadesPorPaquete, unidadesPorCaja,
             precios, manejaVacios, tipoVacio, manejaModelos, modelos, iva: ivaTipo
         };
@@ -1311,7 +1511,7 @@
 
     async function editProducto(productId) {
         if (_userRole !== 'admin') { _showModal('Acceso Denegado', 'Solo administradores pueden editar definiciones.'); return; } const prod = _inventarioCache.find(p => p.id === productId); if (!prod) { _showModal('Error', 'Producto no encontrado en caché.'); return; } if (_floatingControls) _floatingControls.classList.add('hidden');
-        _mainContent.innerHTML = `<div class="p-4 pt-8"> <div class="container mx-auto max-w-2xl"> <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl text-center"> <h2 class="text-2xl font-bold mb-6">Editar Producto</h2> <form id="editProductoForm" class="space-y-4 text-left"> <div class="grid grid-cols-1 md:grid-cols-2 gap-4"> <div> <label for="rubro">Rubro:</label> <div class="flex items-center space-x-2"> <select id="rubro" class="w-full px-4 py-2 border rounded-lg" required></select> <button type="button" onclick="window.inventarioModule.showAddCategoryModal('rubros','Rubro')" class="px-3 py-2 bg-blue-500 text-white rounded-lg text-xs hover:bg-blue-600">+</button> </div> </div> <div> <label for="segmento">Segmento:</label> <div class="flex items-center space-x-2"> <select id="segmento" class="w-full px-4 py-2 border rounded-lg" required></select> <button type="button" onclick="window.inventarioModule.showAddCategoryModal('segmentos','Segmento')" class="px-3 py-2 bg-blue-500 text-white rounded-lg text-xs hover:bg-blue-600">+</button> </div> </div> <div> <label for="marca">Marca:</label> <div class="flex items-center space-x-2"> <select id="marca" class="w-full px-4 py-2 border rounded-lg" required></select> <button type="button" onclick="window.inventarioModule.showAddCategoryModal('marcas','Marca')" class="px-3 py-2 bg-blue-500 text-white rounded-lg text-xs hover:bg-blue-600">+</button> </div> </div> <div> <label for="presentacion">Presentación:</label> <input type="text" id="presentacion" class="w-full px-4 py-2 border rounded-lg" required> </div> </div> <div class="border-t pt-4 mt-4"> <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4"> <div> <label class="block mb-2 font-medium">Venta por:</label> <div id="ventaPorContainer" class="flex space-x-4"> <label class="flex items-center"><input type="checkbox" id="ventaPorUnd" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> <span class="ml-2">Und.</span></label> <label class="flex items-center"><input type="checkbox" id="ventaPorPaq" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> <span class="ml-2">Paq.</span></label> <label class="flex items-center"><input type="checkbox" id="ventaPorCj" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> <span class="ml-2">Cj.</span></label> </div> </div> <div class="mt-4 md:mt-0"> <label class="flex items-center cursor-pointer"> <input type="checkbox" id="manejaVaciosCheck" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> <span class="ml-2 font-medium">Maneja Vacío</span> </label> <div id="tipoVacioContainer" class="mt-2 hidden"> <label for="tipoVacioSelect" class="block text-sm font-medium">Tipo:</label> <select id="tipoVacioSelect" class="w-full mt-1 px-2 py-1 border rounded-lg text-sm bg-gray-50"> <option value="">Seleccione...</option> <option value="1/4 - 1/3">1/4 - 1/3</option> <option value="ret 350 ml">Ret 350 ml</option> <option value="ret 1.25 Lts">Ret 1.25 Lts</option> </select> </div> </div> </div> <div id="manejaModelosBlock" class="mt-4 border-t pt-4"> <label class="flex items-center cursor-pointer"> <input type="checkbox" id="manejaModelosCheck" class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"> <span class="ml-2 font-medium">Maneja modelos (ej: plumita, tornillo, vermicelli, dedal)</span> </label> <div id="modelosContainer" class="mt-2 hidden"> <div class="flex items-center gap-2"> <input type="text" id="modeloInput" placeholder="Nombre del modelo" class="flex-1 px-3 py-2 border rounded-lg text-sm"> <button type="button" id="modeloAddBtn" class="px-4 py-2 bg-indigo-500 text-white rounded-lg text-sm font-bold hover:bg-indigo-600">+</button> </div> <div id="modelosLista" class="flex flex-wrap gap-2 mt-2"></div> <p class="text-[10px] text-gray-500 mt-1">Agrega cada modelo y presiona +. El stock por modelo se asigna en la Recarga.</p> </div> </div> <div id="empaquesContainer" class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4"></div> <div id="preciosContainer" class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4"></div> </div> <div class="border-t pt-4 mt-4"> <div class="grid grid-cols-1 md:grid-cols-2 gap-4"> <div> <label for="cantidadActual" class="block font-medium">Stock Actual (Und. Base):</label> <input type="number" id="cantidadActual" value="${prod.cantidadUnidades||0}" class="w-full mt-1 px-4 py-2 border rounded-lg bg-gray-100 text-gray-500 cursor-not-allowed" readonly title="La cantidad se modifica en 'Ajuste Masivo'"> <p class="text-[10px] text-gray-500 mt-1">Modificar en "Recarga" o "Ajuste Masivo".</p> </div> <div> <label for="ivaTipo" class="block font-medium">IVA:</label> <select id="ivaTipo" class="w-full mt-1 px-4 py-2 border rounded-lg bg-white" required> <option value="16">16%</option> <option value="0">Exento 0%</option> </select> </div> </div> </div> <button type="submit" class="w-full px-6 py-3 bg-blue-500 text-white font-semibold rounded-lg shadow-md hover:bg-blue-600 transition duration-150">Guardar Cambios y Propagar</button> </form> <button id="backToModifyDeleteBtn" class="mt-4 w-full px-6 py-3 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500 transition duration-150">Volver</button> </div> </div> </div>`;
+        _mainContent.innerHTML = `<div class="p-4 pt-8"> <div class="container mx-auto max-w-2xl"> <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl text-center"> <h2 class="text-2xl font-bold mb-6">Editar Producto</h2> <form id="editProductoForm" class="space-y-4 text-left"> <div class="grid grid-cols-1 md:grid-cols-2 gap-4"> <div> <label for="rubro">Rubro:</label> <div class="flex items-center space-x-2"> <select id="rubro" class="w-full px-4 py-2 border rounded-lg" required></select> <button type="button" onclick="window.inventarioModule.showAddCategoryModal('rubros','Rubro')" class="px-3 py-2 bg-blue-500 text-white rounded-lg text-xs hover:bg-blue-600">+</button> </div> </div> <div> <label for="segmento">Segmento:</label> <div class="flex items-center space-x-2"> <select id="segmento" class="w-full px-4 py-2 border rounded-lg" required></select> <button type="button" onclick="window.inventarioModule.showAddCategoryModal('segmentos','Segmento')" class="px-3 py-2 bg-blue-500 text-white rounded-lg text-xs hover:bg-blue-600">+</button> </div> </div> <div> <label for="marca">Marca:</label> <div class="flex items-center space-x-2"> <select id="marca" class="w-full px-4 py-2 border rounded-lg" required></select> <button type="button" onclick="window.inventarioModule.showAddCategoryModal('marcas','Marca')" class="px-3 py-2 bg-blue-500 text-white rounded-lg text-xs hover:bg-blue-600">+</button> </div> </div> <div> <label for="presentacion">Presentación:</label> <input type="text" id="presentacion" class="w-full px-4 py-2 border rounded-lg" required> </div> <div> <label for="codigoPolar">Cod P. (Código Polar):</label> <input type="text" id="codigoPolar" value="${prod.codigoPolar || ''}" placeholder="Opcional" class="w-full px-4 py-2 border rounded-lg uppercase"> <p class="text-[10px] text-gray-500 mt-1">Se guarda en mayúsculas.</p> </div> </div> <div class="border-t pt-4 mt-4"> <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4"> <div> <label class="block mb-2 font-medium">Venta por:</label> <div id="ventaPorContainer" class="flex space-x-4"> <label class="flex items-center"><input type="checkbox" id="ventaPorUnd" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> <span class="ml-2">Und.</span></label> <label class="flex items-center"><input type="checkbox" id="ventaPorPaq" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> <span class="ml-2">Paq.</span></label> <label class="flex items-center"><input type="checkbox" id="ventaPorCj" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> <span class="ml-2">Cj.</span></label> </div> </div> <div class="mt-4 md:mt-0"> <label class="flex items-center cursor-pointer"> <input type="checkbox" id="manejaVaciosCheck" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> <span class="ml-2 font-medium">Maneja Vacío</span> </label> <div id="tipoVacioContainer" class="mt-2 hidden"> <label for="tipoVacioSelect" class="block text-sm font-medium">Tipo:</label> <select id="tipoVacioSelect" class="w-full mt-1 px-2 py-1 border rounded-lg text-sm bg-gray-50"> <option value="">Seleccione...</option> <option value="1/4 - 1/3">1/4 - 1/3</option> <option value="ret 350 ml">Ret 350 ml</option> <option value="ret 1.25 Lts">Ret 1.25 Lts</option> </select> </div> </div> </div> <div id="manejaModelosBlock" class="mt-4 border-t pt-4"> <label class="flex items-center cursor-pointer"> <input type="checkbox" id="manejaModelosCheck" class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"> <span class="ml-2 font-medium">Maneja modelos (ej: plumita, tornillo, vermicelli, dedal)</span> </label> <div id="modelosContainer" class="mt-2 hidden"> <div class="flex items-center gap-2"> <input type="text" id="modeloInput" placeholder="Nombre del modelo" class="flex-1 px-3 py-2 border rounded-lg text-sm"> <button type="button" id="modeloAddBtn" class="px-4 py-2 bg-indigo-500 text-white rounded-lg text-sm font-bold hover:bg-indigo-600">+</button> </div> <div id="modelosLista" class="flex flex-wrap gap-2 mt-2"></div> <p class="text-[10px] text-gray-500 mt-1">Agrega cada modelo y presiona +. El stock por modelo se asigna en la Recarga.</p> </div> </div> <div id="empaquesContainer" class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4"></div> <div id="preciosContainer" class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4"></div> </div> <div class="border-t pt-4 mt-4"> <div class="grid grid-cols-1 md:grid-cols-2 gap-4"> <div> <label for="cantidadActual" class="block font-medium">Stock Actual (Und. Base):</label> <input type="number" id="cantidadActual" value="${prod.cantidadUnidades||0}" class="w-full mt-1 px-4 py-2 border rounded-lg bg-gray-100 text-gray-500 cursor-not-allowed" readonly title="La cantidad se modifica en 'Ajuste Masivo'"> <p class="text-[10px] text-gray-500 mt-1">Modificar en "Recarga" o "Ajuste Masivo".</p> </div> <div> <label for="ivaTipo" class="block font-medium">IVA:</label> <select id="ivaTipo" class="w-full mt-1 px-4 py-2 border rounded-lg bg-white" required> <option value="16">16%</option> <option value="0">Exento 0%</option> </select> </div> </div> </div> <button type="submit" class="w-full px-6 py-3 bg-blue-500 text-white font-semibold rounded-lg shadow-md hover:bg-blue-600 transition duration-150">Guardar Cambios y Propagar</button> </form> <button id="backToModifyDeleteBtn" class="mt-4 w-full px-6 py-3 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500 transition duration-150">Volver</button> </div> </div> </div>`;
 
         await Promise.all([
              populateMergedDropdown('rubros', 'rubro', 'rubro', 'Rubro', prod.rubro),
@@ -1389,6 +1589,8 @@
         }
 
         _setupModelosUI(prod.modelos || []);
+        const _cpInp_editProductoForm = document.getElementById('codigoPolar');
+        if (_cpInp_editProductoForm) _cpInp_editProductoForm.addEventListener('input', () => { _cpInp_editProductoForm.value = _cpInp_editProductoForm.value.toUpperCase(); });
         document.getElementById('editProductoForm').addEventListener('submit', (e) => handleUpdateProducto(e, productId));
         document.getElementById('backToModifyDeleteBtn').addEventListener('click', showModifyDeleteView);
     }
