@@ -402,7 +402,18 @@
         try { 
             const invRef = _collection(_db, `artifacts/${_appId}/users/${_userId}/inventario`); 
             const snap = await _getDocs(invRef); 
-            let inv = snap.docs.map(d => ({ id: d.id, ...d.data() })); 
+            let inv = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+            // El Cod P. vive en el catálogo MAESTRO (el inventario del usuario solo
+            // guarda stock), así que se trae de ahí para incluirlo en el Excel.
+            const codPolarPorId = {};
+            try {
+                const mSnap = window.getCatalogoSnapshot
+                    ? await window.getCatalogoSnapshot()
+                    : await _getDocs(_collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/productos`));
+                mSnap.docs.forEach(d => { const x = d.data(); if (x.codigoPolar) codPolarPorId[d.id] = x.codigoPolar; });
+            } catch (e) { console.warn('No se pudo leer el Cod P. del maestro', e); }
+
             
             // Aplicar nueva lógica de ordenamiento global
             inv.sort((a, b) => {
@@ -418,7 +429,7 @@
                 return (a.presentacion || '').localeCompare(b.presentacion || '');
             });
 
-            const dExport = inv.map(p=>({ 'Rubro':p.rubro||'', 'Segmento':p.segmento||'', 'Marca':p.marca||'', 'Presentacion':p.presentacion||'', 'CantidadActualUnidades':p.cantidadUnidades||0, 'VentaPorUnd':p.ventaPor?.und?'SI':'NO', 'VentaPorPaq':p.ventaPor?.paq?'SI':'NO', 'VentaPorCj':p.ventaPor?.cj?'SI':'NO', 'UnidadesPorPaquete':p.unidadesPorPaquete||'', 'UnidadesPorCaja':p.unidadesPorCaja||'', 'PrecioUnd':p.precios?.und||'', 'PrecioPaq':p.precios?.paq||'', 'PrecioCj':p.precios?.cj||'', 'ManejaVacios':p.manejaVacios?'SI':'NO', 'TipoVacio':p.tipoVacio||'', 'IVA':p.iva!==undefined?`${p.iva}%`:'' }));
+            const dExport = inv.map(p=>({ 'Rubro':p.rubro||'', 'Segmento':p.segmento||'', 'Marca':p.marca||'', 'Presentacion':p.presentacion||'', 'CodP':codPolarPorId[p.id]||p.codigoPolar||'', 'CantidadActualUnidades':p.cantidadUnidades||0, 'VentaPorUnd':p.ventaPor?.und?'SI':'NO', 'VentaPorPaq':p.ventaPor?.paq?'SI':'NO', 'VentaPorCj':p.ventaPor?.cj?'SI':'NO', 'UnidadesPorPaquete':p.unidadesPorPaquete||'', 'UnidadesPorCaja':p.unidadesPorCaja||'', 'PrecioUnd':p.precios?.und||'', 'PrecioPaq':p.precios?.paq||'', 'PrecioCj':p.precios?.cj||'', 'ManejaVacios':p.manejaVacios?'SI':'NO', 'TipoVacio':p.tipoVacio||'', 'IVA':p.iva!==undefined?`${p.iva}%`:'' }));
             const wb = new ExcelJS.Workbook(); const ws = wb.addWorksheet('Inventario');
             ws.columns = Object.keys(dExport[0]||{}).map(k=>({header:k, key:k, width:15})); ws.getRow(1).font = { bold: true }; ws.addRows(dExport);
             const buffer = await wb.xlsx.writeBuffer(); const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
@@ -458,7 +469,7 @@
             const reqHeaders=['rubro','segmento','marca','presentacion']; const hMap={}; let missing=false;
             reqHeaders.forEach(rh=>{ const i=headers.indexOf(rh); if(i!==-1)hMap[rh]=i; else missing=true;}); 
             if(missing){_showModal('Error',`Faltan columnas requeridas.`);return;}
-            const optHeaders=['ventaporund','ventaporpaq','ventaporcj','unidadesporpaquete','unidadesporcaja','preciound','preciopaq','preciocj','manejavacios','tipovacio','iva'];
+            const optHeaders=['ventaporund','ventaporpaq','ventaporcj','unidadesporpaquete','unidadesporcaja','preciound','preciopaq','preciocj','manejavacios','tipovacio','iva','codp','codigopolar','codigop'];
             optHeaders.forEach(oh=>{ const i=headers.indexOf(oh); if(i!==-1)hMap[oh]=i; });
 
             _inventarioParaImportar = jsonData.slice(1).map((row) => {
@@ -467,6 +478,8 @@
                     segmento: (row[hMap['segmento']] || '').toString().trim().toUpperCase(),
                     marca: (row[hMap['marca']] || '').toString().trim().toUpperCase(),
                     presentacion: (row[hMap['presentacion']] || '').toString().trim(),
+                    // Cod P. (Código Polar): admite varios nombres de columna y siempre en mayúsculas
+                    codigoPolar: (row[hMap['codp']] ?? row[hMap['codigopolar']] ?? row[hMap['codigop']] ?? '').toString().trim().toUpperCase(),
                     ventaPor: { und: (row[hMap['ventaporund']]||'SI').toString().toUpperCase()==='SI', paq: (row[hMap['ventaporpaq']]||'NO').toString().toUpperCase()==='SI', cj: (row[hMap['ventaporcj']]||'NO').toString().toUpperCase()==='SI' },
                     unidadesPorPaquete: parseInt(row[hMap['unidadesporpaquete']], 10) || 1, unidadesPorCaja: parseInt(row[hMap['unidadesporcaja']], 10) || 1,
                     precios: { und: parseFloat(row[hMap['preciound']])||0, paq: parseFloat(row[hMap['preciopaq']])||0, cj: parseFloat(row[hMap['preciocj']])||0 },
@@ -498,10 +511,12 @@
         _showModal('Progreso', 'Procesando...');
         try {
             const invRef = _collection(_db, `artifacts/${_appId}/users/${_userId}/inventario`);
-            const snap = await _getDocs(invRef); const curInvMap = new Set();
-            snap.docs.forEach(d => { const da = d.data(); curInvMap.add(`${da.rubro}|${da.segmento}|${da.marca}|${da.presentacion}`.toUpperCase()); });
+            // Map (no Set) para poder recuperar el ID del producto existente y
+            // actualizar su Cod P. desde el Excel.
+            const snap = await _getDocs(invRef); const curInvMap = new Map();
+            snap.docs.forEach(d => { const da = d.data(); curInvMap.set(`${da.rubro}|${da.segmento}|${da.marca}|${da.presentacion}`.toUpperCase(), { id: d.id, ...da }); });
 
-            let batch = _writeBatch(_db); let ops=0; let added=0;
+            let added=0, actualizados=0;
             for (const item of _inventarioParaImportar) {
                 if (!curInvMap.has(item.key)) {
                     // Generar ID local para el nuevo producto
@@ -516,9 +531,30 @@
                     await window.adminModule.propagateProductChange(newId, data);
                     
                     added++;
+                } else if (item.codigoPolar) {
+                    // El producto YA existe: se actualiza únicamente su Cod P. en el
+                    // catálogo maestro. Así el Excel sirve para cargar códigos en lote
+                    // sin tocar precios, stock ni ninguna otra definición del producto.
+                    const existente = curInvMap.get(item.key);
+                    const idExistente = existente && existente.id;
+                    if (idExistente && existente.codigoPolar !== item.codigoPolar) {
+                        try {
+                            await _setDoc(
+                                _doc(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/productos`, idExistente),
+                                { codigoPolar: item.codigoPolar, lastUpdated: new Date() },
+                                { merge: true }
+                            );
+                            actualizados++;
+                        } catch (eCod) { console.warn('No se pudo actualizar el Cod P. de', item.key, eCod); }
+                    }
                 }
             }
-            _showModal('Éxito', `Se añadieron ${added} productos nuevos. Recuerda ir a Ordenar Catálogo.`, showImportExportInventarioView);
+            if (actualizados) window.invalidarCatalogo?.();
+            _showModal('Éxito',
+                `Se añadieron <strong>${added}</strong> productos nuevos` +
+                (actualizados ? ` y se actualizó el Cod P. de <strong>${actualizados}</strong> productos existentes` : '') +
+                `.${added ? ' Recuerda ir a Ordenar Catálogo.' : ''}`,
+                showImportExportInventarioView);
         } catch (e) { _showModal('Error', e.message); }
     }
 
