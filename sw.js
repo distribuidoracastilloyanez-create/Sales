@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v148'; // v148: ADC - tipo de equipo Froster disponible al registrar
+const CACHE_NAME = 'ventas-app-cache-v149'; // v149: nuevo campo Cod P. (Codigo Polar) en productos - columna en inventario, Edicion de Codigos masiva (admin), y soporte en Importar/Exportar
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
