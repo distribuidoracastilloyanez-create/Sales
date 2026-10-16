@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v149'; // v149: nuevo campo Cod P. (Codigo Polar) en productos - columna en inventario, Edicion de Codigos masiva (admin), y soporte en Importar/Exportar
+const CACHE_NAME = 'ventas-app-cache-v150'; // v150: Supervision - al tocar una operacion del monitoreo en vivo se ve el ticket completo (solo lectura)
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
