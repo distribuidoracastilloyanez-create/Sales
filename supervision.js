@@ -144,6 +144,7 @@
                                 </div>
                             </div>
 
+                            <p class="text-[10px] text-gray-500 px-1 pb-1">Toca una operación para ver el detalle de lo vendido (solo lectura).</p>
                             <div class="flex-grow overflow-auto">
                                 <table class="min-w-full bg-white text-sm">
                                     <thead class="bg-indigo-800 text-white sticky top-0 z-10 shadow-md">
@@ -229,7 +230,8 @@
                     tipo,
                     cliente: data.clienteNombre || 'Desconocido',
                     total,
-                    fecha:   dObj
+                    fecha:   dObj,
+                    datos:   data   // copia completa, solo para VER el ticket
                 });
             });
 
@@ -241,7 +243,8 @@
                     tipo:    'Obsequio',
                     cliente: data.clienteNombre || 'Desconocido',
                     total:   0,
-                    fecha:   dObj
+                    fecha:   dObj,
+                    datos:   data
                 });
             });
 
@@ -269,7 +272,7 @@
                     : `<span class="font-black ${esConsig ? 'text-amber-700' : 'text-gray-900'}">$${op.total.toFixed(2)}</span>`;
 
                 html += `
-                    <tr class="hover:bg-indigo-50 transition-colors">
+                    <tr class="sup-op-row hover:bg-indigo-50 transition-colors cursor-pointer" data-op="${op.id}" title="Toca para ver el detalle">
                         <td class="py-3 px-3 font-bold text-gray-800 text-xs">${op.cliente}</td>
                         <td class="py-3 px-3 text-center text-gray-500 text-xs">${horaStr}</td>
                         <td class="py-3 px-3 text-center">
@@ -281,12 +284,106 @@
             });
 
             tbody.innerHTML = html;
+            // Guardar para el detalle y enlazar el clic (solo lectura)
+            _opsEnVivo = operaciones;
+            tbody.querySelectorAll('.sup-op-row').forEach(tr => tr.addEventListener('click', () => {
+                const op = _opsEnVivo.find(x => x.id === tr.dataset.op);
+                if (op) verDetalleOperacion(op);
+            }));
             mostrarPanel();
 
         } catch (error) {
             console.error("Error en Live Sales:", error);
             emptyState.innerHTML = `<span class="text-red-500 font-bold">Error al consultar: ${error.message}</span>`;
         }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // DETALLE DE LA OPERACIÓN (ticket) — SOLO LECTURA
+    // Supervisión es un módulo de consulta: aquí no se edita, no se elimina
+    // ni se guarda nada. Únicamente se muestra lo que el vendedor registró.
+    // ─────────────────────────────────────────────────────────────────────
+    let _opsEnVivo = [];
+
+    function verDetalleOperacion(op) {
+        document.getElementById('supTicketOverlay')?.remove();
+        const d = op.datos || {};
+        const productos = d.productos || [];
+        const vacios = d.vaciosDevueltosPorTipo || {};
+        const fechaStr = op.fecha.toLocaleString('es-VE', { dateStyle: 'medium', timeStyle: 'short' });
+
+        // Desglose de lo vendido por presentación (cj / paq / und)
+        const filaProducto = (p) => {
+            const cv = p.cantidadVendida || {};
+            const partes = [];
+            if (cv.cj)  partes.push(`${cv.cj} Cj`);
+            if (cv.paq) partes.push(`${cv.paq} Paq`);
+            if (cv.und) partes.push(`${cv.und} Und`);
+            const cant = partes.join(' + ') || `${p.totalUnidadesVendidas || 0} Und`;
+            const pre = p.precios || {};
+            const sub = (cv.cj || 0) * (pre.cj || 0) + (cv.paq || 0) * (pre.paq || 0) + (cv.und || 0) * (pre.und || 0);
+            const dsc = (p.descuentoAC && p.descuentoAC.length) ? ' <span class="text-[9px] text-emerald-700 font-bold">(desc.)</span>' : '';
+            return `
+                <div class="flex items-start justify-between gap-2 py-1.5 border-b border-gray-100">
+                    <div class="min-w-0">
+                        <div class="text-xs font-semibold text-gray-800 truncate">${p.presentacion || 'Producto'}${dsc}</div>
+                        <div class="text-[10px] text-gray-400 truncate">${[p.marca, p.segmento].filter(Boolean).join(' · ')}</div>
+                        <div class="text-[10px] text-indigo-600 font-bold">${cant}</div>
+                    </div>
+                    <div class="text-xs font-black text-gray-700 shrink-0">$${sub.toFixed(2)}</div>
+                </div>`;
+        };
+
+        const vaciosKeys = Object.keys(vacios).filter(k => vacios[k]);
+        const ov = document.createElement('div');
+        ov.id = 'supTicketOverlay';
+        ov.className = 'fixed inset-0 z-[9999] bg-black/60 flex items-end sm:items-center justify-center p-0 sm:p-4';
+        ov.innerHTML = `
+            <div class="bg-white w-full max-w-md rounded-t-2xl sm:rounded-2xl shadow-2xl overflow-hidden max-h-[92vh] flex flex-col">
+                <div class="bg-slate-800 text-white px-4 py-3 shrink-0">
+                    <div class="flex items-center justify-between gap-2">
+                        <div class="min-w-0">
+                            <div class="font-bold text-sm truncate">${op.cliente}</div>
+                            <div class="text-[11px] text-slate-300">${fechaStr}</div>
+                        </div>
+                        <span class="text-[10px] bg-white/15 px-2 py-1 rounded font-black shrink-0">${op.tipo}</span>
+                    </div>
+                </div>
+
+                <div class="px-4 py-2 bg-amber-50 border-b border-amber-200 shrink-0">
+                    <p class="text-[10px] text-amber-800 font-semibold">Vista de solo lectura. Esta información no se puede modificar desde Supervisión.</p>
+                </div>
+
+                <div class="p-4 overflow-y-auto flex-1">
+                    ${productos.length ? `
+                        <p class="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1">Productos (${productos.length})</p>
+                        ${productos.map(filaProducto).join('')}
+                    ` : '<p class="text-xs text-gray-400 py-3">Esta operación no tiene productos registrados.</p>'}
+
+                    ${vaciosKeys.length ? `
+                        <p class="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mt-4 mb-1">Vacíos devueltos</p>
+                        ${vaciosKeys.map(k => `<div class="flex justify-between text-xs py-1 border-b border-gray-100"><span class="text-gray-600">${k}</span><span class="font-bold text-gray-800">${vacios[k]}</span></div>`).join('')}
+                    ` : ''}
+
+                    ${d.descuentoTotalAC ? `
+                        <div class="mt-3 text-[11px] text-emerald-700 font-semibold">
+                            Descuento sobre el total: ${d.descuentoTotalAC.porcentaje}%
+                            ${d.totalSinDescuento ? `<span class="text-gray-400 font-normal">(antes $${Number(d.totalSinDescuento).toFixed(2)})</span>` : ''}
+                        </div>` : ''}
+
+                    <div class="flex justify-between items-center mt-4 pt-3 border-t-2 border-gray-200">
+                        <span class="text-sm font-bold text-gray-600">Total</span>
+                        <span class="text-lg font-black ${op.tipo === 'Consignación' ? 'text-amber-700' : 'text-gray-900'}">${op.tipo === 'Obsequio' ? '—' : '$' + op.total.toFixed(2)}</span>
+                    </div>
+                </div>
+
+                <div class="p-3 border-t shrink-0">
+                    <button id="supTicketCerrar" class="w-full py-2.5 bg-gray-100 text-gray-600 rounded-lg font-bold text-sm hover:bg-gray-200">Cerrar</button>
+                </div>
+            </div>`;
+        document.body.appendChild(ov);
+        ov.addEventListener('click', e => { if (e.target === ov) ov.remove(); });
+        document.getElementById('supTicketCerrar').addEventListener('click', () => ov.remove());
     }
 
     // =========================================================================
