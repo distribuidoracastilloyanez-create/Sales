@@ -302,6 +302,161 @@
         }));
     }
 
+    // ═══════════════════════════════════════════════════════════════════
+    // MAPA ADC
+    // Ubica los equipos usando las COORDENADAS DEL CLIENTE donde están
+    // instalados (los equipos no tienen coordenadas propias). Permite
+    // filtrar por los que tienen rastreo SCS Connect Track y los que no.
+    // ═══════════════════════════════════════════════════════════════════
+    let _mapaADC = null;
+    let _mapaMarcadores = [];
+    let _mapaFiltro = { track: '', rubro: '' };
+
+    window.showMapaADC = async function (volverFn) {
+        if (volverFn) _volverArchivos = volverFn;
+        _mainContent.innerHTML = `
+            <div class="p-2 sm:p-3 pt-5 w-full max-w-4xl mx-auto">
+                <div class="bg-white rounded-xl shadow-2xl overflow-hidden border border-slate-200">
+                    <div class="bg-slate-800 px-4 py-3 flex items-center justify-between">
+                        <div>
+                            <h2 class="text-base font-semibold text-white tracking-tight">Mapa ADC</h2>
+                            <p class="text-[10px] text-slate-400 mt-0.5">Ubicación de los equipos de la compañía</p>
+                        </div>
+                        <button id="mapBack" class="px-3 py-1.5 bg-white/10 text-slate-100 text-xs rounded-md hover:bg-white/20 font-medium transition">Volver</button>
+                    </div>
+                    <div class="p-3">
+                        <div class="flex gap-1.5 mb-2">
+                            <button data-t="" class="map-f flex-1 py-1.5 rounded text-[11px] font-bold border bg-slate-800 text-white border-slate-800">Todos</button>
+                            <button data-t="si" class="map-f flex-1 py-1.5 rounded text-[11px] font-bold border bg-white text-slate-700 border-slate-300">Con rastreo</button>
+                            <button data-t="no" class="map-f flex-1 py-1.5 rounded text-[11px] font-bold border bg-white text-slate-700 border-slate-300">Sin rastreo</button>
+                        </div>
+                        <select id="mapFRubro" class="w-full text-xs border border-slate-300 rounded-md p-1.5 bg-white outline-none mb-2">
+                            <option value="">Rubro: todos</option>
+                            ${RUBROS.map(r => `<option value="${r}">${r}</option>`).join('')}
+                        </select>
+
+                        <div id="mapResumen" class="text-[11px] text-slate-500 mb-1.5"></div>
+                        <div id="adc-map" class="w-full rounded-lg shadow-inner z-0" style="height:58vh; border:1px solid #ccc; background:#e5e7eb;">
+                            <p class="text-center text-gray-500 pt-10 font-medium animate-pulse">Iniciando mapa...</p>
+                        </div>
+                        <div class="flex flex-wrap gap-3 mt-2 text-[10px] text-slate-600">
+                            <span class="flex items-center"><img src="https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png" style="height:18px;margin-right:4px;"> Con SCS Connect Track</span>
+                            <span class="flex items-center"><img src="https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png" style="height:18px;margin-right:4px;"> Sin rastreo</span>
+                            <span class="flex items-center"><img src="https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-orange.png" style="height:18px;margin-right:4px;"> Por regularizar</span>
+                        </div>
+                    </div>
+                </div>
+            </div>`;
+        document.getElementById('mapBack').addEventListener('click', () => {
+            _mapaADC = null; _mapaMarcadores = [];
+            if (_volverArchivos) _volverArchivos();
+            else if (window.showArchivosView) window.showArchivosView(false);
+        });
+
+        _mapaFiltro = { track: '', rubro: '' };
+        document.querySelectorAll('.map-f').forEach(b => b.addEventListener('click', () => {
+            _mapaFiltro.track = b.dataset.t;
+            document.querySelectorAll('.map-f').forEach(x => {
+                const act = x.dataset.t === _mapaFiltro.track;
+                x.className = `map-f flex-1 py-1.5 rounded text-[11px] font-bold border ${act ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-700 border-slate-300'}`;
+            });
+            pintarMarcadores();
+        }));
+        document.getElementById('mapFRubro').addEventListener('change', e => { _mapaFiltro.rubro = e.target.value; pintarMarcadores(); });
+
+        await Promise.all([cargarEquipos(), cargarClientes()]);
+        iniciarMapa();
+    };
+
+    function iniciarMapa() {
+        const cont = document.getElementById('adc-map');
+        if (!cont) return;
+        if (typeof L === 'undefined') {
+            cont.innerHTML = '<p class="text-red-500 font-bold p-4 text-center">No se pudo cargar el motor de mapas. Revisa tu conexión a internet.</p>';
+            return;
+        }
+        cont.innerHTML = '';
+        _mapaADC = L.map('adc-map').setView([7.77, -72.22], 13);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OSM', maxZoom: 19 }).addTo(_mapaADC);
+        pintarMarcadores();
+    }
+
+    // Coordenadas del cliente: vienen como "lat,lon" y se validan dentro de Venezuela
+    function coordsDe(cliente) {
+        if (!cliente || !cliente.coordenadas) return null;
+        const p = cliente.coordenadas.split(',');
+        if (p.length !== 2) return null;
+        const lat = parseFloat(p[0]), lon = parseFloat(p[1]);
+        if (isNaN(lat) || isNaN(lon)) return null;
+        if (lat < 0 || lat > 13 || lon < -74 || lon > -59) return null;
+        return [lat, lon];
+    }
+
+    function pintarMarcadores() {
+        if (!_mapaADC || typeof L === 'undefined') return;
+        _mapaMarcadores.forEach(m => _mapaADC.removeLayer(m));
+        _mapaMarcadores = [];
+
+        const icono = (color) => new L.Icon({
+            iconUrl: `https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-${color}.png`,
+            shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+            iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41]
+        });
+
+        let lista = _equipos.slice();
+        if (_mapaFiltro.track === 'si') lista = lista.filter(e => e.gpsTrack);
+        if (_mapaFiltro.track === 'no') lista = lista.filter(e => !e.gpsTrack);
+        if (_mapaFiltro.rubro) lista = lista.filter(e => e.rubro === _mapaFiltro.rubro);
+
+        // Varios equipos pueden estar en el mismo cliente: se agrupan por coordenada
+        const porCliente = {};
+        let sinUbicacion = 0;
+        lista.forEach(e => {
+            const c = _clientes.find(x => x.id === e.clienteId);
+            const co = coordsDe(c);
+            if (!co) { sinUbicacion++; return; }
+            const k = e.clienteId;
+            if (!porCliente[k]) porCliente[k] = { coords: co, cliente: c, equipos: [] };
+            porCliente[k].equipos.push(e);
+        });
+
+        const puntos = [];
+        Object.values(porCliente).forEach(g => {
+            const hayTrack = g.equipos.some(e => e.gpsTrack);
+            const hayRegular = g.equipos.some(e => e.porRegularizar);
+            const color = hayRegular ? 'orange' : (hayTrack ? 'green' : 'blue');
+            const m = L.marker(g.coords, { icon: icono(color) }).addTo(_mapaADC);
+            const nom = g.cliente.nombreComercial || g.cliente.nombrePersonal || '(sin nombre)';
+            m.bindPopup(`
+                <div style="min-width:170px">
+                    <div style="font-weight:800;font-size:12px;margin-bottom:2px">${nom}</div>
+                    <div style="font-size:10px;color:#64748b;margin-bottom:4px">${g.cliente.codigoCEP ? 'CEP ' + g.cliente.codigoCEP : ''}${g.cliente.sector ? ' · ' + g.cliente.sector : ''}</div>
+                    ${g.equipos.map(e => `
+                        <div style="border-top:1px solid #e2e8f0;padding-top:3px;margin-top:3px">
+                            <div style="font-weight:700;font-size:11px">${e.codigo}</div>
+                            <div style="font-size:10px;color:#475569">${e.tipo || 'Sin tipo'}${e.rubro ? ' · ' + e.rubro : ''}</div>
+                            <div style="font-size:10px;color:${e.gpsTrack ? '#047857' : '#94a3b8'};font-weight:700">
+                                ${e.gpsTrack ? 'SCS Connect Track' : 'Sin rastreo'}${e.porRegularizar ? ' · POR REGULARIZAR' : ''}
+                            </div>
+                        </div>`).join('')}
+                </div>`);
+            _mapaMarcadores.push(m);
+            puntos.push(g.coords);
+        });
+
+        const resumen = document.getElementById('mapResumen');
+        if (resumen) {
+            const conTrack = lista.filter(e => e.gpsTrack).length;
+            resumen.innerHTML = `<strong>${lista.length}</strong> equipo(s) · ${conTrack} con rastreo · ` +
+                `<strong>${_mapaMarcadores.length}</strong> ubicación(es) en el mapa` +
+                (sinUbicacion ? ` · <span class="text-amber-600">${sinUbicacion} sin coordenadas del cliente</span>` : '');
+        }
+
+        if (puntos.length) {
+            try { _mapaADC.fitBounds(L.latLngBounds(puntos), { padding: [30, 30], maxZoom: 16 }); } catch (e) {}
+        }
+    }
+
     // ═══════════════ FICHA DEL EQUIPO ═══════════════
     function verEquipo(eq) {
         document.getElementById('adcFichaOverlay')?.remove();
