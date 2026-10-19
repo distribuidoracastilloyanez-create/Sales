@@ -198,7 +198,7 @@
                 <div class="bg-white rounded-xl shadow-2xl overflow-hidden border border-slate-200">
                     <div class="bg-slate-800 px-4 py-3 flex items-center justify-between">
                         <div>
-                            <h2 class="text-base font-semibold text-white tracking-tight">Archivos</h2>
+                            <h2 class="text-base font-semibold text-white tracking-tight">Archivos y ADC</h2>
                             <p class="text-[10px] text-slate-400 mt-0.5">Documentos de clientes y equipos de la compañía</p>
                         </div>
                         <button id="arcMenuVolver" class="px-3 py-1.5 bg-white/10 text-slate-100 text-xs rounded-md hover:bg-white/20 font-medium transition">Volver</button>
@@ -212,11 +212,19 @@
                             <span class="block font-bold text-slate-800 text-sm">Gestión de ADC</span>
                             <span class="block text-xs text-slate-500 mt-0.5">Buscar equipo por código, rastreo y regularización</span>
                         </button>
+                        <button id="arcSubMapa" class="w-full text-left px-4 py-4 bg-slate-50 border border-slate-200 rounded-lg hover:bg-slate-100 transition">
+                            <span class="block font-bold text-slate-800 text-sm">Mapa ADC</span>
+                            <span class="block text-xs text-slate-500 mt-0.5">Ubicación de los equipos según las coordenadas del cliente</span>
+                        </button>
                     </div>
                 </div>
             </div>`;
         document.getElementById('arcMenuVolver').addEventListener('click', () => _showMainMenu());
         document.getElementById('arcSubCliente').addEventListener('click', () => window.showArchivosClienteView(false));
+        document.getElementById('arcSubMapa').addEventListener('click', () => {
+            if (window.showMapaADC) window.showMapaADC(() => window.showArchivosView(false));
+            else _showModal('Aviso', 'El módulo de ADC no está disponible.');
+        });
         document.getElementById('arcSubADC').addEventListener('click', () => {
             if (window.showGestionADC) window.showGestionADC(() => window.showArchivosView(false));
             else _showModal('Aviso', 'El módulo de ADC no está disponible.');
