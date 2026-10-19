@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v150'; // v150: Supervision - al tocar una operacion del monitoreo en vivo se ve el ticket completo (solo lectura)
+const CACHE_NAME = 'ventas-app-cache-v151'; // v151: menu principal 'Archivos y ADC' + nueva subfuncion Mapa ADC (ubica equipos por coordenadas del cliente, filtro con/sin rastreo)
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
