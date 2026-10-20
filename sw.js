@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v151'; // v151: menu principal 'Archivos y ADC' + nueva subfuncion Mapa ADC (ubica equipos por coordenadas del cliente, filtro con/sin rastreo)
+const CACHE_NAME = 'ventas-app-cache-v152'; // v152: modelos se distribuyen en la UNIDAD MENOR DE VENTA (paq/cj) y en la venta se capturan EN LINEA bajo el producto, sin modal
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
