@@ -753,24 +753,115 @@
         }, 'Eliminar', null, true);
     }
 
+    // Lista de todos los acuerdos: cada cliente se puede ABRIR para editar o
+    // eliminar sus descuentos, sin tener que buscarlo de nuevo en el buscador.
     async function mostrarTodosLosAcuerdos() {
-        _showModal('Consultando', 'Buscando acuerdos...');
+        document.getElementById('acTodosOverlay')?.remove();
+        const ov = document.createElement('div');
+        ov.id = 'acTodosOverlay';
+        ov.className = 'fixed inset-0 z-[9999] bg-slate-900/50 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4';
+        ov.innerHTML = `
+            <div class="bg-white w-full max-w-md rounded-t-xl sm:rounded-xl shadow-2xl overflow-hidden max-h-[92vh] flex flex-col border border-slate-200">
+                <div class="bg-slate-800 text-white px-4 py-3 shrink-0">
+                    <div class="font-semibold text-sm">Acuerdos comerciales</div>
+                    <div class="text-[10px] text-slate-400">Toca un cliente para ver, editar o eliminar sus descuentos</div>
+                </div>
+                <div class="px-4 pt-3 shrink-0">
+                    <input type="text" id="acTodosBuscar" placeholder="Buscar cliente..." autocomplete="off"
+                           class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-slate-400">
+                </div>
+                <div id="acTodosLista" class="p-4 overflow-y-auto flex-1">
+                    <p class="text-sm text-slate-400 text-center py-6 animate-pulse">Buscando acuerdos...</p>
+                </div>
+                <div class="p-3 border-t border-slate-100 shrink-0">
+                    <button id="acTodosCerrar" class="w-full py-2.5 bg-slate-100 text-slate-600 rounded-lg font-bold text-sm">Cerrar</button>
+                </div>
+            </div>`;
+        document.body.appendChild(ov);
+        ov.addEventListener('click', e => { if (e.target === ov) ov.remove(); });
+        document.getElementById('acTodosCerrar').addEventListener('click', () => ov.remove());
+
         try {
             const snap = await _getDocs(_collection(_db, pathAcuerdos()));
             const items = snap.docs.map(d => ({ id: d.id, ...d.data() }))
-                .filter(a => (a.reglas && a.reglas.length) || (a.descuentos && Object.keys(a.descuentos).length));
-            if (!items.length) { _showModal('Acuerdos comerciales', 'No hay acuerdos registrados.'); return; }
-            const html = items.map(a => {
-                const nReglas = (a.reglas || []).filter(r => r.activo !== false).length;
-                const nLeg = Object.keys(a.descuentos || {}).length;
-                return `<div class="border-b border-slate-100 py-1.5 text-left">
-                    <div class="text-xs font-semibold text-slate-800">${a.clienteNombre || a.id}</div>
-                    <div class="text-[10px] text-slate-500">${nReglas + nLeg} descuento(s)</div>
-                </div>`;
-            }).join('');
-            _showModal('Acuerdos comerciales', `<div class="max-h-72 overflow-y-auto">${html}</div>`);
+                .filter(a => (a.reglas && a.reglas.length) || (a.descuentos && Object.keys(a.descuentos).length))
+                .sort((a, b) => (a.clienteNombre || '').localeCompare(b.clienteNombre || ''));
+
+            const cont = document.getElementById('acTodosLista');
+            if (!items.length) {
+                cont.innerHTML = '<p class="text-sm text-slate-400 text-center py-6">No hay acuerdos registrados.</p>';
+                return;
+            }
+
+            const vigente = (r) => {
+                if (!r || r.activo === false) return false;
+                const t = r.temporalidad || { tipo: 'indefinido' };
+                return t.tipo === 'indefinido' || (Number(t.restantes) || 0) > 0;
+            };
+
+            const pintar = (filtro = '') => {
+                const t = filtro.toLowerCase().trim();
+                const lista = items.filter(a => !t || (a.clienteNombre || '').toLowerCase().includes(t));
+                if (!lista.length) {
+                    cont.innerHTML = '<p class="text-sm text-slate-400 text-center py-6">Sin coincidencias.</p>';
+                    return;
+                }
+                cont.innerHTML = lista.map(a => {
+                    const reglas = a.reglas || [];
+                    const activas = reglas.filter(vigente).length;
+                    const agotadas = reglas.length - activas;
+                    const nLeg = Object.keys(a.descuentos || {}).length;
+                    return `
+                    <button type="button" data-id="${a.id}" class="ac-todo-item w-full text-left border border-slate-200 rounded-lg p-2.5 mb-1.5 hover:bg-slate-50 hover:border-slate-400 transition">
+                        <div class="text-xs font-semibold text-slate-800 truncate">${a.clienteNombre || a.id}</div>
+                        <div class="text-[10px] mt-0.5">
+                            <span class="text-emerald-700 font-bold">${activas + nLeg} activo(s)</span>
+                            ${agotadas ? `<span class="text-slate-400"> · ${agotadas} agotado(s)</span>` : ''}
+                        </div>
+                    </button>`;
+                }).join('');
+                cont.querySelectorAll('.ac-todo-item').forEach(b => b.addEventListener('click', async () => {
+                    ov.remove();
+                    await abrirClienteDesdeLista(b.dataset.id);
+                }));
+            };
+
+            pintar();
+            document.getElementById('acTodosBuscar').addEventListener('input', e => pintar(e.target.value));
         } catch (e) {
-            _showModal('Error', 'No se pudieron cargar los acuerdos.');
+            console.error('AC ver todos:', e);
+            const cont = document.getElementById('acTodosLista');
+            if (cont) cont.innerHTML = '<p class="text-sm text-red-500 text-center py-6">No se pudieron cargar los acuerdos.</p>';
+        }
+    }
+
+    // Abre el cliente en la pantalla principal para gestionar sus descuentos
+    // (reutiliza la misma vista de siempre: editar y eliminar ya viven ahí).
+    async function abrirClienteDesdeLista(clienteId) {
+        const c = _acClientes.find(x => x.id === clienteId);
+        if (c) { await seleccionarCliente(clienteId); return; }
+
+        // El cliente ya no está en el catálogo (p. ej. fue eliminado): se permite
+        // igualmente gestionar su acuerdo para poder limpiarlo.
+        try {
+            const snap = await _getDoc(_doc(_db, pathAcuerdos(), clienteId));
+            if (!snap.exists()) { _showModal('Aviso', 'Ese acuerdo ya no existe.'); return; }
+            const d = snap.data();
+            _acCliente = { id: clienteId, nombreComercial: d.clienteNombre || clienteId };
+            _acAcuerdo = { clienteId, descuentos: d.descuentos || {}, reglas: Array.isArray(d.reglas) ? d.reglas : [] };
+            const sel = document.getElementById('acClienteSel');
+            if (sel) {
+                sel.classList.remove('hidden');
+                sel.innerHTML = `<div class="flex items-center justify-between">
+                    <div><strong class="text-slate-800">${_acCliente.nombreComercial}</strong>
+                    <span class="text-amber-600 text-[10px]">(cliente no encontrado en el catálogo)</span></div></div>`;
+            }
+            document.getElementById('acListaWrap')?.classList.remove('hidden');
+            document.getElementById('acAgregarWrap')?.classList.remove('hidden');
+            renderListaDescuentos();
+            try { renderSelectorAlcance(); renderCamposPct(); } catch (e) {}
+        } catch (e) {
+            _showModal('Error', 'No se pudo abrir el acuerdo.');
         }
     }
 
