@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v152'; // v152: modelos se distribuyen en la UNIDAD MENOR DE VENTA (paq/cj) y en la venta se capturan EN LINEA bajo el producto, sin modal
+const CACHE_NAME = 'ventas-app-cache-v153'; // v153: fix salto de pantalla al escribir cantidad en productos con modelos (solo se actualiza esa fila, no toda la tabla)
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
