@@ -331,6 +331,7 @@
         const filtInvUI = filtInv.map(p => ({ ...p, cantidadUnidades: stockDisponible(p) }));
 
         body.innerHTML = window.ventasUI.getInventoryTableRows(filtInvUI, _ventaActual.productos, _monedaActual, _tasaCOP, _tasaBs, 'segmento');
+        _vdEnlazarModelosInline();
         
         updateVentaTotal();
     }
@@ -360,6 +361,7 @@
       });
 
       body.innerHTML = window.ventasUI.getInventoryTableRows(mappedInv, _ventaActual.productos, _monedaActual, _tasaCOP, _tasaBs, 'segmento');
+      _vdEnlazarModelosInline();
 
       updateVentaTotal();
   }
@@ -392,82 +394,66 @@
       // Modelos: al cambiar la cantidad, la distribución previa deja de ser válida
       if (pV.modelosDistribucion) delete pV.modelosDistribucion;
       if(totU===0&&pV.cantCj===0&&pV.cantPaq===0&&pV.cantUnd===0) delete _ventaActual.productos[pId]; updateVentaTotal();
-      if (prod.manejaModelos) _vdActualizarBtnModelos(pId);
+      // Re-dibujar para mostrar u ocultar las filas de modelos según la cantidad
+      // Re-dibujar para mostrar u ocultar las filas de modelos según la cantidad
+      if (prod.manejaModelos) {
+          try {
+              if (_originalVentaForEdit) renderEditVentasInventario(); else renderVentasInventario();
+          } catch (e) { console.warn('No se pudo refrescar los modelos', e); }
+      }
     }
 
-    // Actualiza (sin re-render) la etiqueta del botón de modelos en venta directa
-    function _vdActualizarBtnModelos(pId) {
-        const btn = document.querySelector(`.vd-modelos-btn[data-pid="${pId}"]`);
-        if (!btn) return;
-        const prod = _inventarioCache.find(p => p.id === pId);
-        if (!prod) return;
-        const pa = _ventaActual.productos[pId] || {};
-        const totU = (pa.cantCj || 0) * (prod.unidadesPorCaja || 1) + (pa.cantPaq || 0) * (prod.unidadesPorPaquete || 1) + (pa.cantUnd || 0);
-        const dist = pa.modelosDistribucion;
-        const sum = dist ? Object.values(dist).reduce((a, b) => a + (b || 0), 0) : 0;
-        const ok = totU > 0 && dist && sum === totU;
-        btn.textContent = ok ? `Modelos distribuidos (${totU} u)` : `Distribuir modelos${totU > 0 ? ' (' + totU + ' u)' : ''}`;
-        btn.className = `vd-modelos-btn text-[11px] font-bold ${ok ? 'text-green-600' : 'text-indigo-600'} hover:underline`;
-    }
-
-    // Modal para distribuir en modelos la cantidad vendida (venta directa)
-    function abrirDistribucionVentaDirecta(pId) {
-        const prod = _inventarioCache.find(p => p.id === pId);
-        if (!prod || !prod.manejaModelos) return;
-        const pa = _ventaActual.productos[pId] || {};
-        const totU = (pa.cantCj || 0) * (prod.unidadesPorCaja || 1) + (pa.cantPaq || 0) * (prod.unidadesPorPaquete || 1) + (pa.cantUnd || 0);
-        if (totU <= 0) { _showModal('Sin cantidad', 'Primero ingresa la cantidad a vender de este producto.'); return; }
-        const modelos = prod.modelos || [];
-        const modelosStock = prod.modelosStock || {};
-        const prev = pa.modelosDistribucion || {};
-        document.getElementById('vdModOverlay')?.remove();
-        const ov = document.createElement('div');
-        ov.id = 'vdModOverlay';
-        ov.className = 'fixed inset-0 z-[9999] bg-slate-900/50 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4';
-        const filas = modelos.map(m => `
-            <div class="flex items-center justify-between gap-3 py-2 px-3 border-b border-slate-100 last:border-0">
-                <div class="min-w-0"><div class="text-sm font-medium text-slate-800">${m}</div><div class="text-[11px] text-slate-400">Disponible: ${modelosStock[m] || 0} u</div></div>
-                <input type="number" min="0" value="${prev[m] || 0}" data-modelo="${m}" class="vd-mod-inp w-24 px-2 py-1.5 text-center border border-slate-300 rounded-lg text-sm font-bold text-slate-800 focus:ring-2 focus:ring-indigo-500 outline-none">
-            </div>`).join('');
-        ov.innerHTML = `
-            <div class="bg-white w-full max-w-md rounded-t-xl sm:rounded-xl shadow-2xl overflow-hidden max-h-[92vh] flex flex-col border border-slate-200">
-                <div class="bg-indigo-700 text-white px-5 py-4 shrink-0">
-                    <div class="text-[10px] uppercase tracking-wider text-indigo-200 font-semibold">Venta &middot; Modelos</div>
-                    <div class="font-semibold text-base truncate">${prod.presentacion} &middot; ${prod.marca || ''}</div>
-                    <div class="text-xs text-indigo-100 mt-0.5">Distribuye <strong>${totU}</strong> unidad(es) entre los modelos.</div>
-                </div>
-                <div class="overflow-y-auto p-4 flex-1">
-                    <div class="border border-slate-200 rounded-lg overflow-hidden">${filas}</div>
-                    <div id="vdModEstado" class="mt-3 text-center text-sm font-bold"></div>
-                </div>
-                <div class="p-4 border-t border-slate-100 shrink-0 space-y-2">
-                    <button id="vdModGuardar" class="w-full py-3 bg-indigo-700 text-white rounded-lg font-medium text-sm hover:bg-indigo-800 transition disabled:opacity-40">Guardar distribución</button>
-                    <button id="vdModCancelar" class="w-full py-2.5 text-slate-400 hover:text-slate-600 font-medium text-sm">Cancelar</button>
-                </div>
-            </div>`;
-        document.body.appendChild(ov);
-        const getInputs = () => Array.from(ov.querySelectorAll('.vd-mod-inp'));
-        const guardar = document.getElementById('vdModGuardar');
-        const estado = document.getElementById('vdModEstado');
-        const recompute = () => {
-            const suma = getInputs().reduce((a, i) => a + (parseInt(i.value, 10) || 0), 0);
-            const dif = totU - suma;
-            if (dif === 0) { estado.textContent = 'Distribución completa'; estado.className = 'mt-3 text-center text-sm font-bold text-green-600'; guardar.disabled = false; }
-            else if (dif > 0) { estado.textContent = `Faltan ${dif} u por asignar`; estado.className = 'mt-3 text-center text-sm font-bold text-amber-600'; guardar.disabled = true; }
-            else { estado.textContent = `Sobran ${-dif} u (reduce)`; estado.className = 'mt-3 text-center text-sm font-bold text-rose-600'; guardar.disabled = true; }
-        };
-        getInputs().forEach(i => i.addEventListener('input', recompute));
-        recompute();
-        ov.addEventListener('click', e => { if (e.target === ov) ov.remove(); });
-        document.getElementById('vdModCancelar').addEventListener('click', () => ov.remove());
-        guardar.addEventListener('click', () => {
-            const dist = {};
-            getInputs().forEach(i => { const v = parseInt(i.value, 10) || 0; if (v > 0) dist[i.dataset.modelo] = v; });
-            if (_ventaActual.productos[pId]) _ventaActual.productos[pId].modelosDistribucion = dist;
-            ov.remove();
-            _vdActualizarBtnModelos(pId);
+    // Enlaza los campos de modelos que se muestran en línea bajo cada producto
+    function _vdEnlazarModelosInline() {
+        document.querySelectorAll('.vd-mod-inline').forEach(i => {
+            if (i.dataset.bound) return;
+            i.dataset.bound = '1';
+            i.addEventListener('input', () => _vdDistribucionInline(i.dataset.pid));
         });
     }
+
+    // Unidad MENOR en que se vende el producto (factor de conversión a unidades)
+    function _vdFactorVenta(prod) {
+        const vPor = prod.ventaPor || {};
+        if (vPor.und) return { factor: 1, etiqueta: 'Und' };
+        if (vPor.paq) return { factor: prod.unidadesPorPaquete || 1, etiqueta: 'Paq' };
+        return { factor: prod.unidadesPorCaja || 1, etiqueta: 'Cj' };
+    }
+
+    // Captura la distribución escrita en línea y actualiza el estado visual.
+    // Lo que el vendedor escribe está en la unidad de venta; internamente la
+    // distribución se sigue guardando en UNIDADES para no alterar el descuento
+    // de stock ni los tickets.
+    function _vdDistribucionInline(pId) {
+        const prod = _inventarioCache.find(p => p.id === pId);
+        if (!prod || !prod.manejaModelos) return;
+        const pa = _ventaActual.productos[pId];
+        if (!pa) return;
+        const { factor, etiqueta } = _vdFactorVenta(prod);
+        const totU = (pa.cantCj || 0) * (prod.unidadesPorCaja || 1) + (pa.cantPaq || 0) * (prod.unidadesPorPaquete || 1) + (pa.cantUnd || 0);
+        const totalAsignar = Math.round(totU / factor);
+
+        const inputs = Array.from(document.querySelectorAll(`.vd-mod-inline[data-pid="${pId}"]`));
+        const dist = {};
+        let suma = 0;
+        inputs.forEach(i => {
+            const v = Math.max(0, parseInt(i.value, 10) || 0);
+            suma += v;
+            if (v > 0) dist[i.dataset.modelo] = v * factor;   // guardar en unidades
+        });
+        pa.modelosDistribucion = Object.keys(dist).length ? dist : null;
+
+        const est = document.querySelector(`.vd-mod-estado[data-pid="${pId}"]`);
+        if (est) {
+            const dif = totalAsignar - suma;
+            if (dif === 0) { est.textContent = 'Completo'; est.className = 'vd-mod-estado text-[10px] font-bold text-green-600'; }
+            else if (dif > 0) { est.textContent = `Faltan ${dif} ${etiqueta}`; est.className = 'vd-mod-estado text-[10px] font-bold text-amber-600'; }
+            else { est.textContent = `Sobran ${-dif} ${etiqueta}`; est.className = 'vd-mod-estado text-[10px] font-bold text-rose-600'; }
+            est.dataset.pid = pId;
+        }
+    }
+    window.ventasModule = window.ventasModule || {};
+
 
     function handleTipoVacioChange(event) { const inp=event.target, tipo=inp.dataset.tipoVacio, cant=parseInt(inp.value,10)||0; if(tipo&&_ventaActual.vaciosDevueltosPorTipo.hasOwnProperty(tipo)) _ventaActual.vaciosDevueltosPorTipo[tipo]=cant; }
 
@@ -1732,7 +1718,7 @@
   }
 
   window.ventasModule = { toggleMoneda, handleQuantityChange,
-        abrirDistribucionVentaDirecta, handleTipoVacioChange, showPastSaleOptions, editVenta, deleteVenta, invalidateCache: () => { } };
+        handleTipoVacioChange, showPastSaleOptions, editVenta, deleteVenta, invalidateCache: () => { } };
 })();
 
 
