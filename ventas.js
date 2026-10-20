@@ -395,12 +395,40 @@
       if (pV.modelosDistribucion) delete pV.modelosDistribucion;
       if(totU===0&&pV.cantCj===0&&pV.cantPaq===0&&pV.cantUnd===0) delete _ventaActual.productos[pId]; updateVentaTotal();
       // Re-dibujar para mostrar u ocultar las filas de modelos según la cantidad
-      // Re-dibujar para mostrar u ocultar las filas de modelos según la cantidad
+      // Actualizar SOLO la fila de modelos de este producto.
+      // Antes se redibujaba la tabla completa, lo que hacía que la pantalla
+      // saltara hacia arriba y se perdiera el foco del campo en el teléfono.
       if (prod.manejaModelos) {
-          try {
-              if (_originalVentaForEdit) renderEditVentasInventario(); else renderVentasInventario();
-          } catch (e) { console.warn('No se pudo refrescar los modelos', e); }
+          try { _vdRefrescarFilaModelos(pId); } catch (e) { console.warn('No se pudo refrescar los modelos', e); }
       }
+    }
+
+    // Inserta, actualiza o elimina ÚNICAMENTE la fila de modelos de un producto,
+    // sin tocar el resto de la tabla: así no se mueve el scroll ni se pierde el
+    // foco del campo que el vendedor está escribiendo.
+    function _vdRefrescarFilaModelos(pId) {
+        const prod = _inventarioCache.find(p => p.id === pId);
+        if (!prod || !prod.manejaModelos || !window.ventasUI?.getModelosRowHTML) return;
+
+        const filaExistente = document.querySelector(`tr[data-modrow="${pId}"]`);
+        const html = window.ventasUI.getModelosRowHTML(prod, _ventaActual.productos[pId] || {});
+
+        if (!html) { filaExistente?.remove(); return; }
+
+        if (filaExistente) {
+            const tmp = document.createElement('tbody');
+            tmp.innerHTML = html;
+            filaExistente.replaceWith(tmp.firstElementChild);
+        } else {
+            // Colocarla justo después de la última fila de cantidades del producto
+            const inputs = document.querySelectorAll(`input[data-product-id="${pId}"]`);
+            const ultima = inputs.length ? inputs[inputs.length - 1].closest('tr') : null;
+            if (!ultima) return;
+            const tmp = document.createElement('tbody');
+            tmp.innerHTML = html;
+            ultima.insertAdjacentElement('afterend', tmp.firstElementChild);
+        }
+        _vdEnlazarModelosInline();
     }
 
     // Enlaza los campos de modelos que se muestran en línea bajo cada producto
