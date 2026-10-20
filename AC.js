@@ -233,8 +233,15 @@
                                 <div id="acLista" class="space-y-1.5"></div>
                             </div>
 
+                            <div id="acAgregarBtnWrap" class="hidden border-t border-slate-200 pt-3">
+                                <button id="acMostrarNuevo" class="w-full py-2.5 bg-slate-100 text-slate-700 rounded-lg font-semibold text-sm hover:bg-slate-200 transition border border-slate-300">+ Agregar descuento</button>
+                            </div>
+
                             <div id="acAgregarWrap" class="hidden border-t border-slate-200 pt-4">
-                                <p class="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-2">Nuevo descuento</p>
+                                <div class="flex items-center justify-between mb-2">
+                                    <p class="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Nuevo descuento</p>
+                                    <button id="acCancelarNuevo" class="text-[10px] text-slate-400 hover:text-slate-700 underline">Cancelar</button>
+                                </div>
 
                                 <label class="text-[10px] text-slate-500">Aplicar a</label>
                                 <select id="acTipoAlcance" class="w-full text-sm border border-slate-300 rounded-lg p-2 bg-white outline-none mb-2 mt-0.5 focus:ring-2 focus:ring-slate-400">
@@ -327,6 +334,8 @@
                 document.getElementById('acCantWrap').classList.toggle('hidden', _nuevaRegla.temp !== 'cantidad');
             }));
         document.getElementById('acGuardar').addEventListener('click', guardarRegla);
+        document.getElementById('acMostrarNuevo').addEventListener('click', () => _acToggleNuevo(true));
+        document.getElementById('acCancelarNuevo').addEventListener('click', () => _acToggleNuevo(false));
         renderSelectorAlcance();
         renderCamposPct();
         _actualizarVisibilidadPaso2();
@@ -349,14 +358,31 @@
             sel.classList.add('hidden');
             document.getElementById('acListaWrap').classList.add('hidden');
             document.getElementById('acAgregarWrap').classList.add('hidden');
+            document.getElementById('acAgregarBtnWrap').classList.add('hidden');
         });
 
         _acAcuerdo = await window.acGetAcuerdoCliente(c.id) || { clienteId: c.id, descuentos: {}, reglas: [] };
         if (!Array.isArray(_acAcuerdo.reglas)) _acAcuerdo.reglas = [];
         document.getElementById('acListaWrap').classList.remove('hidden');
-        document.getElementById('acAgregarWrap').classList.remove('hidden');
+        document.getElementById('acAgregarBtnWrap').classList.remove('hidden');
+        document.getElementById('acAgregarWrap').classList.add('hidden');
         renderListaDescuentos();
-        renderSelectorAlcance();
+    }
+
+    // Muestra u oculta el formulario de nuevo descuento (antes estaba siempre
+    // desplegado y hacía la pantalla innecesariamente larga).
+    function _acToggleNuevo(mostrar) {
+        document.getElementById('acAgregarWrap')?.classList.toggle('hidden', !mostrar);
+        document.getElementById('acAgregarBtnWrap')?.classList.toggle('hidden', mostrar);
+        if (mostrar) {
+            _nuevaRegla = { tipo: 'producto', valores: [], porcentajes: {}, pctTotal: 0, temp: 'indefinido', cant: 5 };
+            const sel = document.getElementById('acTipoAlcance');
+            if (sel) sel.value = 'producto';
+            renderSelectorAlcance();
+            renderCamposPct();
+            _actualizarVisibilidadPaso2();
+            document.getElementById('acAgregarWrap')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
     }
 
     // ── Lista de descuentos vigentes (reglas nuevas + legado) ──
@@ -389,12 +415,32 @@
         };
         const agotada = (r) => !((r.temporalidad || {}).tipo === 'indefinido' || ((r.temporalidad || {}).restantes || 0) > 0) || r.activo === false;
 
+        // Qué productos cubre realmente el descuento, en texto claro.
+        // Antes solo se veía "3 productos seleccionados" o "Marca: X", sin saber
+        // a qué productos aplicaba de verdad.
+        const detalleProductos = (r) => {
+            const a = r.alcance || {};
+            const v = a.valores || [];
+            if (a.tipo === 'total') return 'Aplica al monto total de la factura';
+            let prods = [];
+            if (a.tipo === 'producto' || a.tipo === 'productos') {
+                prods = _acProductos.filter(p => v.includes(p.id));
+            } else {
+                prods = _acProductos.filter(p => v.includes(p[a.tipo]));
+            }
+            if (!prods.length) return 'Sin productos que coincidan actualmente';
+            const nombres = prods.map(p => [p.presentacion, p.marca].filter(Boolean).join(' '));
+            if (nombres.length <= 3) return nombres.join(' · ');
+            return `${nombres.slice(0, 3).join(' · ')} y ${nombres.length - 3} más`;
+        };
+
         const htmlReglas = reglas.map(r => {
             const off = agotada(r);
             return `<div class="border ${off ? 'border-slate-200 bg-slate-50 opacity-60' : 'border-slate-300 bg-white'} rounded-lg p-2.5 flex items-center justify-between gap-2">
                 <div class="min-w-0">
                     <div class="text-xs font-semibold text-slate-800 truncate">${(r.alcance || {}).etiqueta || 'Descuento'}</div>
                     <div class="text-[10px] text-slate-600 font-medium">${pctTexto(r)}</div>
+                    <div class="text-[10px] text-slate-400 mt-0.5 leading-tight">${detalleProductos(r)}</div>
                     <div class="text-[10px] ${off ? 'text-slate-400' : 'text-emerald-700'} font-medium mt-0.5">${off ? 'Agotado' : _textoVigencia(r)}</div>
                 </div>
                 <button class="ac-del-regla text-[10px] text-red-500 hover:underline shrink-0" data-id="${r.id}">Eliminar</button>
@@ -709,8 +755,7 @@
 
             _nuevaRegla.valores = []; _nuevaRegla.porcentajes = {}; _nuevaRegla.pctTotal = 0;
             renderListaDescuentos();
-            renderSelectorAlcance();
-            renderCamposPct();
+            _acToggleNuevo(false);
         _actualizarVisibilidadPaso2();
             _showModal('Descuento guardado', `<strong>${regla.alcance.etiqueta}</strong> para <strong>${_acCliente.nombreComercial}</strong>.`);
         } catch (e) {
@@ -857,9 +902,9 @@
                     <span class="text-amber-600 text-[10px]">(cliente no encontrado en el catálogo)</span></div></div>`;
             }
             document.getElementById('acListaWrap')?.classList.remove('hidden');
-            document.getElementById('acAgregarWrap')?.classList.remove('hidden');
+            document.getElementById('acAgregarBtnWrap')?.classList.remove('hidden');
+            document.getElementById('acAgregarWrap')?.classList.add('hidden');
             renderListaDescuentos();
-            try { renderSelectorAlcance(); renderCamposPct(); } catch (e) {}
         } catch (e) {
             _showModal('Error', 'No se pudo abrir el acuerdo.');
         }
