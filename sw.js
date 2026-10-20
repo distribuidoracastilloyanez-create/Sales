@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v154'; // v154: Acuerdo Comercial - en 'Ver todos' se puede abrir el acuerdo de un cliente para editar o eliminar sus descuentos
+const CACHE_NAME = 'ventas-app-cache-v155'; // v155: Acuerdo Comercial - cada descuento muestra los productos que cubre y el formulario de nuevo descuento solo aparece al pedirlo
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
