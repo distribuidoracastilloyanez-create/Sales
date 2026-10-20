@@ -180,15 +180,54 @@
                 if (vPor.und) { 
                     html += createRow('und', vActProd.cantUnd || 0, stockU, precios.und || 0, `${stockU} Und`, `${prod.presentacion} (Und)`); 
                 }
+                // ── MODELOS: distribución EN LÍNEA (sin modal) ──
+                // Se despliega debajo del producto, indentada, y se captura en la
+                // UNIDAD MENOR DE VENTA (si solo se vende por paquete, se pide en
+                // paquetes; nunca en unidades sueltas que el vendedor no maneja).
                 if (prod.manejaModelos) {
                     const uCjM = prod.unidadesPorCaja || 1, uPaqM = prod.unidadesPorPaquete || 1;
                     const totUM = (vActProd.cantCj || 0) * uCjM + (vActProd.cantPaq || 0) * uPaqM + (vActProd.cantUnd || 0);
-                    const distM = vActProd.modelosDistribucion;
-                    const sumM = distM ? Object.values(distM).reduce((a, b) => a + (b || 0), 0) : 0;
-                    const okM = totUM > 0 && distM && sumM === totUM;
-                    html += `<tr class="border-b bg-indigo-50/30"><td colspan="4" class="py-1.5 px-3 text-right">
-                        <button type="button" onclick="window.ventasModule.abrirDistribucionVentaDirecta('${prod.id}')" data-pid="${prod.id}" class="vd-modelos-btn text-[11px] font-bold ${okM ? 'text-green-600' : 'text-indigo-600'} hover:underline">${okM ? 'Modelos distribuidos (' + totUM + ' u)' : 'Distribuir modelos' + (totUM > 0 ? ' (' + totUM + ' u)' : '')}</button>
-                    </td></tr>`;
+
+                    // Unidad menor en la que REALMENTE se vende este producto
+                    let factor = 1, etiqUnidad = 'Und';
+                    if (vPor.und)      { factor = 1;     etiqUnidad = 'Und'; }
+                    else if (vPor.paq) { factor = uPaqM; etiqUnidad = 'Paq'; }
+                    else               { factor = uCjM;  etiqUnidad = 'Cj';  }
+
+                    if (totUM > 0) {
+                        const distM = vActProd.modelosDistribucion || {};
+                        const totalAsignar = Math.round(totUM / factor);   // en la unidad de venta
+                        const sumAsignado  = Object.values(distM).reduce((a, b) => a + (b || 0), 0) / factor;
+                        const modelosStock = prod.modelosStock || {};
+                        const completo = Math.round(sumAsignado) === totalAsignar;
+
+                        const filasMod = (prod.modelos || []).map(m => {
+                            const dispUnd = modelosStock[m] || 0;
+                            const dispVta = Math.floor(dispUnd / factor);
+                            const valVta  = Math.round((distM[m] || 0) / factor);
+                            return `
+                            <div class="flex items-center justify-between gap-2 py-1">
+                                <div class="min-w-0">
+                                    <div class="text-[11px] font-semibold text-gray-700 truncate">${m}</div>
+                                    <div class="text-[9px] text-gray-400">Disponible: ${dispVta} ${etiqUnidad}</div>
+                                </div>
+                                <input type="number" min="0" value="${valVta}" data-pid="${prod.id}" data-modelo="${m}"
+                                       class="vd-mod-inline w-14 p-1 text-center border rounded-md text-xs font-bold text-gray-800 focus:ring-2 focus:ring-indigo-500 outline-none">
+                            </div>`;
+                        }).join('');
+
+                        html += `<tr class="border-b bg-indigo-50/40"><td colspan="4" class="py-2 pr-3 pl-8">
+                            <div class="border-l-2 border-indigo-300 pl-3">
+                                <div class="flex items-center justify-between mb-1">
+                                    <span class="text-[10px] font-bold text-indigo-800 uppercase tracking-wide">Modelos</span>
+                                    <span class="vd-mod-estado text-[10px] font-bold ${completo ? 'text-green-600' : 'text-amber-600'}" data-pid="${prod.id}">
+                                        ${completo ? 'Completo' : `Asigna ${totalAsignar} ${etiqUnidad}`}
+                                    </span>
+                                </div>
+                                ${filasMod}
+                            </div>
+                        </td></tr>`;
+                    }
                 }
             });
             return html;
