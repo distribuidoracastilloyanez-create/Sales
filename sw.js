@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v153'; // v153: fix salto de pantalla al escribir cantidad en productos con modelos (solo se actualiza esa fila, no toda la tabla)
+const CACHE_NAME = 'ventas-app-cache-v154'; // v154: Acuerdo Comercial - en 'Ver todos' se puede abrir el acuerdo de un cliente para editar o eliminar sus descuentos
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
