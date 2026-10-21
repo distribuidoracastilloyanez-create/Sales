@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v155'; // v155: Acuerdo Comercial - cada descuento muestra los productos que cubre y el formulario de nuevo descuento solo aparece al pedirlo
+const CACHE_NAME = 'ventas-app-cache-v156'; // v156: fix editar venta con modelos (restaura distribucion y stock por modelo) + factura usa el IVA que tenia el producto en la venta
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
