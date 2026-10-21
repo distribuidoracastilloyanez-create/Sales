@@ -356,6 +356,15 @@
              const orig = _originalVentaForEdit.productos.find(op => op.id === p.id);
              if (orig) {
                copy.cantidadUnidades = (copy.cantidadUnidades || 0) + (orig.totalUnidadesVendidas || 0);
+               // Al editar, el stock de la venta original vuelve a estar disponible.
+               // También hay que devolverlo POR MODELO, o el disponible de cada
+               // modelo se mostraría más bajo de lo real.
+               if (p.manejaModelos && orig.modelosDistribucion) {
+                   copy.modelosStock = { ...(p.modelosStock || {}) };
+                   Object.entries(orig.modelosDistribucion).forEach(([m, u]) => {
+                       copy.modelosStock[m] = (copy.modelosStock[m] || 0) + (u || 0);
+                   });
+               }
            }
            return copy;
       });
@@ -1585,7 +1594,11 @@
                         cantCj:cant.cj||0, 
                         cantPaq:cant.paq||0, 
                         cantUnd:cant.und||0, 
-                        totalUnidadesVendidas:p.totalUnidadesVendidas||0
+                        totalUnidadesVendidas:p.totalUnidadesVendidas||0,
+                        // Restaurar la distribución de modelos de la venta original.
+                        // Sin esto, al editar una venta con modelos la distribución
+                        // aparecía vacía y el guardado quedaba bloqueado.
+                        modelosDistribucion: p.modelosDistribucion || null
                   }; 
                   return acc;
               },{}), 
