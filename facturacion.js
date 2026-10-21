@@ -1023,7 +1023,11 @@
 
         productosFactura.forEach(p => {
             const prod     = _productosCache[p.id] || p;
-            const esExento = !(prod.iva && parseFloat(prod.iva) > 0);
+            // El IVA debe ser el que tenía el producto EN LA VENTA, no el actual:
+            // si después se cambió su condición fiscal, la factura de una venta
+            // anterior debe reflejar lo que se cobró ese día.
+            const ivaVenta = (p.iva !== undefined && p.iva !== null) ? p.iva : prod.iva;
+            const esExento = !(ivaVenta && parseFloat(ivaVenta) > 0);
 
             const cat = determinarCategoria(p, esExento);
             const key = `${cat.orden}__${cat.label}`;
