@@ -79,7 +79,7 @@
                     </div>
 
                     <div class="p-4 space-y-4">
-                        ${esAdmin() ? `<button id="mkEditGestion" class="w-full py-2 bg-slate-100 text-slate-700 rounded-lg text-xs font-bold hover:bg-slate-200 transition border border-slate-300">Editar gestiones</button>` : ''}
+                        ${esAdmin() ? `<button id="mkEditGestion" class="w-full py-2 bg-slate-100 text-slate-700 rounded-lg text-xs font-bold hover:bg-slate-200 transition border border-slate-300">Edit Formato</button>` : ''}
 
                         <div>
                             <label class="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">1. Cliente</label>
@@ -102,10 +102,23 @@
                         <div id="mkPaso3" class="hidden">
                             <label class="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">3. Foto del comprobante</label>
                             <input type="file" id="mkFoto" accept="image/*" capture="environment" class="hidden">
-                            <button id="mkTomarFoto" class="w-full mt-1 py-3 bg-slate-100 text-slate-700 rounded-lg font-semibold text-sm hover:bg-slate-200 transition border border-slate-300 flex items-center justify-center gap-2">
-                                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
-                                Tomar foto o elegir de la galería
-                            </button>
+                            <input type="file" id="mkGaleria" accept="image/*" multiple class="hidden">
+                            <div class="grid grid-cols-2 gap-2 mt-1">
+                                <button id="mkTomarFoto" class="py-3 bg-slate-100 text-slate-700 rounded-lg font-semibold text-xs hover:bg-slate-200 transition border border-slate-300 flex flex-col items-center justify-center gap-1">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                                    Tomar foto
+                                </button>
+                                <button id="mkElegirGaleria" class="py-3 bg-slate-100 text-slate-700 rounded-lg font-semibold text-xs hover:bg-slate-200 transition border border-slate-300 flex flex-col items-center justify-center gap-1">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                                    Galería (hasta 4)
+                                </button>
+                            </div>
+
+                            <div id="mkCollageOpts" class="hidden mt-2 bg-slate-50 border border-slate-200 rounded-lg p-2.5">
+                                <p class="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Composición del collage</p>
+                                <div id="mkLayouts" class="grid grid-cols-3 gap-1.5"></div>
+                            </div>
+
                             <div id="mkPreview" class="hidden mt-2">
                                 <img id="mkPreviewImg" class="w-full max-h-56 object-contain rounded-lg border border-slate-200 bg-slate-50">
                             </div>
@@ -129,7 +142,9 @@
         renderGestiones();
 
         document.getElementById('mkTomarFoto').addEventListener('click', () => document.getElementById('mkFoto').click());
+        document.getElementById('mkElegirGaleria').addEventListener('click', () => document.getElementById('mkGaleria').click());
         document.getElementById('mkFoto').addEventListener('change', onFotoElegida);
+        document.getElementById('mkGaleria').addEventListener('change', onGaleriaElegida);
         document.getElementById('mkCompartir').addEventListener('click', compartir);
         document.getElementById('mkCopiar').addEventListener('click', copiarTexto);
     };
@@ -198,14 +213,132 @@
         }));
     }
 
+    function mostrarPreview(file) {
+        _sel.archivo = file;
+        document.getElementById('mkPreviewImg').src = URL.createObjectURL(file);
+        document.getElementById('mkPreview').classList.remove('hidden');
+        actualizarTexto();
+    }
+
     function onFotoElegida() {
         const f = document.getElementById('mkFoto').files?.[0];
         if (!f) return;
-        _sel.archivo = f;
-        const url = URL.createObjectURL(f);
-        document.getElementById('mkPreviewImg').src = url;
-        document.getElementById('mkPreview').classList.remove('hidden');
-        actualizarTexto();
+        _imgsCollage = [];
+        document.getElementById('mkCollageOpts').classList.add('hidden');
+        mostrarPreview(f);
+    }
+
+    // ── COLLAGE ──────────────────────────────────────────────────────────
+    // Hasta 4 imágenes de la galería, combinadas en una sola con la
+    // composición que elija el usuario.
+    let _imgsCollage = [];
+
+    const LAYOUTS = {
+        2: [
+            { id: 'h', nombre: 'Lado a lado', celdas: [[0, 0, .5, 1], [.5, 0, .5, 1]] },
+            { id: 'v', nombre: 'Una sobre otra', celdas: [[0, 0, 1, .5], [0, .5, 1, .5]] }
+        ],
+        3: [
+            { id: '1-2', nombre: '1 arriba, 2 abajo', celdas: [[0, 0, 1, .5], [0, .5, .5, .5], [.5, .5, .5, .5]] },
+            { id: '2-1', nombre: '2 arriba, 1 abajo', celdas: [[0, 0, .5, .5], [.5, 0, .5, .5], [0, .5, 1, .5]] },
+            { id: 'v3', nombre: 'En columna', celdas: [[0, 0, 1, 1 / 3], [0, 1 / 3, 1, 1 / 3], [0, 2 / 3, 1, 1 / 3]] }
+        ],
+        4: [
+            { id: '2x2', nombre: 'Cuadrícula', celdas: [[0, 0, .5, .5], [.5, 0, .5, .5], [0, .5, .5, .5], [.5, .5, .5, .5]] },
+            { id: 'v4', nombre: 'En columna', celdas: [[0, 0, 1, .25], [0, .25, 1, .25], [0, .5, 1, .25], [0, .75, 1, .25]] },
+            { id: '1-3', nombre: '1 grande, 3 abajo', celdas: [[0, 0, 1, .6], [0, .6, 1 / 3, .4], [1 / 3, .6, 1 / 3, .4], [2 / 3, .6, 1 / 3, .4] ] }
+        ]
+    };
+
+    async function onGaleriaElegida() {
+        const files = Array.from(document.getElementById('mkGaleria').files || []);
+        if (!files.length) return;
+        if (files.length > 4) {
+            _showModal('Máximo 4 imágenes', 'Puedes combinar hasta <strong>4 fotos</strong> en el collage. Se tomarán las primeras 4.');
+        }
+        const sel = files.slice(0, 4);
+
+        // Una sola imagen: no hay collage que hacer
+        if (sel.length === 1) {
+            _imgsCollage = [];
+            document.getElementById('mkCollageOpts').classList.add('hidden');
+            mostrarPreview(sel[0]);
+            return;
+        }
+
+        try {
+            _imgsCollage = await Promise.all(sel.map(cargarImagen));
+            renderLayouts();
+            await generarCollage(LAYOUTS[_imgsCollage.length][0]);
+        } catch (e) {
+            console.error('Collage:', e);
+            _showModal('Error', 'No se pudieron procesar las imágenes seleccionadas.');
+        }
+    }
+
+    function cargarImagen(file) {
+        return new Promise((resolve, reject) => {
+            const img = new Image();
+            img.onload = () => resolve(img);
+            img.onerror = reject;
+            img.src = URL.createObjectURL(file);
+        });
+    }
+
+    function renderLayouts() {
+        const cont = document.getElementById('mkLayouts');
+        const opts = LAYOUTS[_imgsCollage.length] || [];
+        document.getElementById('mkCollageOpts').classList.remove('hidden');
+        cont.innerHTML = opts.map((l, i) => `
+            <button type="button" data-i="${i}" class="mk-layout px-2 py-2 border rounded-lg text-[10px] font-bold transition ${i === 0 ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-300'}">
+                ${miniatura(l)}
+                <span class="block mt-1 leading-tight">${l.nombre}</span>
+            </button>`).join('');
+        cont.querySelectorAll('.mk-layout').forEach(b => b.addEventListener('click', async () => {
+            cont.querySelectorAll('.mk-layout').forEach((x, j) => {
+                const act = Number(b.dataset.i) === j;
+                x.className = `mk-layout px-2 py-2 border rounded-lg text-[10px] font-bold transition ${act ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-300'}`;
+            });
+            await generarCollage(opts[Number(b.dataset.i)]);
+        }));
+    }
+
+    // Diagrama simple de la composición
+    function miniatura(l) {
+        const rects = l.celdas.map(([x, y, w, h]) =>
+            `<rect x="${x * 30 + 1}" y="${y * 30 + 1}" width="${w * 30 - 2}" height="${h * 30 - 2}" rx="1.5" fill="currentColor" opacity="0.5"/>`).join('');
+        return `<svg viewBox="0 0 32 32" class="w-7 h-7 mx-auto">${rects}</svg>`;
+    }
+
+    // Dibuja la imagen recortada para llenar la celda sin deformarse
+    function dibujarCubriendo(ctx, img, x, y, w, h) {
+        const escala = Math.max(w / img.width, h / img.height);
+        const nw = img.width * escala, nh = img.height * escala;
+        ctx.save();
+        ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip();
+        ctx.drawImage(img, x + (w - nw) / 2, y + (h - nh) / 2, nw, nh);
+        ctx.restore();
+    }
+
+    async function generarCollage(layout) {
+        const LADO = 1200, BORDE = 8;
+        const canvas = document.createElement('canvas');
+        canvas.width = LADO; canvas.height = LADO;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, LADO, LADO);
+
+        layout.celdas.forEach(([x, y, w, h], i) => {
+            const img = _imgsCollage[i];
+            if (!img) return;
+            dibujarCubriendo(ctx, img,
+                x * LADO + BORDE / 2, y * LADO + BORDE / 2,
+                w * LADO - BORDE, h * LADO - BORDE);
+        });
+
+        const blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.9));
+        if (!blob) { _showModal('Error', 'No se pudo generar el collage.'); return; }
+        mostrarPreview(new File([blob], `gestion_${Date.now()}.jpg`, { type: 'image/jpeg' }));
     }
 
     // ── Texto del comprobante (formato exacto acordado) ──
@@ -297,7 +430,7 @@
         ov.innerHTML = `
             <div class="bg-white w-full max-w-md rounded-t-xl sm:rounded-xl shadow-2xl overflow-hidden max-h-[92vh] flex flex-col border border-slate-200">
                 <div class="bg-slate-800 text-white px-4 py-3 shrink-0">
-                    <div class="font-semibold text-sm">Editar gestiones</div>
+                    <div class="font-semibold text-sm">Edit Formato</div>
                     <div class="text-[10px] text-slate-400">Tipos de gestión y datos del equipo</div>
                 </div>
                 <div class="p-4 overflow-y-auto flex-1">
