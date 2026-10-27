@@ -193,6 +193,7 @@
     <script src="AC.js" defer></script>
     <script src="seguimiento.js" defer></script>
     <script src="adc.js" defer></script>
+    <script src="mercadeo.js" defer></script>
     <script src="archivos.js" defer></script>
 
     <script type="module"> 
@@ -593,6 +594,9 @@
                             ${P('archivos') ? `<button id="archivosBtn" ${ord('archivosBtn')} class="w-full ${bpad} bg-teal-800 text-white font-bold rounded-lg shadow-md hover:bg-teal-900 transition transform hover:-translate-y-1">
                                 Archivos y ADC
                             </button>` : ''}
+                            ${P('archivos') ? `<button id="mercadeoBtn" class="w-full ${bpad} bg-fuchsia-800 text-white font-bold rounded-lg shadow-md hover:bg-fuchsia-900 transition transform hover:-translate-y-1">
+                                Ejecución y Mercadeo
+                            </button>` : ''}
                             
                             ${P('obsequios') ? `<button id="obsequiosBtn" ${ord('obsequiosBtn')} class="w-full ${bpad} bg-sky-500 text-white rounded-lg shadow-md hover:bg-sky-600 font-bold transition transform hover:-translate-y-1">Obsequios</button>` : ''}
                             
@@ -637,6 +641,7 @@
             document.getElementById('cxcBtn')?.addEventListener('click',           () => safeNav(window.showCXCView,                 'CXC'));
             document.getElementById('facturacionBtn')?.addEventListener('click',   () => safeNav(window.showFacturacionView,          'Facturación'));
             document.getElementById('archivosBtn')?.addEventListener('click',       () => safeNav(window.showArchivosView,            'Archivos y ADC'));
+            document.getElementById('mercadeoBtn')?.addEventListener('click',       () => safeNav(window.showMercadeo,                'Ejecución y Mercadeo'));
             document.getElementById('calculadoraBtn')?.addEventListener('click',   () => safeNav(window.showCalculadoraView,          'Calculadora'));
             document.getElementById('obsequiosBtn')?.addEventListener('click',     () => safeNav(window.showGestionObsequiosView,    'Obsequios'));
             document.getElementById('catalogoBtn')?.addEventListener('click',       () => safeNav(window.showCatalogoSubMenu,         'Catálogo'));
@@ -806,6 +811,7 @@
                     if (window.initAC)            window.initAC(deps);            else console.warn("Módulo Acuerdo Comercial no encontrado");
                     if (window.initSeguimiento)   window.initSeguimiento(deps);   else console.warn("Módulo Seguimiento de Producto no encontrado");
                     if (window.initADC)           window.initADC(deps);           else console.warn("Módulo Gestión de ADC no encontrado");
+                    if (window.initMercadeo)      window.initMercadeo(deps);      else console.warn("Módulo Ejecución y Mercadeo no encontrado");
 
                     // ── Mostrar menú principal ────────────────────────────────
                     showMainMenu();
