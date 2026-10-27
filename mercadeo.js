@@ -97,6 +97,10 @@
                         <div id="mkPaso2" class="hidden">
                             <label class="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">2. Tipo de gestión</label>
                             <div id="mkGestiones" class="space-y-1.5 mt-1"></div>
+                            <div id="mkGestElegida" class="hidden mt-1 flex items-center justify-between gap-2 bg-slate-50 border border-slate-200 rounded-lg p-2.5">
+                                <span id="mkGestNombre" class="text-xs font-bold text-slate-800 truncate"></span>
+                                <button type="button" id="mkGestCambiar" class="text-[10px] text-slate-500 hover:text-slate-800 underline shrink-0">Cambiar</button>
+                            </div>
                         </div>
 
                         <div id="mkPaso3" class="hidden">
@@ -117,6 +121,9 @@
                             <div id="mkCollageOpts" class="hidden mt-2 bg-slate-50 border border-slate-200 rounded-lg p-2.5">
                                 <p class="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Composición del collage</p>
                                 <div id="mkLayouts" class="grid grid-cols-3 gap-1.5"></div>
+                                <p class="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mt-3 mb-1">Orden de las imágenes</p>
+                                <p class="text-[9px] text-slate-400 mb-1.5">Toca una imagen y luego otra para intercambiarlas de posición.</p>
+                                <div id="mkOrden" class="grid grid-cols-4 gap-1.5"></div>
                             </div>
 
                             <div id="mkPreview" class="hidden mt-2">
@@ -128,7 +135,6 @@
                             <label class="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">4. Comprobante</label>
                             <pre id="mkTexto" class="mt-1 bg-slate-50 border border-slate-200 rounded-lg p-3 text-[11px] text-slate-700 whitespace-pre-wrap font-sans"></pre>
                             <button id="mkCompartir" class="w-full mt-2 py-3 bg-emerald-600 text-white rounded-lg font-bold text-sm hover:bg-emerald-700 transition">Compartir por WhatsApp</button>
-                            <button id="mkCopiar" class="w-full mt-1.5 py-2 bg-slate-100 text-slate-600 rounded-lg font-semibold text-xs hover:bg-slate-200 transition">Copiar solo el texto</button>
                         </div>
                     </div>
                 </div>
@@ -141,12 +147,12 @@
         enlazarBuscadorCliente();
         renderGestiones();
 
+        document.getElementById('mkGestCambiar').addEventListener('click', () => { _sel.gestion = null; colapsarGestion(false); actualizarTexto(); });
         document.getElementById('mkTomarFoto').addEventListener('click', () => document.getElementById('mkFoto').click());
         document.getElementById('mkElegirGaleria').addEventListener('click', () => document.getElementById('mkGaleria').click());
         document.getElementById('mkFoto').addEventListener('change', onFotoElegida);
         document.getElementById('mkGaleria').addEventListener('change', onGaleriaElegida);
         document.getElementById('mkCompartir').addEventListener('click', compartir);
-        document.getElementById('mkCopiar').addEventListener('click', copiarTexto);
     };
 
     async function cargarClientes() {
@@ -176,6 +182,7 @@
             eleg.classList.add('hidden'); bus.classList.remove('hidden');
             document.getElementById('mkPaso2').classList.add('hidden');
             document.getElementById('mkPaso4').classList.add('hidden');
+            _sel.gestion = null; colapsarGestion(false);
             inp.focus();
         });
         inp.addEventListener('input', () => {
@@ -207,10 +214,28 @@
             </button>`).join('');
         cont.querySelectorAll('.mk-gest').forEach(b => b.addEventListener('click', () => {
             _sel.gestion = Number(b.dataset.i);
-            renderGestiones();
+            colapsarGestion(true);
             document.getElementById('mkPaso3').classList.remove('hidden');
             actualizarTexto();
         }));
+    }
+
+    // Tras elegir la gestión se oculta la lista y queda solo la seleccionada,
+    // para no ocupar media pantalla con opciones ya descartadas.
+    function colapsarGestion(colapsar) {
+        const lista = document.getElementById('mkGestiones');
+        const elegida = document.getElementById('mkGestElegida');
+        if (!lista || !elegida) return;
+        if (colapsar && _sel.gestion !== null) {
+            const g = _cfg.gestiones[_sel.gestion] || {};
+            document.getElementById('mkGestNombre').textContent = g.nombre + (g.marca ? ` · ${g.marca}` : '');
+            lista.classList.add('hidden');
+            elegida.classList.remove('hidden');
+        } else {
+            renderGestiones();
+            lista.classList.remove('hidden');
+            elegida.classList.add('hidden');
+        }
     }
 
     function mostrarPreview(file) {
@@ -268,7 +293,9 @@
 
         try {
             _imgsCollage = await Promise.all(sel.map(cargarImagen));
+            _intercambioOrigen = null;
             renderLayouts();
+            renderOrden();
             await generarCollage(LAYOUTS[_imgsCollage.length][0]);
         } catch (e) {
             console.error('Collage:', e);
@@ -303,6 +330,37 @@
         }));
     }
 
+    // ── Orden de las imágenes dentro de la composición ──
+    // En el teléfono arrastrar es incómodo, así que se intercambian tocando
+    // una imagen y luego la otra.
+    let _intercambioOrigen = null;
+
+    function renderOrden() {
+        const cont = document.getElementById('mkOrden');
+        if (!cont) return;
+        cont.innerHTML = _imgsCollage.map((img, i) => `
+            <button type="button" data-i="${i}" class="mk-ord relative rounded-lg overflow-hidden border-2 ${_intercambioOrigen === i ? 'border-indigo-500 ring-2 ring-indigo-300' : 'border-slate-300'} transition">
+                <img src="${img.src}" class="w-full h-14 object-cover">
+                <span class="absolute top-0.5 left-0.5 bg-slate-800/80 text-white text-[9px] font-black rounded px-1">${i + 1}</span>
+            </button>`).join('');
+        cont.querySelectorAll('.mk-ord').forEach(b => b.addEventListener('click', async () => {
+            const i = Number(b.dataset.i);
+            if (_intercambioOrigen === null) {
+                _intercambioOrigen = i;           // primera selección
+                renderOrden();
+            } else if (_intercambioOrigen === i) {
+                _intercambioOrigen = null;        // se canceló
+                renderOrden();
+            } else {
+                const a = _intercambioOrigen;
+                [_imgsCollage[a], _imgsCollage[i]] = [_imgsCollage[i], _imgsCollage[a]];
+                _intercambioOrigen = null;
+                renderOrden();
+                await generarCollage(_layoutActual);
+            }
+        }));
+    }
+
     // Diagrama simple de la composición
     function miniatura(l) {
         const rects = l.celdas.map(([x, y, w, h]) =>
@@ -320,7 +378,10 @@
         ctx.restore();
     }
 
+    let _layoutActual = null;
+
     async function generarCollage(layout) {
+        _layoutActual = layout;
         const LADO = 1200, BORDE = 8;
         const canvas = document.createElement('canvas');
         canvas.width = LADO; canvas.height = LADO;
@@ -397,13 +458,6 @@
         } finally {
             btn.disabled = false;
         }
-    }
-
-    async function copiarTexto() {
-        try {
-            await navigator.clipboard.writeText(construirTexto());
-            _showModal('Copiado', 'El texto del comprobante se copió al portapapeles.');
-        } catch (e) { _showModal('Aviso', 'No se pudo copiar automáticamente. Mantén presionado el texto para copiarlo.'); }
     }
 
     // ═══════════════ EDITAR GESTIONES (solo admin) ═══════════════
