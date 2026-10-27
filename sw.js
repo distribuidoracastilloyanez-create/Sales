@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v158'; // v158: Mercadeo - boton Edit Formato, camara y galeria separadas, collage de hasta 4 imagenes con composicion seleccionable
+const CACHE_NAME = 'ventas-app-cache-v159'; // v159: Mercadeo - reordenar imagenes del collage tocando dos, gestion se colapsa al elegirla, sin boton de copiar texto
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
