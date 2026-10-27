@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v156'; // v156: fix editar venta con modelos (restaura distribucion y stock por modelo) + factura usa el IVA que tenia el producto en la venta
+const CACHE_NAME = 'ventas-app-cache-v157'; // v157: nuevo modulo Ejecucion y Mercadeo - comprobante de gestion con foto y envio por WhatsApp; gestiones y equipo editables por admin
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
@@ -24,6 +24,7 @@ const urlsToCache = [
     './AC.js',
   './seguimiento.js',
   './adc.js',
+  './mercadeo.js',
     './archivos.js',
     './calculadora.js',
     // --- Librerías Externas ---
