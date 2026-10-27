@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v157'; // v157: nuevo modulo Ejecucion y Mercadeo - comprobante de gestion con foto y envio por WhatsApp; gestiones y equipo editables por admin
+const CACHE_NAME = 'ventas-app-cache-v158'; // v158: Mercadeo - boton Edit Formato, camara y galeria separadas, collage de hasta 4 imagenes con composicion seleccionable
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
