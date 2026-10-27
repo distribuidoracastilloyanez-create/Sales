@@ -1330,17 +1330,42 @@
             const canvas = await html2canvas(tempDiv.firstElementChild, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
             const blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
             
-            if (navigator.share && blob) {
-                const file = new File([blob], `Historial_${client.name.replace(/\s+/g,'_')}.png`, { type: 'image/png' });
+            // El nombre del archivo se limpia: acentos, puntos y símbolos producían
+            // nombres inválidos (p. ej. "CAFÉ RACER." -> "Historial_CAFÉ_RACER..png")
+            // y el sistema rechazaba el compartir solo para esos clientes.
+            const nombreArchivo = `Historial_${
+                (client.name || 'cliente')
+                    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')  // quita acentos
+                    .replace(/[^a-zA-Z0-9]+/g, '_')                     // solo letras y números
+                    .replace(/^_+|_+$/g, '')                            // sin guiones sobrantes
+                    .slice(0, 60) || 'cliente'
+            }.png`;
+
+            const descargar = () => {
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url; a.download = nombreArchivo; a.click();
+                setTimeout(() => URL.revokeObjectURL(url), 1000);
+            };
+
+            if (!blob) throw new Error('No se pudo generar la imagen.');
+
+            const file = new File([blob], nombreArchivo, { type: 'image/png' });
+            if (navigator.canShare && navigator.canShare({ files: [file] })) {
                 await navigator.share({ files: [file], title: `Estado de Cuenta: ${client.name}` });
             } else {
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a'); a.href = url; a.download = `Historial_${client.name}.png`; a.click();
+                // Si el equipo no admite compartir archivos, se descarga la imagen
+                descargar();
             }
             const m = document.getElementById('modalContainer'); if(m) m.classList.add('hidden');
         } catch (e) {
-            console.error(e);
-            _showModal('Error', 'No se pudo generar la imagen.');
+            if (e && e.name === 'AbortError') {
+                // El usuario cerró el menú de compartir: no es un error
+                const m = document.getElementById('modalContainer'); if(m) m.classList.add('hidden');
+            } else {
+                console.error('CXC compartir historial:', e);
+                _showModal('Error', `No se pudo compartir el historial.<br><br><span class="text-xs text-gray-500">${(e && e.message) || e}</span>`);
+            }
         } finally {
             document.body.removeChild(tempDiv);
         }
