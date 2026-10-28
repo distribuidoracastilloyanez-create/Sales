@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v160'; // v160: fix compartir historial CXC en clientes con acentos o puntos en el nombre (nombre de archivo saneado) + mensajes de error claros
+const CACHE_NAME = 'ventas-app-cache-v161'; // v161: CXC ordena el historial por FECHA REAL (pagos reportados a destiempo quedan en su lugar), en pantalla y en la imagen compartible
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
