@@ -566,8 +566,8 @@
         const retencionPendiente = allTxs.reduce((sum, t) => sum + (t.retencion || 0), 0);
 
         if (allTxs.length > 0) {
-            // INVERTIMOS EL ARREGLO PARA MOSTRAR LAS MÁS NUEVAS PRIMERO
-            const reversedTransactions = [...allTxs].reverse();
+            // Ordenadas por FECHA REAL, de la más reciente a la más antigua
+            const reversedTransactions = ordenarPorFechaDesc(allTxs);
             
             reversedTransactions.forEach(t => {
                 const reten = t.retencion || 0;
@@ -1208,6 +1208,41 @@
         }
     }
 
+    // Fecha de una transacción del CXC ("27/10/2026", "5/10/2026" o ISO).
+    // Devuelve null si no se puede interpretar.
+    function _fechaTx(t) {
+        const raw = (t && t.date) ? t.date.toString().trim() : '';
+        if (!raw) return null;
+        let m = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+        if (m) {
+            let a = parseInt(m[3], 10);
+            if (a < 100) a += 2000;
+            const d = new Date(a, parseInt(m[2], 10) - 1, parseInt(m[1], 10));
+            return isNaN(d.getTime()) ? null : d;
+        }
+        m = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+        if (m) return new Date(+m[1], +m[2] - 1, +m[3]);
+        const d = new Date(raw);
+        return isNaN(d.getTime()) ? null : d;
+    }
+
+    // Ordena las transacciones por FECHA REAL (más reciente primero).
+    // En el Excel los pagos reportados a destiempo quedan fuera de secuencia
+    // (p. ej. una transferencia del día 5 listada después de una del 27);
+    // aquí se reordenan para que el historial cuadre a simple vista.
+    // Las que no tienen fecha legible conservan su posición original al final.
+    function ordenarPorFechaDesc(lista) {
+        return [...(lista || [])]
+            .map((t, i) => ({ t, i, f: _fechaTx(t) }))
+            .sort((a, b) => {
+                if (a.f && b.f) return (b.f - a.f) || (b.i - a.i);
+                if (a.f) return -1;
+                if (b.f) return 1;
+                return b.i - a.i;
+            })
+            .map(x => x.t);
+    }
+
     async function handleShareClientHistory(clientName) {
         const client = _cxcDataCache.find(c => c.name === clientName);
         if (!client) return;
@@ -1225,7 +1260,7 @@
         const tieneRetencion = allTxs.some(t => (t.retencion || 0) !== 0);
         const retencionPendiente = allTxs.reduce((sum, t) => sum + (t.retencion || 0), 0);
 
-        let last12 = [...allTxs].reverse().slice(0, 12); 
+        let last12 = ordenarPorFechaDesc(allTxs).slice(0, 12); 
 
         let rows = '';
         last12.forEach(t => {
