@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v161'; // v161: CXC ordena el historial por FECHA REAL (pagos reportados a destiempo quedan en su lugar), en pantalla y en la imagen compartible
+const CACHE_NAME = 'ventas-app-cache-v162'; // v162: Mercadeo - reencuadre de cada imagen del collage arrastrando, y respaldo/historial de ejecuciones buscable por cliente (admin)
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
