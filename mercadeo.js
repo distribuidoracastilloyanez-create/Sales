@@ -324,17 +324,19 @@
         cv.addEventListener('pointermove', e => {
             if (activo < 0 || !rect) return;
             const img = _imgsCollage[activo];
-            const [cx, cy, cw, ch] = _layoutActual.celdas[activo];
-            const w = cw * PREV, h = ch * PREV;
-            const escala = Math.max(w / img.width, h / img.height);
-            const sobraX = img.width * escala - w;
-            const sobraY = img.height * escala - h;
-            // Escala de pantalla -> lienzo
-            const k = PREV / rect.width;
-            const dx = (e.clientX - px0) * k;
-            const dy = (e.clientY - py0) * k;
-            const nx = sobraX > 0 ? off0.x - dx / sobraX : 0.5;
-            const ny = sobraY > 0 ? off0.y - dy / sobraY : 0.5;
+            const [, , celW, celH] = _layoutActual.celdas[activo];
+            const w = celW * PREV, h = celH * PREV;
+            const { cw, ch, margenX, margenY } = recuadroDe(img, w, h);
+
+            // Píxeles de la imagen original por cada píxel movido en pantalla
+            const porPixelX = cw / (w * rect.width / PREV);
+            const porPixelY = ch / (h * rect.height / PREV);
+            const dx = (e.clientX - px0) * porPixelX;
+            const dy = (e.clientY - py0) * porPixelY;
+
+            // Al arrastrar hacia la derecha se muestra la parte izquierda
+            const nx = margenX > 0 ? off0.x - dx / margenX : 0.5;
+            const ny = margenY > 0 ? off0.y - dy / margenY : 0.5;
             _offsets[activo] = { x: Math.min(1, Math.max(0, nx)), y: Math.min(1, Math.max(0, ny)) };
             dibujarPreview();
         });
@@ -467,17 +469,35 @@
         return `<svg viewBox="0 0 32 32" class="w-7 h-7 mx-auto">${rects}</svg>`;
     }
 
-    // Dibuja la imagen recortada para llenar la celda sin deformarse.
-    // `off` {x,y} va de 0 a 1 e indica QUÉ PARTE de la imagen se ve:
-    // 0.5 es el centro (por defecto), 0 el borde izquierdo/superior, 1 el opuesto.
+    // Porción de la imagen que se toma para el collage. Menor que el recorte
+    // máximo a propósito: así SIEMPRE sobra margen y el recuadro se puede mover
+    // tanto en vertical como en horizontal (antes, si la foto encajaba justo en
+    // un eje, solo se podía mover en el otro).
+    const RECORTE = 0.80;
+
+    // Calcula el recuadro (en píxeles de la imagen original) que se mostrará
+    // en una celda de proporción w/h.
+    function recuadroDe(img, w, h) {
+        const aspecto = w / h;
+        // Recorte máximo posible con la proporción de la celda
+        let cw = Math.min(img.width, img.height * aspecto);
+        let ch = cw / aspecto;
+        // Se reduce para dejar margen de movimiento en ambas direcciones
+        cw *= RECORTE; ch *= RECORTE;
+        return { cw, ch, margenX: img.width - cw, margenY: img.height - ch };
+    }
+
+    // Dibuja la parte elegida de la imagen llenando la celda, sin deformarla.
+    // `off` {x,y} va de 0 a 1: 0.5 es el centro, 0 el borde izquierdo/superior.
     function dibujarCubriendo(ctx, img, x, y, w, h, off) {
-        const escala = Math.max(w / img.width, h / img.height);
-        const nw = img.width * escala, nh = img.height * escala;
+        const { cw, ch, margenX, margenY } = recuadroDe(img, w, h);
         const ox = off && typeof off.x === 'number' ? off.x : 0.5;
         const oy = off && typeof off.y === 'number' ? off.y : 0.5;
+        const sx = margenX * Math.min(1, Math.max(0, ox));
+        const sy = margenY * Math.min(1, Math.max(0, oy));
         ctx.save();
         ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip();
-        ctx.drawImage(img, x + (w - nw) * ox, y + (h - nh) * oy, nw, nh);
+        ctx.drawImage(img, sx, sy, cw, ch, x, y, w, h);
         ctx.restore();
     }
 
