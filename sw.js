@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v162'; // v162: Mercadeo - reencuadre de cada imagen del collage arrastrando, y respaldo/historial de ejecuciones buscable por cliente (admin)
+const CACHE_NAME = 'ventas-app-cache-v163'; // v163: Mercadeo - el recuadro del collage toma una porcion central de la imagen y se puede mover en vertical Y horizontal
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
