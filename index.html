@@ -194,6 +194,7 @@
     <script src="seguimiento.js" defer></script>
     <script src="adc.js" defer></script>
     <script src="mercadeo.js" defer></script>
+    <script src="catalogo-fisico.js" defer></script>
     <script src="archivos.js" defer></script>
 
     <script type="module"> 
@@ -812,6 +813,7 @@
                     if (window.initSeguimiento)   window.initSeguimiento(deps);   else console.warn("Módulo Seguimiento de Producto no encontrado");
                     if (window.initADC)           window.initADC(deps);           else console.warn("Módulo Gestión de ADC no encontrado");
                     if (window.initMercadeo)      window.initMercadeo(deps);      else console.warn("Módulo Ejecución y Mercadeo no encontrado");
+                    if (window.initCatalogoFisico) window.initCatalogoFisico(deps); else console.warn("Módulo Catálogo Físico no encontrado");
 
                     // ── Mostrar menú principal ────────────────────────────────
                     showMainMenu();
