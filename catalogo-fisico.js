@@ -87,10 +87,11 @@
                     <div class="p-4">
                         <div id="cfLoading" class="text-center py-10 text-slate-400 text-sm animate-pulse">Cargando catálogo...</div>
                         <div id="cfBody" class="hidden">
-                            <div class="grid grid-cols-2 gap-2 mb-3">
+                            <div class="grid grid-cols-2 gap-2 mb-2">
+                                <button id="cfVerDigital" class="py-2.5 text-white rounded-lg font-bold text-sm transition" style="background:#2E75B6">Catálogo digital</button>
                                 <button id="cfVerCatalogo" class="py-2.5 text-white rounded-lg font-bold text-sm transition" style="background:#16305C">Ver / Imprimir</button>
-                                ${esAdmin() ? `<button id="cfAjustes" class="py-2.5 bg-slate-100 text-slate-700 rounded-lg font-bold text-sm hover:bg-slate-200 border border-slate-300">Ajustes</button>` : '<div></div>'}
                             </div>
+                            ${esAdmin() ? `<button id="cfAjustes" class="w-full mb-3 py-2 bg-slate-100 text-slate-700 rounded-lg font-bold text-xs hover:bg-slate-200 border border-slate-300">Ajustes</button>` : '<div class="mb-3"></div>'}
 
                             <div id="cfResumen" class="mb-3"></div>
 
@@ -125,6 +126,7 @@
         document.getElementById('cfLoading').classList.add('hidden');
         document.getElementById('cfBody').classList.remove('hidden');
         document.getElementById('cfVerCatalogo').addEventListener('click', () => abrirCatalogo());
+        document.getElementById('cfVerDigital').addEventListener('click', () => abrirDigital());
         document.getElementById('cfAjustes')?.addEventListener('click', abrirAjustes);
 
         if (esAdmin()) {
@@ -339,6 +341,120 @@
         });
     }
 
+    // ─────────────────── CATÁLOGO DIGITAL ───────────────────
+    // Versión para consultar en el teléfono: navegable por categoría y marca,
+    // con buscador y la foto en grande al tocar un producto.
+    let _digCat = null, _digTexto = '';
+
+    function abrirDigital() {
+        const incl = _productos.filter(visible);
+        if (!incl.length) { _showModal('Sin productos', 'No hay productos visibles en el catálogo.'); return; }
+        _digCat = null; _digTexto = '';
+        document.getElementById('cfDigOverlay')?.remove();
+        const ov = document.createElement('div');
+        ov.id = 'cfDigOverlay';
+        ov.className = 'fixed inset-0 z-[9999] bg-white flex flex-col';
+        ov.innerHTML = `
+            <div class="px-4 py-3 flex items-center justify-between shrink-0" style="background:#16305C">
+                <div class="min-w-0">
+                    <div class="text-white font-semibold text-sm truncate">${_cfg.titulo || 'Catálogo'}</div>
+                    <div class="text-[10px] truncate" style="color:#BBD2EE">${_cfg.empresa || ''}</div>
+                </div>
+                <button id="digCerrar" class="px-3 py-1.5 bg-white/10 text-white text-xs rounded-md font-medium shrink-0">Cerrar</button>
+            </div>
+            <div class="px-3 pt-2 shrink-0">
+                <input type="text" id="digBuscar" placeholder="Buscar producto o marca..." class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2" style="--tw-ring-color:#2E75B6">
+                <div id="digCats" class="flex gap-1.5 overflow-x-auto py-2"></div>
+            </div>
+            <div id="digCuerpo" class="flex-1 overflow-y-auto px-3 pb-4"></div>`;
+        document.body.appendChild(ov);
+        document.getElementById('digCerrar').addEventListener('click', () => ov.remove());
+        document.getElementById('digBuscar').addEventListener('input', e => { _digTexto = e.target.value; pintarDigital(incl); });
+        pintarCategorias(incl);
+        pintarDigital(incl);
+    }
+
+    function pintarCategorias(incl) {
+        const cont = document.getElementById('digCats');
+        if (!cont) return;
+        const cats = uniq(incl.map(p => p.rubro));
+        const chip = (txt, val) => `<button data-c="${val}" class="dig-cat shrink-0 px-3 py-1.5 rounded-full text-[11px] font-bold border transition ${_digCat === val ? 'text-white' : 'bg-white text-slate-600 border-slate-300'}" ${_digCat === val ? 'style="background:#16305C;border-color:#16305C"' : ''}>${txt}</button>`;
+        cont.innerHTML = chip('Todas', '') + cats.map(c => chip(c, c)).join('');
+        cont.querySelectorAll('.dig-cat').forEach(b => b.addEventListener('click', () => {
+            _digCat = b.dataset.c || null;
+            pintarCategorias(incl); pintarDigital(incl);
+        }));
+    }
+
+    function pintarDigital(incl) {
+        const cont = document.getElementById('digCuerpo');
+        if (!cont) return;
+        const q = (_digTexto || '').toLowerCase().trim();
+        let lista = incl.filter(p => (!_digCat || p.rubro === _digCat) &&
+            (!q || [p.presentacion, p.marca, p.segmento].filter(Boolean).join(' ').toLowerCase().includes(q)));
+        if (!lista.length) { cont.innerHTML = '<p class="text-sm text-slate-400 text-center py-10">Sin resultados.</p>'; return; }
+
+        // Agrupadas por marca, igual que el catálogo impreso
+        const porMarca = {};
+        lista.forEach(p => { const m = p.marca || 'SIN MARCA'; (porMarca[m] = porMarca[m] || []).push(p); });
+
+        cont.innerHTML = Object.keys(porMarca).map(m => {
+            const mk = _marcas[idMarca(m)] || {};
+            const prods = porMarca[m].map(p => {
+                const u = imagenDe(p);
+                return `<button data-id="${p.id}" class="dig-prod border border-slate-200 rounded-lg overflow-hidden bg-white text-left">
+                    <div class="h-24 bg-slate-50 flex items-center justify-center overflow-hidden">
+                        ${u ? `<img src="${u}" class="w-full h-full object-contain">` : '<span class="text-[9px] text-slate-300">sin foto</span>'}
+                    </div>
+                    <div class="p-1.5">
+                        <div class="text-[10px] font-semibold text-slate-800 leading-tight" style="min-height:1.9em">${p.presentacion || ''}</div>
+                        ${p.unidadesPorCaja ? `<div class="text-[9px] font-black mt-0.5" style="color:#16305C">${p.unidadesPorCaja} und/caja</div>` : ''}
+                    </div>
+                </button>`;
+            }).join('');
+            return `<div class="mt-3">
+                <div class="flex items-center gap-2 mb-1.5">
+                    <div class="w-7 h-7 rounded-full border-2 overflow-hidden bg-white flex items-center justify-center shrink-0" style="border-color:#16305C">
+                        ${mk.logoUrl ? `<img src="${mk.logoUrl}" class="w-full h-full object-contain">` : `<span class="text-[6px] font-bold" style="color:#16305C">LOGO</span>`}
+                    </div>
+                    <span class="text-xs font-black" style="color:#16305C">${m}</span>
+                    <div class="flex-1 h-px bg-slate-200"></div>
+                </div>
+                <div class="grid grid-cols-3 gap-1.5">${prods}</div>
+            </div>`;
+        }).join('');
+
+        cont.querySelectorAll('.dig-prod').forEach(b => b.addEventListener('click', () => {
+            const p = _productos.find(x => x.id === b.dataset.id);
+            if (p) verProductoDigital(p);
+        }));
+    }
+
+    function verProductoDigital(p) {
+        document.getElementById('digVerOverlay')?.remove();
+        const u = imagenDe(p);
+        const it = _items[p.id] || {};
+        const ov = document.createElement('div');
+        ov.id = 'digVerOverlay';
+        ov.className = 'fixed inset-0 z-[10000] bg-black/80 flex items-center justify-center p-4';
+        ov.innerHTML = `
+            <div class="bg-white w-full max-w-sm rounded-xl overflow-hidden shadow-2xl">
+                <div class="bg-slate-50 h-56 flex items-center justify-center overflow-hidden">
+                    ${u ? `<img src="${u}" class="w-full h-full object-contain">` : '<span class="text-xs text-slate-300">Sin foto</span>'}
+                </div>
+                <div class="p-3">
+                    <div class="text-sm font-bold text-slate-800">${p.presentacion || ''}</div>
+                    <div class="text-[11px] text-slate-500">${[p.marca, p.segmento].filter(Boolean).join(' · ')}</div>
+                    ${p.unidadesPorCaja ? `<div class="inline-block mt-2 text-[11px] font-black text-white rounded px-2 py-1" style="background:#16305C">${p.unidadesPorCaja} und/caja</div>` : ''}
+                    ${it.descripcion ? `<p class="text-[11px] text-slate-600 mt-2 leading-snug">${it.descripcion}</p>` : ''}
+                </div>
+                <button id="digVerCerrar" class="w-full py-2.5 bg-slate-100 text-slate-600 font-bold text-sm">Cerrar</button>
+            </div>`;
+        document.body.appendChild(ov);
+        ov.addEventListener('click', e => { if (e.target === ov) ov.remove(); });
+        document.getElementById('digVerCerrar').addEventListener('click', () => ov.remove());
+    }
+
     // ─────────────────── GENERACIÓN DEL CATÁLOGO ───────────────────
     // Se abre en una ventana aparte, ya paginado en tamaño carta vertical,
     // listo para imprimir o guardar como PDF desde el navegador.
@@ -381,6 +497,15 @@
         hojas.forEach(h => { totalPorCat[h.cat] = (totalPorCat[h.cat] || 0) + 1; });
         const idxPorCat = {};
 
+        // Numeración GLOBAL para el índice (portada = 1, índice = 2)
+        const OFFSET = 2;
+        const rangoCat = {};
+        hojas.forEach((h, i) => {
+            const n = i + 1 + OFFSET;
+            if (!rangoCat[h.cat]) rangoCat[h.cat] = { desde: n, hasta: n };
+            else rangoCat[h.cat].hasta = n;
+        });
+
         const htmlHojas = hojas.map(h => {
             idxPorCat[h.cat] = (idxPorCat[h.cat] || 0) + 1;
             const c = _cfg.categorias[h.cat] || {};
@@ -415,6 +540,52 @@
             </div>`;
         }).join('');
 
+        // ── PORTADA ──
+        const totalProd = incl.length;
+        const totalMarcas = uniq(incl.map(p => p.marca)).length;
+        const htmlPortada = `<div class="hoja portada">
+            <div class="pcirc c1"></div><div class="pcirc c2"></div><div class="pcirc c3"></div>
+            <div class="pcont">
+                <div class="pemp">${esc(_cfg.empresa)}</div>
+                <div class="ptit">${esc(_cfg.titulo)}</div>
+                <div class="psub">Portafolio completo · empaques y unidades por caja</div>
+                <div class="ppills">
+                    <span>${totalProd} productos</span>
+                    <span>${totalMarcas} marcas</span>
+                </div>
+            </div>
+            <div class="ppie">${esc(_cfg.pie)}${_cfg.anio ? ' · ' + _cfg.anio : ''}</div>
+        </div>`;
+
+        // ── ÍNDICE ──
+        const cats = Object.keys(porCat);
+        const htmlIndice = `<div class="hoja">
+            <div class="head">
+                <div><div class="cat">Contenido</div><div class="sub">CATEGORÍAS DEL PORTAFOLIO</div></div>
+                <div class="dcy">
+                    <div class="txt"><div class="n">${esc(_cfg.empresa)}</div><div class="t">${esc(_cfg.titulo)} ${_cfg.anio || ''}</div></div>
+                    <div class="iso">${_cfg.logoUrl ? `<img src="${esc(_cfg.logoUrl)}">` : 'DCY'}</div>
+                </div>
+            </div>
+            <div class="idx">
+                ${cats.map((c, i) => {
+                    const prods = Object.values(porCat[c]).reduce((a, b) => a + b.length, 0);
+                    const mks = Object.keys(porCat[c]).length;
+                    const r = rangoCat[c] || {};
+                    const hojasTxt = r.desde === r.hasta ? `hoja ${r.desde}` : `hojas ${r.desde}–${r.hasta}`;
+                    return `<div class="idxrow">
+                        <div class="idxn">${i + 1}</div>
+                        <div class="idxd">
+                            <div class="idxt">${esc(c)}</div>
+                            <div class="idxs">${prods} productos · ${mks} marcas · ${hojasTxt}</div>
+                            <div class="idxm">${esc(Object.keys(porCat[c]).slice(0, 14).join(' · '))}${mks > 14 ? ' …' : ''}</div>
+                        </div>
+                    </div>`;
+                }).join('')}
+            </div>
+            <div class="pie"><span>Contenido</span><b>${esc(_cfg.pie)}</b></div>
+        </div>`;
+
         const doc = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(_cfg.titulo)}</title>
 <style>
 @page{size:letter portrait;margin:0}
@@ -447,6 +618,26 @@ body{font-family:'Helvetica Neue',Arial,sans-serif;background:#8a8a8a}
 .f img{width:100%;height:100%;object-fit:contain}
 .pie{position:absolute;bottom:0;left:0;right:0;height:.4in;background:#16305C;display:flex;align-items:center;justify-content:space-between;padding:0 .28in;color:#BBD2EE;font-size:6.5pt}
 .pie b{color:#fff;letter-spacing:.4px}
+/* PORTADA */
+.portada{background:#16305C;color:#fff;overflow:hidden}
+.pcirc{position:absolute;border-radius:50%;background:rgba(255,255,255,.05)}
+.c1{width:7in;height:7in;right:-2.6in;top:-2.2in}
+.c2{width:4.6in;height:4.6in;right:-1in;bottom:1.4in;background:rgba(255,255,255,.035)}
+.c3{width:2.4in;height:2.4in;left:-.9in;bottom:2.6in;background:rgba(255,255,255,.04)}
+.pcont{position:absolute;left:.75in;top:4.1in;z-index:2}
+.pemp{font-size:10pt;font-weight:800;letter-spacing:3.5px;color:#BBD2EE}
+.ptit{font-size:38pt;font-weight:800;line-height:1.05;margin-top:.14in;letter-spacing:-1px}
+.psub{font-size:8.5pt;color:#BBD2EE;margin-top:.14in;letter-spacing:.4px}
+.ppills{display:flex;gap:9px;margin-top:.3in}
+.ppills span{background:#2E75B6;border-radius:4px;padding:6px 16px;font-size:8pt;font-weight:700;letter-spacing:.3px}
+.ppie{position:absolute;bottom:.5in;left:.75in;font-size:7pt;color:rgba(187,210,238,.75);letter-spacing:1.2px;z-index:2}
+/* ÍNDICE */
+.idx{padding:.22in .28in}
+.idxrow{display:flex;gap:.16in;align-items:flex-start;padding:.11in .14in;border-bottom:1px solid #EDF1F7}
+.idxn{width:.34in;height:.34in;border-radius:50%;background:#16305C;color:#fff;display:flex;align-items:center;justify-content:center;font-size:8.5pt;font-weight:800;flex:0 0 .34in}
+.idxt{font-size:11pt;font-weight:800;color:#16305C;line-height:1.1}
+.idxs{font-size:7pt;color:#2E75B6;font-weight:700;margin-top:2px}
+.idxm{font-size:6pt;color:#9AA8BC;margin-top:3px;line-height:1.3}
 .barra{position:sticky;top:0;z-index:10;background:#16305C;color:#fff;padding:9px 14px;display:flex;gap:9px;align-items:center;justify-content:center}
 .barra button{background:#fff;color:#16305C;border:0;border-radius:6px;padding:7px 15px;font-weight:800;font-size:12px;cursor:pointer}
 .barra span{font-size:11px;color:#BBD2EE}
@@ -454,8 +645,10 @@ body{font-family:'Helvetica Neue',Arial,sans-serif;background:#8a8a8a}
 </style></head><body>
 <div class="barra">
   <button onclick="window.print()">Imprimir / Guardar PDF</button>
-  <span>${hojas.length} hoja(s) · tamaño carta vertical</span>
+  <span>${hojas.length + 2} hoja(s) · tamaño carta vertical</span>
 </div>
+${htmlPortada}
+${htmlIndice}
 ${htmlHojas}
 </body></html>`;
 
