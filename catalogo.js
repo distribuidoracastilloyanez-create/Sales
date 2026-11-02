@@ -62,6 +62,7 @@
                             <button data-rubros='["ALIMENTOS"]' data-bg="images/alimentospolar.png" class="catalogo-btn w-full px-6 py-3 bg-red-500 text-white font-semibold rounded-lg shadow-md hover:bg-red-600 transition duration-200">Alimentos Polar</button>
                             <button data-rubros='["P&G"]' data-bg="images/p&g.png" class="catalogo-btn w-full px-6 py-3 bg-sky-500 text-white font-semibold rounded-lg shadow-md hover:bg-sky-600 transition duration-200">Procter & Gamble</button>
                             <button data-rubros='[]' data-bg="" class="catalogo-btn md:col-span-2 w-full px-6 py-3 bg-gray-700 text-white font-semibold rounded-lg shadow-md hover:bg-gray-800 transition duration-200">Unificado (Todos)</button>
+                            <button id="catFisicoBtn" class="md:col-span-2 w-full px-6 py-3 text-white font-semibold rounded-lg shadow-md transition duration-200" style="background:#16305C">Físico / Presentación</button>
                         </div>
                         <button id="backToMenuBtn" class="mt-6 w-full px-6 py-3 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500 transition duration-200">Volver al Menú</button>
                     </div>
@@ -75,6 +76,10 @@
                 const title = e.target.textContent.trim(); const bgImage = e.target.dataset.bg || '';
                 showCatalogoView(title, bgImage);
             });
+        });
+        document.getElementById('catFisicoBtn')?.addEventListener('click', () => {
+            if (window.showCatalogoFisico) window.showCatalogoFisico(() => window.showCatalogoSubMenu());
+            else _showModal('Aviso', 'El módulo de catálogo físico no está disponible.');
         });
         document.getElementById('backToMenuBtn').addEventListener('click', _showMainMenu);
     }
