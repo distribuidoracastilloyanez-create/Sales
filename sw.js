@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v163'; // v163: Mercadeo - el recuadro del collage toma una porcion central de la imagen y se puede mover en vertical Y horizontal
+const CACHE_NAME = 'ventas-app-cache-v164'; // v164: Catalogo Fisico/Presentacion - editor de imagenes por producto y marca, intro por categoria, y catalogo imprimible en carta vertical
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
@@ -25,6 +25,7 @@ const urlsToCache = [
   './seguimiento.js',
   './adc.js',
   './mercadeo.js',
+  './catalogo-fisico.js',
     './archivos.js',
     './calculadora.js',
     // --- Librerías Externas ---
