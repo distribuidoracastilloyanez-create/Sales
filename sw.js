@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v168'; // v168: Mercadeo - zoom del collage hasta 50%
+const CACHE_NAME = 'ventas-app-cache-v169'; // v169: Mercadeo - historial de todos los usuarios con autor, borrar una ejecucion y limpiar el historial de un cliente (todo o por fecha)
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
