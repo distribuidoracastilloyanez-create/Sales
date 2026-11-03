@@ -209,13 +209,14 @@
             initializeFirestore, persistentLocalCache, persistentMultipleTabManager
         } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
+        import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject, getBlob } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
 
         window.firebaseStorageFunctions = {
             ref: ref,
             uploadBytes: uploadBytes,
             getDownloadURL: getDownloadURL,
-            deleteObject: deleteObject
+            deleteObject: deleteObject,
+            getBlob: getBlob
         };
 
         if (!window.AppConfig) {
