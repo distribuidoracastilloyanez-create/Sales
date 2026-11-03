@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v169'; // v169: Mercadeo - historial de todos los usuarios con autor, borrar una ejecucion y limpiar el historial de un cliente (todo o por fecha)
+const CACHE_NAME = 'ventas-app-cache-v170'; // v170: Mercadeo - Edit Formato e Historial estrictamente solo para administradores (doble verificacion de rol)
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
