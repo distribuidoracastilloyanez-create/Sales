@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v166'; // v166: Mercadeo - acercar imagenes del collage con dos dedos (hasta 20%), historial agrupado por cliente y boton compartir en el detalle
+const CACHE_NAME = 'ventas-app-cache-v167'; // v167: fix collage de galeria (se habian perdido las funciones de composicion al agregar el zoom)
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
