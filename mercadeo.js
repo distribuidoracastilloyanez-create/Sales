@@ -29,6 +29,14 @@
         _deleteDoc    = deps.deleteDoc;
     };
 
+    // El modal general de la app y las ventanas de este módulo usan el mismo
+    // nivel (z-10000), así que la última dibujada tapaba a la otra. Se eleva el
+    // modal para que los avisos y confirmaciones siempre queden al frente.
+    function modalAlFrente() {
+        const m = document.getElementById('modalContainer');
+        if (m) m.style.zIndex = '10100';
+    }
+
     const PUB = () => window.AppConfig.PUBLIC_DATA_ID;
     const pathClientes = () => `artifacts/${PUB()}/public/data/clientes`;
     const pathConfig   = () => `artifacts/${PUB()}/public/data/config/mercadeo`;
@@ -704,6 +712,7 @@
     const nombreUsuario = uid => (_nombresUsuarios && _nombresUsuarios[uid]) || '';
 
     async function verHistorial() {
+        modalAlFrente();
         if (!esAdmin()) { _showModal('Acceso restringido', 'El historial de ejecuciones es solo para administradores.'); return; }
         document.getElementById('mkHistOverlay')?.remove();
         const ov = document.createElement('div');
@@ -911,6 +920,7 @@
     }
 
     function verEjecucion(h) {
+        modalAlFrente();
         document.getElementById('mkVerOverlay')?.remove();
         const f = new Date(h.fecha);
         const fechaStr = isNaN(f.getTime()) ? '' : f.toLocaleString('es-VE', { dateStyle: 'full', timeStyle: 'short' });
@@ -953,30 +963,63 @@
         });
     }
 
-    // Vuelve a compartir una ejecución archivada (imagen + su texto)
+    // Vuelve a compartir una ejecución archivada (imagen + su texto).
+    //
+    // Descargar la imagen desde el navegador puede fallar por CORS: el bucket de
+    // Firebase Storage no permite lecturas cruzadas si no se configuró. Por eso se
+    // intenta de dos formas y, si ninguna funciona, se comparte el texto y se
+    // ofrece abrir la imagen para adjuntarla a mano.
+    async function obtenerBlobImagen(h) {
+        // 1) Descarga directa
+        try {
+            const r = await fetch(h.url, { mode: 'cors' });
+            if (r.ok) return await r.blob();
+        } catch (e) { console.warn('Descarga directa bloqueada (CORS):', e); }
+
+        // 2) A través del SDK de Firebase (usa la misma sesión autenticada)
+        try {
+            const fns = window.firebaseStorageFunctions || {};
+            if (fns.getBlob && h.storagePath) {
+                return await fns.getBlob(fns.ref(_storage, h.storagePath));
+            }
+        } catch (e) { console.warn('Descarga por SDK no disponible:', e); }
+
+        return null;
+    }
+
     async function compartirEjecucion(h) {
+        modalAlFrente();
         const btn = document.getElementById('mkVerCompartir');
         if (btn) { btn.disabled = true; btn.textContent = 'Preparando...'; }
         try {
-            const resp = await fetch(h.url);
-            const blob = await resp.blob();
-            const limpio = (h.clienteNombre || 'gestion')
-                .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-                .replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 50) || 'gestion';
-            const file = new File([blob], `${limpio}.jpg`, { type: blob.type || 'image/jpeg' });
+            const blob = await obtenerBlobImagen(h);
 
-            if (navigator.canShare && navigator.canShare({ files: [file] })) {
-                await navigator.share({ files: [file], text: h.texto || '', title: 'Visita en Gestión' });
-            } else if (navigator.share) {
+            if (blob) {
+                const limpio = (h.clienteNombre || 'gestion')
+                    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+                    .replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 50) || 'gestion';
+                const file = new File([blob], `${limpio}.jpg`, { type: blob.type || 'image/jpeg' });
+                if (navigator.canShare && navigator.canShare({ files: [file] })) {
+                    await navigator.share({ files: [file], text: h.texto || '', title: 'Visita en Gestión' });
+                    return;
+                }
+            }
+
+            // Sin imagen disponible: se comparte el texto y se abre la foto aparte
+            if (navigator.share) {
                 await navigator.share({ text: h.texto || '', title: 'Visita en Gestión' });
-                _showModal('Atención', 'Este dispositivo no permite enviar la imagen junto al texto. Usa "Abrir imagen" para descargarla y adjuntarla.');
             } else {
                 window.open(`https://wa.me/?text=${encodeURIComponent(h.texto || '')}`, '_blank');
             }
+            _showModal('Imagen aparte',
+                'Se compartió el texto del comprobante.<br><br>La imagen no se pudo adjuntar automáticamente desde este dispositivo: ' +
+                'usa <strong>"Abrir imagen"</strong>, descárgala y adjúntala en el chat.');
         } catch (e) {
             if (!e || e.name !== 'AbortError') {
                 console.warn('Compartir ejecución:', e);
-                _showModal('Error', 'No se pudo compartir la imagen. Intenta con "Abrir imagen".');
+                _showModal('No se pudo compartir',
+                    'Intenta con <strong>"Abrir imagen"</strong> para descargarla y enviarla manualmente.' +
+                    `<br><br><span class="text-xs text-slate-500">${(e && e.message) || ''}</span>`);
             }
         } finally {
             if (btn) { btn.disabled = false; btn.textContent = 'Compartir'; }
