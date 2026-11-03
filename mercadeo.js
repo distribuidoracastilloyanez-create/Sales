@@ -11,7 +11,7 @@
     'use strict';
 
     let _db, _storage, _userId, _mainContent, _showMainMenu, _showModal;
-    let _collection, _doc, _getDoc, _getDocs, _setDoc;
+    let _collection, _doc, _getDoc, _getDocs, _setDoc, _deleteDoc;
 
     window.initMercadeo = function (deps) {
         _db           = deps.db;
@@ -25,6 +25,7 @@
         _getDoc       = deps.getDoc;
         _getDocs      = deps.getDocs;
         _setDoc       = deps.setDoc;
+        _deleteDoc    = deps.deleteDoc;
     };
 
     const PUB = () => window.AppConfig.PUBLIC_DATA_ID;
@@ -675,9 +676,24 @@
 
     // ═══════════════ HISTORIAL DE EJECUCIONES (solo admin) ═══════════════
     let _histCache = null;
+    let _nombresUsuarios = null;   // uid -> nombre, para saber quién hizo cada gestión
+
+    async function cargarNombresUsuarios() {
+        if (_nombresUsuarios) return _nombresUsuarios;
+        _nombresUsuarios = {};
+        try {
+            const snap = await _getDocs(_collection(_db, 'users'));
+            snap.docs.forEach(d => {
+                const u = d.data();
+                _nombresUsuarios[d.id] = [u.nombre, u.apellido].filter(Boolean).join(' ') || u.email || d.id;
+            });
+        } catch (e) { }
+        return _nombresUsuarios;
+    }
+    const nombreUsuario = uid => (_nombresUsuarios && _nombresUsuarios[uid]) || '';
 
     async function verHistorial() {
-        if (!esAdmin()) return;
+        if (!esAdmin()) { _showModal('Acceso restringido', 'El historial de ejecuciones es solo para administradores.'); return; }
         document.getElementById('mkHistOverlay')?.remove();
         const ov = document.createElement('div');
         ov.id = 'mkHistOverlay';
@@ -686,7 +702,7 @@
             <div class="bg-white w-full max-w-md rounded-t-xl sm:rounded-xl shadow-2xl overflow-hidden max-h-[92vh] flex flex-col border border-slate-200">
                 <div class="bg-slate-800 text-white px-4 py-3 shrink-0">
                     <div class="font-semibold text-sm">Historial de ejecuciones</div>
-                    <div class="text-[10px] text-slate-400">Comprobantes archivados al compartir</div>
+                    <div class="text-[10px] text-slate-400">Gestiones de todos los vendedores</div>
                 </div>
                 <div class="px-4 pt-3 shrink-0">
                     <input type="text" id="mkHistBuscar" placeholder="Buscar por cliente..." autocomplete="off"
@@ -704,9 +720,11 @@
         document.getElementById('mkHistCerrar').addEventListener('click', () => ov.remove());
 
         try {
+            // Se cargan las gestiones de TODOS los usuarios (colección compartida)
             const snap = await _getDocs(_collection(_db, pathHistorial()));
             _histCache = snap.docs.map(d => ({ id: d.id, ...d.data() }))
                 .sort((a, b) => new Date(b.fecha) - new Date(a.fecha));   // más recientes primero
+            await cargarNombresUsuarios();
             pintarHistorial('');
             document.getElementById('mkHistBuscar').addEventListener('input', e => pintarHistorial(e.target.value));
         } catch (e) {
@@ -756,7 +774,7 @@
                             <img src="${h.url}" loading="lazy" class="w-full h-16 object-cover bg-slate-100">
                             <div class="p-1">
                                 <div class="text-[9px] font-semibold text-slate-700 truncate">${h.gestion || ''}</div>
-                                <div class="text-[9px] text-slate-400">${fs}</div>
+                                <div class="text-[9px] text-slate-400">${fs}${nombreUsuario(h.creadoPor) ? ' · ' + nombreUsuario(h.creadoPor).split(' ')[0] : ''}</div>
                             </div>
                         </button>`;
                     }).join('')}
@@ -770,6 +788,9 @@
                     </div>
                     <span class="text-slate-400 text-xs shrink-0">${abierto ? '▲' : '▼'}</span>
                 </button>
+                ${abierto ? `<div class="px-2 pb-1.5">
+                    <button type="button" data-limpiar="${c.nombre.replace(/"/g, '&quot;')}" class="mk-limpiar w-full py-1.5 text-[10px] font-bold text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition">Limpiar historial de este cliente</button>
+                </div>` : ''}
                 ${detalle}
             </div>`;
         }).join('');
@@ -782,6 +803,100 @@
             const h = (_histCache || []).find(x => x.id === b.dataset.id);
             if (h) verEjecucion(h);
         }));
+        cont.querySelectorAll('.mk-limpiar').forEach(b => b.addEventListener('click', e => {
+            e.stopPropagation();
+            limpiarCliente(b.dataset.limpiar);
+        }));
+    }
+
+    // ── BORRADO ──────────────────────────────────────────────────────────
+    // Elimina el registro y también la imagen del almacenamiento, para que
+    // no quede ocupando espacio.
+    async function borrarEjecucion(h) {
+        try {
+            if (h.storagePath) {
+                try {
+                    await window.firebaseStorageFunctions.deleteObject(
+                        window.firebaseStorageFunctions.ref(_storage, h.storagePath));
+                } catch (eImg) { console.warn('La imagen ya no existía:', eImg); }
+            }
+            await _deleteDoc(_doc(_db, pathHistorial(), h.id));
+            _histCache = (_histCache || []).filter(x => x.id !== h.id);
+            return true;
+        } catch (e) {
+            console.error('Borrar ejecución:', e);
+            return false;
+        }
+    }
+
+    function limpiarCliente(nombre) {
+        const items = (_histCache || []).filter(h => (h.clienteNombre || '(sin cliente)') === nombre);
+        if (!items.length) return;
+        document.getElementById('mkLimpOverlay')?.remove();
+        const ov = document.createElement('div');
+        ov.id = 'mkLimpOverlay';
+        ov.className = 'fixed inset-0 z-[10001] bg-black/70 flex items-center justify-center p-4';
+        ov.innerHTML = `
+            <div class="bg-white w-full max-w-sm rounded-xl overflow-hidden shadow-2xl">
+                <div class="bg-red-600 text-white px-4 py-3">
+                    <div class="font-bold text-sm">Limpiar historial</div>
+                    <div class="text-[11px] text-red-100 truncate">${nombre}</div>
+                </div>
+                <div class="p-4">
+                    <p class="text-xs text-slate-600 mb-3">Este cliente tiene <strong>${items.length} ejecución(es)</strong> archivadas. Las imágenes se borran definitivamente.</p>
+                    <label class="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Borrar</label>
+                    <select id="limpModo" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white outline-none mt-1">
+                        <option value="todo">Todo el historial del cliente</option>
+                        <option value="fecha">Solo lo anterior a una fecha</option>
+                    </select>
+                    <div id="limpFechaWrap" class="hidden mt-2">
+                        <label class="text-[10px] text-slate-500">Borrar las ejecuciones anteriores a:</label>
+                        <input type="date" id="limpFecha" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm outline-none mt-1">
+                    </div>
+                    <p id="limpResumen" class="text-[11px] font-bold text-red-600 mt-2"></p>
+                </div>
+                <div class="p-3 border-t grid grid-cols-2 gap-2">
+                    <button id="limpOk" class="py-2.5 bg-red-600 text-white rounded-lg font-bold text-sm">Borrar</button>
+                    <button id="limpNo" class="py-2.5 bg-slate-100 text-slate-600 rounded-lg font-bold text-sm">Cancelar</button>
+                </div>
+            </div>`;
+        document.body.appendChild(ov);
+        ov.addEventListener('click', e => { if (e.target === ov) ov.remove(); });
+        document.getElementById('limpNo').addEventListener('click', () => ov.remove());
+
+        const modo = document.getElementById('limpModo');
+        const fechaWrap = document.getElementById('limpFechaWrap');
+        const fechaInp = document.getElementById('limpFecha');
+        const resumen = document.getElementById('limpResumen');
+
+        const aBorrar = () => {
+            if (modo.value === 'todo') return items;
+            if (!fechaInp.value) return [];
+            // Fecha local de Venezuela (GMT-4) a las 00:00
+            const corte = new Date(fechaInp.value + 'T00:00:00.000-04:00');
+            return items.filter(h => new Date(h.fecha) < corte);
+        };
+        const refrescar = () => {
+            fechaWrap.classList.toggle('hidden', modo.value !== 'fecha');
+            const n = aBorrar().length;
+            resumen.textContent = n ? `Se borrarán ${n} ejecución(es).` : (modo.value === 'fecha' && !fechaInp.value ? 'Elige una fecha.' : 'No hay nada que borrar.');
+        };
+        modo.addEventListener('change', refrescar);
+        fechaInp.addEventListener('change', refrescar);
+        refrescar();
+
+        document.getElementById('limpOk').addEventListener('click', async () => {
+            const lista = aBorrar();
+            if (!lista.length) return;
+            const btn = document.getElementById('limpOk');
+            btn.disabled = true; btn.textContent = 'Borrando...';
+            let ok = 0;
+            for (const h of lista) { if (await borrarEjecucion(h)) ok++; }
+            ov.remove();
+            _clienteAbierto = null;
+            pintarHistorial(document.getElementById('mkHistBuscar')?.value || '');
+            _showModal('Listo', `Se eliminaron ${ok} ejecución(es).`);
+        });
     }
 
     function verEjecucion(h) {
@@ -796,21 +911,35 @@
                 <div class="bg-slate-800 text-white px-4 py-3 shrink-0">
                     <div class="font-bold text-sm truncate">${h.clienteNombre || ''}</div>
                     <div class="text-[11px] text-slate-300">${fechaStr}</div>
+                    ${nombreUsuario(h.creadoPor) ? `<div class="text-[10px] text-slate-400 truncate">Registrado por ${nombreUsuario(h.creadoPor)}</div>` : ''}
                 </div>
                 <div class="p-3 overflow-y-auto flex-1">
                     <img src="${h.url}" class="w-full rounded-lg border border-slate-200">
                     <pre class="mt-2 bg-slate-50 border border-slate-200 rounded-lg p-3 text-[11px] text-slate-700 whitespace-pre-wrap font-sans">${h.texto || ''}</pre>
                 </div>
-                <div class="p-3 border-t shrink-0 grid grid-cols-3 gap-2">
-                    <a href="${h.url}" target="_blank" rel="noopener" class="py-2.5 bg-slate-800 text-white rounded-lg font-bold text-xs text-center">Abrir imagen</a>
-                    <button id="mkVerCompartir" class="py-2.5 bg-emerald-600 text-white rounded-lg font-bold text-xs">Compartir</button>
-                    <button id="mkVerCerrar" class="py-2.5 bg-slate-100 text-slate-600 rounded-lg font-bold text-xs">Cerrar</button>
+                <div class="p-3 border-t shrink-0">
+                    <div class="grid grid-cols-3 gap-2">
+                        <a href="${h.url}" target="_blank" rel="noopener" class="py-2.5 bg-slate-800 text-white rounded-lg font-bold text-xs text-center">Abrir imagen</a>
+                        <button id="mkVerCompartir" class="py-2.5 bg-emerald-600 text-white rounded-lg font-bold text-xs">Compartir</button>
+                        <button id="mkVerCerrar" class="py-2.5 bg-slate-100 text-slate-600 rounded-lg font-bold text-xs">Cerrar</button>
+                    </div>
+                    <button id="mkVerBorrar" class="w-full mt-2 py-2 text-red-600 text-[11px] font-bold hover:underline">Eliminar esta ejecución</button>
                 </div>
             </div>`;
         document.body.appendChild(ov);
         ov.addEventListener('click', e => { if (e.target === ov) ov.remove(); });
         document.getElementById('mkVerCerrar').addEventListener('click', () => ov.remove());
         document.getElementById('mkVerCompartir').addEventListener('click', () => compartirEjecucion(h));
+        document.getElementById('mkVerBorrar').addEventListener('click', () => {
+            _showModal('Eliminar ejecución',
+                `¿Eliminar definitivamente esta gestión de <strong>${h.clienteNombre || ''}</strong>?<br><br>Se borra también la imagen del almacenamiento. Esta acción no se puede deshacer.`,
+                async () => {
+                    const ok = await borrarEjecucion(h);
+                    ov.remove();
+                    pintarHistorial(document.getElementById('mkHistBuscar')?.value || '');
+                    _showModal(ok ? 'Eliminada' : 'Error', ok ? 'La ejecución fue eliminada.' : 'No se pudo eliminar.');
+                }, 'Eliminar', null, true);
+        });
     }
 
     // Vuelve a compartir una ejecución archivada (imagen + su texto)
