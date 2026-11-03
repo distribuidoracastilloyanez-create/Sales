@@ -274,6 +274,86 @@
     let _offsets = [];          // encuadre de cada imagen {x,y} entre 0 y 1
     let _zooms = [];            // acercamiento de cada imagen (1 = normal, 1.2 = +20%)
 
+    const LAYOUTS = {
+        2: [
+            { id: 'h', nombre: 'Lado a lado', celdas: [[0, 0, .5, 1], [.5, 0, .5, 1]] },
+            { id: 'v', nombre: 'Una sobre otra', celdas: [[0, 0, 1, .5], [0, .5, 1, .5]] }
+        ],
+        3: [
+            { id: '1-2', nombre: '1 arriba, 2 abajo', celdas: [[0, 0, 1, .5], [0, .5, .5, .5], [.5, .5, .5, .5]] },
+            { id: '2-1', nombre: '2 arriba, 1 abajo', celdas: [[0, 0, .5, .5], [.5, 0, .5, .5], [0, .5, 1, .5]] },
+            { id: 'v3', nombre: 'En columna', celdas: [[0, 0, 1, 1 / 3], [0, 1 / 3, 1, 1 / 3], [0, 2 / 3, 1, 1 / 3]] }
+        ],
+        4: [
+            { id: '2x2', nombre: 'Cuadrícula', celdas: [[0, 0, .5, .5], [.5, 0, .5, .5], [0, .5, .5, .5], [.5, .5, .5, .5]] },
+            { id: 'v4', nombre: 'En columna', celdas: [[0, 0, 1, .25], [0, .25, 1, .25], [0, .5, 1, .25], [0, .75, 1, .25]] },
+            { id: '1-3', nombre: '1 grande, 3 abajo', celdas: [[0, 0, 1, .6], [0, .6, 1 / 3, .4], [1 / 3, .6, 1 / 3, .4], [2 / 3, .6, 1 / 3, .4]] }
+        ]
+    };
+
+    function cargarImagen(file) {
+        return new Promise((resolve, reject) => {
+            const img = new Image();
+            img.onload = () => resolve(img);
+            img.onerror = reject;
+            img.src = URL.createObjectURL(file);
+        });
+    }
+
+    async function onGaleriaElegida() {
+        const files = Array.from(document.getElementById('mkGaleria').files || []);
+        if (!files.length) return;
+        if (files.length > 4) {
+            _showModal('Máximo 4 imágenes', 'Puedes combinar hasta <strong>4 fotos</strong> en el collage. Se tomarán las primeras 4.');
+        }
+        const sel = files.slice(0, 4);
+
+        // Una sola imagen: no hay collage que hacer
+        if (sel.length === 1) {
+            _imgsCollage = []; _offsets = []; _zooms = [];
+            document.getElementById('mkCollageOpts').classList.add('hidden');
+            document.getElementById('mkEditor').classList.add('hidden');
+            mostrarPreview(sel[0]);
+            return;
+        }
+
+        try {
+            _imgsCollage = await Promise.all(sel.map(cargarImagen));
+            _offsets = _imgsCollage.map(() => ({ x: 0.5, y: 0.5 }));  // centradas
+            _zooms = _imgsCollage.map(() => 1);
+            _intercambioOrigen = null;
+            renderLayouts();
+            renderOrden();
+            await generarCollage(LAYOUTS[_imgsCollage.length][0]);
+            document.getElementById('mkEditor').classList.remove('hidden');
+            document.getElementById('mkPreview').classList.add('hidden');
+            enlazarEditor();
+            dibujarPreview();
+        } catch (e) {
+            console.error('Collage:', e);
+            _showModal('Error', 'No se pudieron procesar las imágenes seleccionadas.');
+        }
+    }
+
+    function renderLayouts() {
+        const cont = document.getElementById('mkLayouts');
+        const opts = LAYOUTS[_imgsCollage.length] || [];
+        document.getElementById('mkCollageOpts').classList.remove('hidden');
+        cont.innerHTML = opts.map((l, i) => `
+            <button type="button" data-i="${i}" class="mk-layout px-2 py-2 border rounded-lg text-[10px] font-bold transition ${i === 0 ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-300'}">
+                ${miniatura(l)}
+                <span class="block mt-1 leading-tight">${l.nombre}</span>
+            </button>`).join('');
+        cont.querySelectorAll('.mk-layout').forEach(b => b.addEventListener('click', async () => {
+            cont.querySelectorAll('.mk-layout').forEach((x, j) => {
+                const act = Number(b.dataset.i) === j;
+                x.className = `mk-layout px-2 py-2 border rounded-lg text-[10px] font-bold transition ${act ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-300'}`;
+            });
+            await generarCollage(opts[Number(b.dataset.i)]);
+            dibujarPreview();
+        }));
+    }
+
     // ── Editor de encuadre: se arrastra sobre el collage para mover la parte
     //    visible de cada imagen dentro de su recuadro ──
     const PREV = 600;           // lado del lienzo de edición
