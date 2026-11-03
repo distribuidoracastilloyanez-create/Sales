@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v165'; // v165: Catalogo Fisico etapa 2 - portada, indice con numeracion de hojas y version digital navegable
+const CACHE_NAME = 'ventas-app-cache-v166'; // v166: Mercadeo - acercar imagenes del collage con dos dedos (hasta 20%), historial agrupado por cliente y boton compartir en el detalle
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
