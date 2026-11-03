@@ -272,7 +272,7 @@
     // composición que elija el usuario.
     let _imgsCollage = [];
     let _offsets = [];          // encuadre de cada imagen {x,y} entre 0 y 1
-    let _zooms = [];            // acercamiento de cada imagen (1 = normal, 1.2 = +20%)
+    let _zooms = [];            // acercamiento de cada imagen (1 = normal, 1.5 = +50%)
 
     const LAYOUTS = {
         2: [
@@ -516,7 +516,7 @@
 
     // Calcula el recuadro (en píxeles de la imagen original) que se mostrará
     // en una celda de proporción w/h.
-    const ZOOM_MAX = 1.2;   // hasta 20% de acercamiento
+    const ZOOM_MAX = 1.5;   // hasta 50% de acercamiento
 
     function recuadroDe(img, w, h, zoom) {
         const aspecto = w / h;
