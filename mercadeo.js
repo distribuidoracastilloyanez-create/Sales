@@ -135,7 +135,7 @@
                                 <img id="mkPreviewImg" class="w-full max-h-56 object-contain rounded-lg border border-slate-200 bg-slate-50">
                             </div>
                             <div id="mkEditor" class="hidden mt-2">
-                                <p class="text-[10px] text-slate-500 mb-1">Arrastra sobre una imagen para elegir qué parte se ve.</p>
+                                <p class="text-[10px] text-slate-500 mb-1">Arrastra sobre una imagen para encuadrarla. Con dos dedos puedes acercarla.</p>
                                 <canvas id="mkCanvas" class="w-full rounded-lg border border-slate-200 bg-white touch-none"></canvas>
                             </div>
                         </div>
@@ -261,7 +261,7 @@
     function onFotoElegida() {
         const f = document.getElementById('mkFoto').files?.[0];
         if (!f) return;
-        _imgsCollage = []; _offsets = [];
+        _imgsCollage = []; _offsets = []; _zooms = [];
         document.getElementById('mkCollageOpts').classList.add('hidden');
         document.getElementById('mkEditor').classList.add('hidden');
         mostrarPreview(f);
@@ -272,6 +272,7 @@
     // composición que elija el usuario.
     let _imgsCollage = [];
     let _offsets = [];          // encuadre de cada imagen {x,y} entre 0 y 1
+    let _zooms = [];            // acercamiento de cada imagen (1 = normal, 1.2 = +20%)
 
     // ── Editor de encuadre: se arrastra sobre el collage para mover la parte
     //    visible de cada imagen dentro de su recuadro ──
@@ -287,7 +288,7 @@
         _layoutActual.celdas.forEach(([x, y, w, h], i) => {
             const img = _imgsCollage[i];
             if (!img) return;
-            dibujarCubriendo(ctx, img, x * PREV + B / 2, y * PREV + B / 2, w * PREV - B, h * PREV - B, _offsets[i]);
+            dibujarCubriendo(ctx, img, x * PREV + B / 2, y * PREV + B / 2, w * PREV - B, h * PREV - B, _offsets[i], _zooms[i]);
             // Número de la imagen, para relacionarla con el orden
             ctx.save();
             ctx.fillStyle = 'rgba(15,23,42,.75)';
@@ -309,24 +310,52 @@
         if (!cv || cv.dataset.bound) return;
         cv.dataset.bound = '1';
         let activo = -1, px0 = 0, py0 = 0, off0 = null, rect = null;
+        // Pellizco (dos dedos) para acercar la imagen hasta un 20%
+        const dedos = new Map();
+        let distIni = 0, zoomIni = 1;
+
+        const posRel = e => {
+            rect = rect || cv.getBoundingClientRect();
+            return { rx: (e.clientX - rect.left) / rect.width, ry: (e.clientY - rect.top) / rect.height };
+        };
 
         cv.addEventListener('pointerdown', e => {
             rect = cv.getBoundingClientRect();
-            const rx = (e.clientX - rect.left) / rect.width;
-            const ry = (e.clientY - rect.top) / rect.height;
-            activo = celdaEn(rx, ry);
-            if (activo < 0) return;
-            cv.setPointerCapture(e.pointerId);
-            px0 = e.clientX; py0 = e.clientY;
-            off0 = { ..._offsets[activo] };
+            dedos.set(e.pointerId, { x: e.clientX, y: e.clientY });
+            const { rx, ry } = posRel(e);
+
+            if (dedos.size === 1) {
+                activo = celdaEn(rx, ry);
+                if (activo < 0) return;
+                cv.setPointerCapture(e.pointerId);
+                px0 = e.clientX; py0 = e.clientY;
+                off0 = { ..._offsets[activo] };
+            } else if (dedos.size === 2 && activo >= 0) {
+                const p = [...dedos.values()];
+                distIni = Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y) || 1;
+                zoomIni = _zooms[activo] || 1;
+            }
         });
 
         cv.addEventListener('pointermove', e => {
             if (activo < 0 || !rect) return;
+            if (dedos.has(e.pointerId)) dedos.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+            // ── Dos dedos: acercar / alejar ──
+            if (dedos.size >= 2) {
+                const p = [...dedos.values()];
+                const dist = Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y) || 1;
+                const nz = Math.min(ZOOM_MAX, Math.max(1, zoomIni * (dist / distIni)));
+                _zooms[activo] = nz;
+                dibujarPreview();
+                return;
+            }
+
+            // ── Un dedo: mover el encuadre ──
             const img = _imgsCollage[activo];
             const [, , celW, celH] = _layoutActual.celdas[activo];
             const w = celW * PREV, h = celH * PREV;
-            const { cw, ch, margenX, margenY } = recuadroDe(img, w, h);
+            const { cw, ch, margenX, margenY } = recuadroDe(img, w, h, _zooms[activo]);
 
             // Píxeles de la imagen original por cada píxel movido en pantalla
             const porPixelX = cw / (w * rect.width / PREV);
@@ -341,92 +370,21 @@
             dibujarPreview();
         });
 
-        const soltar = async () => {
+        const soltar = async (e) => {
+            if (e) dedos.delete(e.pointerId);
+            if (dedos.size > 0) {
+                // Queda un dedo en pantalla: se reinicia el arrastre desde ahí
+                const p = [...dedos.values()][0];
+                px0 = p.x; py0 = p.y;
+                if (activo >= 0) off0 = { ..._offsets[activo] };
+                return;
+            }
             if (activo < 0) return;
-            activo = -1;
+            activo = -1; rect = null;
             await generarCollage(_layoutActual);   // imagen final con el nuevo encuadre
         };
         cv.addEventListener('pointerup', soltar);
         cv.addEventListener('pointercancel', soltar);
-    }
-
-    const LAYOUTS = {
-        2: [
-            { id: 'h', nombre: 'Lado a lado', celdas: [[0, 0, .5, 1], [.5, 0, .5, 1]] },
-            { id: 'v', nombre: 'Una sobre otra', celdas: [[0, 0, 1, .5], [0, .5, 1, .5]] }
-        ],
-        3: [
-            { id: '1-2', nombre: '1 arriba, 2 abajo', celdas: [[0, 0, 1, .5], [0, .5, .5, .5], [.5, .5, .5, .5]] },
-            { id: '2-1', nombre: '2 arriba, 1 abajo', celdas: [[0, 0, .5, .5], [.5, 0, .5, .5], [0, .5, 1, .5]] },
-            { id: 'v3', nombre: 'En columna', celdas: [[0, 0, 1, 1 / 3], [0, 1 / 3, 1, 1 / 3], [0, 2 / 3, 1, 1 / 3]] }
-        ],
-        4: [
-            { id: '2x2', nombre: 'Cuadrícula', celdas: [[0, 0, .5, .5], [.5, 0, .5, .5], [0, .5, .5, .5], [.5, .5, .5, .5]] },
-            { id: 'v4', nombre: 'En columna', celdas: [[0, 0, 1, .25], [0, .25, 1, .25], [0, .5, 1, .25], [0, .75, 1, .25]] },
-            { id: '1-3', nombre: '1 grande, 3 abajo', celdas: [[0, 0, 1, .6], [0, .6, 1 / 3, .4], [1 / 3, .6, 1 / 3, .4], [2 / 3, .6, 1 / 3, .4] ] }
-        ]
-    };
-
-    async function onGaleriaElegida() {
-        const files = Array.from(document.getElementById('mkGaleria').files || []);
-        if (!files.length) return;
-        if (files.length > 4) {
-            _showModal('Máximo 4 imágenes', 'Puedes combinar hasta <strong>4 fotos</strong> en el collage. Se tomarán las primeras 4.');
-        }
-        const sel = files.slice(0, 4);
-
-        // Una sola imagen: no hay collage que hacer
-        if (sel.length === 1) {
-            _imgsCollage = []; _offsets = [];
-            document.getElementById('mkCollageOpts').classList.add('hidden');
-            document.getElementById('mkEditor').classList.add('hidden');
-            mostrarPreview(sel[0]);
-            return;
-        }
-
-        try {
-            _imgsCollage = await Promise.all(sel.map(cargarImagen));
-            _offsets = _imgsCollage.map(() => ({ x: 0.5, y: 0.5 }));  // centradas
-            _intercambioOrigen = null;
-            renderLayouts();
-            renderOrden();
-            await generarCollage(LAYOUTS[_imgsCollage.length][0]);
-            document.getElementById('mkEditor').classList.remove('hidden');
-            document.getElementById('mkPreview').classList.add('hidden');
-            enlazarEditor();
-            dibujarPreview();
-        } catch (e) {
-            console.error('Collage:', e);
-            _showModal('Error', 'No se pudieron procesar las imágenes seleccionadas.');
-        }
-    }
-
-    function cargarImagen(file) {
-        return new Promise((resolve, reject) => {
-            const img = new Image();
-            img.onload = () => resolve(img);
-            img.onerror = reject;
-            img.src = URL.createObjectURL(file);
-        });
-    }
-
-    function renderLayouts() {
-        const cont = document.getElementById('mkLayouts');
-        const opts = LAYOUTS[_imgsCollage.length] || [];
-        document.getElementById('mkCollageOpts').classList.remove('hidden');
-        cont.innerHTML = opts.map((l, i) => `
-            <button type="button" data-i="${i}" class="mk-layout px-2 py-2 border rounded-lg text-[10px] font-bold transition ${i === 0 ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-300'}">
-                ${miniatura(l)}
-                <span class="block mt-1 leading-tight">${l.nombre}</span>
-            </button>`).join('');
-        cont.querySelectorAll('.mk-layout').forEach(b => b.addEventListener('click', async () => {
-            cont.querySelectorAll('.mk-layout').forEach((x, j) => {
-                const act = Number(b.dataset.i) === j;
-                x.className = `mk-layout px-2 py-2 border rounded-lg text-[10px] font-bold transition ${act ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-300'}`;
-            });
-            await generarCollage(opts[Number(b.dataset.i)]);
-            dibujarPreview();
-        }));
     }
 
     // ── Orden de las imágenes dentro de la composición ──
@@ -454,6 +412,7 @@
                 const a = _intercambioOrigen;
                 [_imgsCollage[a], _imgsCollage[i]] = [_imgsCollage[i], _imgsCollage[a]];
                 [_offsets[a], _offsets[i]] = [_offsets[i], _offsets[a]];
+                [_zooms[a], _zooms[i]] = [_zooms[i], _zooms[a]];
                 _intercambioOrigen = null;
                 renderOrden();
                 await generarCollage(_layoutActual);
@@ -477,20 +436,25 @@
 
     // Calcula el recuadro (en píxeles de la imagen original) que se mostrará
     // en una celda de proporción w/h.
-    function recuadroDe(img, w, h) {
+    const ZOOM_MAX = 1.2;   // hasta 20% de acercamiento
+
+    function recuadroDe(img, w, h, zoom) {
         const aspecto = w / h;
         // Recorte máximo posible con la proporción de la celda
         let cw = Math.min(img.width, img.height * aspecto);
         let ch = cw / aspecto;
-        // Se reduce para dejar margen de movimiento en ambas direcciones
-        cw *= RECORTE; ch *= RECORTE;
+        // Se reduce para dejar margen de movimiento en ambas direcciones.
+        // Al acercar (zoom) el recuadro se hace más pequeño, así que se ve
+        // una porción menor de la foto: eso es acercar la imagen.
+        const z = Math.min(ZOOM_MAX, Math.max(1, zoom || 1));
+        cw *= RECORTE / z; ch *= RECORTE / z;
         return { cw, ch, margenX: img.width - cw, margenY: img.height - ch };
     }
 
     // Dibuja la parte elegida de la imagen llenando la celda, sin deformarla.
     // `off` {x,y} va de 0 a 1: 0.5 es el centro, 0 el borde izquierdo/superior.
-    function dibujarCubriendo(ctx, img, x, y, w, h, off) {
-        const { cw, ch, margenX, margenY } = recuadroDe(img, w, h);
+    function dibujarCubriendo(ctx, img, x, y, w, h, off, zoom) {
+        const { cw, ch, margenX, margenY } = recuadroDe(img, w, h, zoom);
         const ox = off && typeof off.x === 'number' ? off.x : 0.5;
         const oy = off && typeof off.y === 'number' ? off.y : 0.5;
         const sx = margenX * Math.min(1, Math.max(0, ox));
@@ -517,7 +481,7 @@
             if (!img) return;
             dibujarCubriendo(ctx, img,
                 x * LADO + BORDE / 2, y * LADO + BORDE / 2,
-                w * LADO - BORDE, h * LADO - BORDE, _offsets[i]);
+                w * LADO - BORDE, h * LADO - BORDE, _offsets[i], _zooms[i]);
         });
 
         const blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.9));
@@ -671,28 +635,69 @@
         }
     }
 
+    // El historial se organiza POR CLIENTE (no por fecha suelta): se listan los
+    // clientes con gestiones, el más reciente primero, y al abrir uno se ven
+    // todas sus ejecuciones.
+    let _clienteAbierto = null;
+
     function pintarHistorial(filtro) {
         const cont = document.getElementById('mkHistLista');
         if (!cont) return;
         const t = (filtro || '').toLowerCase().trim();
-        const lista = (_histCache || []).filter(h => !t || (h.clienteNombre || '').toLowerCase().includes(t));
-        if (!lista.length) {
+
+        // Agrupar por cliente
+        const grupos = {};
+        (_histCache || []).forEach(h => {
+            const k = h.clienteNombre || '(sin cliente)';
+            if (!grupos[k]) grupos[k] = [];
+            grupos[k].push(h);
+        });
+        // Ordenados por la gestión más reciente de cada cliente
+        let clientes = Object.keys(grupos)
+            .map(k => ({ nombre: k, items: grupos[k], ultima: new Date(grupos[k][0].fecha) }))
+            .sort((a, b) => b.ultima - a.ultima);
+        if (t) clientes = clientes.filter(c => c.nombre.toLowerCase().includes(t));
+
+        if (!clientes.length) {
             cont.innerHTML = `<p class="text-sm text-slate-400 text-center py-6">${t ? 'Sin resultados para esa búsqueda.' : 'Todavía no hay ejecuciones archivadas.'}</p>`;
             return;
         }
-        cont.innerHTML = lista.slice(0, 120).map(h => {
-            const f = new Date(h.fecha);
-            const fechaStr = isNaN(f.getTime()) ? '' : f.toLocaleString('es-VE', { dateStyle: 'medium', timeStyle: 'short' });
-            return `
-            <button type="button" data-id="${h.id}" class="mk-hist-item w-full text-left flex gap-2 border border-slate-200 rounded-lg p-2 mb-1.5 hover:bg-slate-50 hover:border-slate-400 transition">
-                <img src="${h.url}" loading="lazy" class="w-14 h-14 object-cover rounded border border-slate-200 shrink-0 bg-slate-100">
-                <div class="min-w-0 flex-1">
-                    <div class="text-xs font-semibold text-slate-800 truncate">${h.clienteNombre || '(sin cliente)'}</div>
-                    <div class="text-[10px] text-slate-500 truncate">${h.gestion || ''}${h.marca ? ' · ' + h.marca : ''}</div>
-                    <div class="text-[10px] text-slate-400">${fechaStr}</div>
-                </div>
-            </button>`;
+
+        cont.innerHTML = clientes.slice(0, 80).map(c => {
+            const abierto = _clienteAbierto === c.nombre;
+            const f = c.ultima;
+            const ultimaStr = isNaN(f.getTime()) ? '' : f.toLocaleDateString('es-VE', { day: '2-digit', month: 'short', year: 'numeric' });
+            const detalle = abierto ? `
+                <div class="grid grid-cols-3 gap-1.5 px-2 pb-2">
+                    ${c.items.map(h => {
+                        const fh = new Date(h.fecha);
+                        const fs = isNaN(fh.getTime()) ? '' : fh.toLocaleDateString('es-VE', { day: '2-digit', month: '2-digit' });
+                        return `<button type="button" data-id="${h.id}" class="mk-hist-item text-left border border-slate-200 rounded-lg overflow-hidden hover:border-slate-400 transition">
+                            <img src="${h.url}" loading="lazy" class="w-full h-16 object-cover bg-slate-100">
+                            <div class="p-1">
+                                <div class="text-[9px] font-semibold text-slate-700 truncate">${h.gestion || ''}</div>
+                                <div class="text-[9px] text-slate-400">${fs}</div>
+                            </div>
+                        </button>`;
+                    }).join('')}
+                </div>` : '';
+            return `<div class="border border-slate-200 rounded-lg mb-1.5 overflow-hidden ${abierto ? 'border-slate-400' : ''}">
+                <button type="button" data-cli="${c.nombre.replace(/"/g, '&quot;')}" class="mk-cli-row w-full text-left flex items-center gap-2 p-2 hover:bg-slate-50 transition">
+                    <img src="${c.items[0].url}" loading="lazy" class="w-11 h-11 object-cover rounded border border-slate-200 shrink-0 bg-slate-100">
+                    <div class="min-w-0 flex-1">
+                        <div class="text-xs font-semibold text-slate-800 truncate">${c.nombre}</div>
+                        <div class="text-[10px] text-slate-500">${c.items.length} ejecución(es) · última: ${ultimaStr}</div>
+                    </div>
+                    <span class="text-slate-400 text-xs shrink-0">${abierto ? '▲' : '▼'}</span>
+                </button>
+                ${detalle}
+            </div>`;
         }).join('');
+
+        cont.querySelectorAll('.mk-cli-row').forEach(b => b.addEventListener('click', () => {
+            _clienteAbierto = (_clienteAbierto === b.dataset.cli) ? null : b.dataset.cli;
+            pintarHistorial(document.getElementById('mkHistBuscar')?.value || '');
+        }));
         cont.querySelectorAll('.mk-hist-item').forEach(b => b.addEventListener('click', () => {
             const h = (_histCache || []).find(x => x.id === b.dataset.id);
             if (h) verEjecucion(h);
@@ -716,14 +721,46 @@
                     <img src="${h.url}" class="w-full rounded-lg border border-slate-200">
                     <pre class="mt-2 bg-slate-50 border border-slate-200 rounded-lg p-3 text-[11px] text-slate-700 whitespace-pre-wrap font-sans">${h.texto || ''}</pre>
                 </div>
-                <div class="p-3 border-t shrink-0 grid grid-cols-2 gap-2">
-                    <a href="${h.url}" target="_blank" rel="noopener" class="py-2.5 bg-slate-800 text-white rounded-lg font-bold text-sm text-center">Abrir imagen</a>
-                    <button id="mkVerCerrar" class="py-2.5 bg-slate-100 text-slate-600 rounded-lg font-bold text-sm">Cerrar</button>
+                <div class="p-3 border-t shrink-0 grid grid-cols-3 gap-2">
+                    <a href="${h.url}" target="_blank" rel="noopener" class="py-2.5 bg-slate-800 text-white rounded-lg font-bold text-xs text-center">Abrir imagen</a>
+                    <button id="mkVerCompartir" class="py-2.5 bg-emerald-600 text-white rounded-lg font-bold text-xs">Compartir</button>
+                    <button id="mkVerCerrar" class="py-2.5 bg-slate-100 text-slate-600 rounded-lg font-bold text-xs">Cerrar</button>
                 </div>
             </div>`;
         document.body.appendChild(ov);
         ov.addEventListener('click', e => { if (e.target === ov) ov.remove(); });
         document.getElementById('mkVerCerrar').addEventListener('click', () => ov.remove());
+        document.getElementById('mkVerCompartir').addEventListener('click', () => compartirEjecucion(h));
+    }
+
+    // Vuelve a compartir una ejecución archivada (imagen + su texto)
+    async function compartirEjecucion(h) {
+        const btn = document.getElementById('mkVerCompartir');
+        if (btn) { btn.disabled = true; btn.textContent = 'Preparando...'; }
+        try {
+            const resp = await fetch(h.url);
+            const blob = await resp.blob();
+            const limpio = (h.clienteNombre || 'gestion')
+                .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+                .replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 50) || 'gestion';
+            const file = new File([blob], `${limpio}.jpg`, { type: blob.type || 'image/jpeg' });
+
+            if (navigator.canShare && navigator.canShare({ files: [file] })) {
+                await navigator.share({ files: [file], text: h.texto || '', title: 'Visita en Gestión' });
+            } else if (navigator.share) {
+                await navigator.share({ text: h.texto || '', title: 'Visita en Gestión' });
+                _showModal('Atención', 'Este dispositivo no permite enviar la imagen junto al texto. Usa "Abrir imagen" para descargarla y adjuntarla.');
+            } else {
+                window.open(`https://wa.me/?text=${encodeURIComponent(h.texto || '')}`, '_blank');
+            }
+        } catch (e) {
+            if (!e || e.name !== 'AbortError') {
+                console.warn('Compartir ejecución:', e);
+                _showModal('Error', 'No se pudo compartir la imagen. Intenta con "Abrir imagen".');
+            }
+        } finally {
+            if (btn) { btn.disabled = false; btn.textContent = 'Compartir'; }
+        }
     }
 
     // ═══════════════ EDITAR GESTIONES (solo admin) ═══════════════
