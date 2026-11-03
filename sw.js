@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v167'; // v167: fix collage de galeria (se habian perdido las funciones de composicion al agregar el zoom)
+const CACHE_NAME = 'ventas-app-cache-v168'; // v168: Mercadeo - zoom del collage hasta 50%
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
