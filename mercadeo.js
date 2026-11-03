@@ -10,13 +10,14 @@
 (function () {
     'use strict';
 
-    let _db, _storage, _userId, _mainContent, _showMainMenu, _showModal;
+    let _db, _storage, _userId, _userRole, _mainContent, _showMainMenu, _showModal;
     let _collection, _doc, _getDoc, _getDocs, _setDoc, _deleteDoc;
 
     window.initMercadeo = function (deps) {
         _db           = deps.db;
         _storage      = deps.storage;
         _userId       = deps.userId;
+        _userRole     = deps.userRole;
         _mainContent  = deps.mainContent;
         _showMainMenu = deps.showMainMenu;
         _showModal    = deps.showModal;
@@ -32,7 +33,9 @@
     const pathClientes = () => `artifacts/${PUB()}/public/data/clientes`;
     const pathConfig   = () => `artifacts/${PUB()}/public/data/config/mercadeo`;
     const pathHistorial = () => `artifacts/${PUB()}/public/data/mercadeo_historial`;
-    const esAdmin = () => window.userRole === 'admin';
+    // Se consulta el rol en vivo y también el capturado al iniciar el módulo:
+    // así la comprobación no depende de cuál de los dos esté disponible.
+    const esAdmin = () => (window.userRole || _userRole) === 'admin';
 
     // Gestiones por defecto (el admin puede cambiarlas desde la app)
     const CONFIG_DEFAULT = {
@@ -151,8 +154,16 @@
             </div>`;
 
         document.getElementById('mkBack').addEventListener('click', () => _showMainMenu());
-        document.getElementById('mkEditGestion')?.addEventListener('click', editarGestiones);
-        document.getElementById('mkHistorial')?.addEventListener('click', verHistorial);
+        // Salvaguarda: si por cualquier motivo los botones quedaron en el HTML y
+        // el usuario no es administrador, se retiran antes de poder usarlos.
+        if (!esAdmin()) {
+            document.getElementById('mkEditGestion')?.closest('div')?.remove();
+            document.getElementById('mkEditGestion')?.remove();
+            document.getElementById('mkHistorial')?.remove();
+        } else {
+            document.getElementById('mkEditGestion')?.addEventListener('click', editarGestiones);
+            document.getElementById('mkHistorial')?.addEventListener('click', verHistorial);
+        }
 
         await Promise.all([cargarConfig(), cargarClientes()]);
         enlazarBuscadorCliente();
@@ -974,7 +985,7 @@
 
     // ═══════════════ EDITAR GESTIONES (solo admin) ═══════════════
     function editarGestiones() {
-        if (!esAdmin()) return;
+        if (!esAdmin()) { _showModal('Acceso restringido', 'La edición del formato es solo para administradores.'); return; }
         document.getElementById('mkCfgOverlay')?.remove();
         const ov = document.createElement('div');
         ov.id = 'mkCfgOverlay';
