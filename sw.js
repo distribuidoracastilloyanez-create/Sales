@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v171'; // v171: fix modales del historial de mercadeo por detras de la ventana; compartir con descarga alternativa por SDK y aviso claro si CORS la bloquea
+const CACHE_NAME = 'ventas-app-cache-v172'; // v172: estilo profesional (azul corporativo) en Panel Admin y sus pantallas; solo cambios visuales
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
