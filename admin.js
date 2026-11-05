@@ -1,5 +1,21 @@
 (function() {
     let _db, _userId, _userRole, _appId, _mainContent, _floatingControls, _showMainMenu, _showModal;
+
+    // Paleta corporativa del estilo profesional
+    const AZUL = '#16305C';
+    const AZUL_CLARO = '#BBD2EE';
+
+    // Cabecera común del estilo profesional (azul corporativo).
+    // Solo presentación: el botón conserva el id que ya usaba cada pantalla.
+    function cabecera(titulo, subtitulo, idVolver) {
+        return `<div class="px-4 py-3 flex items-center justify-between" style="background:${AZUL}">
+                    <div class="min-w-0">
+                        <h2 class="text-base font-semibold text-white tracking-tight truncate">${titulo}</h2>
+                        <p class="text-[10px] mt-0.5 truncate" style="color:${AZUL_CLARO}">${subtitulo}</p>
+                    </div>
+                    <button id="${idVolver}" class="px-3 py-1.5 bg-white/10 text-white text-xs rounded-md hover:bg-white/20 font-medium transition shrink-0">Volver</button>
+                </div>`;
+    }
     let _collection, _getDocs, _doc, _setDoc, _getDoc, _writeBatch, _query, _where, _deleteDoc;
     let limit, startAfter;
     let _obsequioProductId = null;
@@ -61,17 +77,32 @@
     function showAdminSubMenuView() {
         if (_floatingControls) _floatingControls.classList.add('hidden');
         _mainContent.innerHTML = `
-            <div class="p-4 pt-8">
-                <div class="container mx-auto max-w-md">
-                    <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl text-center">
-                        <h1 class="text-3xl font-bold text-gray-800 mb-6">Panel Admin</h1>
-                        <div class="space-y-4">
-                            <button id="userManagementBtn" class="w-full px-6 py-3 bg-blue-600 text-white rounded-lg shadow-md hover:bg-blue-700">Gestión Usuarios</button>
-                            <button id="obsequioConfigBtn" class="w-full px-6 py-3 bg-purple-600 text-white rounded-lg shadow-md hover:bg-purple-700">Config Obsequio</button>
-                            <button id="importExportInventarioBtn" class="w-full px-6 py-3 bg-teal-600 text-white rounded-lg shadow-md hover:bg-teal-700">Importar/Exportar Inventario</button>
-                            <button id="deepCleanBtn" class="w-full px-6 py-3 bg-red-700 text-white rounded-lg shadow-md hover:bg-red-800">Limpieza Profunda</button>
-                            <button id="backToMenuBtn" class="w-full px-6 py-3 bg-gray-400 text-white rounded-lg shadow-md hover:bg-gray-500">Volver Menú</button>
+            <div class="p-2 sm:p-3 pt-5 w-full max-w-lg mx-auto">
+                <div class="bg-white rounded-xl shadow-2xl overflow-hidden border border-slate-200">
+                    <div class="px-4 py-3 flex items-center justify-between" style="background:${AZUL}">
+                        <div>
+                            <h2 class="text-base font-semibold text-white tracking-tight">Panel de Administración</h2>
+                            <p class="text-[10px] mt-0.5" style="color:${AZUL_CLARO}">Configuración y mantenimiento del sistema</p>
                         </div>
+                        <button id="backToMenuBtn" class="px-3 py-1.5 bg-white/10 text-white text-xs rounded-md hover:bg-white/20 font-medium transition shrink-0">Volver</button>
+                    </div>
+                    <div class="p-4 space-y-2">
+                        <button id="userManagementBtn" class="w-full text-left px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-lg hover:bg-slate-100 hover:border-slate-400 transition">
+                            <span class="block font-bold text-slate-800 text-sm">Gestión de Usuarios</span>
+                            <span class="block text-xs text-slate-500 mt-0.5">Roles, perfiles y zonas de los vendedores</span>
+                        </button>
+                        <button id="obsequioConfigBtn" class="w-full text-left px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-lg hover:bg-slate-100 hover:border-slate-400 transition">
+                            <span class="block font-bold text-slate-800 text-sm">Config Obsequio</span>
+                            <span class="block text-xs text-slate-500 mt-0.5">Productos habilitados como obsequio</span>
+                        </button>
+                        <button id="importExportInventarioBtn" class="w-full text-left px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-lg hover:bg-slate-100 hover:border-slate-400 transition">
+                            <span class="block font-bold text-slate-800 text-sm">Importar / Exportar Inventario</span>
+                            <span class="block text-xs text-slate-500 mt-0.5">Carga masiva de productos desde Excel</span>
+                        </button>
+                        <button id="deepCleanBtn" class="w-full text-left px-4 py-3.5 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 hover:border-red-400 transition">
+                            <span class="block font-bold text-red-800 text-sm">Limpieza Profunda</span>
+                            <span class="block text-xs text-red-600 mt-0.5">Borrado de datos. Usar con precaución</span>
+                        </button>
                     </div>
                 </div>
             </div>
@@ -90,11 +121,19 @@
     function showDeepCleanView() {
         if (_floatingControls) _floatingControls.classList.add('hidden');
         _mainContent.innerHTML = `
-            <div class="p-4 pt-8">
-                <div class="container mx-auto max-w-lg">
-                    <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl">
-                        <h1 class="text-3xl font-bold text-red-600 mb-4 text-center">⚠️ Limpieza Profunda ⚠️</h1>
-                        <p class="text-center text-red-700 mb-6 font-semibold">¡ADVERTENCIA! Eliminará permanentemente datos. NO SE PUEDE DESHACER.</p>
+            <div class="p-2 sm:p-3 pt-5 w-full max-w-lg mx-auto">
+                <div class="bg-white rounded-xl shadow-2xl overflow-hidden border border-slate-200">
+                    <div class="px-4 py-3 flex items-center justify-between bg-red-800">
+                        <div class="min-w-0">
+                            <h2 class="text-base font-semibold text-white tracking-tight">Limpieza Profunda</h2>
+                            <p class="text-[10px] mt-0.5 text-red-200">Borrado permanente de datos</p>
+                        </div>
+                        <button id="deepCleanVolverBtn" class="px-3 py-1.5 bg-white/10 text-white text-xs rounded-md hover:bg-white/20 font-medium transition shrink-0">Volver</button>
+                    </div>
+                    <div class="p-4">
+                        <div class="bg-red-50 border border-red-200 rounded-lg p-2.5 mb-3">
+                            <p class="text-[11px] text-red-800 font-semibold">Esta acción elimina los datos de forma permanente y no se puede deshacer.</p>
+                        </div>
                         
                         <div class="space-y-4 text-left mb-6 border p-4 rounded-lg bg-gray-50">
                             <div class="font-bold text-gray-700 mb-2 border-b pb-1">Datos Operativos:</div>
@@ -147,11 +186,11 @@
                             <input type="text" id="confirmCleanText" class="w-full px-4 py-2 border border-red-300 rounded-lg focus:ring-red-500 focus:border-red-500 font-mono text-center uppercase" placeholder="BORRAR DATOS">
                         </div>
 
-                        <div class="space-y-4">
-                            <button id="executeCleanBtn" class="w-full px-6 py-3 bg-red-700 text-white font-semibold rounded-lg shadow-md hover:bg-red-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all" disabled>
-                                INICIAR LIMPIEZA
+                        <div class="space-y-2">
+                            <button id="executeCleanBtn" class="w-full py-2.5 bg-red-700 text-white font-bold text-sm rounded-lg hover:bg-red-800 disabled:opacity-40 disabled:cursor-not-allowed transition" disabled>
+                                Iniciar limpieza
                             </button>
-                            <button id="backToAdminMenuBtn" class="w-full px-6 py-3 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500">
+                            <button id="backToAdminMenuBtn" class="w-full py-2.5 bg-slate-100 text-slate-700 font-bold text-sm rounded-lg hover:bg-slate-200 border border-slate-300 transition">
                                 Cancelar
                             </button>
                         </div>
@@ -168,6 +207,7 @@
 
         document.getElementById('executeCleanBtn').addEventListener('click', handleDeepCleanConfirmation);
         document.getElementById('backToAdminMenuBtn').addEventListener('click', showAdminSubMenuView);
+        document.getElementById('deepCleanVolverBtn').addEventListener('click', showAdminSubMenuView);
     }
 
     function handleDeepCleanConfirmation() { 
@@ -381,19 +421,22 @@
     function showImportExportInventarioView() {
         if (_floatingControls) _floatingControls.classList.add('hidden');
         _mainContent.innerHTML = `
-            <div class="p-4 pt-8"> <div class="container mx-auto max-w-lg"> <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl">
-                <h1 class="text-3xl font-bold mb-6 text-center">Importar / Exportar Inventario</h1>
-                <p class="text-center text-gray-600 mb-6 text-sm"> Exporta a Excel. Importa para añadir productos NUEVOS (ignora cantidad). </p>
-                <div class="space-y-4">
-                    <button id="exportInventarioBtn" class="w-full px-6 py-3 bg-blue-500 text-white rounded-lg shadow-md hover:bg-blue-600">Exportar Inventario</button>
-                    <button id="importInventarioBtn" class="w-full px-6 py-3 bg-green-500 text-white rounded-lg shadow-md hover:bg-green-600">Importar Inventario</button>
-                    <button id="backToAdminMenuBtn" class="w-full px-6 py-3 bg-gray-400 text-white rounded-lg shadow-md hover:bg-gray-500">Volver</button>
+            <div class="p-2 sm:p-3 pt-5 w-full max-w-lg mx-auto"> <div class="bg-white rounded-xl shadow-2xl overflow-hidden border border-slate-200">
+                ${cabecera('Importar / Exportar Inventario', 'Carga masiva de productos desde Excel', 'backToAdminMenuBtn2')}
+                <div class="p-4">
+                <p class="text-xs text-slate-500 mb-3 leading-relaxed">Exporta el inventario a Excel, o impórtalo para añadir productos nuevos y actualizar el Cod P. (la cantidad se ignora).</p>
+                <div class="space-y-2">
+                    <button id="exportInventarioBtn" class="w-full py-2.5 text-white rounded-lg font-bold text-sm transition" style="background:${AZUL}">Exportar Inventario</button>
+                    <button id="importInventarioBtn" class="w-full py-2.5 bg-slate-100 text-slate-700 rounded-lg font-bold text-sm hover:bg-slate-200 border border-slate-300 transition">Importar Inventario</button>
+                    <button id="backToAdminMenuBtn" class="hidden"></button>
                 </div>
-            </div> </div> </div>
+                </div>
+            </div> </div>
         `;
         document.getElementById('exportInventarioBtn').addEventListener('click', handleExportInventario);
         document.getElementById('importInventarioBtn').addEventListener('click', showImportInventarioView);
         document.getElementById('backToAdminMenuBtn').addEventListener('click', showAdminSubMenuView);
+        document.getElementById('backToAdminMenuBtn2').addEventListener('click', showAdminSubMenuView);
     }
 
     async function handleExportInventario() {
@@ -441,13 +484,13 @@
 
     function showImportInventarioView() {
         _mainContent.innerHTML = `
-            <div class="p-4 pt-8"> <div class="container mx-auto max-w-4xl"> <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl">
-                <h2 class="text-2xl font-bold mb-4 text-center">Importar Inventario</h2>
-                <p class="text-center text-gray-600 mb-6 text-sm"> Selecciona archivo Excel/CSV. Nuevos productos se añaden con stock 0.</p>
-                <input type="file" id="inventario-excel-uploader" accept=".xlsx,.xls,.csv" class="w-full p-4 border-2 border-dashed rounded-lg mb-6">
-                <div id="inventario-preview-container" class="overflow-auto max-h-72 border rounded-lg"></div>
-                <div id="inventario-import-actions" class="mt-6 flex flex-col sm:flex-row gap-4 hidden"> <button id="confirmInventarioImportBtn" class="w-full px-6 py-3 bg-green-500 text-white rounded-lg shadow-md hover:bg-green-600">Confirmar e Importar</button> <button id="cancelInventarioImportBtn" class="w-full px-6 py-3 bg-gray-400 text-white rounded-lg shadow-md hover:bg-gray-500">Cancelar</button> </div>
-                 <button id="backToImportExportBtn" class="mt-6 w-full px-6 py-3 bg-gray-400 text-white rounded-lg shadow-md hover:bg-gray-500">Volver</button>
+            <div class="p-2 sm:p-3 pt-5 w-full max-w-3xl mx-auto"> <div class="bg-white rounded-xl shadow-2xl overflow-hidden border border-slate-200">
+                ${cabecera('Importar Inventario', 'Los productos nuevos se añaden con stock en 0', 'backToImportExportBtn')}
+                <div class="p-4">
+                <p class="text-xs text-slate-500 mb-2">Selecciona un archivo Excel o CSV con el formato exportado.</p>
+                <input type="file" id="inventario-excel-uploader" accept=".xlsx,.xls,.csv" class="w-full p-3 border-2 border-dashed border-slate-300 rounded-lg mb-3 text-xs">
+                <div id="inventario-preview-container" class="overflow-auto max-h-72 border border-slate-200 rounded-lg"></div>
+                <div id="inventario-import-actions" class="mt-3 grid grid-cols-2 gap-2 hidden"> <button id="confirmInventarioImportBtn" class="py-2.5 text-white rounded-lg font-bold text-sm transition" style="background:${AZUL}">Confirmar e importar</button> <button id="cancelInventarioImportBtn" class="py-2.5 bg-slate-100 text-slate-700 rounded-lg font-bold text-sm hover:bg-slate-200 border border-slate-300 transition">Cancelar</button> </div>
             </div> </div> </div>
         `;
         document.getElementById('inventario-excel-uploader').addEventListener('change', handleFileUploadInventario);
@@ -562,8 +605,9 @@
     function showUserManagementView() {
          if (_floatingControls) _floatingControls.classList.add('hidden');
         _mainContent.innerHTML = `
-            <div class="p-4 pt-8"> <div class="container mx-auto"> <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl">
-                <div class="flex justify-between items-center mb-6"> <h1 class="text-3xl font-bold flex-grow text-center">Gestión Usuarios</h1> <button id="backToAdminMenuBtn" class="px-4 py-2 bg-gray-400 text-white text-sm rounded-lg shadow-md hover:bg-gray-500 ml-4 flex-shrink-0">Volver</button> </div>
+            <div class="p-2 sm:p-3 pt-5 w-full max-w-3xl mx-auto"> <div class="bg-white rounded-xl shadow-2xl overflow-hidden border border-slate-200">
+                ${cabecera('Gestión de Usuarios', 'Roles, perfiles y zonas de los vendedores', 'backToAdminMenuBtn')}
+                <div class="p-4">
                 <div id="user-list-container" class="overflow-x-auto max-h-96"> <p class="text-center text-gray-500">Cargando...</p> </div>
             </div> </div> </div>
         `;
@@ -596,13 +640,17 @@
     async function showUserProfileView() {
          if (_floatingControls) _floatingControls.classList.add('hidden');
         _mainContent.innerHTML = `
-            <div class="p-4 pt-8"> <div class="container mx-auto max-w-lg"> <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl">
-                <h1 class="text-3xl font-bold mb-6 text-center">Mi Perfil</h1>
-                <form id="userProfileForm" class="space-y-4 text-left"> <div> <label for="profileNombre">Nombre:</label> <input type="text" id="profileNombre" class="w-full px-4 py-2 border rounded-lg" required> </div> <div> <label for="profileApellido">Apellido:</label> <input type="text" id="profileApellido" class="w-full px-4 py-2 border rounded-lg" required> </div> <div> <label for="profileCamion">Camión:</label> <input type="text" id="profileCamion" class="w-full px-4 py-2 border rounded-lg" placeholder="Ej: Placa ABC-123"> </div> <button type="submit" class="w-full px-6 py-3 bg-green-500 text-white rounded-lg shadow-md hover:bg-green-600">Guardar</button> </form>
-                <button id="backToMenuBtn" class="mt-4 w-full px-6 py-3 bg-gray-400 text-white rounded-lg shadow-md hover:bg-gray-500">Volver</button>
-            </div> </div> </div>
+            <div class="p-2 sm:p-3 pt-5 w-full max-w-lg mx-auto"> <div class="bg-white rounded-xl shadow-2xl overflow-hidden border border-slate-200">
+                ${cabecera('Mi Perfil', 'Datos de tu cuenta', 'perfilVolverBtn')}
+                <div class="p-4">
+                <form id="userProfileForm" class="space-y-4 text-left"> <div> <label for="profileNombre">Nombre:</label> <input type="text" id="profileNombre" class="w-full px-4 py-2 border rounded-lg" required> </div> <div> <label for="profileApellido">Apellido:</label> <input type="text" id="profileApellido" class="w-full px-4 py-2 border rounded-lg" required> </div> <div> <label for="profileCamion">Camión:</label> <input type="text" id="profileCamion" class="w-full px-4 py-2 border rounded-lg" placeholder="Ej: Placa ABC-123"> </div> <button type="submit" class="w-full py-2.5 text-white rounded-lg font-bold text-sm transition" style="background:${AZUL}">Guardar</button> </form>
+                <button id="backToMenuBtn" class="hidden"></button>
+                </div>
+            </div> </div>
         `;
-        document.getElementById('backToMenuBtn').addEventListener('click', _showMainMenu); document.getElementById('userProfileForm').addEventListener('submit', handleSaveProfile);
+        document.getElementById('backToMenuBtn').addEventListener('click', _showMainMenu);
+        document.getElementById('perfilVolverBtn').addEventListener('click', _showMainMenu);
+        document.getElementById('userProfileForm').addEventListener('submit', handleSaveProfile);
         try { const uDRef = _doc(_db, "users", _userId); const uDoc = await _getDoc(uDRef); if (uDoc.exists()) { const d = uDoc.data(); const _n = document.getElementById('profileNombre'), _a = document.getElementById('profileApellido'), _c = document.getElementById('profileCamion'); if (_n) _n.value = d.nombre||''; if (_a) _a.value = d.apellido||''; if (_c) _c.value = d.camion||''; } } catch (error) { _showModal('Error', 'No se pudo cargar.'); }
     }
     async function handleSaveProfile(e) {
@@ -614,11 +662,14 @@
     async function showObsequioConfigView() {
          if (_floatingControls) _floatingControls.classList.add('hidden');
         _mainContent.innerHTML = `
-            <div class="p-4 pt-8"> <div class="container mx-auto max-w-lg"> <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl">
-                <div class="flex justify-between items-center mb-6"> <h1 class="text-2xl font-bold flex-grow text-center">Configurar Obsequio</h1> <button id="backToAdminMenuBtn" class="px-4 py-2 bg-gray-400 text-white text-sm rounded-lg shadow-md hover:bg-gray-500 ml-4 flex-shrink-0">Volver</button> </div>
-                <p class="text-gray-600 mb-4 text-center text-sm">Selecciona uno o más productos de obsequio.</p>
-                <div class="space-y-4 text-left"> <div> <label class="font-medium block mb-1">Productos de obsequio (marca uno o más):</label> <div id="obsequioProductList" class="border border-gray-200 rounded-lg p-2 max-h-72 overflow-y-auto space-y-1"><p class="text-sm text-gray-400 text-center py-3">Cargando...</p></div> </div> <button id="saveObsequioConfigBtn" class="w-full px-6 py-3 bg-purple-500 text-white rounded-lg shadow-md hover:bg-purple-600">Guardar Config Pública</button> </div>
-            </div> </div> </div>
+            <div class="p-2 sm:p-3 pt-5 w-full max-w-lg mx-auto"> <div class="bg-white rounded-xl shadow-2xl overflow-hidden border border-slate-200">
+                ${cabecera('Config Obsequio', 'Productos habilitados como obsequio', 'backToAdminMenuBtn')}
+                <div class="p-4">
+                    <label class="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Productos de obsequio (marca uno o más)</label>
+                    <div id="obsequioProductList" class="border border-slate-200 rounded-lg p-2 max-h-72 overflow-y-auto space-y-1 mt-1"><p class="text-sm text-slate-400 text-center py-3">Cargando...</p></div>
+                    <button id="saveObsequioConfigBtn" class="w-full mt-3 py-2.5 text-white rounded-lg font-bold text-sm transition" style="background:${AZUL}">Guardar configuración</button>
+                </div>
+            </div> </div>
         `;
         document.getElementById('backToAdminMenuBtn').addEventListener('click', showAdminSubMenuView); document.getElementById('saveObsequioConfigBtn').addEventListener('click', handleSaveObsequioConfig); await loadAndPopulateObsequioSelect();
     }
