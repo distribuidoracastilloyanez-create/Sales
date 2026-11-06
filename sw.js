@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v172'; // v172: estilo profesional (azul corporativo) en Panel Admin y sus pantallas; solo cambios visuales
+const CACHE_NAME = 'ventas-app-cache-v173'; // v173: Mercadeo - collage y archivo en Full HD (1920px) + miniatura para la lista del historial
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
