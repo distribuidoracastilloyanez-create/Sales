@@ -569,7 +569,7 @@
 
     async function generarCollage(layout) {
         _layoutActual = layout;
-        const LADO = 1200, BORDE = 8;
+        const LADO = 1920, BORDE = 12;   // Full HD: mejor calidad para el archivo y la impresión
         const canvas = document.createElement('canvas');
         canvas.width = LADO; canvas.height = LADO;
         const ctx = canvas.getContext('2d');
@@ -664,17 +664,34 @@
         } catch (e) { return file; }
     }
 
+    // Se archivan DOS versiones de cada ejecución:
+    //   · Full HD (1920 px)  → para ver en detalle, compartir e imprimir
+    //   · Miniatura (250 px) → para la lista del historial
+    // Así la lista abre rápido y consume muy pocos datos, sin perder calidad
+    // cuando realmente se necesita.
     async function guardarEnHistorial(texto) {
         if (!_sel.archivo || !_sel.cliente) return;
         const g = (_sel.gestion !== null) ? _cfg.gestiones[_sel.gestion] : {};
         const ahora = new Date();
+        const sf = window.firebaseStorageFunctions;
         try {
-            const blob = await reducirImagen(_sel.archivo);
-            const nombre = `MERCADEO_${ahora.getTime()}.jpg`;
-            const ruta = `clientes/${_sel.cliente.id}/imagenes/${nombre}`;
-            const ref = window.firebaseStorageFunctions.ref(_storage, ruta);
-            await window.firebaseStorageFunctions.uploadBytes(ref, blob);
-            const url = await window.firebaseStorageFunctions.getDownloadURL(ref);
+            const base = `clientes/${_sel.cliente.id}/imagenes/MERCADEO_${ahora.getTime()}`;
+
+            // Full HD
+            const blobHD = await reducirImagen(_sel.archivo, 1920, 0.9);
+            const refHD = sf.ref(_storage, `${base}.jpg`);
+            await sf.uploadBytes(refHD, blobHD);
+            const url = await sf.getDownloadURL(refHD);
+
+            // Miniatura (si falla, la lista usa la imagen grande como respaldo)
+            let urlMini = '', rutaMini = '';
+            try {
+                const blobMini = await reducirImagen(_sel.archivo, 250, 0.7);
+                rutaMini = `${base}_mini.jpg`;
+                const refMini = sf.ref(_storage, rutaMini);
+                await sf.uploadBytes(refMini, blobMini);
+                urlMini = await sf.getDownloadURL(refMini);
+            } catch (eM) { console.warn('Miniatura no generada:', eM); rutaMini = ''; }
 
             const docRef = _doc(_collection(_db, pathHistorial()));
             await _setDoc(docRef, {
@@ -683,15 +700,19 @@
                 gestion: g.nombre || '',
                 marca: g.marca || '',
                 texto,
-                url, storagePath: ruta,
+                url, storagePath: `${base}.jpg`,
+                urlMini, storagePathMini: rutaMini,
                 fecha: ahora.toISOString(),
                 creadoPor: _userId
             });
-            console.log('Mercadeo: ejecución archivada.');
+            console.log('Mercadeo: ejecución archivada en Full HD.');
         } catch (e) {
             console.warn('No se pudo archivar la ejecución:', e);
         }
     }
+
+    // La lista usa la miniatura; si una ejecución antigua no la tiene, cae en la grande
+    const miniDe = h => h.urlMini || h.url;
 
     // ═══════════════ HISTORIAL DE EJECUCIONES (solo admin) ═══════════════
     let _histCache = null;
@@ -791,7 +812,7 @@
                         const fh = new Date(h.fecha);
                         const fs = isNaN(fh.getTime()) ? '' : fh.toLocaleDateString('es-VE', { day: '2-digit', month: '2-digit' });
                         return `<button type="button" data-id="${h.id}" class="mk-hist-item text-left border border-slate-200 rounded-lg overflow-hidden hover:border-slate-400 transition">
-                            <img src="${h.url}" loading="lazy" class="w-full h-16 object-cover bg-slate-100">
+                            <img src="${miniDe(h)}" loading="lazy" class="w-full h-16 object-cover bg-slate-100">
                             <div class="p-1">
                                 <div class="text-[9px] font-semibold text-slate-700 truncate">${h.gestion || ''}</div>
                                 <div class="text-[9px] text-slate-400">${fs}${nombreUsuario(h.creadoPor) ? ' · ' + nombreUsuario(h.creadoPor).split(' ')[0] : ''}</div>
@@ -801,7 +822,7 @@
                 </div>` : '';
             return `<div class="border border-slate-200 rounded-lg mb-1.5 overflow-hidden ${abierto ? 'border-slate-400' : ''}">
                 <button type="button" data-cli="${c.nombre.replace(/"/g, '&quot;')}" class="mk-cli-row w-full text-left flex items-center gap-2 p-2 hover:bg-slate-50 transition">
-                    <img src="${c.items[0].url}" loading="lazy" class="w-11 h-11 object-cover rounded border border-slate-200 shrink-0 bg-slate-100">
+                    <img src="${miniDe(c.items[0])}" loading="lazy" class="w-11 h-11 object-cover rounded border border-slate-200 shrink-0 bg-slate-100">
                     <div class="min-w-0 flex-1">
                         <div class="text-xs font-semibold text-slate-800 truncate">${c.nombre}</div>
                         <div class="text-[10px] text-slate-500">${c.items.length} ejecución(es) · última: ${ultimaStr}</div>
@@ -834,11 +855,13 @@
     // no quede ocupando espacio.
     async function borrarEjecucion(h) {
         try {
-            if (h.storagePath) {
+            // Se borran las DOS versiones (Full HD y miniatura)
+            for (const ruta of [h.storagePath, h.storagePathMini]) {
+                if (!ruta) continue;
                 try {
                     await window.firebaseStorageFunctions.deleteObject(
-                        window.firebaseStorageFunctions.ref(_storage, h.storagePath));
-                } catch (eImg) { console.warn('La imagen ya no existía:', eImg); }
+                        window.firebaseStorageFunctions.ref(_storage, ruta));
+                } catch (eImg) { console.warn('La imagen ya no existía:', ruta, eImg); }
             }
             await _deleteDoc(_doc(_db, pathHistorial(), h.id));
             _histCache = (_histCache || []).filter(x => x.id !== h.id);
