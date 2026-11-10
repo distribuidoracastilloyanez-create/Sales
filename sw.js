@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v174'; // v174: Mercadeo - nueva composicion de collage (1 alta a la izquierda, 2 apiladas a la derecha y banda abajo)
+const CACHE_NAME = 'ventas-app-cache-v175'; // v175: nuevo modulo Clientes por Gestionar - importa el Excel de la matriz, navega por GPS y permite marcar cada cliente como gestionado
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
@@ -26,6 +26,7 @@ const urlsToCache = [
   './adc.js',
   './mercadeo.js',
   './catalogo-fisico.js',
+  './inconsistencias.js',
     './archivos.js',
     './calculadora.js',
     // --- Librerías Externas ---
