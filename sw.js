@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v173'; // v173: Mercadeo - collage y archivo en Full HD (1920px) + miniatura para la lista del historial
+const CACHE_NAME = 'ventas-app-cache-v174'; // v174: Mercadeo - nueva composicion de collage (1 alta a la izquierda, 2 apiladas a la derecha y banda abajo)
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
