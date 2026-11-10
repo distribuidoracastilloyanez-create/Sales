@@ -137,7 +137,7 @@
 
                             <div id="mkCollageOpts" class="hidden mt-2 bg-slate-50 border border-slate-200 rounded-lg p-2.5">
                                 <p class="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Composición del collage</p>
-                                <div id="mkLayouts" class="grid grid-cols-3 gap-1.5"></div>
+                                <div id="mkLayouts" class="grid grid-cols-4 gap-1.5"></div>
                                 <p class="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mt-3 mb-1">Orden de las imágenes</p>
                                 <p class="text-[9px] text-slate-400 mb-1.5">Toca una imagen y luego otra para intercambiarlas de posición.</p>
                                 <div id="mkOrden" class="grid grid-cols-4 gap-1.5"></div>
@@ -307,7 +307,9 @@
         4: [
             { id: '2x2', nombre: 'Cuadrícula', celdas: [[0, 0, .5, .5], [.5, 0, .5, .5], [0, .5, .5, .5], [.5, .5, .5, .5]] },
             { id: 'v4', nombre: 'En columna', celdas: [[0, 0, 1, .25], [0, .25, 1, .25], [0, .5, 1, .25], [0, .75, 1, .25]] },
-            { id: '1-3', nombre: '1 grande, 3 abajo', celdas: [[0, 0, 1, .6], [0, .6, 1 / 3, .4], [1 / 3, .6, 1 / 3, .4], [2 / 3, .6, 1 / 3, .4]] }
+            { id: '1-3', nombre: '1 grande, 3 abajo', celdas: [[0, 0, 1, .6], [0, .6, 1 / 3, .4], [1 / 3, .6, 1 / 3, .4], [2 / 3, .6, 1 / 3, .4]] },
+            // Vertical a la izquierda, dos apiladas a la derecha y una banda abajo
+            { id: 'L2B', nombre: '1 alta, 2 y banda', celdas: [[0, 0, .5, .7], [.5, 0, .5, .35], [.5, .35, .5, .35], [0, .7, 1, .3]] }
         ]
     };
 
