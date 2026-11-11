@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v176'; // v176: Clientes por Gestionar - navegacion solo por Google Maps
+const CACHE_NAME = 'ventas-app-cache-v177'; // v177: Mercadeo - ahora se puede ALEJAR la imagen en el collage hasta verla completa, ademas de acercarla
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
