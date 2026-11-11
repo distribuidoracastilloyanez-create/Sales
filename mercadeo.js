@@ -147,7 +147,7 @@
                                 <img id="mkPreviewImg" class="w-full max-h-56 object-contain rounded-lg border border-slate-200 bg-slate-50">
                             </div>
                             <div id="mkEditor" class="hidden mt-2">
-                                <p class="text-[10px] text-slate-500 mb-1">Arrastra sobre una imagen para encuadrarla. Con dos dedos puedes acercarla.</p>
+                                <p class="text-[10px] text-slate-500 mb-1">Arrastra para encuadrar. Con dos dedos acercas o alejas la imagen.</p>
                                 <canvas id="mkCanvas" class="w-full rounded-lg border border-slate-200 bg-white touch-none"></canvas>
                             </div>
                         </div>
@@ -447,7 +447,11 @@
             if (dedos.size >= 2) {
                 const p = [...dedos.values()];
                 const dist = Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y) || 1;
-                const nz = Math.min(ZOOM_MAX, Math.max(1, zoomIni * (dist / distIni)));
+                // Se permite alejar por debajo de 1; el mínimo lo fija la geometría
+                // de cada celda (hasta ver la imagen completa).
+                const [, , celW2, celH2] = _layoutActual.celdas[activo];
+                const gz = geometria(_imgsCollage[activo], celW2 * PREV, celH2 * PREV, 1);
+                const nz = Math.min(ZOOM_MAX, Math.max(gz.zMin, zoomIni * (dist / distIni)));
                 _zooms[activo] = nz;
                 dibujarPreview();
                 return;
@@ -457,17 +461,18 @@
             const img = _imgsCollage[activo];
             const [, , celW, celH] = _layoutActual.celdas[activo];
             const w = celW * PREV, h = celH * PREV;
-            const { cw, ch, margenX, margenY } = recuadroDe(img, w, h, _zooms[activo]);
+            const { margenX, margenY } = geometria(img, w, h, _zooms[activo]);
 
-            // Píxeles de la imagen original por cada píxel movido en pantalla
-            const porPixelX = cw / (w * rect.width / PREV);
-            const porPixelY = ch / (h * rect.height / PREV);
-            const dx = (e.clientX - px0) * porPixelX;
-            const dy = (e.clientY - py0) * porPixelY;
+            // El movimiento se calcula en píxeles del lienzo
+            const k = PREV / rect.width;
+            const dx = (e.clientX - px0) * k;
+            const dy = (e.clientY - py0) * k;
 
-            // Al arrastrar hacia la derecha se muestra la parte izquierda
-            const nx = margenX > 0 ? off0.x - dx / margenX : 0.5;
-            const ny = margenY > 0 ? off0.y - dy / margenY : 0.5;
+            // Si la imagen desborda la celda (margen positivo), arrastrar hacia la
+            // derecha muestra la parte izquierda. Si está alejada y hay franjas,
+            // el margen es negativo y la imagen sigue al dedo de forma natural.
+            const nx = Math.abs(margenX) > 1 ? off0.x - dx / margenX : 0.5;
+            const ny = Math.abs(margenY) > 1 ? off0.y - dy / margenY : 0.5;
             _offsets[activo] = { x: Math.min(1, Math.max(0, nx)), y: Math.min(1, Math.max(0, ny)) };
             dibujarPreview();
         });
@@ -534,36 +539,36 @@
     // máximo a propósito: así SIEMPRE sobra margen y el recuadro se puede mover
     // tanto en vertical como en horizontal (antes, si la foto encajaba justo en
     // un eje, solo se podía mover en el otro).
-    const RECORTE = 0.80;
-
-    // Calcula el recuadro (en píxeles de la imagen original) que se mostrará
-    // en una celda de proporción w/h.
+    const RECORTE = 0.80;   // margen base para poder mover la imagen
     const ZOOM_MAX = 1.5;   // hasta 50% de acercamiento
 
-    function recuadroDe(img, w, h, zoom) {
-        const aspecto = w / h;
-        // Recorte máximo posible con la proporción de la celda
-        let cw = Math.min(img.width, img.height * aspecto);
-        let ch = cw / aspecto;
-        // Se reduce para dejar margen de movimiento en ambas direcciones.
-        // Al acercar (zoom) el recuadro se hace más pequeño, así que se ve
-        // una porción menor de la foto: eso es acercar la imagen.
-        const z = Math.min(ZOOM_MAX, Math.max(1, zoom || 1));
-        cw *= RECORTE / z; ch *= RECORTE / z;
-        return { cw, ch, margenX: img.width - cw, margenY: img.height - ch };
+    // Geometría de una imagen dentro de su celda.
+    //   zoom = 1   → encuadre normal (llena la celda y sobra margen para mover)
+    //   zoom > 1   → se acerca (se ve menos foto)
+    //   zoom < 1   → se aleja (se ve más foto; al mínimo, la imagen COMPLETA)
+    function geometria(img, w, h, zoom) {
+        const cubrir = Math.max(w / img.width, h / img.height);   // llena la celda
+        const caber  = Math.min(w / img.width, h / img.height);   // imagen completa
+        const base = cubrir / RECORTE;
+        // Alejar hasta ver la foto entera; no tiene sentido ir más allá
+        const zMin = Math.min(1, caber / base);
+        const z = Math.min(ZOOM_MAX, Math.max(zMin, zoom || 1));
+        const escala = base * z;
+        const nw = img.width * escala, nh = img.height * escala;
+        return { nw, nh, margenX: nw - w, margenY: nh - h, zMin };
     }
 
-    // Dibuja la parte elegida de la imagen llenando la celda, sin deformarla.
-    // `off` {x,y} va de 0 a 1: 0.5 es el centro, 0 el borde izquierdo/superior.
+    // Dibuja la imagen dentro de la celda según su encuadre y acercamiento.
+    // `off` {x,y} de 0 a 1 indica qué parte se ve (0.5 = centrada).
     function dibujarCubriendo(ctx, img, x, y, w, h, off, zoom) {
-        const { cw, ch, margenX, margenY } = recuadroDe(img, w, h, zoom);
+        const { nw, nh, margenX, margenY } = geometria(img, w, h, zoom);
         const ox = off && typeof off.x === 'number' ? off.x : 0.5;
         const oy = off && typeof off.y === 'number' ? off.y : 0.5;
-        const sx = margenX * Math.min(1, Math.max(0, ox));
-        const sy = margenY * Math.min(1, Math.max(0, oy));
         ctx.save();
         ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip();
-        ctx.drawImage(img, sx, sy, cw, ch, x, y, w, h);
+        // Fondo blanco: al alejar pueden quedar franjas a los lados
+        ctx.fillStyle = '#ffffff'; ctx.fillRect(x, y, w, h);
+        ctx.drawImage(img, x - margenX * Math.min(1, Math.max(0, ox)), y - margenY * Math.min(1, Math.max(0, oy)), nw, nh);
         ctx.restore();
     }
 
