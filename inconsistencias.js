@@ -190,8 +190,6 @@
                 <div class="p-3 space-y-2">
                     <a href="https://www.google.com/maps/dir/?api=1&destination=${i.lat},${i.lon}" target="_blank" rel="noopener"
                        class="block w-full py-2.5 text-white rounded-lg font-bold text-sm text-center" style="background:${AZUL}">Abrir en Google Maps</a>
-                    <a href="https://waze.com/ul?ll=${i.lat},${i.lon}&navigate=yes" target="_blank" rel="noopener"
-                       class="block w-full py-2.5 bg-slate-100 text-slate-700 rounded-lg font-bold text-sm text-center border border-slate-300">Abrir en Waze</a>
                     <button id="cgNavCerrar" class="w-full py-2 text-slate-500 text-xs font-bold">Cerrar</button>
                 </div>
             </div>`;
