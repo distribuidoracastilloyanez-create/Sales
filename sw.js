@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v177'; // v177: Mercadeo - ahora se puede ALEJAR la imagen en el collage hasta verla completa, ademas de acercarla
+const CACHE_NAME = 'ventas-app-cache-v178'; // v178: Inventario - edicion de precios en linea en la pantalla de filtros (solo admin), ajuste masivo por % y sin perder la posicion de la lista
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
