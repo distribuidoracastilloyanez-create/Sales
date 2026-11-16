@@ -13,6 +13,11 @@
     
     let _listenersUnsubscribes = []; 
     let _lastFilters = { searchTerm: '', rubro: '', segmento: '', marca: '' };
+    // Edición de precios en línea (solo admin): productoId -> { cj?, paq?, und? }
+    // Nada se escribe en Firestore hasta que se presiona "Guardar precios".
+    let _precioCambios = {};
+    // Posición de scroll de la lista de productos. null = conservar la que tenga.
+    let _listaScrollTop = null;
     let _recargaTempState = {}; 
     let _recargaModelosState = {}; // productId -> { modelo: unidadesAAgregar } (recarga por modelo)
 
@@ -630,6 +635,7 @@
         }
 
         const applyAndSaveChanges = () => {
+            _listaScrollTop = 0; // al cambiar un filtro la lista arranca desde arriba
             _lastFilters.searchTerm = searchInput.value || '';
             _lastFilters.rubro = rubroFilter.value || '';
             _lastFilters.segmento = segmentoFilter.value || '';
@@ -649,6 +655,7 @@
     async function showModifyDeleteView() {
         if (_floatingControls) _floatingControls.classList.add('hidden'); 
         const isAdmin = _userRole === 'admin';
+        _precioCambios = {}; // se entra siempre sin cambios de precio pendientes
        
         _mainContent.innerHTML = `
             <div class="p-2 md:p-6 pt-8 max-w-7xl mx-auto"> 
@@ -663,10 +670,29 @@
                     </div>
                     
                     ${getFiltrosHTML('modify')} 
-                    
+
+                    ${isAdmin ? `
+                    <div class="mb-4 p-3 rounded-lg border border-emerald-200 bg-emerald-50/70 flex flex-col lg:flex-row lg:items-center gap-3">
+                        <p class="text-xs text-emerald-900 flex-1 leading-relaxed">
+                            <strong>Edición rápida de precios:</strong> escribe el nuevo precio directamente en la columna <strong>Precio</strong>.
+                            Los cambios se marcan en amarillo y se guardan todos juntos, sin salir de esta pantalla ni perder los filtros.
+                        </p>
+                        <div class="flex items-center gap-2 shrink-0">
+                            <input type="number" id="precioAjustePct" step="0.01" placeholder="%" title="Ejemplo: 5 sube 5%, -5 baja 5%" class="w-24 px-2 py-2 border border-emerald-300 rounded-lg text-sm text-center font-bold outline-none focus:ring-2 focus:ring-emerald-400">
+                            <button id="precioAjusteBtn" class="px-4 py-2 bg-emerald-600 text-white text-xs font-bold rounded-lg shadow hover:bg-emerald-700 transition whitespace-nowrap">Aplicar % a lo filtrado</button>
+                        </div>
+                    </div>` : ''}
+
                     <div id="productosListContainer" class="overflow-x-auto max-h-[65vh] border border-gray-300 rounded-xl shadow-inner bg-white"> 
                          <p class="text-gray-500 text-center p-8 font-medium animate-pulse">Cargando y organizando inventario...</p>
                     </div> 
+
+                    ${isAdmin ? `
+                    <div id="precioBarra" class="hidden sticky bottom-3 z-30 mt-4 bg-white border-2 border-emerald-500 rounded-xl shadow-2xl p-3 flex items-center gap-3 flex-wrap">
+                        <span id="precioBarraTxt" class="text-sm font-bold text-emerald-800 flex-1 min-w-[170px]"></span>
+                        <button id="precioDescartar" class="px-4 py-2 bg-gray-200 text-gray-700 text-xs font-bold rounded-lg hover:bg-gray-300 transition">Descartar</button>
+                        <button id="precioGuardar" class="px-6 py-2 bg-emerald-600 text-white text-sm font-bold rounded-lg shadow hover:bg-emerald-700 transition">Guardar precios</button>
+                    </div>` : ''}
                     
                     <div class="mt-6 flex flex-col sm:flex-row gap-4 justify-between"> 
                         <button id="backToInventarioBtnBottom" class="w-full sm:w-auto px-8 py-3 bg-gray-500 text-white font-bold rounded-lg shadow hover:bg-gray-600 transition-colors">Volver al Menú</button> 
@@ -680,6 +706,10 @@
         
         if (isAdmin) {
             document.getElementById('deleteAllProductosBtn')?.addEventListener('click', handleDeleteAllProductos);
+            document.getElementById('precioAjusteBtn')?.addEventListener('click', ajustarPreciosFiltrados);
+            document.getElementById('precioGuardar')?.addEventListener('click', guardarPrecios);
+            document.getElementById('precioDescartar')?.addEventListener('click', descartarPrecios);
+            _actualizarBarraPrecios();
         }
 
         const baseRender = () => renderProductosList('productosListContainer', !isAdmin);
@@ -728,6 +758,11 @@
         _lastRenderElementId = elementId; _lastRenderReadOnly = readOnly;
         const container = document.getElementById(elementId);
         if (!container) return;
+
+        // Conservar el punto donde estaba la lista: al guardar un precio (o volver de
+        // editar un producto) NO se debe saltar al principio de la pantalla.
+        const scrollPrevio = (_listaScrollTop !== null) ? _listaScrollTop : (container.scrollTop || 0);
+        _listaScrollTop = null;
 
         container.innerHTML = '<div class="flex justify-center items-center p-12 text-gray-500 font-bold animate-pulse">Procesando y Ordenando...</div>';
 
@@ -780,7 +815,7 @@
                         <th class="py-3 px-4 uppercase font-semibold tracking-wider">Presentación</th>
                         <th class="py-3 px-4 uppercase font-semibold tracking-wider hidden sm:table-cell">Marca</th>
                         <th class="py-3 px-4 uppercase font-semibold tracking-wider text-center">Cod P.</th>
-                        <th class="py-3 px-4 uppercase font-semibold tracking-wider text-right">Precio</th>
+                        <th class="py-3 px-4 uppercase font-semibold tracking-wider text-right">Precio${readOnly ? '' : ' <span class="normal-case text-[10px] font-normal text-emerald-300">(editable)</span>'}</th>
                         <th class="py-3 px-4 uppercase font-semibold tracking-wider text-center">Stock</th>
                         <th class="py-3 px-4 uppercase font-semibold tracking-wider text-center">Pedidos</th>
                         <th class="py-3 px-4 uppercase font-semibold tracking-wider text-center">Disponible</th>
@@ -824,6 +859,26 @@
                 labelPrecio = `<span class="text-gray-500 text-xs">Un</span> $${(pre.und || 0).toFixed(2)}`;
             }
 
+            // --- CELDA DE PRECIO ---
+            // El vendedor solo la lee. El administrador la edita aquí mismo, sin salir de
+            // la pantalla de filtros: un campo por cada presentación que el producto
+            // realmente vende (Cj / Pq / Un). Nada se guarda hasta presionar "Guardar precios".
+            // Los productos que ya no existen en el catálogo maestro (huérfanos) no se editan.
+            const enMaestro = !!_masterCatalogCache[p.id];
+            const celdaPrecio = (readOnly || !enMaestro)
+                ? labelPrecio
+                : _preciosActivos(p).map(x => {
+                    const val = _precioValorDe(p, x.k);
+                    const editado = !!(_precioCambios[p.id] && _precioCambios[p.id][x.k] !== undefined);
+                    return `<div class="flex items-center justify-end gap-1 py-0.5">
+                                <span class="text-[10px] font-bold text-gray-400 w-5 text-right">${x.lab}</span>
+                                <span class="text-xs text-gray-400">$</span>
+                                <input type="number" step="0.01" min="0" inputmode="decimal"
+                                       value="${val.toFixed(2)}" data-pid="${p.id}" data-pk="${x.k}"
+                                       class="precio-inp w-20 px-1.5 py-1 border rounded text-sm font-bold text-right outline-none focus:ring-2 focus:ring-emerald-400 ${editado ? 'border-amber-500 bg-amber-50' : 'border-gray-300'}">
+                            </div>`;
+                  }).join('');
+
             const stockReal = p.cantidadUnidades || 0;
             const apartado = comprometidos[p.id] || 0;
             const disponible = stockReal - apartado;
@@ -843,7 +898,7 @@
                     </td>
                     <td class="py-3 px-4 text-gray-600 hidden sm:table-cell">${p.marca || 'S/M'}</td>
                     <td class="py-3 px-4 text-center">${p.codigoPolar ? `<span class="font-bold text-gray-700">${p.codigoPolar}</span>` : '<span class="text-gray-300">—</span>'}</td>
-                    <td class="py-3 px-4 font-bold text-gray-900 text-right">${labelPrecio}</td>
+                    <td class="py-2 px-3 font-bold text-gray-900 text-right">${celdaPrecio}</td>
                     <td class="py-3 px-4 text-center text-gray-500">
                         ${stockDisplayHtml}
                     </td>
@@ -867,7 +922,158 @@
 
         html += `</tbody></table>`;
         container.innerHTML = html;
+        container.scrollTop = scrollPrevio;
         document.getElementById('btnCorregirNegativos')?.addEventListener('click', corregirStockNegativo);
+        if (!readOnly) { _wirePrecioInputs(container); _actualizarBarraPrecios(); }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // EDICIÓN DE PRECIOS EN LÍNEA (solo admin)
+    // Se edita el precio en la misma pantalla de filtros (Rubro / Segmento / Marca),
+    // sin entrar al formulario completo del producto y sin volver al tope de la
+    // página después de cada guardado. Los cambios se acumulan y se escriben en
+    // una sola pasada al catálogo maestro, que es de donde todos los módulos leen
+    // el precio vigente.
+    // ═══════════════════════════════════════════════════════════════════════
+    const _PRECIO_KEYS = [{ k: 'cj', lab: 'Cj' }, { k: 'paq', lab: 'Pq' }, { k: 'und', lab: 'Un' }];
+
+    // Solo las presentaciones que el producto realmente vende.
+    function _preciosActivos(p) {
+        const vPor = p.ventaPor || { und: true };
+        const activos = _PRECIO_KEYS.filter(x => vPor[x.k]);
+        return activos.length ? activos : [{ k: 'und', lab: 'Un' }];
+    }
+
+    // Valor a mostrar: el que el admin acaba de escribir, o el guardado.
+    function _precioValorDe(p, k) {
+        const ch = _precioCambios[p.id];
+        if (ch && ch[k] !== undefined) return Number(ch[k]) || 0;
+        const pre = p.precios || { und: p.precioPorUnidad || 0 };
+        return Number(pre[k] || 0);
+    }
+
+    function _actualizarBarraPrecios() {
+        const barra = document.getElementById('precioBarra');
+        if (!barra) return;
+        const n = Object.keys(_precioCambios).length;
+        barra.classList.toggle('hidden', n === 0);
+        const txt = document.getElementById('precioBarraTxt');
+        if (txt) txt.innerHTML = `<strong>${n}</strong> producto(s) con precio modificado sin guardar.`;
+    }
+
+    function _wirePrecioInputs(container) {
+        container.querySelectorAll('.precio-inp').forEach(inp => {
+            inp.addEventListener('focus', () => { try { inp.select(); } catch (e) {} });
+            // Evita que la rueda del mouse cambie el precio sin querer al desplazar la lista
+            inp.addEventListener('wheel', () => { inp.blur(); }, { passive: true });
+            inp.addEventListener('input', () => {
+                const pid = inp.dataset.pid, k = inp.dataset.pk;
+                const prod = _inventarioCache.find(x => x.id === pid);
+                if (!prod) return;
+                const orig = Number((prod.precios || {})[k] || 0);
+                const txt = (inp.value || '').trim();
+                const nuevo = parseFloat(txt);
+                const invalido = txt === '' || isNaN(nuevo) || nuevo < 0;
+
+                const olvidar = () => {
+                    if (!_precioCambios[pid]) return;
+                    delete _precioCambios[pid][k];
+                    if (!Object.keys(_precioCambios[pid]).length) delete _precioCambios[pid];
+                };
+
+                if (invalido || Math.abs(nuevo - orig) < 0.0001) {
+                    olvidar();
+                } else {
+                    if (!_precioCambios[pid]) _precioCambios[pid] = {};
+                    _precioCambios[pid][k] = Math.round(nuevo * 100) / 100;
+                }
+
+                const marcado = !!(_precioCambios[pid] && _precioCambios[pid][k] !== undefined);
+                inp.classList.toggle('border-red-500', invalido);
+                inp.classList.toggle('bg-red-50', invalido);
+                inp.classList.toggle('border-amber-500', marcado && !invalido);
+                inp.classList.toggle('bg-amber-50', marcado && !invalido);
+                inp.classList.toggle('border-gray-300', !marcado && !invalido);
+                _actualizarBarraPrecios();
+            });
+        });
+    }
+
+    // Sube o baja un porcentaje a TODOS los productos que están en pantalla según
+    // los filtros actuales. Solo llena los campos: nada se guarda hasta confirmar.
+    function ajustarPreciosFiltrados() {
+        if (_userRole !== 'admin') return;
+        const pct = parseFloat(document.getElementById('precioAjustePct')?.value);
+        if (isNaN(pct) || pct === 0) {
+            _showModal('Ajuste de precios', 'Escribe un porcentaje distinto de 0.<br><br>Ejemplo: <strong>5</strong> para subir 5%, <strong>-5</strong> para bajar 5%.');
+            return;
+        }
+        const inputs = Array.from(document.querySelectorAll('#productosListContainer .precio-inp'));
+        const ids = new Set(inputs.map(i => i.dataset.pid));
+        if (!ids.size) { _showModal('Ajuste de precios', 'No hay productos editables en pantalla con estos filtros.'); return; }
+
+        _showModal('Confirmar ajuste',
+            `Se aplicará <strong>${pct > 0 ? '+' : ''}${pct}%</strong> a los precios de los <strong>${ids.size}</strong> producto(s) que están en pantalla con los filtros actuales.<br><br>Los precios quedan marcados en amarillo y <u>NO se guardan</u> hasta que presiones <strong>Guardar precios</strong>.`,
+            () => {
+                let tocados = 0;
+                inputs.forEach(inp => {
+                    const actual = parseFloat(inp.value);
+                    if (isNaN(actual) || actual <= 0) return; // no se puede escalar desde 0
+                    inp.value = (Math.round(actual * (1 + pct / 100) * 100) / 100).toFixed(2);
+                    inp.dispatchEvent(new Event('input', { bubbles: true }));
+                    tocados++;
+                });
+                _actualizarBarraPrecios();
+                document.getElementById('precioAjustePct').value = '';
+                _showModal('Ajuste aplicado', `Se recalcularon <strong>${tocados}</strong> precio(s) en pantalla. Revísalos y presiona <strong>Guardar precios</strong> para confirmar.`);
+            }, 'Sí, aplicar', () => {});
+    }
+
+    function descartarPrecios() {
+        if (!Object.keys(_precioCambios).length) return;
+        _showModal('Descartar cambios', 'Se perderán los precios modificados que todavía no has guardado. ¿Continuar?', async () => {
+            _precioCambios = {};
+            _actualizarBarraPrecios();
+            await renderProductosList(_lastRenderElementId || 'productosListContainer', _lastRenderReadOnly);
+        }, 'Sí, descartar', () => {});
+    }
+
+    async function guardarPrecios() {
+        if (_userRole !== 'admin') return;
+        const ids = Object.keys(_precioCambios).filter(id => !!_masterCatalogCache[id]);
+        if (!ids.length) { _precioCambios = {}; _actualizarBarraPrecios(); return; }
+
+        const btn = document.getElementById('precioGuardar');
+        if (btn) { btn.disabled = true; btn.textContent = 'Guardando...'; }
+        try {
+            let batch = _writeBatch(_db);
+            let ops = 0;
+            for (const id of ids) {
+                const prod = _masterCatalogCache[id] || {};
+                const nuevos = { und: 0, paq: 0, cj: 0, ...(prod.precios || {}), ..._precioCambios[id] };
+                batch.set(_doc(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/productos`, id),
+                          { precios: nuevos, lastUpdated: new Date() }, { merge: true });
+                // Reflejar de una vez en memoria para que la lista muestre el precio nuevo
+                prod.precios = nuevos;
+                const enLista = _inventarioCache.find(x => x.id === id);
+                if (enLista) enLista.precios = { ...nuevos };
+                ops++;
+                if (ops >= 400) { await batch.commit(); batch = _writeBatch(_db); ops = 0; }
+            }
+            if (ops > 0) await batch.commit();
+            window.invalidarCatalogo?.();
+
+            const n = ids.length;
+            _precioCambios = {};
+            _actualizarBarraPrecios();
+            if (btn) { btn.disabled = false; btn.textContent = 'Guardar precios'; }
+            await renderProductosList(_lastRenderElementId || 'productosListContainer', _lastRenderReadOnly);
+            _showModal('Precios actualizados', `Se guardaron los precios de <strong>${n}</strong> producto(s).`);
+        } catch (e) {
+            console.error('Precios:', e);
+            if (btn) { btn.disabled = false; btn.textContent = 'Guardar precios'; }
+            _showModal('Error', 'No se pudieron guardar los precios. Revisa la conexión e inténtalo de nuevo.');
+        }
     }
 
     // =========================================================================================
@@ -1510,6 +1716,8 @@
     }
 
     async function editProducto(productId) {
+        // Recordar dónde estaba la lista para regresar al mismo punto al guardar
+        _listaScrollTop = document.getElementById('productosListContainer')?.scrollTop || 0;
         if (_userRole !== 'admin') { _showModal('Acceso Denegado', 'Solo administradores pueden editar definiciones.'); return; } const prod = _inventarioCache.find(p => p.id === productId); if (!prod) { _showModal('Error', 'Producto no encontrado en caché.'); return; } if (_floatingControls) _floatingControls.classList.add('hidden');
         _mainContent.innerHTML = `<div class="p-4 pt-8"> <div class="container mx-auto max-w-2xl"> <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl text-center"> <h2 class="text-2xl font-bold mb-6">Editar Producto</h2> <form id="editProductoForm" class="space-y-4 text-left"> <div class="grid grid-cols-1 md:grid-cols-2 gap-4"> <div> <label for="rubro">Rubro:</label> <div class="flex items-center space-x-2"> <select id="rubro" class="w-full px-4 py-2 border rounded-lg" required></select> <button type="button" onclick="window.inventarioModule.showAddCategoryModal('rubros','Rubro')" class="px-3 py-2 bg-blue-500 text-white rounded-lg text-xs hover:bg-blue-600">+</button> </div> </div> <div> <label for="segmento">Segmento:</label> <div class="flex items-center space-x-2"> <select id="segmento" class="w-full px-4 py-2 border rounded-lg" required></select> <button type="button" onclick="window.inventarioModule.showAddCategoryModal('segmentos','Segmento')" class="px-3 py-2 bg-blue-500 text-white rounded-lg text-xs hover:bg-blue-600">+</button> </div> </div> <div> <label for="marca">Marca:</label> <div class="flex items-center space-x-2"> <select id="marca" class="w-full px-4 py-2 border rounded-lg" required></select> <button type="button" onclick="window.inventarioModule.showAddCategoryModal('marcas','Marca')" class="px-3 py-2 bg-blue-500 text-white rounded-lg text-xs hover:bg-blue-600">+</button> </div> </div> <div> <label for="presentacion">Presentación:</label> <input type="text" id="presentacion" class="w-full px-4 py-2 border rounded-lg" required> </div> <div> <label for="codigoPolar">Cod P. (Código Polar):</label> <input type="text" id="codigoPolar" value="${prod.codigoPolar || ''}" placeholder="Opcional" class="w-full px-4 py-2 border rounded-lg uppercase"> <p class="text-[10px] text-gray-500 mt-1">Se guarda en mayúsculas.</p> </div> </div> <div class="border-t pt-4 mt-4"> <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4"> <div> <label class="block mb-2 font-medium">Venta por:</label> <div id="ventaPorContainer" class="flex space-x-4"> <label class="flex items-center"><input type="checkbox" id="ventaPorUnd" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> <span class="ml-2">Und.</span></label> <label class="flex items-center"><input type="checkbox" id="ventaPorPaq" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> <span class="ml-2">Paq.</span></label> <label class="flex items-center"><input type="checkbox" id="ventaPorCj" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> <span class="ml-2">Cj.</span></label> </div> </div> <div class="mt-4 md:mt-0"> <label class="flex items-center cursor-pointer"> <input type="checkbox" id="manejaVaciosCheck" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> <span class="ml-2 font-medium">Maneja Vacío</span> </label> <div id="tipoVacioContainer" class="mt-2 hidden"> <label for="tipoVacioSelect" class="block text-sm font-medium">Tipo:</label> <select id="tipoVacioSelect" class="w-full mt-1 px-2 py-1 border rounded-lg text-sm bg-gray-50"> <option value="">Seleccione...</option> <option value="1/4 - 1/3">1/4 - 1/3</option> <option value="ret 350 ml">Ret 350 ml</option> <option value="ret 1.25 Lts">Ret 1.25 Lts</option> </select> </div> </div> </div> <div id="manejaModelosBlock" class="mt-4 border-t pt-4"> <label class="flex items-center cursor-pointer"> <input type="checkbox" id="manejaModelosCheck" class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"> <span class="ml-2 font-medium">Maneja modelos (ej: plumita, tornillo, vermicelli, dedal)</span> </label> <div id="modelosContainer" class="mt-2 hidden"> <div class="flex items-center gap-2"> <input type="text" id="modeloInput" placeholder="Nombre del modelo" class="flex-1 px-3 py-2 border rounded-lg text-sm"> <button type="button" id="modeloAddBtn" class="px-4 py-2 bg-indigo-500 text-white rounded-lg text-sm font-bold hover:bg-indigo-600">+</button> </div> <div id="modelosLista" class="flex flex-wrap gap-2 mt-2"></div> <p class="text-[10px] text-gray-500 mt-1">Agrega cada modelo y presiona +. El stock por modelo se asigna en la Recarga.</p> </div> </div> <div id="empaquesContainer" class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4"></div> <div id="preciosContainer" class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4"></div> </div> <div class="border-t pt-4 mt-4"> <div class="grid grid-cols-1 md:grid-cols-2 gap-4"> <div> <label for="cantidadActual" class="block font-medium">Stock Actual (Und. Base):</label> <input type="number" id="cantidadActual" value="${prod.cantidadUnidades||0}" class="w-full mt-1 px-4 py-2 border rounded-lg bg-gray-100 text-gray-500 cursor-not-allowed" readonly title="La cantidad se modifica en 'Ajuste Masivo'"> <p class="text-[10px] text-gray-500 mt-1">Modificar en "Recarga" o "Ajuste Masivo".</p> </div> <div> <label for="ivaTipo" class="block font-medium">IVA:</label> <select id="ivaTipo" class="w-full mt-1 px-4 py-2 border rounded-lg bg-white" required> <option value="16">16%</option> <option value="0">Exento 0%</option> </select> </div> </div> </div> <button type="submit" class="w-full px-6 py-3 bg-blue-500 text-white font-semibold rounded-lg shadow-md hover:bg-blue-600 transition duration-150">Guardar Cambios y Propagar</button> </form> <button id="backToModifyDeleteBtn" class="mt-4 w-full px-6 py-3 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500 transition duration-150">Volver</button> </div> </div> </div>`;
 
@@ -2130,5 +2338,3 @@
     };
 
 })();
-
-
