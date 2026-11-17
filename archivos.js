@@ -54,6 +54,14 @@
 
     const PUBLIC_DATA_ID = window.AppConfig.PUBLIC_DATA_ID;
 
+    // Formatos aceptados como "documento". Se incluyen imágenes porque muchos
+    // documentos llegan como foto (cédula, RIF, permisos) desde el teléfono.
+    const ACCEPT_DOCUMENTOS = '.pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,image/png,image/jpeg';
+    const EXT_IMAGEN = ['png', 'jpg', 'jpeg', 'webp'];
+
+    // El rol puede cambiar durante la sesión; se consulta el global si existe.
+    function esAdmin() { return (window.userRole || _userRole) === 'admin'; }
+
     let _clientesCache       = [];
     let _archivosCache       = [];
     let _clienteSeleccionado = null;
@@ -298,7 +306,10 @@
                                         </label>
                                         <input type="file" id="arcFileInput"
                                             class="w-full p-2 border border-gray-300 rounded bg-white text-sm"
-                                            accept=".pdf,.doc,.docx,.xls,.xlsx">
+                                            accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,image/png,image/jpeg">
+                                        <p id="arcFormatosHint" class="text-[10px] text-gray-500 mt-1">
+                                            Se aceptan PDF, Word, Excel e imágenes (PNG o JPG).
+                                        </p>
                                         <p id="multiFileHint" class="text-[10px] text-gray-500 mt-1 hidden">
                                             Puede seleccionar varias fotos a la vez para este registro.
                                         </p>
@@ -511,10 +522,13 @@
 
         // Los equipos ADC ya NO se manejan aquí: tienen su propio módulo
         // (Archivos > Gestión de ADC). Esta pantalla es solo documentos e imágenes.
+        const formatosHint = document.getElementById('arcFormatosHint');
+
         if (_categoriaActual === 'documentos') {
-            fileInput.accept = '.pdf,.doc,.docx,.xls,.xlsx';
+            fileInput.accept = ACCEPT_DOCUMENTOS;
             fileInput.removeAttribute('multiple');
             multiHint.classList.add('hidden');
+            formatosHint?.classList.remove('hidden');
             title.textContent     = 'Documentos Guardados';
             btnAddText.textContent = _isShareMode ? `Subir como Documento` : 'Agregar Documento';
             formTitle.textContent  = _isShareMode ? 'Subir archivos recibidos como Documento' : 'Subir Nuevo Documento';
@@ -524,6 +538,7 @@
             fileInput.accept = 'image/png, image/jpeg, image/jpg';
             fileInput.setAttribute('multiple', 'true');
             multiHint.classList.remove('hidden');
+            formatosHint?.classList.add('hidden');
             title.textContent     = 'Registros Fotográficos del Cliente';
             btnAddText.textContent = _isShareMode ? `Subir como Imágenes` : 'Agregar Registro de Imágenes';
             formTitle.textContent  = _isShareMode ? 'Subir imágenes recibidas' : 'Subir Nuevo Lote de Imágenes';
@@ -660,6 +675,7 @@
             _archivosCache = snap.docs.map(d => ({ id: d.id, ...d.data() }));
             _archivosCache.sort((a, b) => new Date(b.fechaCreacion) - new Date(a.fechaCreacion));
 
+            const puedeBorrar = esAdmin(); // borrar sigue siendo exclusivo de administradores
             let html = '';
             _archivosCache.forEach(arc => {
                 const d           = new Date(arc.fechaCreacion);
@@ -699,22 +715,36 @@
                                 <p class="text-[11px] text-gray-500 font-mono">${fechaFormat}</p>
                                 ${metaHTML}
                             </div>
-                            <button onclick="window.archivosModule.eliminarArchivo('${arc.id}')"
+                            ${puedeBorrar ? `<button onclick="window.archivosModule.eliminarArchivo('${arc.id}')"
                                 class="mt-3 w-full py-1.5 bg-red-50 text-red-600 hover:bg-red-600 hover:text-white border border-red-200 hover:border-transparent rounded text-xs font-bold transition uppercase tracking-wide">
                                 Eliminar Registro Completo
-                            </button>
+                            </button>` : ''}
                         </div>`;
                 } else {
+                    // Un documento puede ser PDF/Word/Excel o una imagen (cédula, RIF,
+                    // permiso fotografiado). Si es imagen se muestra la miniatura;
+                    // si no, un distintivo con el tipo de archivo.
+                    const ext      = (arc.fileName || '').split('.').pop().toLowerCase();
+                    const esImagen = EXT_IMAGEN.includes(ext);
+                    const previa   = esImagen
+                        ? `<a href="${arc.url}" target="_blank" class="block w-14 h-14 shrink-0 rounded border border-gray-200 overflow-hidden bg-gray-100">
+                               <img src="${arc.url}" alt="${arc.fileName}" loading="lazy" class="w-full h-full object-cover">
+                           </a>`
+                        : `<div class="w-14 h-14 shrink-0 rounded border border-gray-200 bg-gray-50 flex items-center justify-center text-[10px] font-black text-gray-500 tracking-wide">${(ext || 'DOC').toUpperCase().slice(0, 4)}</div>`;
+
                     html += `
-                        <div class="bg-white p-4 rounded-lg shadow border border-gray-200 flex items-center justify-between gap-3 hover:bg-teal-50 transition">
+                        <div class="bg-white p-3 rounded-lg shadow border border-gray-200 flex items-center justify-between gap-3 hover:bg-teal-50 transition">
                             <div class="flex items-center gap-3 overflow-hidden">
-                                <div class="text-3xl"></div>
+                                ${previa}
                                 <div class="overflow-hidden">
                                     <p class="text-[11px] text-gray-500 font-mono">${fechaFormat}</p>
                                     <a href="${arc.url}" target="_blank" class="text-sm font-bold text-teal-700 hover:underline truncate block" title="${arc.fileName}">${arc.fileName}</a>
                                 </div>
                             </div>
-                            <button onclick="window.archivosModule.eliminarArchivo('${arc.id}')" class="p-2 text-gray-400 hover:text-red-600 transition" title="Eliminar"></button>
+                            ${puedeBorrar ? `<button onclick="window.archivosModule.eliminarArchivo('${arc.id}')"
+                                class="shrink-0 px-3 py-1.5 bg-red-50 text-red-600 hover:bg-red-600 hover:text-white border border-red-200 hover:border-transparent rounded text-xs font-bold transition uppercase tracking-wide">
+                                Eliminar
+                            </button>` : ''}
                         </div>`;
                 }
             });
@@ -731,7 +761,7 @@
     // Eliminar archivo (solo admins)
     // ─────────────────────────────────────────────────────────────────────────
     async function eliminarArchivo(docId) {
-        if (_userRole !== 'admin') {
+        if (!esAdmin()) {
             _showModal('Acceso Denegado', 'Solo los administradores pueden borrar archivos.');
             return;
         }
