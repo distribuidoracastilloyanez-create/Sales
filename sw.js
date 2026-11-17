@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v178'; // v178: Inventario - edicion de precios en linea en la pantalla de filtros (solo admin), ajuste masivo por % y sin perder la posicion de la lista
+const CACHE_NAME = 'ventas-app-cache-v179'; // v179: Archivos de Cliente - los documentos aceptan imagenes PNG/JPG (cedula, RIF), miniatura en la lista y boton Eliminar visible para administradores
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
