@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v179'; // v179: Archivos de Cliente - los documentos aceptan imagenes PNG/JPG (cedula, RIF), miniatura en la lista y boton Eliminar visible para administradores
+const CACHE_NAME = 'ventas-app-cache-v180'; // v180: Archivos de Cliente - en Documentos se pueden seleccionar hasta 3 archivos a la vez, cada uno queda como un registro propio
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
