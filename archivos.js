@@ -59,6 +59,10 @@
     const ACCEPT_DOCUMENTOS = '.pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,image/png,image/jpeg';
     const EXT_IMAGEN = ['png', 'jpg', 'jpeg', 'webp'];
 
+    // Tope de archivos por carga en la pestaña de Documentos. Cada archivo queda
+    // como un registro propio, para poder abrirlo o borrarlo por separado.
+    const MAX_DOCUMENTOS = 3;
+
     // El rol puede cambiar durante la sesión; se consulta el global si existe.
     function esAdmin() { return (window.userRole || _userRole) === 'admin'; }
 
@@ -308,7 +312,7 @@
                                             class="w-full p-2 border border-gray-300 rounded bg-white text-sm"
                                             accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,image/png,image/jpeg">
                                         <p id="arcFormatosHint" class="text-[10px] text-gray-500 mt-1">
-                                            Se aceptan PDF, Word, Excel e imágenes (PNG o JPG).
+                                            Se aceptan PDF, Word, Excel e imágenes (PNG o JPG). Puede seleccionar hasta 3 archivos a la vez.
                                         </p>
                                         <p id="multiFileHint" class="text-[10px] text-gray-500 mt-1 hidden">
                                             Puede seleccionar varias fotos a la vez para este registro.
@@ -526,7 +530,7 @@
 
         if (_categoriaActual === 'documentos') {
             fileInput.accept = ACCEPT_DOCUMENTOS;
-            fileInput.removeAttribute('multiple');
+            fileInput.setAttribute('multiple', 'true');
             multiHint.classList.add('hidden');
             formatosHint?.classList.remove('hidden');
             title.textContent     = 'Documentos Guardados';
@@ -568,6 +572,15 @@
             filesToUpload = Array.from(fileInput.files);
         }
 
+        // En Documentos se permiten varios archivos, pero con tope, para que una
+        // selección descuidada no cargue una carpeta entera a la nube. El tope se
+        // aplica a la selección manual; lo que llega compartido desde otra app se
+        // sube completo, porque ahí el usuario no puede quitar archivos de la lista.
+        if (_categoriaActual !== 'imagenes' && !_isShareMode && filesToUpload.length > MAX_DOCUMENTOS) {
+            _showModal('Demasiados archivos', `Puede subir hasta <strong>${MAX_DOCUMENTOS}</strong> documentos a la vez y seleccionó <strong>${filesToUpload.length}</strong>.<br><br>Quite algunos y vuelva a intentarlo.`);
+            return;
+        }
+
         _showModal('Subiendo...', `Subiendo ${filesToUpload.length} archivo(s)...`, null, '', null, false);
 
         try {
@@ -598,23 +611,26 @@
                 await _addDoc(_collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/archivos_clientes`), docData);
 
             } else {
-                // DOCUMENTO INDIVIDUAL
-                const file        = filesToUpload[0];
-                const uniqueName  = `${exactMomentMs}_${file.name}`;
-                const storagePath = `clientes/${_clienteSeleccionado.id}/${_categoriaActual}/${uniqueName}`;
-                const refObj      = window.firebaseStorageFunctions.ref(_storage, storagePath);
-                await window.firebaseStorageFunctions.uploadBytes(refObj, file);
-                const downloadURL = await window.firebaseStorageFunctions.getDownloadURL(refObj);
+                // DOCUMENTOS: cada archivo se guarda como un registro independiente,
+                // así cada uno se abre, se descarga o se borra por separado.
+                await Promise.all(filesToUpload.map(async (file, index) => {
+                    const uniqueName  = `${exactMomentMs}_${index}_${file.name}`;
+                    const storagePath = `clientes/${_clienteSeleccionado.id}/${_categoriaActual}/${uniqueName}`;
+                    const refObj      = window.firebaseStorageFunctions.ref(_storage, storagePath);
+                    await window.firebaseStorageFunctions.uploadBytes(refObj, file);
+                    const downloadURL = await window.firebaseStorageFunctions.getDownloadURL(refObj);
 
-                await _addDoc(_collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/archivos_clientes`), {
-                    clienteId:    _clienteSeleccionado.id,
-                    categoria:    _categoriaActual,
-                    fileName:     file.name,
-                    storagePath,
-                    url:          downloadURL,
-                    fechaCreacion: exactMomentISO,
-                    subidoPor:    _userId
-                });
+                    await _addDoc(_collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/archivos_clientes`), {
+                        clienteId:    _clienteSeleccionado.id,
+                        categoria:    _categoriaActual,
+                        fileName:     file.name,
+                        storagePath,
+                        url:          downloadURL,
+                        // Separación de milisegundos para conservar el orden de selección
+                        fechaCreacion: new Date(exactMomentMs + index).toISOString(),
+                        subidoPor:    _userId
+                    });
+                }));
             }
 
             // ── Post-subida ──────────────────────────────────────────────────
