@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v181'; // v181: Mapa de Clientes - seguimiento de la gestion de codigos CEP (marcar en amarillo) y boton Mi Ubicacion con GPS
+const CACHE_NAME = 'ventas-app-cache-v182'; // v182: Modulo Data con estilo profesional azul corporativo, mapa rediseniado para telefono, filtros de gestion CEP y amarillo mas brillante
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
