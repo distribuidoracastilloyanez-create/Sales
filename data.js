@@ -13,6 +13,28 @@
     let _cxcMap = new Map(); // Maps clientName (normalized) -> amount
     let _lastSaleMap = new Map(); // Maps clientName (normalized) -> Date object
 
+    // Estilo profesional (azul corporativo), igual que Admin Panel.
+    const AZUL = '#16305C';
+    const AZUL_CLARO = '#BBD2EE';
+
+    function cabecera(titulo, subtitulo, idVolver) {
+        return `<div class="px-4 py-3 flex items-center justify-between" style="background:${AZUL}">
+                    <div class="min-w-0">
+                        <h2 class="text-base font-semibold text-white tracking-tight truncate">${titulo}</h2>
+                        <p class="text-[10px] mt-0.5 truncate" style="color:${AZUL_CLARO}">${subtitulo}</p>
+                    </div>
+                    <button id="${idVolver}" class="px-3 py-1.5 bg-white/10 text-white text-xs rounded-md hover:bg-white/20 font-medium transition shrink-0">Volver</button>
+                </div>`;
+    }
+
+    // Tarjeta descriptiva del menú
+    function tarjetaMenu(id, titulo, descripcion) {
+        return `<button id="${id}" class="w-full text-left p-4 bg-white border border-gray-200 rounded-lg hover:border-[#16305C] hover:shadow-md transition group">
+                    <p class="font-semibold text-gray-900 group-hover:text-[#16305C] transition">${titulo}</p>
+                    <p class="text-xs text-gray-500 mt-0.5 leading-snug">${descripcion}</p>
+                </button>`;
+    }
+
     let mapInstance = null;
     let mapMarkers = new Map(); 
     let _mapModoActual = 'classic';   // modo con el que se dibujó el mapa
@@ -151,16 +173,19 @@
         if (mapInstance) { mapInstance.remove(); mapInstance = null; }
         _floatingControls.classList.add('hidden');
         _mainContent.innerHTML = `
-            <div class="p-4 pt-8"> <div class="container mx-auto"> <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl text-center">
-                <h1 class="text-3xl font-bold text-gray-800 mb-6">Módulo de Datos</h1>
-                <div class="space-y-4">
-                    <button id="closingDataBtn" class="w-full px-6 py-3 bg-indigo-600 text-white rounded-lg shadow-md hover:bg-indigo-700 transition">Cierres de Ventas</button>
-                    <button id="designReportBtn" class="w-full px-6 py-3 bg-purple-600 text-white rounded-lg shadow-md hover:bg-purple-700 transition">Diseño de Reporte</button>
-                    <button id="consolidatedClientsBtn" class="w-full px-6 py-3 bg-green-600 text-white font-bold rounded-lg shadow-md hover:bg-green-700 transition">🌍 Reporte Consolidado de Clientes</button>
-                    <button id="clientMapBtn" class="w-full px-6 py-3 bg-cyan-600 text-white rounded-lg shadow-md hover:bg-cyan-700 transition">Mapa de Clientes / Asistencia</button>
-                    <button id="backToMenuBtn" class="w-full px-6 py-3 bg-gray-400 text-white rounded-lg shadow-md hover:bg-gray-500 transition">Volver Menú</button>
+            <div class="p-3 sm:p-4 pt-6">
+                <div class="container mx-auto max-w-3xl">
+                    <div class="bg-white rounded-xl shadow-lg overflow-hidden">
+                        ${cabecera('Data', 'Cierres, reportes y mapa de clientes', 'backToMenuBtn')}
+                        <div class="p-4 space-y-3">
+                            ${tarjetaMenu('closingDataBtn', 'Cierres de Ventas', 'Consultar y descargar los cierres diarios de cada vendedor.')}
+                            ${tarjetaMenu('clientMapBtn', 'Mapa de Clientes y Asistencia', 'Ubicación de los clientes, gestión de códigos CEP y control de visitas.')}
+                            ${tarjetaMenu('consolidatedClientsBtn', 'Reporte Consolidado de Clientes', 'Cruce maestro de la cartera completa, con descarga a Excel.')}
+                            ${tarjetaMenu('designReportBtn', 'Diseño de Reporte', 'Colores, secciones y formato del archivo Excel de cierre.')}
+                        </div>
+                    </div>
                 </div>
-            </div> </div> </div>
+            </div>
         `;
         document.getElementById('closingDataBtn').addEventListener('click', showClosingDataView);
         document.getElementById('designReportBtn').addEventListener('click', showReportDesignView);
@@ -171,17 +196,31 @@
 
     async function showClosingDataView() {
         _mainContent.innerHTML = `
-            <div class="p-4 pt-8"> <div class="container mx-auto"> <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl">
-                <h1 class="text-3xl font-bold text-gray-800 mb-6 text-center">Cierres de Vendedores</h1>
-                <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6 p-4 border rounded-lg items-end">
-                    <div> <label for="userFilter" class="block text-sm font-medium">Vendedor:</label> <select id="userFilter" class="mt-1 block w-full px-3 py-2 border rounded-md shadow-sm text-sm"> <option value="">Cargando...</option> </select> </div>
-                    <div> <label for="fechaDesde" class="block text-sm font-medium">Desde:</label> <input type="date" id="fechaDesde" class="mt-1 block w-full px-3 py-2 border rounded-md shadow-sm text-sm"> </div>
-                    <div> <label for="fechaHasta" class="block text-sm font-medium">Hasta:</label> <input type="date" id="fechaHasta" class="mt-1 block w-full px-3 py-2 border rounded-md shadow-sm text-sm"> </div>
-                    <button id="searchCierresBtn" class="w-full px-6 py-2 bg-indigo-600 text-white rounded-lg shadow-md hover:bg-indigo-700">Buscar</button>
+            <div class="p-3 sm:p-4 pt-6">
+                <div class="container mx-auto max-w-5xl">
+                    <div class="bg-white rounded-xl shadow-lg overflow-hidden">
+                        ${cabecera('Cierres de Ventas', 'Consulta por vendedor y rango de fechas', 'backToDataMenuBtn')}
+                        <div class="p-4">
+                            <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4 p-3 bg-gray-50 border border-gray-200 rounded-lg items-end">
+                                <div class="col-span-2 lg:col-span-1">
+                                    <label for="userFilter" class="block text-[11px] font-semibold text-gray-600 uppercase tracking-wide mb-1">Vendedor</label>
+                                    <select id="userFilter" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm bg-white outline-none focus:ring-2 focus:ring-[#16305C]/30"> <option value="">Cargando...</option> </select>
+                                </div>
+                                <div>
+                                    <label for="fechaDesde" class="block text-[11px] font-semibold text-gray-600 uppercase tracking-wide mb-1">Desde</label>
+                                    <input type="date" id="fechaDesde" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm bg-white outline-none focus:ring-2 focus:ring-[#16305C]/30">
+                                </div>
+                                <div>
+                                    <label for="fechaHasta" class="block text-[11px] font-semibold text-gray-600 uppercase tracking-wide mb-1">Hasta</label>
+                                    <input type="date" id="fechaHasta" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm bg-white outline-none focus:ring-2 focus:ring-[#16305C]/30">
+                                </div>
+                                <button id="searchCierresBtn" class="col-span-2 lg:col-span-1 w-full px-4 py-2 text-white text-sm font-semibold rounded-md shadow hover:opacity-90 transition" style="background:${AZUL}">Buscar</button>
+                            </div>
+                            <div id="cierres-list-container" class="overflow-x-auto max-h-[60vh] border border-gray-200 rounded-lg"> <p class="text-center text-gray-500 py-8 text-sm">Seleccione los filtros y presione Buscar.</p> </div>
+                        </div>
+                    </div>
                 </div>
-                <div id="cierres-list-container" class="overflow-x-auto max-h-96"> <p class="text-center text-gray-500">Seleccione filtros.</p> </div>
-                <button id="backToDataMenuBtn" class="mt-6 w-full px-6 py-3 bg-gray-400 text-white rounded-lg shadow-md hover:bg-gray-500">Volver</button>
-            </div> </div> </div>
+            </div>
         `;
         document.getElementById('backToDataMenuBtn').addEventListener('click', window.showDataView);
         document.getElementById('searchCierresBtn').addEventListener('click', handleSearchClosings);
@@ -1368,19 +1407,17 @@
     
     async function showConsolidatedClientsView() {
         _mainContent.innerHTML = `
-            <div class="p-4 pt-8 w-full max-w-7xl mx-auto flex flex-col h-screen">
-                <div class="bg-white/95 backdrop-blur-sm p-6 rounded-lg shadow-xl flex flex-col flex-grow overflow-hidden border-t-4 border-green-600">
-                    <h2 class="text-2xl font-bold text-gray-800 mb-6 text-center border-b border-gray-200 pb-4">🌍 Reporte Consolidado Maestro</h2>
-                    
-                    <div id="consolidated-clients-filters"></div>
-                    
-                    <div id="consolidated-clients-container" class="overflow-x-auto overflow-y-auto flex-grow border border-gray-200 rounded-lg shadow-inner bg-gray-50 mb-4">
-                        <p class="text-gray-500 text-center py-6 animate-pulse font-medium">Analizando bases de datos cruzadas... Esto puede tardar unos segundos.</p>
-                    </div>
-                    
-                    <div class="mt-4 flex flex-col sm:flex-row gap-4 border-t border-gray-200 pt-4">
-                        <button id="downloadClientsBtn" class="w-full sm:w-2/3 px-6 py-3 bg-green-600 text-white font-bold rounded-lg shadow hover:bg-green-700 transition tracking-wide hidden">📥 DESCARGAR REPORTE EXCEL (COMPLETO)</button>
-                        <button id="backToDataMenuBtn" class="w-full sm:w-1/3 px-6 py-3 bg-gray-500 text-white font-bold rounded-lg shadow hover:bg-gray-600 transition tracking-wide">VOLVER</button>
+            <div class="p-3 sm:p-4 pt-6 w-full max-w-7xl mx-auto flex flex-col h-screen">
+                <div class="bg-white rounded-xl shadow-lg flex flex-col flex-grow overflow-hidden">
+                    ${cabecera('Reporte Consolidado de Clientes', 'Cruce maestro de la cartera completa', 'backToDataMenuBtn')}
+                    <div class="p-4 flex flex-col flex-grow overflow-hidden">
+                        <div id="consolidated-clients-filters"></div>
+
+                        <div id="consolidated-clients-container" class="overflow-x-auto overflow-y-auto flex-grow border border-gray-200 rounded-lg bg-gray-50 mb-3">
+                            <p class="text-gray-500 text-center py-6 animate-pulse font-medium">Analizando bases de datos cruzadas... Esto puede tardar unos segundos.</p>
+                        </div>
+
+                        <button id="downloadClientsBtn" class="w-full px-6 py-3 text-white text-sm font-semibold rounded-lg shadow hover:opacity-90 transition hidden" style="background:${AZUL}">Descargar reporte en Excel</button>
                     </div>
                 </div>
             </div>
@@ -1678,7 +1715,8 @@
             shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
             iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41]
         });
-        _mapIcons = { red: crear('red'), blue: crear('blue'), green: crear('green'), grey: crear('grey'), yellow: crear('yellow') };
+        // 'gold' es el amarillo vivo del set; 'yellow' es mostaza y se pierde sobre el mapa
+        _mapIcons = { red: crear('red'), blue: crear('blue'), green: crear('green'), grey: crear('grey'), yellow: crear('gold') };
         return _mapIcons;
     }
 
@@ -1697,7 +1735,7 @@
         const conCEP   = tieneCEP(cli);
         const gestion  = !!cli.cepEnGestion;
         // El botón de gestión solo tiene sentido donde el color habla del CEP
-        const permite  = !conCEP && (mode === 'classic' || mode === 'cep_gestion');
+        const permite  = !conCEP && ['classic', 'cep_gestion', 'cep_en_gestion', 'cep_pendientes'].includes(mode);
 
         let bloqueGestion = '';
         if (permite) {
@@ -1739,8 +1777,17 @@
 
             const marker = mapMarkers.get(clienteId);
             if (marker) {
-                marker.setIcon(iconoSinCEP(cli));
-                marker.setPopupContent(popupClienteHTML(cli, _mapModoActual));
+                // En los modos que filtran por estado, el cliente deja de pertenecer
+                // a la vista: se retira del mapa en lugar de quedar con el color que no es.
+                const saleDeLaVista = (_mapModoActual === 'cep_en_gestion' && !nuevoEstado)
+                                   || (_mapModoActual === 'cep_pendientes' && nuevoEstado);
+                if (saleDeLaVista) {
+                    mapInstance.removeLayer(marker);
+                    mapMarkers.delete(clienteId);
+                } else {
+                    marker.setIcon(iconoSinCEP(cli));
+                    marker.setPopupContent(popupClienteHTML(cli, _mapModoActual));
+                }
             }
             actualizarResumenGestion();
         } catch (error) {
@@ -1754,6 +1801,7 @@
         const cont = document.getElementById('cepGestionResumen');
         if (!cont) return;
         const sinCEP     = _consolidatedClientsCache.filter(c => !tieneCEP(c));
+        // (los conteos de abajo son sobre toda la cartera, no solo lo que se ve)
         const enGestion  = sinCEP.filter(c => c.cepEnGestion).length;
         const pendientes = sinCEP.length - enGestion;
         const sinCoords  = sinCEP.filter(c => !c.coordenadas).length;
@@ -1820,56 +1868,59 @@
         const currentWeekStr = getISOWeekString(new Date());
 
         _mainContent.innerHTML = `
-            <div class="p-4 pt-8"> <div class="container mx-auto max-w-6xl"> <div class="bg-white/90 backdrop-blur-sm p-6 md:p-8 rounded-lg shadow-xl">
-                <h1 class="text-3xl font-bold text-gray-800 mb-6 text-center">Mapa de Clientes y Asistencia</h1>
-                
-                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-                    
-                    <div class="lg:col-span-2 space-y-4">
-                        <div class="p-4 bg-blue-50 border border-blue-200 rounded-lg shadow-sm">
-                            <h3 class="font-bold text-blue-900 mb-3 text-sm uppercase">Controles del Mapa</h3>
-                            <div class="flex flex-col sm:flex-row gap-3">
-                                <div class="relative flex-grow"> 
-                                    <input type="text" id="map-search-input" placeholder="Buscar cliente por nombre o CEP..." class="w-full px-4 py-2 border border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm"> 
-                                    <div id="map-search-results" class="absolute z-[1000] w-full bg-white border border-gray-300 rounded-lg mt-1 max-h-60 overflow-y-auto hidden shadow-2xl"></div> 
+            <div class="p-2 sm:p-4 sm:pt-6">
+                <div class="container mx-auto max-w-6xl">
+                    <div class="bg-white rounded-xl shadow-lg overflow-hidden">
+                        ${cabecera('Mapa de Clientes', 'Ubicación, gestión de códigos CEP y asistencia', 'backToDataMenuBtn')}
+
+                        <div class="p-3 space-y-2">
+
+                            <!-- Buscador + vista: siempre a la mano -->
+                            <div class="flex gap-2">
+                                <div class="relative flex-grow">
+                                    <input type="text" id="map-search-input" placeholder="Buscar cliente por nombre o CEP..."
+                                        class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-[#16305C]/30">
+                                    <div id="map-search-results" class="absolute z-[1000] w-full bg-white border border-gray-300 rounded-lg mt-1 max-h-60 overflow-y-auto hidden shadow-2xl"></div>
                                 </div>
-                                <select id="map-mode-select" class="w-full sm:w-1/2 px-4 py-2 border border-blue-300 rounded-lg shadow-sm bg-white text-sm font-semibold focus:ring-2 focus:ring-blue-500 outline-none">
-                                    <option value="classic">Clásico: Tipo de Cliente (CEP)</option>
-                                    <option value="cep_gestion">Gestión de Códigos: Solo clientes sin CEP</option>
-                                    <option value="weekly_all">Semanal: Todos (Visitados/Faltantes)</option>
-                                    <option value="weekly_attended">Semanal: Solo Visitados</option>
-                                    <option value="weekly_unattended">Semanal: Solo Faltantes (Ruta del día)</option>
-                                </select>
+                                <button id="btnMiUbicacion" class="shrink-0 px-4 py-2 text-white text-sm font-semibold rounded-lg shadow hover:opacity-90 transition whitespace-nowrap" style="background:${AZUL}">Mi Ubicación</button>
                             </div>
-                            <button id="btnMiUbicacion" class="mt-3 w-full sm:w-auto px-5 py-2 bg-indigo-600 text-white text-sm font-bold rounded-lg shadow hover:bg-indigo-700 transition">
-                                Mi Ubicación
-                            </button>
-                            <p class="text-[10px] text-blue-800 mt-1.5 leading-tight">Centra el mapa donde usted está. Requiere tener activada la ubicación del teléfono.</p>
+
+                            <select id="map-mode-select" class="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm font-semibold outline-none focus:ring-2 focus:ring-[#16305C]/30">
+                                <optgroup label="Códigos CEP">
+                                    <option value="classic">Todos los clientes por tipo</option>
+                                    <option value="cep_gestion">Sin código CEP (por gestionar y en gestión)</option>
+                                    <option value="cep_en_gestion">Solo los que están en gestión</option>
+                                    <option value="cep_pendientes">Solo los que faltan por gestionar</option>
+                                </optgroup>
+                                <optgroup label="Asistencia de la semana">
+                                    <option value="weekly_all">Todos (visitados y faltantes)</option>
+                                    <option value="weekly_attended">Solo visitados</option>
+                                    <option value="weekly_unattended">Solo faltantes (ruta del día)</option>
+                                </optgroup>
+                            </select>
+
+                            <div id="map-legend" class="p-2 bg-gray-50 border border-gray-200 rounded-lg text-[11px] flex flex-wrap justify-center items-center gap-x-4 gap-y-1 font-medium"></div>
+
+                            <div id="client-map" class="w-full rounded-lg z-0" style="height:65vh;min-height:320px;border:1px solid #d1d5db;background-color:#e5e7eb;">
+                                <p class="text-center text-gray-500 pt-10 font-medium animate-pulse">Iniciando motor de mapas...</p>
+                            </div>
+
+                            <!-- Auditoría: fuera del camino, se abre solo si se necesita -->
+                            <details class="border border-gray-200 rounded-lg bg-gray-50">
+                                <summary class="px-3 py-2.5 text-sm font-semibold text-gray-700 cursor-pointer select-none">Reporte de inasistencias</summary>
+                                <div class="px-3 pb-3 pt-1">
+                                    <p class="text-[11px] text-gray-600 mb-2 leading-snug">Listado de los clientes a los que <b>no se les vendió nada</b> en la semana seleccionada.</p>
+                                    <div class="flex flex-col sm:flex-row gap-2">
+                                        <input type="week" id="missed-clients-week" value="${currentWeekStr}" class="flex-grow border border-gray-300 rounded-lg p-2 text-sm bg-white outline-none focus:ring-2 focus:ring-[#16305C]/30">
+                                        <button id="btnDownloadMissed" class="px-4 py-2 bg-red-600 text-white text-sm font-semibold rounded-lg shadow hover:bg-red-700 transition whitespace-nowrap">Generar Excel</button>
+                                    </div>
+                                </div>
+                            </details>
+
                         </div>
                     </div>
-
-                    <div class="lg:col-span-1">
-                        <div class="p-4 bg-red-50 border border-red-200 rounded-lg shadow-sm h-full flex flex-col justify-center">
-                            <h3 class="font-bold text-red-900 mb-2 text-sm uppercase">Auditoría: Reporte de Inasistencias</h3>
-                            <div class="flex flex-col gap-2">
-                                <input type="week" id="missed-clients-week" value="${currentWeekStr}" class="border border-red-300 rounded p-2 text-sm w-full bg-white focus:ring-2 focus:ring-red-500 outline-none">
-                                <button id="btnDownloadMissed" class="bg-red-600 text-white font-bold py-2 px-4 rounded shadow-md hover:bg-red-700 transition">Generar Excel</button>
-                            </div>
-                            <p class="text-[10px] text-red-700 mt-2 font-medium leading-tight">Descarga un listado exacto de los clientes del catálogo a los que <b>NO se les vendió nada</b> en la semana seleccionada.</p>
-                        </div>
-                    </div>
-
                 </div>
-
-                <div id="map-legend" class="mb-4 p-2 bg-gray-100 border border-gray-300 rounded-lg text-xs flex flex-wrap justify-center items-center gap-x-6 gap-y-2 font-medium"> 
-                </div>
-                
-                <div id="client-map" class="w-full rounded-lg shadow-inner z-0" style="height:60vh; border:1px solid #ccc; background-color:#e5e7eb;"> <p class="text-center text-gray-500 pt-10 font-medium animate-pulse">Iniciando motor de mapas...</p> </div>
-                
-                <div class="mt-6 flex justify-end">
-                    <button id="backToDataMenuBtn" class="px-8 py-2.5 bg-gray-600 text-white font-bold rounded-lg shadow-md hover:bg-gray-700 transition">Volver al Menú</button>
-                </div>
-            </div> </div> </div>
+            </div>
         `;
         document.getElementById('backToDataMenuBtn').addEventListener('click', window.showDataView); 
         document.getElementById('btnDownloadMissed').addEventListener('click', downloadMissedClientsExcel);
@@ -1890,16 +1941,17 @@
 
         _mapModoActual = mode;
         
-        if (mode === 'cep_gestion') {
-            legendCont.innerHTML = `
-                <span class="flex items-center"><img src="${MARKER_BASE}red.png" style="height:22px;margin-right:4px;"> Sin CEP, por gestionar</span>
-                <span class="flex items-center"><img src="${MARKER_BASE}yellow.png" style="height:22px;margin-right:4px;"> Código en gestión</span>
-                <span id="cepGestionResumen" class="w-full text-center text-gray-700 mt-1"></span>
-                <span class="w-full text-center text-[10px] text-gray-500 leading-tight">Toque un marcador y use el botón del globo para marcarlo o quitarlo de gestión.</span>`;
+        if (mode === 'cep_gestion' || mode === 'cep_en_gestion' || mode === 'cep_pendientes') {
+            const filas = [];
+            if (mode !== 'cep_en_gestion') filas.push(`<span class="flex items-center"><img src="${MARKER_BASE}red.png" style="height:20px;margin-right:4px;"> Por gestionar</span>`);
+            if (mode !== 'cep_pendientes') filas.push(`<span class="flex items-center"><img src="${MARKER_BASE}gold.png" style="height:20px;margin-right:4px;"> Código en gestión</span>`);
+            legendCont.innerHTML = filas.join('')
+                + `<span id="cepGestionResumen" class="w-full text-center text-gray-700 mt-1"></span>`
+                + `<span class="w-full text-center text-[10px] text-gray-500 leading-tight">Toque un marcador y use el botón del globo para marcarlo o quitarlo de gestión.</span>`;
         } else if (mode === 'classic') {
             legendCont.innerHTML = `
                 <span class="flex items-center"><img src="${MARKER_BASE}red.png" style="height:22px;margin-right:4px;"> Cliente Regular (Sin CEP)</span> 
-                <span class="flex items-center"><img src="${MARKER_BASE}yellow.png" style="height:22px;margin-right:4px;"> Sin CEP, código en gestión</span>
+                <span class="flex items-center"><img src="${MARKER_BASE}gold.png" style="height:22px;margin-right:4px;"> Sin CEP, código en gestión</span>
                 <span class="flex items-center"><img src="${MARKER_BASE}blue.png" style="height:22px;margin-right:4px;"> Cliente Con CEP</span>
             `;
         } else if (mode === 'weekly_all') {
@@ -1976,10 +2028,13 @@
 
                     if (mode === 'classic') {
                         icon = tieneCEP(cli) ? blueI : iconoSinCEP(cli);
-                    } else if (mode === 'cep_gestion') {
-                        // Solo los que no tienen código: rojo por gestionar, amarillo en gestión
-                        if (tieneCEP(cli)) { shouldPlot = false; }
-                        else { icon = iconoSinCEP(cli); }
+                    } else if (mode === 'cep_gestion' || mode === 'cep_en_gestion' || mode === 'cep_pendientes') {
+                        // Clientes sin código CEP: rojo por gestionar, amarillo en gestión
+                        const enGestion = !!cli.cepEnGestion;
+                        if (tieneCEP(cli)) shouldPlot = false;
+                        else if (mode === 'cep_en_gestion' && !enGestion) shouldPlot = false;
+                        else if (mode === 'cep_pendientes' && enGestion) shouldPlot = false;
+                        else icon = iconoSinCEP(cli);
                     } else {
                         const nameKey = (cli.nombreComercial || '').trim().toLowerCase();
                         const isAttended = attendedSet.has(nameKey);
@@ -2053,16 +2108,16 @@
                 }
                 .design-tab-btn.active {
                     background-color: #ffffff;
-                    color: #3b82f6;
+                    color: #16305C;
                     font-weight: 600;
                     border-color: #e5e7eb;
                 }
             </style>
-            <div class="p-4 pt-8">
+            <div class="p-3 sm:p-4 pt-6">
                 <div class="container mx-auto max-w-3xl">
-                    <div class="bg-white/90 backdrop-blur-sm p-6 md:p-8 rounded-lg shadow-xl">
-                        <h1 class="text-3xl font-bold text-gray-800 mb-6 text-center">Diseño de Reporte de Cierre</h1>
-                        <p class="text-center text-gray-600 mb-6">Define los estilos visuales y la visibilidad de las secciones del reporte Excel.</p>
+                    <div class="bg-white rounded-xl shadow-lg overflow-hidden">
+                        ${cabecera('Diseño de Reporte', 'Estilos y secciones del Excel de cierre', 'cabeceraVolverDiseno')}
+                        <div class="p-4 md:p-6">
                         
                         <div id="design-loader" class="text-center text-gray-500 p-4">Cargando configuración...</div>
                         
@@ -2134,17 +2189,17 @@
 
                             </div>
 
-                            <div class="flex flex-col sm:flex-row gap-4 pt-6 mt-6 border-t">
-                                <button type="button" id="saveDesignBtn" class="w-full px-6 py-3 bg-green-500 text-white font-semibold rounded-lg shadow-md hover:bg-green-600">Guardar Diseño</button>
-                                <button type="button" id="backToDataMenuBtn" class="w-full px-6 py-3 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500">Volver</button>
+                            <div class="pt-6 mt-6 border-t">
+                                <button type="button" id="saveDesignBtn" class="w-full px-6 py-3 text-white text-sm font-semibold rounded-lg shadow hover:opacity-90 transition" style="background:${AZUL}">Guardar Diseño</button>
                             </div>
                         </form>
+                        </div>
                     </div>
                 </div>
             </div>
         `;
 
-        document.getElementById('backToDataMenuBtn').addEventListener('click', window.showDataView);
+        document.getElementById('cabeceraVolverDiseno').addEventListener('click', window.showDataView);
         document.getElementById('saveDesignBtn').addEventListener('click', handleSaveReportDesign);
 
         const tabsContainer = document.getElementById('design-tabs');
