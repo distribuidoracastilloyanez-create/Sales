@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v180'; // v180: Archivos de Cliente - en Documentos se pueden seleccionar hasta 3 archivos a la vez, cada uno queda como un registro propio
+const CACHE_NAME = 'ventas-app-cache-v181'; // v181: Mapa de Clientes - seguimiento de la gestion de codigos CEP (marcar en amarillo) y boton Mi Ubicacion con GPS
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
