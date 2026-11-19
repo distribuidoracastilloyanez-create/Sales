@@ -15,6 +15,9 @@
 
     let mapInstance = null;
     let mapMarkers = new Map(); 
+    let _mapModoActual = 'classic';   // modo con el que se dibujó el mapa
+    let _mapIcons = null;             // iconos Leaflet, creados una sola vez
+    let _miUbicacionCapas = [];       // punto azul + círculo de precisión del usuario
 
     const PUBLIC_DATA_ID = window.AppConfig.PUBLIC_DATA_ID;
     const CLIENTES_COLLECTION_PATH = `artifacts/${PUBLIC_DATA_ID}/public/data/clientes`;
@@ -1660,8 +1663,159 @@
         }
     }
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // MAPA DE CLIENTES — Apoyo para la gestión de códigos CEP
+    // Un cliente sin código CEP se marca en ROJO. Cuando ya se está tramitando
+    // el código con la compañía se marca en AMARILLO, para saber cuáles quedan
+    // pendientes de verificar. Al cargarle el CEP pasa a AZUL automáticamente.
+    // ─────────────────────────────────────────────────────────────────────────
+    const MARKER_BASE = 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-';
+
+    function construirIconos() {
+        if (_mapIcons) return _mapIcons;
+        const crear = color => new L.Icon({
+            iconUrl: `${MARKER_BASE}${color}.png`,
+            shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+            iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41]
+        });
+        _mapIcons = { red: crear('red'), blue: crear('blue'), green: crear('green'), grey: crear('grey'), yellow: crear('yellow') };
+        return _mapIcons;
+    }
+
+    function tieneCEP(cli) {
+        return !!(cli.codigoCEP && cli.codigoCEP.toString().trim().toLowerCase() !== 'n/a');
+    }
+
+    // Icono que le toca a un cliente sin CEP según si ya está en gestión
+    function iconoSinCEP(cli) {
+        const I = construirIconos();
+        return cli.cepEnGestion ? I.yellow : I.red;
+    }
+
+    function popupClienteHTML(cli, mode) {
+        const coords   = (cli.coordenadas || '').split(',').map(x => parseFloat(x));
+        const conCEP   = tieneCEP(cli);
+        const gestion  = !!cli.cepEnGestion;
+        // El botón de gestión solo tiene sentido donde el color habla del CEP
+        const permite  = !conCEP && (mode === 'classic' || mode === 'cep_gestion');
+
+        let bloqueGestion = '';
+        if (permite) {
+            const desde = gestion && cli.cepGestionFecha
+                ? `<br><small class="text-gray-500">En gestión desde el ${new Date(cli.cepGestionFecha).toLocaleDateString('es-ES')}</small>`
+                : '';
+            bloqueGestion = `
+                <div style="margin-top:6px;padding-top:6px;border-top:1px solid #e5e7eb">
+                    ${gestion ? '<small style="color:#92400e;font-weight:700">CÓDIGO EN GESTIÓN</small>' + desde : '<small style="color:#b91c1c;font-weight:700">SIN CÓDIGO CEP</small>'}
+                    <br>
+                    <button onclick="window.dataModule.toggleCepGestion('${cli.id}')"
+                        style="margin-top:5px;width:100%;padding:5px 8px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer;border:1px solid ${gestion ? '#d1d5db' : '#f59e0b'};background:${gestion ? '#f3f4f6' : '#fef3c7'};color:${gestion ? '#374151' : '#92400e'}">
+                        ${gestion ? 'Quitar de gestión' : 'Marcar en gestión'}
+                    </button>
+                </div>`;
+        }
+
+        return `<b>${cli.nombreComercial || ''}</b><br><small>${cli.nombrePersonal || ''}</small><br>`
+             + `<small>Tel: ${cli.telefono || 'N/A'}</small><br><small>Sector: ${cli.sector || 'N/A'}</small>`
+             + (conCEP ? `<br><b>CEP: ${cli.codigoCEP}</b>` : '')
+             + `<br><a href="https://www.google.com/maps?q=${coords[0]},${coords[1]}" target="_blank" class="text-xs text-blue-600 font-bold mt-1 inline-block">Ver en Google Maps</a>`
+             + bloqueGestion;
+    }
+
+    // Marca o desmarca un cliente como "código CEP en gestión".
+    // Solo cambia ese marcador: el mapa no se recarga ni se mueve de sitio.
+    async function toggleCepGestion(clienteId) {
+        const cli = _consolidatedClientsCache.find(c => c.id === clienteId);
+        if (!cli) { _showModal('Aviso', 'Cliente no encontrado. Vuelva a abrir el mapa.'); return; }
+        if (tieneCEP(cli)) { _showModal('Aviso', 'Este cliente ya tiene código CEP asignado.'); return; }
+
+        const nuevoEstado = !cli.cepEnGestion;
+        const fecha       = nuevoEstado ? new Date().toISOString() : null;
+        try {
+            await _setDoc(_doc(_db, CLIENTES_COLLECTION_PATH, clienteId),
+                          { cepEnGestion: nuevoEstado, cepGestionFecha: fecha }, { merge: true });
+            cli.cepEnGestion    = nuevoEstado;
+            cli.cepGestionFecha = fecha;
+
+            const marker = mapMarkers.get(clienteId);
+            if (marker) {
+                marker.setIcon(iconoSinCEP(cli));
+                marker.setPopupContent(popupClienteHTML(cli, _mapModoActual));
+            }
+            actualizarResumenGestion();
+        } catch (error) {
+            console.error('Error marcando gestión CEP:', error);
+            _showModal('Error', 'No se pudo guardar la marca de gestión. Revise la conexión.');
+        }
+    }
+
+    // Contador de cómo va la gestión de códigos
+    function actualizarResumenGestion() {
+        const cont = document.getElementById('cepGestionResumen');
+        if (!cont) return;
+        const sinCEP     = _consolidatedClientsCache.filter(c => !tieneCEP(c));
+        const enGestion  = sinCEP.filter(c => c.cepEnGestion).length;
+        const pendientes = sinCEP.length - enGestion;
+        const sinCoords  = sinCEP.filter(c => !c.coordenadas).length;
+        cont.innerHTML = `<b>${enGestion}</b> en gestión · <b>${pendientes}</b> por gestionar`
+                       + (sinCoords ? ` <span class="text-gray-500">(${sinCoords} sin coordenadas, no salen en el mapa)</span>` : '');
+    }
+
+    // Ubica al usuario en el mapa con el GPS del teléfono y acerca la vista.
+    // Se dibuja con círculos (no con un marcador normal) para que el punto azul
+    // sobreviva cuando se cambia de modo y no se confunda con un cliente.
+    function mostrarMiUbicacion() {
+        const btn = document.getElementById('btnMiUbicacion');
+        if (!mapInstance) { _showModal('Aviso', 'El mapa todavía se está cargando. Intente en un momento.'); return; }
+        if (!navigator.geolocation) { _showModal('No disponible', 'Este dispositivo o navegador no permite obtener la ubicación.'); return; }
+
+        const textoOriginal = btn ? btn.textContent.trim() : 'Mi Ubicación';
+        if (btn) { btn.disabled = true; btn.textContent = 'Buscando señal...'; btn.classList.add('opacity-70'); }
+        const restaurar = () => { if (btn) { btn.disabled = false; btn.textContent = textoOriginal; btn.classList.remove('opacity-70'); } };
+
+        navigator.geolocation.getCurrentPosition(
+            (pos) => {
+                restaurar();
+                const lat = pos.coords.latitude;
+                const lon = pos.coords.longitude;
+                const precision = Math.round(pos.coords.accuracy || 0);
+
+                _miUbicacionCapas.forEach(capa => { try { mapInstance.removeLayer(capa); } catch (e) {} });
+                _miUbicacionCapas = [];
+
+                const halo = L.circle([lat, lon], {
+                    radius: Math.max(precision, 10), color: '#2563eb', weight: 1,
+                    fillColor: '#3b82f6', fillOpacity: 0.15
+                }).addTo(mapInstance);
+
+                const punto = L.circleMarker([lat, lon], {
+                    radius: 8, color: '#ffffff', weight: 3,
+                    fillColor: '#2563eb', fillOpacity: 1
+                }).addTo(mapInstance);
+
+                punto.bindPopup(`<b>Usted está aquí</b><br><small>Precisión aproximada: ${precision} m</small><br><a href="https://www.google.com/maps?q=${lat},${lon}" target="_blank" class="text-xs text-blue-600 font-bold mt-1 inline-block">Ver en Google Maps</a>`);
+
+                _miUbicacionCapas = [halo, punto];
+                mapInstance.flyTo([lat, lon], 17);
+                punto.openPopup();
+            },
+            (err) => {
+                restaurar();
+                const mensajes = {
+                    1: 'La aplicación no tiene permiso para usar su ubicación. Actívelo en los ajustes del navegador o del teléfono y vuelva a intentarlo.',
+                    2: 'No se pudo determinar su ubicación. Verifique que el GPS esté encendido y que tenga señal.',
+                    3: 'La búsqueda tardó demasiado. Salga a un lugar más despejado e intente de nuevo.'
+                };
+                _showModal('Ubicación no disponible', mensajes[err.code] || 'No se pudo obtener su ubicación.');
+            },
+            { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+        );
+    }
+
     function showClientMapView() {
-        if (mapInstance) { mapInstance.remove(); mapInstance = null; } _floatingControls.classList.add('hidden');
+        if (mapInstance) { mapInstance.remove(); mapInstance = null; }
+        _miUbicacionCapas = [];
+        _floatingControls.classList.add('hidden');
         
         const currentWeekStr = getISOWeekString(new Date());
 
@@ -1681,11 +1835,16 @@
                                 </div>
                                 <select id="map-mode-select" class="w-full sm:w-1/2 px-4 py-2 border border-blue-300 rounded-lg shadow-sm bg-white text-sm font-semibold focus:ring-2 focus:ring-blue-500 outline-none">
                                     <option value="classic">Clásico: Tipo de Cliente (CEP)</option>
+                                    <option value="cep_gestion">Gestión de Códigos: Solo clientes sin CEP</option>
                                     <option value="weekly_all">Semanal: Todos (Visitados/Faltantes)</option>
                                     <option value="weekly_attended">Semanal: Solo Visitados</option>
                                     <option value="weekly_unattended">Semanal: Solo Faltantes (Ruta del día)</option>
                                 </select>
                             </div>
+                            <button id="btnMiUbicacion" class="mt-3 w-full sm:w-auto px-5 py-2 bg-indigo-600 text-white text-sm font-bold rounded-lg shadow hover:bg-indigo-700 transition">
+                                Mi Ubicación
+                            </button>
+                            <p class="text-[10px] text-blue-800 mt-1.5 leading-tight">Centra el mapa donde usted está. Requiere tener activada la ubicación del teléfono.</p>
                         </div>
                     </div>
 
@@ -1715,6 +1874,8 @@
         document.getElementById('backToDataMenuBtn').addEventListener('click', window.showDataView); 
         document.getElementById('btnDownloadMissed').addEventListener('click', downloadMissedClientsExcel);
         
+        document.getElementById('btnMiUbicacion').addEventListener('click', mostrarMiUbicacion);
+
         const modeSelect = document.getElementById('map-mode-select');
         modeSelect.addEventListener('change', () => loadAndDisplayMap(modeSelect.value));
         
@@ -1726,11 +1887,20 @@
         const legendCont = document.getElementById('map-legend');
 
         if (!mapCont || typeof L === 'undefined') { mapCont.innerHTML = '<p class="text-red-500 font-bold p-4 text-center">Error Crítico: El motor de mapas Leaflet no pudo ser cargado. Revise su conexión a internet.</p>'; return; }
+
+        _mapModoActual = mode;
         
-        if (mode === 'classic') {
+        if (mode === 'cep_gestion') {
             legendCont.innerHTML = `
-                <span class="flex items-center"><img src="https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png" style="height:22px;margin-right:4px;"> Cliente Regular (Sin CEP)</span> 
-                <span class="flex items-center"><img src="https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png" style="height:22px;margin-right:4px;"> Cliente Con CEP</span>
+                <span class="flex items-center"><img src="${MARKER_BASE}red.png" style="height:22px;margin-right:4px;"> Sin CEP, por gestionar</span>
+                <span class="flex items-center"><img src="${MARKER_BASE}yellow.png" style="height:22px;margin-right:4px;"> Código en gestión</span>
+                <span id="cepGestionResumen" class="w-full text-center text-gray-700 mt-1"></span>
+                <span class="w-full text-center text-[10px] text-gray-500 leading-tight">Toque un marcador y use el botón del globo para marcarlo o quitarlo de gestión.</span>`;
+        } else if (mode === 'classic') {
+            legendCont.innerHTML = `
+                <span class="flex items-center"><img src="${MARKER_BASE}red.png" style="height:22px;margin-right:4px;"> Cliente Regular (Sin CEP)</span> 
+                <span class="flex items-center"><img src="${MARKER_BASE}yellow.png" style="height:22px;margin-right:4px;"> Sin CEP, código en gestión</span>
+                <span class="flex items-center"><img src="${MARKER_BASE}blue.png" style="height:22px;margin-right:4px;"> Cliente Con CEP</span>
             `;
         } else if (mode === 'weekly_all') {
              legendCont.innerHTML = `
@@ -1793,10 +1963,7 @@
                 });
             }
 
-            const redI = new L.Icon({iconUrl:'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png', shadowUrl:'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png', iconSize:[25,41],iconAnchor:[12,41],popupAnchor:[1,-34],shadowSize:[41,41]}); 
-            const blueI = new L.Icon({iconUrl:'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png', shadowUrl:'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png', iconSize:[25,41],iconAnchor:[12,41],popupAnchor:[1,-34],shadowSize:[41,41]});
-            const greenI = new L.Icon({iconUrl:'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png', shadowUrl:'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png', iconSize:[25,41],iconAnchor:[12,41],popupAnchor:[1,-34],shadowSize:[41,41]});
-            const greyI = new L.Icon({iconUrl:'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-grey.png', shadowUrl:'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png', iconSize:[25,41],iconAnchor:[12,41],popupAnchor:[1,-34],shadowSize:[41,41]});
+            const { red: redI, blue: blueI, green: greenI, grey: greyI } = construirIconos();
 
             mapMarkers.clear(); 
             const mGroup=[]; 
@@ -1808,8 +1975,11 @@
                     let shouldPlot = true;
 
                     if (mode === 'classic') {
-                        const hasCEP = cli.codigoCEP && cli.codigoCEP.toLowerCase() !== 'n/a'; 
-                        icon = hasCEP ? blueI : redI;
+                        icon = tieneCEP(cli) ? blueI : iconoSinCEP(cli);
+                    } else if (mode === 'cep_gestion') {
+                        // Solo los que no tienen código: rojo por gestionar, amarillo en gestión
+                        if (tieneCEP(cli)) { shouldPlot = false; }
+                        else { icon = iconoSinCEP(cli); }
                     } else {
                         const nameKey = (cli.nombreComercial || '').trim().toLowerCase();
                         const isAttended = attendedSet.has(nameKey);
@@ -1828,8 +1998,7 @@
 
                     if (!shouldPlot) return;
 
-                    const hasCEP = cli.codigoCEP && cli.codigoCEP.toLowerCase()!=='n/a';
-                    const pCont=`<b>${cli.nombreComercial}</b><br><small>${cli.nombrePersonal||''}</small><br><small>Tel: ${cli.telefono||'N/A'}</small><br><small>Sector: ${cli.sector||'N/A'}</small>${hasCEP?`<br><b>CEP: ${cli.codigoCEP}</b>`:''}<br><a href="https://www.google.com/maps?q=${coords[0]},${coords[1]}" target="_blank" class="text-xs text-blue-600 font-bold mt-1 inline-block">Ver en Google Maps</a>`; 
+                    const pCont = popupClienteHTML(cli, mode);
                     
                     const marker = L.marker(coords, { icon: icon, opacity: opacity }).bindPopup(pCont, { minWidth: 160 }); 
                     
@@ -1849,6 +2018,7 @@
                 if (!mapInstance.getCenter()) mapInstance.setView([7.77, -72.22], 13);
             }
             
+            actualizarResumenGestion();
             setupMapSearch(cliCoords);
         } catch (error) { 
             console.error("Error mapa:", error); 
@@ -2209,6 +2379,7 @@
     window.showClientMapView = showClientMapView;
 
     window.dataModule = { 
+        toggleCepGestion,
         showClosingDetail, 
         handleDownloadSingleClosing,
         exportSingleClosingToExcel,
@@ -2217,5 +2388,3 @@
     };
 
 })();
-
-
