@@ -19,6 +19,32 @@
     let _admConfig       = { inventarioVendedores: [], analistaVendedores: [], analistaExcluidos: [] };
 
     // ─── INIT ───────────────────────────────────────────────
+    // Estilo profesional (azul corporativo), igual que Admin Panel, Data y Editar Inventario.
+    const AZUL = '#16305C';
+    const AZUL_CLARO = '#BBD2EE';
+
+    function cabecera(titulo, subtitulo, idVolver) {
+        return `<div class="px-4 py-3 flex items-center justify-between" style="background:${AZUL}">
+                    <div class="min-w-0">
+                        <h2 class="text-base font-semibold text-white tracking-tight truncate">${titulo}</h2>
+                        <p class="text-[10px] mt-0.5 truncate" style="color:${AZUL_CLARO}">${subtitulo}</p>
+                    </div>
+                    <button id="${idVolver}" class="px-3 py-1.5 bg-white/10 text-white text-xs rounded-md hover:bg-white/20 font-medium transition shrink-0">Volver</button>
+                </div>`;
+    }
+
+    // Cabecera a sangre dentro de una tarjeta con padding
+    function cabeceraCard(titulo, subtitulo, idVolver) {
+        return `<div class="-m-3 sm:-m-4 mb-3 sm:mb-4">${cabecera(titulo, subtitulo, idVolver)}</div>`;
+    }
+
+    function tarjetaMenu(id, titulo, descripcion) {
+        return `<button id="${id}" class="w-full text-left p-4 bg-white border border-gray-200 rounded-lg hover:border-[#16305C] hover:shadow-md transition group">
+                    <p class="font-semibold text-gray-900 group-hover:text-[#16305C] transition">${titulo}</p>
+                    <p class="text-xs text-gray-500 mt-0.5 leading-snug">${descripcion}</p>
+                </button>`;
+    }
+
     window.initAdministracion = function (deps) {
         _db               = deps.db;
         _userId           = deps.userId;
@@ -438,53 +464,15 @@
         _mainContent.classList.remove('hidden');
 
         _mainContent.innerHTML = `
-            <div class="p-3 pt-8 w-full max-w-lg mx-auto">
-                <div class="bg-white/95 backdrop-blur-sm p-5 rounded-lg shadow-xl">
-                    <div class="flex items-center justify-between mb-5">
-                        <h1 class="text-xl font-bold text-gray-800 flex items-center gap-2">⚙️ Administración</h1>
-                        <button id="admBack" class="px-3 py-1.5 bg-gray-400 text-white text-sm rounded hover:bg-gray-500 font-bold transition">Volver</button>
-                    </div>
-
-                    <div class="space-y-3">
-                        <button id="admInvBtn" class="w-full text-left px-4 py-4 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition flex items-center gap-3">
-                            <span class="w-11 h-11 bg-blue-600 text-white rounded-lg flex items-center justify-center text-xl shrink-0">📦</span>
-                            <span>
-                                <span class="block font-bold text-gray-800">Inventario Total Consolidado</span>
-                                <span class="block text-xs text-gray-500 mt-0.5">Suma inventarios de los vendedores que elijas</span>
-                            </span>
-                        </button>
-
-                        <button id="admAnaBtn" class="w-full text-left px-4 py-4 bg-green-50 border border-green-200 rounded-lg hover:bg-green-100 transition flex items-center gap-3">
-                            <span class="w-11 h-11 bg-green-600 text-white rounded-lg flex items-center justify-center text-xl shrink-0">📊</span>
-                            <span>
-                                <span class="block font-bold text-gray-800">Analista de Datos de Ventas</span>
-                                <span class="block text-xs text-gray-500 mt-0.5">Productos con más salida por mes</span>
-                            </span>
-                        </button>
-
-                        <button id="admInvAnaBtn" class="w-full text-left px-4 py-4 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 transition flex items-center gap-3">
-                            <span class="w-11 h-11 bg-amber-600 text-white rounded-lg flex items-center justify-center text-xl shrink-0">🔍</span>
-                            <span>
-                                <span class="block font-bold text-gray-800">Analista de Inventario</span>
-                                <span class="block text-xs text-gray-500 mt-0.5">Productos que se vendían y están agotados o bajos</span>
-                            </span>
-                        </button>
-
-                        <button id="admCliBtn" class="w-full text-left px-4 py-4 bg-purple-50 border border-purple-200 rounded-lg hover:bg-purple-100 transition flex items-center gap-3">
-                            <span class="w-11 h-11 bg-purple-600 text-white rounded-lg flex items-center justify-center text-xl shrink-0">👥</span>
-                            <span>
-                                <span class="block font-bold text-gray-800">Analista de Clientes por Compras y Pagos</span>
-                                <span class="block text-xs text-gray-500 mt-0.5">Ranking por compra y calificación de pago (CXC)</span>
-                            </span>
-                        </button>
-
-                        <button id="admCliDatosBtn" class="w-full text-left px-4 py-4 bg-cyan-50 border border-cyan-200 rounded-lg hover:bg-cyan-100 transition flex items-center gap-3">
-                            <span class="w-11 h-11 bg-cyan-600 text-white rounded-lg flex items-center justify-center text-xl shrink-0">🗂️</span>
-                            <span>
-                                <span class="block font-bold text-gray-800">Analista de Clientes por Datos</span>
-                                <span class="block text-xs text-gray-500 mt-0.5">Estado de datos, documentos, última compra y errores</span>
-                            </span>
-                        </button>
+            <div class="p-3 sm:p-4 pt-6 w-full max-w-3xl mx-auto">
+                <div class="bg-white rounded-xl shadow-lg overflow-hidden">
+                    ${cabecera('Administración', 'Análisis de inventario, ventas y clientes', 'admBack')}
+                    <div class="p-4 space-y-3">
+                        ${tarjetaMenu('admInvBtn', 'Inventario Total Consolidado', 'Suma el inventario de los vendedores que elijas.')}
+                        ${tarjetaMenu('admAnaBtn', 'Analista de Datos de Ventas', 'Productos con más salida en el periodo que escojas.')}
+                        ${tarjetaMenu('admInvAnaBtn', 'Analista de Inventario', 'Productos que se venden y están agotados o bajos.')}
+                        ${tarjetaMenu('admCliBtn', 'Analista de Clientes por Compras y Pagos', 'Ranking por volumen de compra y calificación de pago (CXC).')}
+                        ${tarjetaMenu('admCliDatosBtn', 'Analista de Clientes por Datos', 'Estado de datos, documentos, última compra y errores.')}
                     </div>
                 </div>
             </div>`;
@@ -509,17 +497,14 @@
     async function showInventarioConsolidado() {
         _mainContent.innerHTML = `
             <div class="p-2 sm:p-3 pt-6 w-full max-w-3xl mx-auto">
-                <div class="bg-white/95 backdrop-blur-sm p-3 sm:p-4 rounded-lg shadow-xl">
-                    <div class="flex items-center justify-between mb-3">
-                        <h2 class="text-lg font-bold text-gray-800 flex items-center gap-2">📦 Inventario Consolidado</h2>
-                        <button id="invBack" class="px-3 py-1.5 bg-gray-400 text-white text-xs rounded hover:bg-gray-500 font-bold transition">Volver</button>
-                    </div>
+                <div class="bg-white rounded-xl shadow-lg overflow-hidden p-3 sm:p-4">
+                    ${cabeceraCard('Inventario Consolidado', 'Stock sumado de los vendedores seleccionados', 'invBack')}
 
                     <!-- Selección de vendedores -->
-                    <div class="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-3">
+                    <div class="bg-gray-50 border border-gray-200 rounded-lg p-3 mb-3">
                         <div class="flex items-center justify-between mb-2">
-                            <span class="text-xs font-bold text-blue-800 uppercase tracking-wide">Vendedores a sumar (máx. 3)</span>
-                            <button id="invVendConfig" class="text-xs text-blue-600 font-bold hover:underline">Configurar</button>
+                            <span class="text-[11px] font-semibold text-gray-600 uppercase tracking-wide">Vendedores a sumar (máx. 3)</span>
+                            <button id="invVendConfig" class="text-xs font-semibold hover:underline" style="color:${AZUL}">Configurar</button>
                         </div>
                         <div id="invVendList" class="flex flex-wrap gap-1.5"></div>
                     </div>
@@ -537,7 +522,7 @@
                             <option value="existDesc">Existencia ↓ (mayor)</option>
                             <option value="existAsc">Existencia ↑ (menor)</option>
                         </select>
-                        <button id="invExport" class="text-xs bg-green-600 text-white rounded px-3 py-1.5 font-bold hover:bg-green-700 transition whitespace-nowrap flex items-center gap-1">⬇️ Excel</button>
+                        <button id="invExport" class="text-xs text-white rounded-md px-3 py-1.5 font-semibold shadow hover:opacity-90 transition whitespace-nowrap shrink-0" style="background:${AZUL}">Excel</button>
                     </div>
 
                     <div id="invLoading" class="text-center py-10 text-gray-400 text-sm">
@@ -581,7 +566,7 @@
         }
         cont.innerHTML = sel.map(uid => {
             const u = _usersCache.find(x => x.id === uid);
-            return `<span class="text-xs bg-blue-600 text-white px-2 py-1 rounded-full font-medium">${u ? nombreVendedor(u) : uid}</span>`;
+            return `<span class="text-xs text-white px-2 py-1 rounded-full font-medium" style="background:#16305C">${u ? nombreVendedor(u) : uid}</span>`;
         }).join('');
     }
 
@@ -604,7 +589,7 @@
                 </div>
                 <div class="p-3 border-t flex gap-2">
                     <button id="vendCancel" class="flex-1 py-2 bg-gray-100 text-gray-600 rounded font-bold text-sm">Cancelar</button>
-                    <button id="vendSave" class="flex-1 py-2 bg-blue-600 text-white rounded font-bold text-sm">Guardar</button>
+                    <button id="vendSave" class="flex-1 py-2 text-white rounded-md font-semibold text-sm shadow" style="background:#16305C">Guardar</button>
                 </div>
                 <p id="vendMsg" class="text-center text-xs text-red-500 pb-2 h-4"></p>
             </div>`;
@@ -838,23 +823,20 @@
     async function showAnalistaDatos() {
         _mainContent.innerHTML = `
             <div class="p-2 sm:p-3 pt-6 w-full max-w-3xl mx-auto">
-                <div class="bg-white/95 backdrop-blur-sm p-3 sm:p-4 rounded-lg shadow-xl">
-                    <div class="flex items-center justify-between mb-3">
-                        <h2 class="text-lg font-bold text-gray-800 flex items-center gap-2">📊 Analista de Datos</h2>
-                        <button id="anaBack" class="px-3 py-1.5 bg-gray-400 text-white text-xs rounded hover:bg-gray-500 font-bold transition">Volver</button>
-                    </div>
+                <div class="bg-white rounded-xl shadow-lg overflow-hidden p-3 sm:p-4">
+                    ${cabeceraCard('Analista de Datos de Ventas', 'Productos con más salida en el periodo', 'anaBack')}
 
                     <!-- Vendedores -->
-                    <div class="bg-green-50 border border-green-200 rounded-lg p-3 mb-2">
+                    <div class="bg-gray-50 border border-gray-200 rounded-lg p-3 mb-2">
                         <div class="flex items-center justify-between mb-2">
-                            <span class="text-xs font-bold text-green-800 uppercase tracking-wide">Vendedores a analizar (máx. 3)</span>
-                            <button id="anaVendConfig" class="text-xs text-green-700 font-bold hover:underline">Configurar</button>
+                            <span class="text-[11px] font-semibold text-gray-600 uppercase tracking-wide">Vendedores a analizar (máx. 3)</span>
+                            <button id="anaVendConfig" class="text-xs font-semibold hover:underline" style="color:${AZUL}">Configurar</button>
                         </div>
                         <div id="anaVendList" class="flex flex-wrap gap-1.5"></div>
                     </div>
 
                     <!-- Controles -->
-                    <div class="bg-green-50 border border-green-200 rounded-lg p-3 mb-3 space-y-2">
+                    <div class="bg-gray-50 border border-gray-200 rounded-lg p-3 mb-3 space-y-2">
                         <div>
                             <label class="block text-[10px] font-bold text-green-800 uppercase mb-1">Periodo a analizar</label>
                             <select id="anaPeriodo" class="w-full text-xs border border-green-300 rounded p-1.5 bg-white focus:ring-2 focus:ring-green-400 outline-none mb-1.5">
@@ -869,7 +851,7 @@
                             <div id="anaPeriodoControl"></div>
                         </div>
                         <div class="flex gap-2">
-                            <button id="anaRun" class="flex-1 py-2 bg-green-600 text-white font-bold rounded text-sm hover:bg-green-700 transition">📈 Analizar Ventas</button>
+                            <button id="anaRun" class="flex-1 py-2 text-white font-semibold rounded-md text-sm shadow hover:opacity-90 transition" style="background:#16305C">Analizar Ventas</button>
                             <button id="anaRefresh" title="Actualizar datos (recargar de Firebase)" class="px-3 py-2 bg-gray-100 text-gray-600 rounded text-sm hover:bg-gray-200 transition font-bold flex items-center gap-1">🔄</button>
                         </div>
                         <p id="anaCacheInfo" class="text-[10px] text-gray-400 text-center"></p>
@@ -1491,18 +1473,15 @@
     async function showAnalistaInventario() {
         _mainContent.innerHTML = `
             <div class="p-2 sm:p-3 pt-6 w-full max-w-3xl mx-auto">
-                <div class="bg-white/95 backdrop-blur-sm p-3 sm:p-4 rounded-lg shadow-xl">
-                    <div class="flex items-center justify-between mb-3">
-                        <h2 class="text-lg font-bold text-gray-800 flex items-center gap-2">🔍 Analista de Inventario</h2>
-                        <button id="invAnaBack" class="px-3 py-1.5 bg-gray-400 text-white text-xs rounded hover:bg-gray-500 font-bold transition">Volver</button>
-                    </div>
+                <div class="bg-white rounded-xl shadow-lg overflow-hidden p-3 sm:p-4">
+                    ${cabeceraCard('Analista de Inventario', 'Productos que se venden y están agotados o bajos', 'invAnaBack')}
 
-                    <div class="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-3">
+                    <div class="bg-gray-50 border border-gray-200 rounded-lg p-3 mb-3">
                         <p class="text-xs text-amber-800 leading-relaxed">
                             Cruza los productos <b>vendidos en los últimos 6 meses</b> con el inventario consolidado actual
                             (vendedores: <b id="invAnaVends">—</b>). Muestra los que están <b>agotados</b> o con inventario bajo en 3 niveles.
                         </p>
-                        <button id="invAnaRun" class="w-full mt-2 py-2 bg-amber-600 text-white font-bold rounded text-sm hover:bg-amber-700 transition">🔍 Analizar Inventario</button>
+                        <button id="invAnaRun" class="w-full mt-2 py-2 text-white font-semibold rounded-md text-sm shadow hover:opacity-90 transition" style="background:#16305C">Analizar Inventario</button>
                     </div>
 
                     <!-- Filtros -->
@@ -1936,18 +1915,15 @@
     async function showAnalistaClientes() {
         _mainContent.innerHTML = `
             <div class="p-2 sm:p-3 pt-6 w-full max-w-3xl mx-auto">
-                <div class="bg-white/95 backdrop-blur-sm p-3 sm:p-4 rounded-lg shadow-xl">
-                    <div class="flex items-center justify-between mb-3">
-                        <h2 class="text-lg font-bold text-gray-800 flex items-center gap-2">👥 Analista de Clientes</h2>
-                        <button id="cliBack" class="px-3 py-1.5 bg-gray-400 text-white text-xs rounded hover:bg-gray-500 font-bold transition">Volver</button>
-                    </div>
+                <div class="bg-white rounded-xl shadow-lg overflow-hidden p-3 sm:p-4">
+                    ${cabeceraCard('Analista de Clientes', 'Volumen de compra y estructura de pago', 'cliBack')}
 
                     <div class="grid grid-cols-2 gap-2 mb-3">
-                        <button id="cliModoVol" class="py-2 rounded text-xs font-bold border transition bg-purple-600 text-white border-purple-600">🏆 Volumen de compra</button>
-                        <button id="cliModoPago" class="py-2 rounded text-xs font-bold border transition bg-white text-purple-700 border-purple-300">💳 Estructura de pago</button>
+                        <button id="cliModoVol" class="py-2 rounded-md text-xs font-semibold border border-transparent text-white transition" style="background:#16305C">Volumen de compra</button>
+                        <button id="cliModoPago" class="py-2 rounded-md text-xs font-semibold border transition bg-white text-gray-600 border-gray-300 hover:border-gray-400">Estructura de pago</button>
                     </div>
 
-                    <div class="bg-purple-50 border border-purple-200 rounded-lg p-3 mb-3 space-y-2">
+                    <div class="bg-gray-50 border border-gray-200 rounded-lg p-3 mb-3 space-y-2">
                         <label class="flex items-center gap-2 cursor-pointer">
                             <input type="checkbox" id="cliADC" class="w-4 h-4 accent-purple-600">
                             <span class="text-xs font-bold text-purple-800">Solo clientes con ADC</span>
@@ -2089,13 +2065,16 @@
         _cliModo = modo;
         const bVol = document.getElementById('cliModoVol');
         const bPago = document.getElementById('cliModoPago');
-        const on = 'py-2 rounded text-xs font-bold border transition bg-purple-600 text-white border-purple-600';
-        const off = 'py-2 rounded text-xs font-bold border transition bg-white text-purple-700 border-purple-300';
+        const on = 'py-2 rounded-md text-xs font-semibold border border-transparent text-white transition';
+        const off = 'py-2 rounded-md text-xs font-semibold border transition bg-white text-gray-600 border-gray-300 hover:border-gray-400';
         document.getElementById('cliVolControls').classList.toggle('hidden', modo !== 'volumen');
         document.getElementById('cliPagoControls').classList.toggle('hidden', modo !== 'pago');
         document.getElementById('cliFiltroCalif').classList.toggle('hidden', modo !== 'pago');
         bVol.className = modo === 'volumen' ? on : off;
         bPago.className = modo === 'pago' ? on : off;
+        // El activo lleva el azul corporativo; el inactivo queda en blanco
+        bVol.style.background = modo === 'volumen' ? AZUL : '';
+        bPago.style.background = modo === 'pago' ? AZUL : '';
 
         ['cliRiesgo','cliEstrella','cliChart','cliTableWrap','cliResumen','cliFiltros','cliVolPostFiltros'].forEach(id =>
             document.getElementById(id)?.classList.add('hidden'));
@@ -2408,7 +2387,7 @@
         }
 
         resumen.classList.remove('hidden');
-        resumen.innerHTML = `${lista.length}${term ? ' de ' + listaFull.length : ''} cliente(s) · <button id="cliExportVol" class="text-purple-600 font-bold hover:underline">⬇️ Exportar Excel</button>`;
+        resumen.innerHTML = `${lista.length}${term ? ' de ' + listaFull.length : ''} cliente(s) · <button id="cliExportVol" class="font-semibold hover:underline" style="color:${AZUL}">Exportar Excel</button>`;
         document.getElementById('cliExportVol').addEventListener('click', () => exportarClientesExcel(listaFull, medir, 'volumen'));
     }
 
@@ -2559,7 +2538,7 @@
         }
 
         resumen.classList.remove('hidden');
-        resumen.innerHTML = `${lista.length}${(term||filtroCalif) ? ' de ' + listaFull.length : ''} cliente(s) · <button id="cliExportPago" class="text-purple-600 font-bold hover:underline">⬇️ Exportar Excel</button>`;
+        resumen.innerHTML = `${lista.length}${(term||filtroCalif) ? ' de ' + listaFull.length : ''} cliente(s) · <button id="cliExportPago" class="font-semibold hover:underline" style="color:${AZUL}">Exportar Excel</button>`;
         document.getElementById('cliExportPago').addEventListener('click', () => exportarClientesExcel(listaFull, null, 'pago'));
     }
 
@@ -2963,22 +2942,19 @@
     async function showAnalistaClientesDatos() {
         _mainContent.innerHTML = `
             <div class="p-2 sm:p-3 pt-6 w-full max-w-3xl mx-auto">
-                <div class="bg-white/95 backdrop-blur-sm p-3 sm:p-4 rounded-lg shadow-xl">
-                    <div class="flex items-center justify-between mb-3">
-                        <h2 class="text-lg font-bold text-gray-800 flex items-center gap-2">🗂️ Clientes por Datos</h2>
-                        <button id="cdBack" class="px-3 py-1.5 bg-gray-400 text-white text-xs rounded hover:bg-gray-500 font-bold transition">Volver</button>
-                    </div>
+                <div class="bg-white rounded-xl shadow-lg overflow-hidden p-3 sm:p-4">
+                    ${cabeceraCard('Clientes por Datos', 'Estado de datos, documentos, última compra y errores', 'cdBack')}
 
                     <!-- Sub-vistas -->
                     <div class="grid grid-cols-2 gap-1.5 mb-3">
-                        <button id="cdVistaEstado" class="py-2 rounded text-[11px] font-bold border transition bg-cyan-600 text-white border-cyan-600">📊 Datos + Compra</button>
-                        <button id="cdVistaErrores" class="py-2 rounded text-[11px] font-bold border transition bg-white text-cyan-700 border-cyan-300">🔍 Errores</button>
+                        <button id="cdVistaEstado" class="py-2 rounded-md text-[11px] font-semibold border border-transparent text-white transition" style="background:#16305C">Datos y Compra</button>
+                        <button id="cdVistaErrores" class="py-2 rounded-md text-[11px] font-semibold border transition bg-white text-gray-600 border-gray-300 hover:border-gray-400">Errores</button>
                     </div>
 
                     <div id="cdLoading" class="text-center py-10 text-gray-400 text-sm">Cargando datos...</div>
 
                     <!-- FILTROS (estado de datos) -->
-                    <div id="cdFiltrosEstado" class="hidden bg-cyan-50 border border-cyan-200 rounded-lg p-2 mb-3 space-y-2">
+                    <div id="cdFiltrosEstado" class="hidden bg-gray-50 border border-gray-200 rounded-lg p-2 mb-3 space-y-2">
                         <input type="text" id="cdBuscar" placeholder="Buscar cliente..." class="w-full text-xs border border-cyan-300 rounded p-1.5 outline-none">
                         <!-- Chips de ZONA (multi-selección) -->
                         <div>
@@ -3021,7 +2997,7 @@
                                 <option value="zona">Por zona</option>
                                 <option value="compra">Por última compra</option>
                             </select>
-                            <button id="cdCompartir" class="text-xs bg-green-600 text-white rounded p-1.5 font-bold hover:bg-green-700 transition">📊 Exportar Excel</button>
+                            <button id="cdCompartir" class="text-xs text-white rounded-md px-3 py-1.5 font-semibold shadow hover:opacity-90 transition" style="background:${AZUL}">Exportar Excel</button>
                         </div>
                     </div>
 
@@ -3074,10 +3050,14 @@
     function setCdVista(vista) {
         _cliDatosVista = vista;
         document.getElementById('cdLoading').classList.add('hidden');
-        const on = 'py-2 rounded text-[11px] font-bold border transition bg-cyan-600 text-white border-cyan-600';
-        const off = 'py-2 rounded text-[11px] font-bold border transition bg-white text-cyan-700 border-cyan-300';
-        document.getElementById('cdVistaEstado').className = vista === 'estado' ? on : off;
-        document.getElementById('cdVistaErrores').className = vista === 'errores' ? on : off;
+        const on = 'py-2 rounded-md text-[11px] font-semibold border border-transparent text-white transition';
+        const off = 'py-2 rounded-md text-[11px] font-semibold border transition bg-white text-gray-600 border-gray-300 hover:border-gray-400';
+        const bEstado = document.getElementById('cdVistaEstado');
+        const bErrores = document.getElementById('cdVistaErrores');
+        bEstado.className = vista === 'estado' ? on : off;
+        bErrores.className = vista === 'errores' ? on : off;
+        bEstado.style.background = vista === 'estado' ? AZUL : '';
+        bErrores.style.background = vista === 'errores' ? AZUL : '';
 
         document.getElementById('cdFiltrosEstado').classList.toggle('hidden', vista !== 'estado');
 
@@ -3099,8 +3079,9 @@
         const sel = destino === 'compra' ? _cdZonasCompraSel : _cdZonasSel;
         cont.innerHTML = _cdZonasDisponibles.map(z => {
             const on = sel.has(z);
-            const cls = on ? 'bg-cyan-600 text-white border-cyan-600' : 'bg-white text-gray-500 border-gray-300';
-            return `<button class="cd-zona-chip text-[10px] font-bold px-2 py-1 rounded-full border transition ${cls}" data-zona="${z.replace(/"/g,'&quot;')}">${z}</button>`;
+            const cls = on ? 'text-white border-transparent' : 'bg-white text-gray-500 border-gray-300';
+            const sty = on ? ` style="background:${AZUL}"` : '';
+            return `<button class="cd-zona-chip text-[10px] font-bold px-2 py-1 rounded-full border transition ${cls}"${sty} data-zona="${z.replace(/"/g,'&quot;')}">${z}</button>`;
         }).join('') || '<span class="text-[10px] text-gray-400">Sin zonas</span>';
         cont.querySelectorAll('.cd-zona-chip').forEach(el => el.addEventListener('click', () => {
             const z = el.dataset.zona;
@@ -3477,16 +3458,3 @@
 
 })();
 // redeploy trigger 1783190804
-
-
-
-
-
-
-
-
-
-
-
-
-
