@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v182'; // v182: Modulo Data con estilo profesional azul corporativo, mapa rediseniado para telefono, filtros de gestion CEP y amarillo mas brillante
+const CACHE_NAME = 'ventas-app-cache-v183'; // v183: Editar Inventario con estilo profesional azul corporativo y limpieza del historial de correcciones (todo o desde un punto de corte)
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
