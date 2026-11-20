@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v183'; // v183: Editar Inventario con estilo profesional azul corporativo y limpieza del historial de correcciones (todo o desde un punto de corte)
+const CACHE_NAME = 'ventas-app-cache-v184'; // v184: Modulo Administracion con estilo profesional azul corporativo en el menu y los cinco analistas
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
