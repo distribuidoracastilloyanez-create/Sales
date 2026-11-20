@@ -7,6 +7,27 @@
     // --- CONFIGURACIÓN CENTRALIZADA ---
     const PUBLIC_DATA_ID = window.AppConfig.PUBLIC_DATA_ID;
 
+    // Estilo profesional (azul corporativo), igual que Admin Panel y Data.
+    const AZUL = '#16305C';
+    const AZUL_CLARO = '#BBD2EE';
+
+    function cabecera(titulo, subtitulo, idVolver) {
+        return `<div class="px-4 py-3 flex items-center justify-between" style="background:${AZUL}">
+                    <div class="min-w-0">
+                        <h2 class="text-base font-semibold text-white tracking-tight truncate">${titulo}</h2>
+                        <p class="text-[10px] mt-0.5 truncate" style="color:${AZUL_CLARO}">${subtitulo}</p>
+                    </div>
+                    <button id="${idVolver}" class="px-3 py-1.5 bg-white/10 text-white text-xs rounded-md hover:bg-white/20 font-medium transition shrink-0">Volver</button>
+                </div>`;
+    }
+
+    function tarjetaMenu(id, titulo, descripcion) {
+        return `<button id="${id}" class="w-full text-left p-4 bg-white border border-gray-200 rounded-lg hover:border-[#16305C] hover:shadow-md transition group">
+                    <p class="font-semibold text-gray-900 group-hover:text-[#16305C] transition">${titulo}</p>
+                    <p class="text-xs text-gray-500 mt-0.5 leading-snug">${descripcion}</p>
+                </button>`;
+    }
+
     let _usersCache = [];
     let _targetInventoryCache = [];
     let _correccionActualState = {}; 
@@ -71,27 +92,15 @@
         if (_floatingControls) _floatingControls.classList.add('hidden');
 
         _mainContent.innerHTML = `
-            <div class="p-4 pt-8">
-                <div class="container mx-auto max-w-lg">
-                    <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl text-center">
-                        <h1 class="text-3xl font-bold text-gray-800 mb-6">Gestión de Inventario (Admin)</h1>
-                        <p class="text-gray-600 mb-6 text-sm">Herramientas de control y auditoría de stock.</p>
-                        <div class="space-y-4">
-                            <button id="btnNuevaCorreccion" class="w-full px-6 py-3 bg-yellow-600 text-white font-semibold rounded-lg shadow-md hover:bg-yellow-700 transition">
-                                🛠️ Realizar Corrección Manual
-                            </button>
-                            <button id="btnVerRecargas" class="w-full px-6 py-3 bg-teal-600 text-white font-semibold rounded-lg shadow-md hover:bg-teal-700 transition">
-                                📥 Ver Reporte de Recargas
-                            </button>
-                            <button id="btnVerAperturaCierre" class="w-full px-6 py-3 bg-indigo-600 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-700 transition">
-                                ☀️/🌙 Apertura y Cierre Inventario
-                            </button>
-                            <button id="btnVerHistorial" class="w-full px-6 py-3 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 transition">
-                                📜 Historial de Correcciones
-                            </button>
-                            <button id="btnVolverMenu" class="w-full px-6 py-3 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500 transition">
-                                Volver al Menú Principal
-                            </button>
+            <div class="p-3 sm:p-4 pt-6">
+                <div class="container mx-auto max-w-3xl">
+                    <div class="bg-white rounded-xl shadow-lg overflow-hidden">
+                        ${cabecera('Editar Inventario', 'Control y auditoría del stock de los vendedores', 'btnVolverMenu')}
+                        <div class="p-4 space-y-3">
+                            ${tarjetaMenu('btnNuevaCorreccion', 'Realizar Corrección Manual', 'Ajustar el stock de un vendedor dejando constancia del motivo.')}
+                            ${tarjetaMenu('btnVerRecargas', 'Reporte de Recargas', 'Qué se le cargó a cada vendedor y en qué fecha.')}
+                            ${tarjetaMenu('btnVerAperturaCierre', 'Apertura y Cierre de Inventario', 'Con qué stock abrió y cerró la jornada cada vendedor.')}
+                            ${tarjetaMenu('btnVerHistorial', 'Historial de Correcciones', 'Todas las correcciones manuales aplicadas, con opción de limpiar el historial.')}
                         </div>
                     </div>
                 </div>
@@ -108,14 +117,15 @@
     // --- VISTA 1: SELECCIÓN DE USUARIO (Para Corrección) ---
     async function showUserSelectionView() {
         _mainContent.innerHTML = `
-            <div class="p-4 pt-8">
+            <div class="p-3 sm:p-4 pt-6">
                 <div class="container mx-auto max-w-md">
-                    <div class="bg-white/90 p-6 rounded-lg shadow-xl">
-                        <h2 class="text-xl font-bold mb-4 text-center">Seleccionar Vendedor</h2>
-                        <div id="usersListContainer" class="space-y-2 max-h-96 overflow-y-auto mb-4">
-                            <p class="text-center text-gray-500">Cargando usuarios...</p>
+                    <div class="bg-white rounded-xl shadow-lg overflow-hidden">
+                        ${cabecera('Corrección Manual', 'Seleccione el vendedor a corregir', 'btnBackToEditMenu')}
+                        <div class="p-4">
+                            <div id="usersListContainer" class="space-y-2 max-h-[70vh] overflow-y-auto">
+                                <p class="text-center text-gray-500 py-6 text-sm">Cargando usuarios...</p>
+                            </div>
                         </div>
-                        <button id="btnBackToEditMenu" class="w-full py-2 bg-gray-400 text-white rounded hover:bg-gray-500">Volver</button>
                     </div>
                 </div>
             </div>
@@ -210,26 +220,26 @@
             <div class="p-2 md:p-4 h-screen flex flex-col">
                 <div class="bg-white/95 backdrop-blur-sm p-4 rounded-lg shadow-xl flex flex-col flex-grow overflow-hidden">
                     
-                    <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-4 gap-4">
-                        <div>
-                            <h2 class="text-xl font-bold text-gray-800">Corregir Inventario</h2>
-                            <p class="text-sm text-gray-600">Usuario: <span class="font-bold text-blue-600">${targetUser.email}</span></p>
-                            <p class="text-xs text-red-600 mt-1 font-semibold">* La unidad requerida de corrección (Und, Pq, Cj) se ajusta dinámicamente según el producto.</p>
+                    <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-3 gap-3">
+                        <div class="min-w-0">
+                            <h2 class="text-lg font-semibold text-gray-900 tracking-tight">Corregir Inventario</h2>
+                            <p class="text-xs text-gray-600 truncate">Vendedor: <span class="font-semibold" style="color:${AZUL}">${targetUser.email}</span></p>
+                            <p class="text-[11px] text-gray-500 mt-0.5">La unidad de corrección (Und, Pq, Cj) se ajusta según cómo se venda cada producto.</p>
                         </div>
-                        <div class="flex flex-col md:flex-row gap-2 w-full md:w-auto">
-                            <button id="btnWipeInventory" class="flex-1 md:flex-none px-4 py-2 bg-red-600 text-white font-bold rounded shadow hover:bg-red-700 text-sm" title="Limpiar todo el inventario del vendedor a cero">
-                                🧹 Limpiar Inventario
-                            </button>
-                            <button id="btnApplyCorrections" class="flex-1 md:flex-none px-4 py-2 bg-green-600 text-white font-bold rounded shadow hover:bg-green-700 text-sm">
+                        <div class="flex gap-2 w-full md:w-auto shrink-0">
+                            <button id="btnApplyCorrections" class="flex-1 md:flex-none px-4 py-2 text-white text-sm font-semibold rounded-md shadow hover:opacity-90 transition" style="background:${AZUL}">
                                 Guardar Cambios
                             </button>
-                            <button id="btnCancelCorrection" class="flex-1 md:flex-none px-4 py-2 bg-gray-400 text-white rounded shadow hover:bg-gray-500 text-sm">
+                            <button id="btnCancelCorrection" class="flex-1 md:flex-none px-4 py-2 bg-gray-100 text-gray-700 text-sm font-semibold rounded-md border border-gray-300 hover:bg-gray-200 transition">
                                 Cancelar
+                            </button>
+                            <button id="btnWipeInventory" class="flex-1 md:flex-none px-4 py-2 bg-red-50 text-red-600 text-sm font-semibold rounded-md border border-red-200 hover:bg-red-600 hover:text-white hover:border-transparent transition" title="Dejar en cero todo el inventario del vendedor">
+                                Limpiar
                             </button>
                         </div>
                     </div>
 
-                    <div class="grid grid-cols-2 md:grid-cols-4 gap-2 mb-4 p-3 bg-gray-50 rounded border">
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
                         <input type="text" id="corrSearch" placeholder="Buscar producto..." class="col-span-2 md:col-span-1 w-full border rounded p-1.5 text-sm">
                         <select id="corrRubro" class="w-full border rounded p-1.5 text-sm"><option value="">Rubro: Todos</option></select>
                         <select id="corrSegmento" class="w-full border rounded p-1.5 text-sm" disabled><option value="">Segmento: Todos</option></select>
@@ -626,16 +636,14 @@
         })();
 
         _mainContent.innerHTML = `
-            <div class="p-2 md:p-4 pt-8 h-screen flex flex-col">
+            <div class="p-2 sm:p-4 sm:pt-6 h-screen flex flex-col">
                 
                 <div id="recargasMainContainer" class="container mx-auto max-w-5xl flex flex-col flex-grow">
-                    <div class="bg-white/95 backdrop-blur-sm p-4 md:p-6 rounded-lg shadow-xl flex flex-col flex-grow overflow-hidden border border-gray-200">
-                        <div class="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
-                            <h2 class="text-2xl font-bold text-gray-800">Historial de Recargas</h2>
-                            <button id="btnBackFromRecargas" class="px-4 py-2 bg-gray-400 text-white rounded shadow hover:bg-gray-500 font-bold transition">Volver al Menú</button>
-                        </div>
+                    <div class="bg-white rounded-xl shadow-lg flex flex-col flex-grow overflow-hidden">
+                        ${cabecera('Reporte de Recargas', 'Qué se le cargó a cada vendedor y cuándo', 'btnBackFromRecargas')}
+                        <div class="p-3 md:p-4 flex flex-col flex-grow overflow-hidden">
 
-                        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200 shadow-inner">
+                        <div class="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
                             <div>
                                 <label class="block text-xs font-bold text-gray-700 mb-1 uppercase tracking-wider">Vendedor:</label>
                                 <select id="recargaUserSelect" class="w-full border border-gray-300 rounded-md p-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
@@ -657,8 +665,9 @@
                             </div>
                         </div>
                         
-                        <div id="recargasListContainer" class="space-y-3 overflow-y-auto flex-grow pr-2 pb-4">
-                            <p class="text-center text-gray-500 py-8 font-medium">Seleccione los filtros y presione "Buscar".</p>
+                        <div id="recargasListContainer" class="space-y-3 overflow-y-auto flex-grow pr-1 pb-2">
+                            <p class="text-center text-gray-500 py-8 text-sm">Seleccione los filtros y presione "Buscar".</p>
+                        </div>
                         </div>
                     </div>
                 </div>
@@ -1124,18 +1133,17 @@
         })();
 
         _mainContent.innerHTML = `
-            <div class="p-2 md:p-4 pt-8 h-screen flex flex-col">
+            <div class="p-2 sm:p-4 sm:pt-6 h-screen flex flex-col">
                 <div id="aperturaCierreMainContainer" class="container mx-auto max-w-5xl flex flex-col flex-grow">
-                    <div class="bg-white/95 backdrop-blur-sm p-4 md:p-6 rounded-lg shadow-xl flex flex-col flex-grow overflow-hidden border border-gray-200">
-                        <div class="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
-                            <h2 class="text-2xl font-bold text-gray-800">Apertura y Cierre de Inventario</h2>
-                            <div class="flex gap-2">
-                                <button id="btnExportApCierre" class="hidden px-4 py-2 bg-green-600 text-white rounded shadow hover:bg-green-700 font-bold transition">Descargar Excel</button>
-                                <button id="btnBackFromApCierre" class="px-4 py-2 bg-gray-400 text-white rounded shadow hover:bg-gray-500 font-bold transition">Volver al Menú</button>
-                            </div>
+                    <div class="bg-white rounded-xl shadow-lg flex flex-col flex-grow overflow-hidden">
+                        ${cabecera('Apertura y Cierre de Inventario', 'Con qué stock abrió y cerró la jornada el vendedor', 'btnBackFromApCierre')}
+                        <div class="p-3 md:p-4 flex flex-col flex-grow overflow-hidden">
+
+                        <div class="mb-3 flex justify-end">
+                            <button id="btnExportApCierre" class="hidden px-4 py-2 text-white text-sm font-semibold rounded-md shadow hover:opacity-90 transition" style="background:${AZUL}">Descargar Excel</button>
                         </div>
 
-                        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6 p-4 bg-indigo-50 rounded-lg border border-indigo-100 shadow-inner">
+                        <div class="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
                             <div>
                                 <label class="block text-xs font-bold text-indigo-900 mb-1 uppercase tracking-wider">Vendedor:</label>
                                 <select id="apCierreUserSelect" class="w-full border border-indigo-300 rounded-md p-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
@@ -1193,7 +1201,8 @@
                                 <tbody id="snapshotTableBody" class="divide-y divide-gray-200"></tbody>
                             </table>
                         </div>
-                        <div id="apCierreEmptyState" class="text-center p-8 text-gray-500 font-medium bg-gray-50 mt-4 rounded border">Seleccione filtros y presione "Buscar".</div>
+                        <div id="apCierreEmptyState" class="text-center p-8 text-gray-500 text-sm bg-gray-50 mt-3 rounded-lg border border-gray-200">Seleccione filtros y presione "Buscar".</div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -1703,23 +1712,24 @@
     // --- VISTA 4: HISTORIAL DE CORRECCIONES ---
     async function showHistorialView() {
         _mainContent.innerHTML = `
-            <div class="p-4 pt-8">
+            <div class="p-3 sm:p-4 pt-6">
                 <div class="container mx-auto max-w-4xl">
-                    <div class="bg-white/90 backdrop-blur-sm p-6 rounded-lg shadow-xl">
-                        <div class="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
-                            <h2 class="text-2xl font-bold text-gray-800">Historial de Correcciones Manuales</h2>
-                            <div class="flex gap-2">
-                                <button id="btnExportHistorial" class="px-4 py-2 bg-green-600 text-white font-bold rounded shadow hover:bg-green-700 text-sm">
+                    <div class="bg-white rounded-xl shadow-lg overflow-hidden">
+                        ${cabecera('Historial de Correcciones', 'Últimas 50 correcciones manuales aplicadas', 'btnBackFromHist')}
+                        <div class="p-3 md:p-4">
+                            <div class="flex gap-2 mb-3">
+                                <button id="btnExportHistorial" class="flex-1 px-4 py-2 text-white text-sm font-semibold rounded-md shadow hover:opacity-90 transition" style="background:${AZUL}">
                                     Descargar Excel
                                 </button>
-                                <button id="btnBackFromHist" class="px-4 py-2 bg-gray-400 text-white rounded shadow hover:bg-gray-500 text-sm">
-                                    Volver
+                                <button id="btnLimpiarHistorial" class="flex-1 px-4 py-2 bg-red-50 text-red-600 text-sm font-semibold rounded-md border border-red-200 hover:bg-red-600 hover:text-white hover:border-transparent transition">
+                                    Borrar todo el historial
                                 </button>
                             </div>
-                        </div>
-                        
-                        <div id="historialListContainer" class="space-y-4 overflow-y-auto" style="max-height: 70vh;">
-                            <p class="text-center text-gray-500">Cargando historial...</p>
+                            <p class="text-[11px] text-gray-500 mb-3 leading-snug">Para conservar lo reciente y descartar lo viejo, use <b>Borrar desde aquí</b> en el registro que marque el corte: se elimina ese y todos los anteriores.</p>
+
+                            <div id="historialListContainer" class="space-y-3 overflow-y-auto" style="max-height: 65vh;">
+                                <p class="text-center text-gray-500 py-6 text-sm">Cargando historial...</p>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1728,6 +1738,7 @@
 
         document.getElementById('btnBackFromHist').addEventListener('click', showEditInventarioMenu);
         document.getElementById('btnExportHistorial').addEventListener('click', exportHistorialToExcel);
+        document.getElementById('btnLimpiarHistorial').addEventListener('click', () => confirmarBorradoHistorial('todo'));
 
         try {
             await loadMasterCatalog(); // Garantizar catálogo para ordenamiento
@@ -1764,11 +1775,11 @@
             }
 
             container.innerHTML = '';
-            logs.forEach(log => {
+            logs.forEach((log, idx) => {
                 const fechaStr = log.fecha?.toDate ? log.fecha.toDate().toLocaleString() : 'Fecha inválida';
                 
                 const card = document.createElement('div');
-                card.className = 'border rounded-lg p-4 bg-gray-50 shadow-sm';
+                card.className = 'border border-gray-200 rounded-lg p-3 bg-gray-50';
                 
                 let detallesHTML = `
                     <table class="w-full text-xs mt-2 border-collapse">
@@ -1806,12 +1817,17 @@
                 detallesHTML += `</tbody></table>`;
 
                 card.innerHTML = `
-                    <div class="flex justify-between items-start mb-2">
-                        <div>
-                            <p class="font-bold text-blue-800">Usuario Afectado: ${log.targetUserEmail}</p>
-                            <p class="text-xs text-gray-500">Fecha: ${fechaStr}</p>
+                    <div class="flex justify-between items-start gap-3 mb-2">
+                        <div class="min-w-0">
+                            <p class="font-semibold text-sm truncate" style="color:${AZUL}">${log.targetUserEmail}</p>
+                            <p class="text-[11px] text-gray-500">${fechaStr}</p>
                         </div>
-                        <span class="text-xs bg-gray-200 px-2 py-1 rounded font-bold">Tipo: ${log.tipoAjuste || 'MANUAL'} | Items: ${log.totalItemsAfectados}</span>
+                        <div class="flex flex-col items-end gap-1.5 shrink-0">
+                            <span class="text-[10px] bg-gray-200 text-gray-700 px-2 py-1 rounded font-semibold whitespace-nowrap">${log.tipoAjuste || 'MANUAL'} · ${log.totalItemsAfectados} items</span>
+                            <button data-corte="${idx}" class="btn-corte-historial text-[10px] px-2 py-1 bg-white text-red-600 border border-red-200 rounded font-semibold hover:bg-red-600 hover:text-white hover:border-transparent transition whitespace-nowrap">
+                                Borrar desde aquí
+                            </button>
+                        </div>
                     </div>
                     ${detallesHTML}
                 `;
@@ -1820,9 +1836,72 @@
 
             window._tempHistorialLogs = logs;
 
+            container.querySelectorAll('.btn-corte-historial').forEach(btn => {
+                btn.addEventListener('click', () => confirmarBorradoHistorial('desde', parseInt(btn.dataset.corte, 10)));
+            });
+
         } catch (e) {
             console.error(e);
             document.getElementById('historialListContainer').innerHTML = `<p class="text-red-500">Error cargando historial: ${e.message}</p>`;
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // LIMPIEZA DEL HISTORIAL DE CORRECCIONES
+    // Dos formas: borrar todo, o elegir un registro como punto de corte y
+    // borrar ese y todos los anteriores (lo más viejo). El historial es un
+    // registro de auditoría, así que cada borrado se confirma y es definitivo.
+    // ═══════════════════════════════════════════════════════════════════════
+    function confirmarBorradoHistorial(modo, indice) {
+        if (_userRole !== 'admin') { _showModal('Acceso Denegado', 'Solo los administradores pueden borrar el historial.'); return; }
+
+        const logs = window._tempHistorialLogs || [];
+
+        if (modo === 'todo') {
+            _showModal('Borrar todo el historial',
+                'Se eliminarán <strong>todos</strong> los registros de correcciones manuales, incluso los que no se ven en esta pantalla.<br><br>'
+                + 'Esta acción <u>no se puede deshacer</u>. Si necesita conservarlos, descargue primero el Excel.<br><br>¿Desea continuar?',
+                () => ejecutarBorradoHistorial('todo', null), 'Sí, borrar todo', () => {});
+            return;
+        }
+
+        const log = logs[indice];
+        if (!log || !log.fecha) { _showModal('Aviso', 'No se pudo identificar el registro. Vuelva a abrir el historial.'); return; }
+        const fechaStr = log.fecha?.toDate ? log.fecha.toDate().toLocaleString() : '';
+
+        _showModal('Borrar desde este punto',
+            `Se eliminará el registro del <strong>${fechaStr}</strong> y <strong>todos los anteriores</strong> a esa fecha.<br><br>`
+            + 'Los registros más recientes se conservan. Esta acción <u>no se puede deshacer</u>.<br><br>¿Desea continuar?',
+            () => ejecutarBorradoHistorial('desde', log.fecha), 'Sí, borrar', () => {});
+    }
+
+    async function ejecutarBorradoHistorial(modo, fechaCorte) {
+        _showModal('Progreso', 'Borrando historial...', null, '', null, false);
+        try {
+            const logRef = _collection(_db, `artifacts/${_appId}/users/${_userId}/historial_correcciones`);
+            const q = (modo === 'todo') ? _query(logRef) : _query(logRef, _where('fecha', '<=', fechaCorte));
+            const snap = await _getDocs(q);
+
+            if (snap.empty) {
+                _showModal('Sin cambios', 'No se encontraron registros para borrar.');
+                return;
+            }
+
+            let batch = _writeBatch(_db);
+            let ops = 0;
+            let borrados = 0;
+            for (const d of snap.docs) {
+                batch.delete(d.ref);
+                ops++; borrados++;
+                if (ops >= 400) { await batch.commit(); batch = _writeBatch(_db); ops = 0; }
+            }
+            if (ops > 0) await batch.commit();
+
+            await showHistorialView();
+            _showModal('Historial actualizado', `Se eliminaron <strong>${borrados}</strong> registro(s) del historial de correcciones.`);
+        } catch (e) {
+            console.error('Error borrando historial:', e);
+            _showModal('Error', 'No se pudo borrar el historial. Revise la conexión e inténtelo de nuevo.');
         }
     }
 
@@ -1890,5 +1969,4 @@
     }
 
 })();
-
 
