@@ -90,17 +90,15 @@
         
         _mainContent.innerHTML = `
             <div class="p-2 sm:p-4 pt-6 w-full max-w-4xl mx-auto">
-                <div class="bg-white/90 backdrop-blur-sm p-4 rounded-lg shadow-xl min-h-[80vh] flex flex-col">
-                    <div class="flex flex-col md:flex-row justify-between items-center mb-4 gap-3">
-                        <div>
-                            <h1 class="text-2xl font-bold text-gray-800 tracking-tight">Cuentas por Cobrar</h1>
-                            <button id="cxcTasaBcvDisplay" class="text-sm font-bold text-gray-700 hover:text-gray-900 hover:underline transition mt-0.5 cursor-pointer">(BCV ----- --/--/--)</button>
-                        </div>
-                        <div class="flex flex-col items-end text-right w-full md:w-auto space-y-2">
-                            <div class="flex gap-2 w-full justify-end">
-                                <button id="backToMenuBtn" class="px-4 py-1.5 bg-gray-400 text-white rounded shadow hover:bg-gray-500 text-sm font-semibold transition">Volver</button>
+                <div class="bg-white rounded-xl shadow-lg min-h-[80vh] flex flex-col overflow-hidden">
+                    ${window.Comun.cabecera('Cuentas por Cobrar', 'Deudas, abonos y recibos de los clientes', 'backToMenuBtn')}
+                    <div class="p-3 sm:p-4 flex flex-col flex-grow overflow-hidden">
+                    <div class="flex flex-wrap items-center justify-between mb-3 gap-2">
+                        <button id="cxcTasaBcvDisplay" class="text-xs font-semibold text-gray-600 hover:underline transition cursor-pointer">(BCV ----- --/--/--)</button>
+                        <div class="flex flex-col items-end text-right space-y-2">
+                            <div class="flex gap-2 justify-end">
                                 ${window.esAdmin() ? `
-                                <button id="manageTasasBtn" class="px-3 py-1.5 bg-purple-600 text-white rounded shadow hover:bg-purple-700 text-sm font-bold flex items-center gap-1 transition">
+                                <button id="manageTasasBtn" class="px-3 py-1.5 text-white rounded shadow hover:opacity-90" style="background:#16305C text-sm font-bold flex items-center gap-1 transition">
                                     Tasas BCV
                                 </button>
                                 ` : ''}
@@ -108,7 +106,7 @@
                             <span id="dataStatusLabel" class="text-[10px] font-semibold text-blue-600 block"></span>
                             
                             ${window.esAdmin() ? `
-                                <button id="updateCXCBtn" class="w-full md:w-auto px-4 py-2 bg-green-600 text-white rounded shadow hover:bg-green-700 text-sm font-bold flex justify-center items-center gap-1 transition">
+                                <button id="updateCXCBtn" class="w-full md:w-auto px-4 py-2 text-white rounded shadow hover:opacity-90" style="background:#16305C text-sm font-bold flex justify-center items-center gap-1 transition">
                                     <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
                                     Cargar Excel CXC
                                 </button>
@@ -124,6 +122,7 @@
 
                     <div id="cxcListContainer" class="flex-grow overflow-y-auto border border-gray-200 rounded-lg bg-gray-50 p-2 space-y-2.5">
                         <p class="text-center text-gray-500 py-10 animate-pulse font-medium">Cargando datos...</p>
+                    </div>
                     </div>
                 </div>
             </div>
@@ -208,12 +207,12 @@
                     <p class="text-xs text-gray-500 mb-4">${_calSoloLectura ? 'Consulta los valores históricos de la tasa BCV. Los días con tasa aparecen resaltados.' : 'Toca un día para registrar o editar su tasa. Los días con tasa aparecen resaltados.'}</p>
 
                     <!-- Navegación de mes -->
-                    <div class="flex items-center justify-between mb-3 bg-purple-50 rounded-lg p-2 border border-purple-100">
-                        <button id="calPrev" class="w-9 h-9 flex items-center justify-center rounded-full hover:bg-purple-200 text-purple-700 font-black text-lg transition">‹</button>
+                    <div class="flex items-center justify-between mb-3 bg-gray-50 rounded-lg p-2 border border-gray-200">
+                        <button id="calPrev" class="w-9 h-9 flex items-center justify-center rounded-full hover:bg-gray-200 text-gray-700 font-black text-lg transition">‹</button>
                         <div class="text-center">
                             <div id="calMonthLabel" class="font-black text-gray-800 text-base capitalize"></div>
                         </div>
-                        <button id="calNext" class="w-9 h-9 flex items-center justify-center rounded-full hover:bg-purple-200 text-purple-700 font-black text-lg transition">›</button>
+                        <button id="calNext" class="w-9 h-9 flex items-center justify-center rounded-full hover:bg-gray-200 text-gray-700 font-black text-lg transition">›</button>
                     </div>
 
                     <!-- Cabecera de días -->
