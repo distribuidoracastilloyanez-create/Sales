@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v194'; // v194: corrige los botones del menu que salian en blanco para los VENDEDORES: ord() inyectaba un segundo atributo style y el navegador descartaba el color
+const CACHE_NAME = 'ventas-app-cache-v195'; // v195: Facturacion con cabecera corporativa; menus de Pre-Venta, Venta Directa, Ventas Totales y Cierre de Jornada convertidos a tarjetas
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
