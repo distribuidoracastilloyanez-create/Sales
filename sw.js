@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v193'; // v193: Clientes, Pre-Venta, Facturacion, Obsequios y Ventas Totales al estilo corporativo; con esto los 15 modulos comparten el mismo formato
+const CACHE_NAME = 'ventas-app-cache-v194'; // v194: corrige los botones del menu que salian en blanco para los VENDEDORES: ord() inyectaba un segundo atributo style y el navegador descartaba el color
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
