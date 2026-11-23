@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v187'; // v187: todas las fechas ancladas a GMT-4 (America/Caracas) desde comun.js; se acaban los dias corridos por zona horaria en cierres, reportes y nombres de archivo
+const CACHE_NAME = 'ventas-app-cache-v188'; // v188: caches compartidas de clientes y usuarios (ademas del catalogo); 22 lecturas repetidas de colecciones completas pasan a leerse una sola vez
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
