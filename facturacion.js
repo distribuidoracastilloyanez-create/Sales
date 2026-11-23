@@ -453,7 +453,7 @@
         });
 
         const totalMes = ventasMes.reduce((s, v) => s + (v.total || 0), 0);
-        const nombreMes = new Date(y, m - 1, 1).toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
+        const nombreMes = new Date(y, m - 1, 1).toLocaleDateString('es-ES', { timeZone: 'America/Caracas', month: 'long', year: 'numeric' });
 
         _ventaParaFacturar = {
             productos: Object.values(productosMap),
@@ -912,8 +912,8 @@
             const sel = document.getElementById('facSelectVenta');
             sel.innerHTML = '<option value="">— Seleccione una venta —</option>';
             _ventasEncontradas.forEach((v, i) => {
-                const fd = v.fechaObj.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' });
-                const fh = v.fechaObj.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+                const fd = v.fechaObj.toLocaleDateString('es-ES', { timeZone: 'America/Caracas', day: '2-digit', month: '2-digit', year: 'numeric' });
+                const fh = v.fechaObj.toLocaleTimeString('es-ES', { timeZone: 'America/Caracas', hour: '2-digit', minute: '2-digit' });
                 const o  = document.createElement('option');
                 o.value  = i;
                 o.textContent = `📅 ${fd} ${fh}  |  $${(v.total || 0).toFixed(2)}  (${v.origen})`;
