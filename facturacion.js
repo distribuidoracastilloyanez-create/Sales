@@ -95,11 +95,10 @@
 
         _mainContent.innerHTML = `
             <div class="p-2 sm:p-4 pt-8 w-full max-w-5xl mx-auto flex flex-col min-h-screen">
-                <div class="bg-white/95 backdrop-blur-sm p-4 sm:p-6 rounded-lg shadow-xl flex flex-col flex-grow border-t-4 border-blue-800">
+                <div class="bg-white p-3 sm:p-4 rounded-xl shadow-lg overflow-hidden flex flex-col flex-grow border-t-4 border-blue-800">
 
                     <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-5 gap-3">
-                        <h2 class="text-xl sm:text-2xl font-black text-gray-800 tracking-tight">Simulador de Facturación</h2>
-                        <div class="flex gap-2 w-full sm:w-auto">
+                        ${window.Comun.cabeceraCard('Facturación', 'Simulador de factura a partir de una venta', 'btnVolverFacturacion')}<div class="flex gap-2 w-full sm:w-auto">
                             ${window.esAdmin() ? '<button id="btnConfigFactura" class="flex-1 sm:flex-none px-4 py-2 bg-indigo-600 text-white font-bold rounded shadow hover:bg-indigo-700 transition text-sm">Config Factura</button>' : ''}
                             <button id="btnVolverFacturacion" class="flex-1 sm:flex-none px-4 py-2 bg-gray-500 text-white font-bold rounded shadow hover:bg-gray-600 transition">Volver al Menú</button>
                         </div>
@@ -1369,12 +1368,8 @@
     async function showConfigFacturaView() {
         _mainContent.innerHTML = `
             <div class="p-3 pt-6 w-full max-w-3xl mx-auto">
-                <div class="bg-white/95 backdrop-blur-sm p-4 rounded-lg shadow-xl border-t-4 border-indigo-700">
-                    <div class="flex items-center justify-between mb-1">
-                        <h2 class="text-lg font-bold text-gray-800">Config Factura</h2>
-                        <button id="cfgFactVolver" class="px-3 py-1.5 bg-gray-200 text-gray-700 text-xs font-bold rounded-lg hover:bg-gray-300">Volver</button>
-                    </div>
-                    <p class="text-gray-500 mb-3 text-xs">Toca una fila para asignarle el producto del catálogo. "Automático" usa la detección por nombre.</p>
+                <div class="bg-white p-3 sm:p-4 rounded-xl shadow-lg overflow-hidden border-t-4 border-indigo-700">
+                    ${window.Comun.cabeceraCard('Configuración de Factura', 'Productos fijos de cada fila del formato', 'cfgFactVolver')}<p class="text-gray-500 mb-3 text-xs">Toca una fila para asignarle el producto del catálogo. "Automático" usa la detección por nombre.</p>
                     <div id="cfgFactCont" class="space-y-4 max-h-[62vh] overflow-y-auto"><p class="text-sm text-gray-400 text-center py-4">Cargando...</p></div>
                     <button id="cfgFactGuardar" class="w-full mt-4 px-6 py-3 bg-indigo-600 text-white rounded-lg shadow-md hover:bg-indigo-700 font-bold">Guardar Config Factura</button>
                 </div>
