@@ -751,7 +751,7 @@
 
             recargas.forEach(r => {
                 const fecha = new Date(r.fecha);
-                const fechaStr = fecha.toLocaleString('es-ES', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+                const fechaStr = fecha.toLocaleString('es-ES', { timeZone: 'America/Caracas', weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' });
                 
                 // Filtrar para mostrar la cantidad REAL de items modificados en la tarjeta
                 const realItemsCount = (r.detalles || []).filter(d => (d.diferenciaUnidades || 0) > 0).length;
@@ -797,7 +797,7 @@
             document.getElementById('recargasDetailContainer').classList.remove('hidden');
             document.getElementById('recargasDetailContainer').classList.add('flex');
 
-            const fecha = new Date(_currentDetalleRecarga.fecha).toLocaleString('es-ES', { dateStyle: 'full', timeStyle: 'short' });
+            const fecha = new Date(_currentDetalleRecarga.fecha).toLocaleString('es-ES', { timeZone: 'America/Caracas', dateStyle: 'full', timeStyle: 'short' });
             // Contar items reales
             const realItemsCount = (_currentDetalleRecarga.detalles || []).filter(d => (d.diferenciaUnidades || 0) > 0).length;
             { const _l = document.getElementById('detalleRecargaInfo'); if (_l) _l.innerHTML = `Fecha: <b class="text-gray-800">${fecha}</b> <span class="mx-2 text-gray-300">|</span> Items: <b class="text-gray-800">${realItemsCount}</b>`; }
@@ -1085,7 +1085,7 @@
             const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
             const link = document.createElement('a');
             link.href = URL.createObjectURL(blob);
-            link.download = `Reporte_Recargas_${new Date().toISOString().slice(0,10)}.xlsx`;
+            link.download = `Reporte_Recargas_${window.Fechas.clave()}.xlsx`;
             link.click();
 
             document.getElementById('modalContainer').classList.add('hidden');
@@ -1944,7 +1944,7 @@
             const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
             const link = document.createElement('a');
             link.href = URL.createObjectURL(blob);
-            link.download = `Historial_Correcciones_${new Date().toISOString().slice(0,10)}.xlsx`;
+            link.download = `Historial_Correcciones_${window.Fechas.clave()}.xlsx`;
             link.click();
 
             document.getElementById('modalContainer').classList.add('hidden');
