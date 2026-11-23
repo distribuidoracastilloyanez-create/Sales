@@ -242,7 +242,7 @@
          * @param {string} tipoOperacion - 'venta' o 'consignacion'
          */
         getTicketHTML: (venta, productosVendidos, vaciosDevueltos, tipo = 'ticket', tipoOperacion = 'venta') => {
-            const fecha = venta.fecha ? (venta.fecha.toDate ? venta.fecha.toDate().toLocaleDateString('es-ES') : new Date(venta.fecha).toLocaleDateString('es-ES')) : new Date().toLocaleDateString('es-ES');
+            const fecha = venta.fecha ? (venta.fecha.toDate ? venta.fecha.toDate().toLocaleDateString('es-ES', { timeZone: 'America/Caracas' }) : new Date(venta.fecha).toLocaleDateString('es-ES', { timeZone: 'America/Caracas' })) : new Date().toLocaleDateString('es-ES', { timeZone: 'America/Caracas' });
             const clienteNombre = venta.cliente ? venta.cliente.nombreComercial : venta.clienteNombre;
             const clienteNombrePersonal = (venta.cliente ? venta.cliente.nombrePersonal : venta.clienteNombrePersonal) || '';
             
@@ -370,7 +370,7 @@
          * @param {string} tipoOperacion - 'venta' o 'consignacion'
          */
         getTicketRawText: (venta, productosVendidos, vaciosDevueltos, tipoOperacion = 'venta') => {
-            const fecha = venta.fecha ? (venta.fecha.toDate ? venta.fecha.toDate().toLocaleDateString('es-ES') : new Date(venta.fecha).toLocaleDateString('es-ES')) : new Date().toLocaleDateString('es-ES');
+            const fecha = venta.fecha ? (venta.fecha.toDate ? venta.fecha.toDate().toLocaleDateString('es-ES', { timeZone: 'America/Caracas' }) : new Date(venta.fecha).toLocaleDateString('es-ES', { timeZone: 'America/Caracas' })) : new Date().toLocaleDateString('es-ES', { timeZone: 'America/Caracas' });
             const clienteNombre = _toTitleCase(venta.cliente ? venta.cliente.nombreComercial : venta.clienteNombre);
             const clienteNombrePersonal = _toTitleCase((venta.cliente ? venta.cliente.nombrePersonal : venta.clienteNombrePersonal) || '');
             const LINE_WIDTH = 48; 
@@ -544,7 +544,7 @@
                         </div>
                         <div class="p-4 bg-gray-100 rounded-lg border border-gray-200 shadow-sm"> 
                             <p><span class="font-medium">Cliente:</span> <span class="font-bold text-gray-800">${venta.clienteNombre || 'N/A'}</span></p> 
-                            <p class="text-sm"><span class="font-medium">Fecha:</span> ${venta.fecha?.toDate ? venta.fecha.toDate().toLocaleString('es-ES') : 'N/A'}</p> 
+                            <p class="text-sm"><span class="font-medium">Fecha:</span> ${venta.fecha?.toDate ? venta.fecha.toDate().toLocaleString('es-ES', { timeZone: 'America/Caracas' }) : 'N/A'}</p> 
                             
                             <div class="mt-3">
                                 <label for="editTipoOperacion" class="text-xs font-bold text-gray-600 block mb-1">Tipo de Operación Registrada:</label>
@@ -618,7 +618,7 @@
             
             ventasList.forEach(v => {
                 const fV = v.fecha?.toDate ? v.fecha.toDate() : new Date(0);
-                const fF = fV.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute:'2-digit' });
+                const fF = fV.toLocaleDateString('es-ES', { timeZone: 'America/Caracas', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute:'2-digit' });
                 
                 // DETECCIÓN DE CONSIGNACIÓN PARA LA ETIQUETA VISUAL
                 const isConsignacion = v.tipoOperacion === 'consignacion' || v.origen === 'Consignación';
@@ -702,4 +702,3 @@
         }
     };
 })();
-
