@@ -72,7 +72,7 @@
 
     // ═══════════════ PANTALLA ═══════════════
     window.showSeguimientoProducto = async function () {
-        if (window.userRole !== 'admin') {
+        if (!window.esAdmin()) {
             if (_showModal) _showModal('Acceso restringido', 'Esta función es solo para administradores.');
             return;
         }
