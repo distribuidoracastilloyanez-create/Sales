@@ -62,7 +62,7 @@
         ]);
         if (cfgSnap && cfgSnap.exists()) _cfg = { ...CFG_DEFAULT, ...cfgSnap.data(), categorias: (cfgSnap.data().categorias || {}) };
         _productos = prodSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-        try { const fn = window.getGlobalProductSortFunction ? await window.getGlobalProductSortFunction() : null; if (fn) _productos.sort(fn); } catch (e) {}
+        try { const fn = window.getGlobalProductSortFunction ? await window.getGlobalProductSortFunction() : null; if (fn) _productos.sort(fn); } catch (e) { console.error('Catálogo Físico: no se pudo aplicar el orden global; la lista queda sin ordenar.', e); }
         _items = {}; itSnap.docs.forEach(d => { _items[d.id] = d.data(); });
         _marcas = {}; mkSnap.docs.forEach(d => { _marcas[d.id] = d.data(); });
     }
