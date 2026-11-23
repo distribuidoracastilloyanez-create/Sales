@@ -1002,7 +1002,7 @@
                  const uDoc = await _getDoc(_doc(_db, "users", _userId)); 
                  const uData = uDoc.exists() ? uDoc.data() : {};
                  vendedorInfo = { userId: _userId, nombre: uData.nombre || '', apellido: uData.apellido || '', camion: uData.camion || '', email: uData.email || '' };
-            } catch (e) {}
+            } catch (e) { console.error('Ventas: no se pudieron leer los datos del vendedor; la venta se registra sin ellos.', e); }
 
             const fechaCierre = new Date();
             let obsequiosTotal = 0;
@@ -1096,7 +1096,7 @@
                  const uDoc = await _getDoc(_doc(_db, "users", _userId));
                  const uData = uDoc.exists() ? uDoc.data() : {};
                  vendedorInfo = { userId: _userId, nombre: uData.nombre || '', apellido: uData.apellido || '', camion: uData.camion || '', email: uData.email || '' };
-            } catch (e) {}
+            } catch (e) { console.error('Ventas: no se pudieron leer los datos del vendedor; la venta se registra sin ellos.', e); }
             let vNameModal = vendedorInfo.nombre || 'Desconocido';
             if(!vendedorInfo.nombre && vendedorInfo.userId && window._usersMapCache && window._usersMapCache.has(vendedorInfo.userId)){
                  vNameModal = window._usersMapCache.get(vendedorInfo.userId).nombre;
@@ -1352,7 +1352,7 @@
                 try {
                     const uDoc = await _getDoc(_doc(_db, "users", _userId)); 
                     vendedorInfo = uDoc.exists() ? { userId:_userId, nombre:uDoc.data().nombre||'', apellido:uDoc.data().apellido||'', camion:uDoc.data().camion||'', email:uDoc.data().email||'' } : { userId: _userId };
-                } catch (e) {}
+                } catch (e) { console.error('Ventas: no se pudieron leer los datos del vendedor; la venta se registra sin ellos.', e); }
 
                 const fechaCierre = new Date();
                 let obsequiosTotal = 0;
@@ -1761,8 +1761,3 @@
   window.ventasModule = { toggleMoneda, handleQuantityChange,
         handleTipoVacioChange, showPastSaleOptions, editVenta, deleteVenta, invalidateCache: () => { } };
 })();
-
-
-
-
-
