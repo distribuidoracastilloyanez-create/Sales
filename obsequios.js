@@ -56,12 +56,10 @@
         _mainContent.innerHTML = `
             <div class="p-4 pt-8">
                 <div class="container mx-auto max-w-lg">
-                    <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl text-center">
-                        <h1 class="text-3xl font-bold text-gray-800 mb-6">Gestión de Obsequios</h1>
-                        <div class="space-y-4">
-                            <button id="generarObsequioBtn" class="w-full px-6 py-3 bg-cyan-500 text-white font-semibold rounded-lg shadow-md hover:bg-cyan-600 transition">Generar Obsequio</button>
-                            <button id="registroObsequiosBtn" class="w-full px-6 py-3 bg-blue-500 text-white font-semibold rounded-lg shadow-md hover:bg-blue-600 transition">Registro de Obsequios</button>
-                            <button id="backToMenuBtn" class="w-full px-6 py-3 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500 transition">Volver al Menú</button>
+                    <div class="bg-white p-3 sm:p-4 rounded-xl shadow-lg overflow-hidden text-center">
+                        ${window.Comun.cabeceraCard('Obsequios', 'Generar y consultar obsequios entregados', 'backToMenuBtn')}<div class="space-y-4">
+                            ${window.Comun.tarjetaMenu('generarObsequioBtn', 'Generar Obsequio', 'Registrar un obsequio entregado a un cliente.')}
+                            ${window.Comun.tarjetaMenu('registroObsequiosBtn', 'Registro de Obsequios', 'Consultar el historial de obsequios por vendedor y fecha.')}
                         </div>
                     </div>
                 </div>
@@ -75,11 +73,8 @@
     async function showGenerarObsequioView() {
         _mainContent.innerHTML = `
             <div class="p-4 pt-8">
-                <div class="container mx-auto max-w-lg bg-white p-8 rounded-lg shadow-xl">
-                    <div class="flex justify-between items-center mb-6">
-                        <h2 class="text-2xl font-bold text-gray-800">Generar Obsequio</h2>
-                        <button onclick="window.showGestionObsequiosView()" class="text-gray-400 font-bold hover:text-gray-600 text-xl">✕</button>
-                    </div>
+                <div class="container mx-auto max-w-lg bg-white p-8 rounded-xl shadow-lg overflow-hidden">
+                    ${window.Comun.cabeceraCard('Generar Obsequio', 'Registrar un obsequio para un cliente', 'obsGenVolver')}
                     <div id="obs-form-loader" class="text-center p-8 font-medium text-gray-500 animate-pulse">Sincronizando Catálogo y Clientes...</div>
                     <div id="obs-form-content" class="hidden space-y-4">
                         <div>
@@ -124,6 +119,7 @@
                 </div>
             </div>
         `;
+        document.getElementById('obsGenVolver')?.addEventListener('click', () => window.showGestionObsequiosView());
 
         await Promise.all([_loadClientes(), _loadInventarioHibrido(), _loadObsequioProduct()]);
 
@@ -429,10 +425,8 @@
 
         _mainContent.innerHTML = `
             <div class="p-2 sm:p-4 pt-8">
-                <div class="container mx-auto max-w-4xl bg-white p-4 sm:p-6 md:p-8 rounded-lg shadow-xl">
-                    <h2 class="text-2xl font-black mb-6 text-gray-800 text-center tracking-tight">Registro de Obsequios</h2>
-                    
-                    <div class="grid grid-cols-1 md:grid-cols-${window.esAdmin() ? '4' : '3'} gap-4 mb-6 bg-blue-50 p-4 rounded-lg border border-blue-100 shadow-inner">
+                <div class="container mx-auto max-w-4xl bg-white p-4 sm:p-6 md:p-8 rounded-xl shadow-lg overflow-hidden">
+                    ${window.Comun.cabeceraCard('Registro de Obsequios', 'Historial de lo entregado por cada vendedor', 'obsRegVolver')}<div class="grid grid-cols-1 md:grid-cols-${window.esAdmin() ? '4' : '3'} gap-4 mb-6 bg-blue-50 p-4 rounded-lg border border-blue-100 shadow-inner">
                         ${adminFiltersHTML}
                         <div>
                             <label class="block text-xs font-bold text-gray-700 mb-1 uppercase tracking-wider">Desde Fecha:</label>
@@ -454,6 +448,7 @@
                 </div>
             </div>
         `;
+        document.getElementById('obsRegVolver')?.addEventListener('click', () => window.showGestionObsequiosView());
         document.getElementById('btnSearch').onclick = handleSearchObsequios;
         handleSearchObsequios();
     }
