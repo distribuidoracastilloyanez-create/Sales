@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v185'; // v185: se eliminan los 52 catch vacios; los fallos ahora se registran y, donde el silencio enganiaba (CXC, Seguimiento, Preventa, Diagnostico), se avisa en pantalla
+const CACHE_NAME = 'ventas-app-cache-v186'; // v186: nuevo comun.js con utilidades compartidas; esAdmin() unica en 16 modulos y cabeceras del estilo sin duplicar. Incluye preventa.js completo (el de v185 quedo cortado)
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
@@ -6,6 +6,7 @@ const urlsToCache = [
     './index.html',
     './manifest.json',
     './config.js',
+    './comun.js',
     // --- Módulos de Lógica ---
     './admin.js',
     './data.js',
