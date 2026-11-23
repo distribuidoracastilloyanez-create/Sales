@@ -191,7 +191,7 @@
     let _nuevaRegla = { tipo: 'producto', valores: [], porcentajes: {}, pctTotal: 0, temp: 'indefinido', cant: 5 };
 
     window.showAcuerdoComercial = async function () {
-        if (window.userRole !== 'admin') {
+        if (!window.esAdmin()) {
             if (_showModal) _showModal('Acceso restringido', 'Esta función es solo para administradores.');
             return;
         }
