@@ -655,7 +655,7 @@
                 const ch = vaciosChanges[tV];
                 if (ch !== 0) {
                     const fieldPath = `saldoVacios.${tV}`;
-                    batch.update(clientRef, { [fieldPath]: _increment(ch) });
+                    batch.update(clientRef, { [fieldPath]: _increment(ch) }); window.invalidarClientes?.();
                 }
           }
 
@@ -764,7 +764,7 @@
                           const ch = vaciosChanges[tV];
                           if (ch !== 0) sVac[tV] = (sVac[tV] || 0) + ch;
                       }
-                      transaction.update(clientRef, { saldoVacios: sVac });
+                      transaction.update(clientRef, { saldoVacios: sVac }); window.invalidarClientes?.();
                   }
 
                   // Acuerdo Comercial: descuento sobre el TOTAL de la factura
@@ -1555,7 +1555,7 @@
                                 modificado = true;
                             }
                       }
-                      if (modificado) transaction.update(clienteRef, { saldoVacios: nuevosSaldoVaciosCliente });
+                      if (modificado) transaction.update(clienteRef, { saldoVacios: nuevosSaldoVaciosCliente }); window.invalidarClientes?.();
                   }
                   
                   transaction.delete(ventaRef);
@@ -1720,7 +1720,7 @@
                     if (clientDoc.exists() && Object.values(vaciosAdj).some(a => a !== 0)) {
                         const sVac = clientDoc.data().saldoVacios || {};
                         for (const tV in vaciosAdj) if (vaciosAdj[tV] !== 0) sVac[tV] = (sVac[tV] || 0) + vaciosAdj[tV];
-                        transaction.update(clientRef, { saldoVacios: sVac });
+                        transaction.update(clientRef, { saldoVacios: sVac }); window.invalidarClientes?.();
                     }
 
                     let nTotal = 0;
