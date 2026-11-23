@@ -456,7 +456,7 @@
     // ─────────────────────────────────────────────────────────────────────────
     async function cargarClientes() {
         try {
-            const snap  = await _getDocs(_collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/clientes`));
+            const snap  = await (window.getClientesSnapshot ? window.getClientesSnapshot() : _getDocs(_collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/clientes`)));
             _clientesCache = snap.docs.map(d => ({ id: d.id, ...d.data() }));
         } catch (e) { console.error('Error cargando clientes:', e); }
     }
