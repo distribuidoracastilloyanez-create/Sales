@@ -912,10 +912,15 @@
             fechaCargaInicial = data.fecha?.toDate ? data.fecha.toDate() : new Date(data.fecha);
         }
 
+        // Si el snapshot no trae fecha utilizable se parte del origen del tiempo:
+        // así la consulta nunca falla y se comporta como antes (sin filtro).
+        if (!(fechaCargaInicial instanceof Date) || isNaN(fechaCargaInicial.getTime())) fechaCargaInicial = new Date(0);
+
         const [rSnapFull, cSnapFull, cierresSnapFull] = await Promise.all([
             _getDocs(_collection(_db, `artifacts/${_appId}/users/${userId}/recargas`)),
             _getDocs(_collection(_db, `artifacts/${_appId}/users/${userId}/historial_correcciones`)),
-            _getDocs(_collection(_db, `artifacts/${_appId}/users/${userId}/cierres`))
+            _getDocs(_query(_collection(_db, `artifacts/${_appId}/users/${userId}/cierres`),
+                            _where('fecha', '>=', fechaCargaInicial)))
         ]);
 
         const recargas = rSnapFull.docs.map(d => d.data()).filter(r => (r.fecha?.toDate ? r.fecha.toDate() : new Date(r.fecha)) >= fechaCargaInicial);
