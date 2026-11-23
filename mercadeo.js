@@ -188,7 +188,7 @@
     async function cargarClientes() {
         if (_clientes.length) return;
         try {
-            const snap = await _getDocs(_collection(_db, pathClientes()));
+            const snap = await (window.getClientesSnapshot ? window.getClientesSnapshot() : _getDocs(_collection(_db, pathClientes())));
             _clientes = snap.docs.map(d => ({ id: d.id, ...d.data() }));
         } catch (e) { _clientes = []; }
     }
@@ -729,7 +729,7 @@
         if (_nombresUsuarios) return _nombresUsuarios;
         _nombresUsuarios = {};
         try {
-            const snap = await _getDocs(_collection(_db, 'users'));
+            const snap = await (window.getUsuariosSnapshot ? window.getUsuariosSnapshot() : _getDocs(_collection(_db, 'users')));
             snap.docs.forEach(d => {
                 const u = d.data();
                 _nombresUsuarios[d.id] = [u.nombre, u.apellido].filter(Boolean).join(' ') || u.email || d.id;
