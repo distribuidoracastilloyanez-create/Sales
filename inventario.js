@@ -500,7 +500,7 @@
                             cantidad: data.cantidadUnidades || 0,
                             nombre: [t.marca, t.segmento, t.presentacion].filter(Boolean).join(' · ') || '(sin registro del producto)',
                             rubro: t.rubro || '',
-                            fechaEliminado: t.fechaEliminado && t.fechaEliminado.toDate ? t.fechaEliminado.toDate().toLocaleDateString('es-ES') : '',
+                            fechaEliminado: t.fechaEliminado && t.fechaEliminado.toDate ? t.fechaEliminado.toDate().toLocaleDateString('es-ES', { timeZone: 'America/Caracas' }) : '',
                             eliminadoPor: t.eliminadoPor || ''
                         });
                     });
