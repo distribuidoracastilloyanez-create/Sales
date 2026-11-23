@@ -28,11 +28,11 @@
         _writeBatch  = deps.writeBatch;
     };
 
-    const AZUL = '#16305C';
-    const AZUL_CLARO = '#BBD2EE';
+    const AZUL = window.Comun.AZUL;
+    const AZUL_CLARO = window.Comun.AZUL_CLARO;
     const PUB = () => window.AppConfig.PUBLIC_DATA_ID;
     const pGestion = () => `artifacts/${PUB()}/public/data/clientes_gestion`;
-    const esAdmin = () => (window.userRole || _userRole) === 'admin';
+    const esAdmin = () => window.esAdmin();
 
     // Resultados posibles de la gestión
     const RESULTADOS = [
