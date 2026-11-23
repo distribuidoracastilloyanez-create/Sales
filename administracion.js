@@ -2579,7 +2579,7 @@
                 let htmlFilas = '';
                 let mesActual = null;
                 lista.forEach(e => {
-                    const mes = e.fecha.toLocaleDateString('es-VE', { month: 'long', year: 'numeric' });
+                    const mes = e.fecha.toLocaleDateString('es-VE', { timeZone: 'America/Caracas', month: 'long', year: 'numeric' });
                     if (mes !== mesActual) {
                         mesActual = mes;
                         htmlFilas += `<div class="text-[10px] font-black text-slate-400 uppercase tracking-wider mt-3 mb-1 capitalize">${mes}</div>`;
@@ -2591,7 +2591,7 @@
                     const borde = esCompra ? 'border-slate-300' : (esPago ? 'border-emerald-400' : 'border-amber-400');
                     htmlFilas += `
                         <div class="flex items-start gap-2 py-1.5 border-l-2 ${borde} pl-2 mb-1">
-                            <div class="w-14 shrink-0 text-[11px] text-slate-500 font-semibold">${e.fecha.toLocaleDateString('es-VE', { day: '2-digit', month: '2-digit' })}</div>
+                            <div class="w-14 shrink-0 text-[11px] text-slate-500 font-semibold">${e.fecha.toLocaleDateString('es-VE', { timeZone: 'America/Caracas', day: '2-digit', month: '2-digit' })}</div>
                             <div class="flex-1 min-w-0">
                                 <div class="text-xs font-semibold ${color}">${e.etiqueta}</div>
                                 ${e.detalle ? `<div class="text-[10px] text-slate-400 truncate">${e.detalle}</div>` : ''}
@@ -2653,7 +2653,7 @@
         const barras = fs.map(f => {
             const h = (f.dias / maxD) * 100;
             const col = f.dias <= 8 ? 'green' : f.dias <= 15 ? 'blue' : f.dias <= 21 ? 'amber' : 'red';
-            const fecha = f.fecha.toLocaleDateString('es-VE', { day: '2-digit', month: '2-digit' });
+            const fecha = f.fecha.toLocaleDateString('es-VE', { timeZone: 'America/Caracas', day: '2-digit', month: '2-digit' });
             return `<div class="flex flex-col items-center justify-end h-full" style="flex:1;min-width:12px">
                 <div class="w-full bg-${col}-500 rounded-t hover:opacity-75" style="height:${h}%" title="${fecha}: ${f.dias}d${f.cancelada ? '' : ' (activa)'}"></div>
             </div>`;
@@ -3232,7 +3232,7 @@
                 const dias = c.diasSinComprar;
                 const txt = dias === null ? 'Nunca ha comprado' : `Hace ${dias} día(s)`;
                 const col = dias === null ? 'text-gray-400' : dias > 21 ? 'text-red-600' : dias >= 15 ? 'text-amber-600' : 'text-gray-600';
-                const fecha = c.ultimaCompra ? c.ultimaCompra.toLocaleDateString('es-VE', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—';
+                const fecha = c.ultimaCompra ? c.ultimaCompra.toLocaleDateString('es-VE', { timeZone: 'America/Caracas', day: '2-digit', month: '2-digit', year: '2-digit' }) : '—';
                 return `<div class="border border-gray-200 rounded-lg p-2 hover:bg-cyan-50 cursor-pointer cd-card" data-id="${c.id}">
                     <div class="flex items-center justify-between gap-2">
                         <div class="min-w-0">
@@ -3298,7 +3298,7 @@
                 <span class="text-xs font-semibold ${ok === false ? 'text-red-400' : 'text-gray-800'} text-right">${valor}</span>
             </div>`;
 
-        const fecha = c.ultimaCompra ? c.ultimaCompra.toLocaleDateString('es-VE', { day: '2-digit', month: 'long', year: 'numeric' }) : 'Sin registro';
+        const fecha = c.ultimaCompra ? c.ultimaCompra.toLocaleDateString('es-VE', { timeZone: 'America/Caracas', day: '2-digit', month: 'long', year: 'numeric' }) : 'Sin registro';
         const diasTxt = c.diasSinComprar === null ? '—' : `hace ${c.diasSinComprar} día(s)`;
 
         // Saldo de vacíos (si tiene)
@@ -3357,7 +3357,7 @@
     // Exporta la lista filtrada a Excel bien estructurado
     function exportarExcelDatos(modo) {
         let lista, hojaNombre, headers, filas;
-        const fmtFecha = (d) => d ? d.toLocaleDateString('es-VE', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '';
+        const fmtFecha = (d) => d ? d.toLocaleDateString('es-VE', { timeZone: 'America/Caracas', day: '2-digit', month: '2-digit', year: 'numeric' }) : '';
         const si = (b) => b ? 'Sí' : 'No';
 
         {
@@ -3386,7 +3386,7 @@
             const zonasTxt = _cdZonasSel.size ? [..._cdZonasSel].join(', ') : 'Todas las zonas';
             const aoa = [
                 ['DISTRIBUIDORA CASTILLO YAÑEZ - ' + hojaNombre.toUpperCase()],
-                ['Fecha: ' + hoy.toLocaleDateString('es-VE'), 'Zonas: ' + zonasTxt, 'Total: ' + lista.length + ' clientes'],
+                ['Fecha: ' + hoy.toLocaleDateString('es-VE', { timeZone: 'America/Caracas' }), 'Zonas: ' + zonasTxt, 'Total: ' + lista.length + ' clientes'],
                 [],
                 headers,
                 ...filas
