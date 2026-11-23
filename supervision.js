@@ -75,19 +75,11 @@
         _mainContent.innerHTML = `
             <div class="p-4 pt-8">
                 <div class="container mx-auto max-w-lg">
-                    <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl text-center border-t-4 border-indigo-600">
-                        <h1 class="text-3xl font-black text-gray-800 mb-2 tracking-tight">Centro de Supervisión</h1>
-                        <p class="text-gray-600 mb-8 text-sm">Monitoreo en vivo y Auditoría de inventarios.</p>
-                        <div class="space-y-4">
-                            <button id="btnVentasEnVivo" class="w-full px-6 py-4 bg-indigo-600 text-white font-bold rounded-lg shadow-md hover:bg-indigo-700 transition flex items-center justify-center gap-2">
-                                <span class="text-xl">📡</span> Monitoreo de Ventas en Vivo
-                            </button>
-                            <button id="btnAuditoria" class="w-full px-6 py-4 bg-red-600 text-white font-bold rounded-lg shadow-md hover:bg-red-700 transition flex items-center justify-center gap-2">
-                                <span class="text-xl">⚖️</span> Auditoría de Cuadre
-                            </button>
-                            <button id="btnVolverMenuSup" class="w-full px-6 py-3 bg-gray-400 text-white font-bold rounded-lg shadow-md hover:bg-gray-500 transition mt-4">
-                                Volver al Menú Principal
-                            </button>
+                    <div class="bg-white rounded-xl shadow-lg overflow-hidden">
+                        ${window.Comun.cabecera('Supervisión', 'Monitoreo en vivo y auditoría de inventarios', 'btnVolverMenuSup')}
+                        <div class="p-4 space-y-3">
+                            ${window.Comun.tarjetaMenu('btnVentasEnVivo', 'Monitoreo de Ventas en Vivo', 'Ver en el momento qué está vendiendo cada vendedor y a quién.')}
+                            ${window.Comun.tarjetaMenu('btnAuditoria', 'Auditoría de Cuadre', 'Comparar el stock calculado contra el que el vendedor tiene cargado.')}
                         </div>
                     </div>
                 </div>
@@ -108,16 +100,13 @@
         _mainContent.innerHTML = `
             <div class="p-2 md:p-4 pt-8 h-screen flex flex-col">
                 <div class="container mx-auto max-w-5xl flex flex-col flex-grow">
-                    <div class="bg-white/95 backdrop-blur-sm p-4 md:p-6 rounded-lg shadow-xl flex flex-col flex-grow overflow-hidden border border-indigo-100">
+                    <div class="bg-white rounded-xl shadow-lg flex flex-col flex-grow overflow-hidden">
+                        ${window.Comun.cabecera('Ventas en Vivo', 'Lo que se está vendiendo en este momento', 'btnBackSup1')}
+                        <div class="p-3 md:p-4 flex flex-col flex-grow overflow-hidden">
 
-                        <div class="flex justify-between items-center mb-6">
-                            <h2 class="text-2xl font-black text-indigo-900 tracking-tight">📡 Ventas en Vivo</h2>
-                            <button id="btnBackSup1" class="px-4 py-2 bg-gray-500 text-white font-bold rounded shadow hover:bg-gray-600 transition text-sm">Volver</button>
-                        </div>
-
-                        <div class="mb-6 p-4 bg-indigo-50 border border-indigo-200 rounded-lg">
-                            <label class="block text-xs font-bold text-indigo-800 mb-1 uppercase tracking-wider">Seleccione el Vendedor a monitorear:</label>
-                            <select id="supUserSelect" class="w-full border border-indigo-300 rounded-md p-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none bg-white">
+                        <div class="mb-6 p-4 bg-gray-50 border border-gray-200 rounded-lg">
+                            <label class="block text-[11px] font-semibold text-gray-600 mb-1 uppercase tracking-wide">Seleccione el Vendedor a monitorear:</label>
+                            <select id="supUserSelect" class="w-full border border-gray-300 rounded-md p-2 text-sm focus:ring-2 focus:ring-[#16305C]/30 outline-none bg-white">
                                 <option value="">-- Seleccione un vendedor --</option>
                                 ${_usersCache.map(u => `<option value="${u.id}">${u.nombre || ''} ${u.apellido || ''} (${u.email})</option>`).join('')}
                             </select>
@@ -162,6 +151,7 @@
 
                         <div id="liveEmptyState" class="text-center p-8 text-gray-500 font-medium bg-gray-50 mt-4 rounded border border-dashed flex-grow flex items-center justify-center">
                             Seleccione un vendedor para ver sus operaciones del día.
+                        </div>
                         </div>
                     </div>
                 </div>
@@ -396,20 +386,15 @@
         _mainContent.innerHTML = `
             <div class="p-2 md:p-4 pt-8 h-screen flex flex-col">
                 <div class="container mx-auto max-w-6xl flex flex-col flex-grow">
-                    <div class="bg-white/95 backdrop-blur-sm p-4 md:p-6 rounded-lg shadow-xl flex flex-col flex-grow overflow-hidden border border-red-100">
-                        <div class="flex justify-between items-center mb-4">
-                            <div>
-                                <h2 class="text-2xl font-black text-red-900 tracking-tight">⚖️ Auditoría de Inventario</h2>
-                                <p class="text-xs text-gray-500 font-medium mt-1">Compara el Stock Matemático Perpetuo vs la Base de Datos Físico Actual</p>
-                            </div>
-                            <button id="btnBackSup2" class="px-4 py-2 bg-gray-500 text-white font-bold rounded shadow hover:bg-gray-600 transition text-sm">Volver</button>
-                        </div>
+                    <div class="bg-white rounded-xl shadow-lg flex flex-col flex-grow overflow-hidden">
+                        ${window.Comun.cabecera('Auditoría de Cuadre', 'Stock calculado frente al stock cargado', 'btnBackSup2')}
+                        <div class="p-3 md:p-4 flex flex-col flex-grow overflow-hidden">
 
-                        <div class="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg flex flex-col gap-4">
+                        <div class="mb-4 p-4 bg-gray-50 border border-gray-200 rounded-lg flex flex-col gap-3">
                             <div class="flex gap-4 items-end">
                                 <div class="flex-grow">
-                                    <label class="block text-xs font-bold text-red-800 mb-1 uppercase tracking-wider">Seleccione Vendedor para Auditar:</label>
-                                    <select id="auditUserSelect" class="w-full border border-red-300 rounded-md p-2 text-sm focus:ring-2 focus:ring-red-500 outline-none bg-white">
+                                    <label class="block text-[11px] font-semibold text-gray-600 mb-1 uppercase tracking-wide">Seleccione Vendedor para Auditar:</label>
+                                    <select id="auditUserSelect" class="w-full border border-gray-300 rounded-md p-2 text-sm focus:ring-2 focus:ring-[#16305C]/30 outline-none bg-white">
                                         <option value="">-- Seleccione un vendedor --</option>
                                         ${_usersCache.map(u => `<option value="${u.id}">${u.nombre || ''} ${u.apellido || ''} (${u.email})</option>`).join('')}
                                     </select>
@@ -457,6 +442,7 @@
                         </div>
                         <div id="auditEmptyState" class="text-center p-8 text-gray-500 font-medium bg-gray-50 mt-2 rounded border border-dashed flex-grow flex items-center justify-center">
                             Seleccione un vendedor y presione "Auditar Ahora".
+                        </div>
                         </div>
                     </div>
                 </div>
