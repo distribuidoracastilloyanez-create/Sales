@@ -262,7 +262,7 @@
         if (!grid || !label) return;
 
         const nombreMes = new Date(_calYear, _calMonth, 1)
-            .toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
+            .toLocaleDateString('es-ES', { timeZone: 'America/Caracas', month: 'long', year: 'numeric' });
         label.textContent = nombreMes;
 
         const primerDia   = new Date(_calYear, _calMonth, 1).getDay(); // 0=Dom
@@ -311,7 +311,7 @@
         const existente = _tasasCache[iso];
         const [y, m, d] = iso.split('-');
         const fechaLegible = new Date(parseInt(y), parseInt(m) - 1, parseInt(d))
-            .toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+            .toLocaleDateString('es-ES', { timeZone: 'America/Caracas', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 
         document.getElementById('tasaEditorOverlay')?.remove();
         const overlay = document.createElement('div');
@@ -1767,7 +1767,7 @@
         // Sin tasa de hoy → pedir que la actualicen
         if (tasaHoy === undefined || tasaHoy === null || !(tasaHoy > 0)) {
             out.innerHTML = `<div class="bg-amber-100 border border-amber-300 rounded p-2 text-amber-800 text-[11px] font-semibold">
-                No hay tasa BCV registrada para hoy (${h.toLocaleDateString('es-VE')}).<br>
+                No hay tasa BCV registrada para hoy (${h.toLocaleDateString('es-VE', { timeZone: 'America/Caracas' })}).<br>
                 Actualiza la tasa del día para poder simular el abono.</div>`;
             return;
         }
