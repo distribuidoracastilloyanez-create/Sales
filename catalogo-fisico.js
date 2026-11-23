@@ -34,7 +34,7 @@
     const pConfig = () => `artifacts/${PUB()}/public/data/config/catalogo_fisico`;
     const pItems  = () => `artifacts/${PUB()}/public/data/catalogo_fisico_items`;
     const pMarcas = () => `artifacts/${PUB()}/public/data/catalogo_fisico_marcas`;
-    const esAdmin = () => window.userRole === 'admin';
+    const esAdmin = () => window.esAdmin();
     const idMarca = (m) => (m || '').toString().trim().toUpperCase().replace(/[^A-Z0-9]+/g, '_') || 'SIN_MARCA';
 
     const CFG_DEFAULT = {
