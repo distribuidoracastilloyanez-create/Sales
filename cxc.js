@@ -99,7 +99,7 @@
                         <div class="flex flex-col items-end text-right w-full md:w-auto space-y-2">
                             <div class="flex gap-2 w-full justify-end">
                                 <button id="backToMenuBtn" class="px-4 py-1.5 bg-gray-400 text-white rounded shadow hover:bg-gray-500 text-sm font-semibold transition">Volver</button>
-                                ${_userRole === 'admin' ? `
+                                ${window.esAdmin() ? `
                                 <button id="manageTasasBtn" class="px-3 py-1.5 bg-purple-600 text-white rounded shadow hover:bg-purple-700 text-sm font-bold flex items-center gap-1 transition">
                                     Tasas BCV
                                 </button>
@@ -107,7 +107,7 @@
                             </div>
                             <span id="dataStatusLabel" class="text-[10px] font-semibold text-blue-600 block"></span>
                             
-                            ${_userRole === 'admin' ? `
+                            ${window.esAdmin() ? `
                                 <button id="updateCXCBtn" class="w-full md:w-auto px-4 py-2 bg-green-600 text-white rounded shadow hover:bg-green-700 text-sm font-bold flex justify-center items-center gap-1 transition">
                                     <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
                                     Cargar Excel CXC
@@ -142,7 +142,7 @@
             }
         })();
         
-        if (_userRole === 'admin') {
+        if (window.esAdmin()) {
             document.getElementById('manageTasasBtn').addEventListener('click', showTasasBCVManagementView);
             const btn = document.getElementById('updateCXCBtn');
             const input = document.getElementById('fileInput');
