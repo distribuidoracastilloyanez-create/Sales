@@ -347,7 +347,7 @@
 
             tableHTML += `
                 <tr class="hover:bg-gray-50">
-                    <td class="py-2 px-3 border-b">${cierre.fecha.toDate().toLocaleDateString('es-ES')}</td>
+                    <td class="py-2 px-3 border-b">${cierre.fecha.toDate().toLocaleDateString('es-ES', { timeZone: 'America/Caracas' })}</td>
                     <td class="py-2 px-3 border-b">${vName || ''} ${vLast || ''} ${importedBadge}</td>
                     <td class="py-2 px-3 border-b">${vCamion || 'N/A'}</td>
                     <td class="py-2 px-3 border-b text-right font-semibold">$${(cierre.total || 0).toFixed(2)}</td>
@@ -787,7 +787,7 @@
             }
 
             const reportInner = `<div class="text-left text-[11px]" style="width:max-content;max-width:none;">
-                <div class="mb-2 text-xs"> <p><strong>Vendedor:</strong> ${vNameModal} ${vendedor.apellido||''}</p> <p><strong>Camión:</strong> ${vendedor.camion||'N/A'}</p> <p><strong>Fecha:</strong> ${closingData.fecha.toDate().toLocaleString('es-ES')}</p> </div>
+                <div class="mb-2 text-xs"> <p><strong>Vendedor:</strong> ${vNameModal} ${vendedor.apellido||''}</p> <p><strong>Camión:</strong> ${vendedor.camion||'N/A'}</p> <p><strong>Fecha:</strong> ${closingData.fecha.toDate().toLocaleString('es-ES', { timeZone: 'America/Caracas' })}</p> </div>
                 <h3 class="text-sm font-bold mb-1">Reporte Cierre</h3>
                 <table class="bg-white text-[11px] border border-gray-300" style="border-collapse:collapse;"> <thead class="bg-gray-200">${hHTML}</thead> <tbody>${bHTML}</tbody> <tfoot>${fHTML}</tfoot> </table>
                 <div class="mt-5">${vHTML}</div>
@@ -836,7 +836,7 @@
                             ? fechaObjeto.toDate()  
                             : fechaObjeto;            
 
-            const fechaCierre = jsDate ? jsDate.toLocaleDateString('es-ES') : 'Fecha Inválida';
+            const fechaCierre = jsDate ? jsDate.toLocaleDateString('es-ES', { timeZone: 'America/Caracas' }) : 'Fecha Inválida';
             
             const usuarioNombre = (userInfo.nombre || '') + ' ' + (userInfo.apellido || '');
             const usuarioDisplay = usuarioNombre.trim() || userInfo.email || 'Usuario Desconocido';
@@ -1240,7 +1240,7 @@
             }
 
             const vendedor = closingData.vendedorInfo || {}; 
-            const fecha = jsDate ? jsDate.toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10);
+            const fecha = jsDate ? jsDate.toISOString().slice(0, 10) : window.Fechas.clave();
             const vendNombre = (vendedor.nombre || 'Vendedor').replace(/\s/g, '_');
             
             const fileNamePre = isPreview ? '_PREVIO' : '';
@@ -1574,7 +1574,7 @@
             const gpsIcon = c.coordenadas ? '📍 Sí' : '<span class="text-red-400">No</span>';
 
             const lastSaleObj = _lastSaleMap.get(normalizeStr(c.nombreComercial));
-            const lastSaleStr = lastSaleObj ? `<span class="text-blue-700 font-medium">${lastSaleObj.toLocaleDateString('es-ES')}</span>` : '<span class="text-gray-400 text-xs italic">Sin reg.</span>';
+            const lastSaleStr = lastSaleObj ? `<span class="text-blue-700 font-medium">${lastSaleObj.toLocaleDateString('es-ES', { timeZone: 'America/Caracas' })}</span>` : '<span class="text-gray-400 text-xs italic">Sin reg.</span>';
 
             tHTML+=`<tr class="hover:bg-blue-50 border-b transition-colors"><td class="py-2.5 px-3 align-middle text-gray-700">${c.sector||'N/A'}</td><td class="py-2.5 px-3 font-bold text-gray-900 align-middle">${c.nombreComercial||'N/A'}</td><td class="py-2.5 px-3 font-mono text-gray-600 hidden sm:table-cell align-middle">${docFormat}</td><td class="py-2.5 px-3 text-center align-middle">${adcIcon}</td><td class="py-2.5 px-3 text-center align-middle">${deudaLabel}</td><td class="py-2.5 px-3 text-center align-middle">${gpsIcon}</td><td class="py-2.5 px-3 text-center align-middle">${lastSaleStr}</td></tr>`;
         });
@@ -1599,7 +1599,7 @@
             const tieneDeuda = deudaMonto > 0 ? 'SÍ' : 'NO';
             
             const ultimaVentaObj = _lastSaleMap.get(normName);
-            const ultimaVentaStr = ultimaVentaObj ? ultimaVentaObj.toLocaleDateString('es-ES') : 'Sin registros';
+            const ultimaVentaStr = ultimaVentaObj ? ultimaVentaObj.toLocaleDateString('es-ES', { timeZone: 'America/Caracas' }) : 'Sin registros';
 
             let saldoVaciosStr = '';
             if(c.saldoVacios) {
@@ -1665,7 +1665,7 @@
 
         worksheet.addRows(dExport);
 
-        const today = new Date().toISOString().slice(0, 10);
+        const today = window.Fechas.clave();
         const fileName = `Master_Clientes_Consolidado_${today}.xlsx`;
 
         try {
@@ -1726,7 +1726,7 @@
         let bloqueGestion = '';
         if (permite) {
             const desde = gestion && cli.cepGestionFecha
-                ? `<br><small class="text-gray-500">En gestión desde el ${new Date(cli.cepGestionFecha).toLocaleDateString('es-ES')}</small>`
+                ? `<br><small class="text-gray-500">En gestión desde el ${new Date(cli.cepGestionFecha).toLocaleDateString('es-ES', { timeZone: 'America/Caracas' })}</small>`
                 : '';
             bloqueGestion = `
                 <div style="margin-top:6px;padding-top:6px;border-top:1px solid #e5e7eb">
