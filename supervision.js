@@ -659,7 +659,8 @@
             const snapshotDoc = await _getDoc(_doc(_db, AUDIT_SNAPSHOT_PATH));
             const snapData = snapshotDoc.exists() ? snapshotDoc.data() : { inventario: [], fecha: new Date(0) };
             const baseItems = snapData.inventario || [];
-            const fechaCargaInicial = snapData.fecha?.toDate ? snapData.fecha.toDate() : new Date(snapData.fecha || 0);
+            let fechaCargaInicial = snapData.fecha?.toDate ? snapData.fecha.toDate() : new Date(snapData.fecha || 0);
+            if (!(fechaCargaInicial instanceof Date) || isNaN(fechaCargaInicial.getTime())) fechaCargaInicial = new Date(0);
 
             const [vSnap, oSnap, iSnap, rSnapFull, cSnapFull, cierresSnapFull, tombSnap] = await Promise.all([
                 _getDocs(_collection(_db, `artifacts/${_appId}/users/${userId}/ventas`)),
@@ -667,7 +668,8 @@
                 _getDocs(_collection(_db, `artifacts/${_appId}/users/${userId}/inventario`)),
                 _getDocs(_collection(_db, `artifacts/${_appId}/users/${userId}/recargas`)),
                 _getDocs(_collection(_db, `artifacts/${_appId}/users/${userId}/historial_correcciones`)),
-                _getDocs(_collection(_db, `artifacts/${_appId}/users/${userId}/cierres`)),
+                _getDocs(_query(_collection(_db, `artifacts/${_appId}/users/${userId}/cierres`),
+                                _where('fecha', '>=', fechaCargaInicial))),
                 _getDocs(_collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/productos_eliminados`))
             ]);
 
@@ -805,7 +807,8 @@
 
             const snapData         = snapshotDoc.data();
             const baseItems        = snapData.inventario || [];
-            const fechaCargaInicial = snapData.fecha?.toDate ? snapData.fecha.toDate() : new Date(snapData.fecha);
+            let fechaCargaInicial = snapData.fecha?.toDate ? snapData.fecha.toDate() : new Date(snapData.fecha);
+            if (!(fechaCargaInicial instanceof Date) || isNaN(fechaCargaInicial.getTime())) fechaCargaInicial = new Date(0);
 
             const [vSnap, oSnap, iSnap, rSnapFull, cSnapFull, cierresSnapFull] = await Promise.all([
                 _getDocs(_collection(_db, `artifacts/${_appId}/users/${userId}/ventas`)),
@@ -813,7 +816,8 @@
                 _getDocs(_collection(_db, `artifacts/${_appId}/users/${userId}/inventario`)),
                 _getDocs(_collection(_db, `artifacts/${_appId}/users/${userId}/recargas`)),
                 _getDocs(_collection(_db, `artifacts/${_appId}/users/${userId}/historial_correcciones`)),
-                _getDocs(_collection(_db, `artifacts/${_appId}/users/${userId}/cierres`))
+                _getDocs(_query(_collection(_db, `artifacts/${_appId}/users/${userId}/cierres`),
+                                _where('fecha', '>=', fechaCargaInicial)))
             ]);
 
             const inventarioActualMap = new Map(iSnap.docs.map(d => [d.id, d.data().cantidadUnidades || 0]));
