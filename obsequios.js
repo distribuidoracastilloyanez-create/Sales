@@ -392,7 +392,7 @@
     }
 
     async function showRegistroObsequiosView() {
-        if (_userRole === 'admin' && _usersCache.length === 0) {
+        if (window.esAdmin() && _usersCache.length === 0) {
             try {
                 const usersSnap = await _getDocs(_collection(_db, "users"));
                 _usersCache = usersSnap.docs.map(d => ({id: d.id, ...d.data()}));
@@ -412,7 +412,7 @@
         })();
 
         let adminFiltersHTML = '';
-        if (_userRole === 'admin') {
+        if (window.esAdmin()) {
             adminFiltersHTML = `
                 <div>
                     <label class="block text-xs font-bold text-gray-700 mb-1 uppercase tracking-wider">Vendedor:</label>
@@ -432,7 +432,7 @@
                 <div class="container mx-auto max-w-4xl bg-white p-4 sm:p-6 md:p-8 rounded-lg shadow-xl">
                     <h2 class="text-2xl font-black mb-6 text-gray-800 text-center tracking-tight">Registro de Obsequios</h2>
                     
-                    <div class="grid grid-cols-1 md:grid-cols-${_userRole === 'admin' ? '4' : '3'} gap-4 mb-6 bg-blue-50 p-4 rounded-lg border border-blue-100 shadow-inner">
+                    <div class="grid grid-cols-1 md:grid-cols-${window.esAdmin() ? '4' : '3'} gap-4 mb-6 bg-blue-50 p-4 rounded-lg border border-blue-100 shadow-inner">
                         ${adminFiltersHTML}
                         <div>
                             <label class="block text-xs font-bold text-gray-700 mb-1 uppercase tracking-wider">Desde Fecha:</label>
@@ -463,7 +463,7 @@
         const dEndStr = document.getElementById('obsDateEnd').value;
         let selectedUserId = _userId;
 
-        if (_userRole === 'admin') {
+        if (window.esAdmin()) {
             const selectEl = document.getElementById('obsUserSelect');
             if (selectEl) selectedUserId = selectEl.value;
         }
@@ -552,7 +552,7 @@
                 const fStr = r.fechaParaOrdenar.toLocaleDateString('es-ES', {day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute:'2-digit'});
                 
                 let vendedorBadge = '';
-                if (_userRole === 'admin') {
+                if (window.esAdmin()) {
                     // Extraer nombre y apellido de la caché de usuarios
                     const userObj = _usersCache.find(u => u.id === r.vendedorId) || {};
                     let vName = 'Desconocido';
