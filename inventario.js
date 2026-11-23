@@ -207,7 +207,7 @@
     window.showInventarioSubMenu = function() {
         if (_floatingControls) _floatingControls.classList.add('hidden');
         _listenersUnsubscribes.forEach(u => u()); _listenersUnsubscribes = [];
-        const isAdmin = _userRole === 'admin';
+        const isAdmin = window.esAdmin();
         _mainContent.innerHTML = `
             <div class="p-4 pt-8">
                 <div class="container mx-auto max-w-lg">
@@ -256,7 +256,7 @@
     let _codCambios = {};   // productoId -> código nuevo
 
     async function showEdicionCodigosView() {
-        if (_userRole !== 'admin') return;
+        if (!window.esAdmin()) return;
         if (_floatingControls) _floatingControls.classList.add('hidden');
         _codCambios = {};
 
@@ -447,7 +447,7 @@
     let _diagFallos = [];    // vendedores cuyo inventario no se pudo leer en el diagnóstico
 
     async function showDiagnosticoInventariosView() {
-        if (_userRole !== 'admin') { _showModal('Acceso denegado', 'Solo los administradores pueden usar esta herramienta.'); return; }
+        if (!window.esAdmin()) { _showModal('Acceso denegado', 'Solo los administradores pueden usar esta herramienta.'); return; }
         _mainContent.innerHTML = `
             <div class="p-3 pt-6 w-full max-w-3xl mx-auto">
                 <div class="bg-white/95 backdrop-blur-sm p-4 rounded-lg shadow-xl border-t-4 border-rose-600">
@@ -673,7 +673,7 @@
 
     async function showModifyDeleteView() {
         if (_floatingControls) _floatingControls.classList.add('hidden'); 
-        const isAdmin = _userRole === 'admin';
+        const isAdmin = window.esAdmin();
         _precioCambios = {}; // se entra siempre sin cambios de precio pendientes
        
         _mainContent.innerHTML = `
@@ -1021,7 +1021,7 @@
     // Sube o baja un porcentaje a TODOS los productos que están en pantalla según
     // los filtros actuales. Solo llena los campos: nada se guarda hasta confirmar.
     function ajustarPreciosFiltrados() {
-        if (_userRole !== 'admin') return;
+        if (!window.esAdmin()) return;
         const pct = parseFloat(document.getElementById('precioAjustePct')?.value);
         if (isNaN(pct) || pct === 0) {
             _showModal('Ajuste de precios', 'Escribe un porcentaje distinto de 0.<br><br>Ejemplo: <strong>5</strong> para subir 5%, <strong>-5</strong> para bajar 5%.');
@@ -1058,7 +1058,7 @@
     }
 
     async function guardarPrecios() {
-        if (_userRole !== 'admin') return;
+        if (!window.esAdmin()) return;
         const ids = Object.keys(_precioCambios).filter(id => !!_masterCatalogCache[id]);
         if (!ids.length) { _precioCambios = {}; _actualizarBarraPrecios(); return; }
 
@@ -1100,7 +1100,7 @@
     // =========================================================================================
 
     function showOrdenarSegmentosMarcasView() {
-        if (_userRole !== 'admin') {
+        if (!window.esAdmin()) {
             _showModal('Acceso Denegado', 'Solo administradores.');
             return;
         }
@@ -1349,7 +1349,7 @@
     }
 
     async function handleGuardarOrdenJerarquia() {
-        if (_userRole !== 'admin') return;
+        if (!window.esAdmin()) return;
         
         const rubroValue = document.getElementById('ordenarRubroFilter')?.value;
         if (!rubroValue) {
@@ -1508,7 +1508,7 @@
     // =========================================================================================
 
     async function showAgregarProductoView() {
-        if (_userRole !== 'admin') return;
+        if (!window.esAdmin()) return;
         if (_floatingControls) _floatingControls.classList.add('hidden');
         
         _mainContent.innerHTML = `<div class="p-4 pt-8"> <div class="container mx-auto max-w-2xl"> <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl text-center"> <h2 class="text-2xl font-bold mb-6">Agregar Nuevo Producto</h2> <form id="addProductoForm" class="space-y-4 text-left"> <div class="grid grid-cols-1 md:grid-cols-2 gap-4"> <div> <label for="rubro">Rubro:</label> <div class="flex items-center space-x-2"> <select id="rubro" class="w-full px-4 py-2 border rounded-lg" required></select> <button type="button" onclick="window.inventarioModule.showAddCategoryModal('rubros','Rubro')" class="px-3 py-2 bg-blue-500 text-white rounded-lg text-xs hover:bg-blue-600">+</button> </div> </div> <div> <label for="segmento">Segmento:</label> <div class="flex items-center space-x-2"> <select id="segmento" class="w-full px-4 py-2 border rounded-lg" required></select> <button type="button" onclick="window.inventarioModule.showAddCategoryModal('segmentos','Segmento')" class="px-3 py-2 bg-blue-500 text-white rounded-lg text-xs hover:bg-blue-600">+</button> </div> </div> <div> <label for="marca">Marca:</label> <div class="flex items-center space-x-2"> <select id="marca" class="w-full px-4 py-2 border rounded-lg" required></select> <button type="button" onclick="window.inventarioModule.showAddCategoryModal('marcas','Marca')" class="px-3 py-2 bg-blue-500 text-white rounded-lg text-xs hover:bg-blue-600">+</button> </div> </div> <div> <label for="presentacion">Presentación:</label> <input type="text" id="presentacion" class="w-full px-4 py-2 border rounded-lg" required> </div> <div> <label for="codigoPolar">Cod P. (Código Polar):</label> <input type="text" id="codigoPolar" placeholder="Opcional" class="w-full px-4 py-2 border rounded-lg uppercase"> <p class="text-[10px] text-gray-500 mt-1">Se guarda en mayúsculas.</p> </div> </div> <div class="border-t pt-4 mt-4"> <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4"> <div> <label class="block mb-2 font-medium">Venta por:</label> <div id="ventaPorContainer" class="flex space-x-4"> <label class="flex items-center"><input type="checkbox" id="ventaPorUnd" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> <span class="ml-2">Und.</span></label> <label class="flex items-center"><input type="checkbox" id="ventaPorPaq" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> <span class="ml-2">Paq.</span></label> <label class="flex items-center"><input type="checkbox" id="ventaPorCj" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> <span class="ml-2">Cj.</span></label> </div> </div> <div class="mt-4 md:mt-0"> <label class="flex items-center cursor-pointer"> <input type="checkbox" id="manejaVaciosCheck" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> <span class="ml-2 font-medium">Maneja Vacío</span> </label> <div id="tipoVacioContainer" class="mt-2 hidden"> <label for="tipoVacioSelect" class="block text-sm font-medium">Tipo:</label> <select id="tipoVacioSelect" class="w-full mt-1 px-2 py-1 border rounded-lg text-sm bg-gray-50"> <option value="">Seleccione...</option> <option value="1/4 - 1/3">1/4 - 1/3</option> <option value="ret 350 ml">Ret 350 ml</option> <option value="ret 1.25 Lts">Ret 1.25 Lts</option> </select> </div> </div> </div> <div id="manejaModelosBlock" class="mt-4 border-t pt-4"> <label class="flex items-center cursor-pointer"> <input type="checkbox" id="manejaModelosCheck" class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"> <span class="ml-2 font-medium">Maneja modelos (ej: plumita, tornillo, vermicelli, dedal)</span> </label> <div id="modelosContainer" class="mt-2 hidden"> <div class="flex items-center gap-2"> <input type="text" id="modeloInput" placeholder="Nombre del modelo" class="flex-1 px-3 py-2 border rounded-lg text-sm"> <button type="button" id="modeloAddBtn" class="px-4 py-2 bg-indigo-500 text-white rounded-lg text-sm font-bold hover:bg-indigo-600">+</button> </div> <div id="modelosLista" class="flex flex-wrap gap-2 mt-2"></div> <p class="text-[10px] text-gray-500 mt-1">Agrega cada modelo y presiona +. El stock por modelo se asigna en la Recarga.</p> </div> </div> <div id="empaquesContainer" class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4"></div> <div id="preciosContainer" class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4"></div> </div> <div class="border-t pt-4 mt-4"> <div class="grid grid-cols-1 md:grid-cols-2 gap-4"> <div> <label for="cantidadActual" class="block font-medium">Stock Inicial (Und. Base):</label> <input type="number" id="cantidadActual" value="0" class="w-full mt-1 px-4 py-2 border rounded-lg bg-gray-100 text-gray-500 cursor-not-allowed" readonly title="El stock se gestiona en 'Recarga de Productos'"> <p class="text-[10px] text-gray-500 mt-1">El stock se asigna en "Recarga de Productos" tras crear el ítem.</p> </div> <div> <label for="ivaTipo" class="block font-medium">IVA:</label> <select id="ivaTipo" class="w-full mt-1 px-4 py-2 border rounded-lg bg-white" required> <option value="16">16%</option> <option value="0">Exento 0%</option> </select> </div> </div> </div> <button type="submit" class="w-full px-6 py-3 bg-green-500 text-white font-semibold rounded-lg shadow-md hover:bg-green-600 transition duration-150">Agregar Producto</button> </form> <button id="backToMenuBtn" class="mt-4 w-full px-6 py-3 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500 transition duration-150">Volver</button> </div> </div> </div>`;
@@ -1615,7 +1615,7 @@
     }
 
     function showModificarDatosView() {
-        if (_userRole !== 'admin') return;
+        if (!window.esAdmin()) return;
         if (_floatingControls) _floatingControls.classList.add('hidden');
         
         _mainContent.innerHTML = `
@@ -1737,7 +1737,7 @@
     async function editProducto(productId) {
         // Recordar dónde estaba la lista para regresar al mismo punto al guardar
         _listaScrollTop = document.getElementById('productosListContainer')?.scrollTop || 0;
-        if (_userRole !== 'admin') { _showModal('Acceso Denegado', 'Solo administradores pueden editar definiciones.'); return; } const prod = _inventarioCache.find(p => p.id === productId); if (!prod) { _showModal('Error', 'Producto no encontrado en caché.'); return; } if (_floatingControls) _floatingControls.classList.add('hidden');
+        if (!window.esAdmin()) { _showModal('Acceso Denegado', 'Solo administradores pueden editar definiciones.'); return; } const prod = _inventarioCache.find(p => p.id === productId); if (!prod) { _showModal('Error', 'Producto no encontrado en caché.'); return; } if (_floatingControls) _floatingControls.classList.add('hidden');
         _mainContent.innerHTML = `<div class="p-4 pt-8"> <div class="container mx-auto max-w-2xl"> <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl text-center"> <h2 class="text-2xl font-bold mb-6">Editar Producto</h2> <form id="editProductoForm" class="space-y-4 text-left"> <div class="grid grid-cols-1 md:grid-cols-2 gap-4"> <div> <label for="rubro">Rubro:</label> <div class="flex items-center space-x-2"> <select id="rubro" class="w-full px-4 py-2 border rounded-lg" required></select> <button type="button" onclick="window.inventarioModule.showAddCategoryModal('rubros','Rubro')" class="px-3 py-2 bg-blue-500 text-white rounded-lg text-xs hover:bg-blue-600">+</button> </div> </div> <div> <label for="segmento">Segmento:</label> <div class="flex items-center space-x-2"> <select id="segmento" class="w-full px-4 py-2 border rounded-lg" required></select> <button type="button" onclick="window.inventarioModule.showAddCategoryModal('segmentos','Segmento')" class="px-3 py-2 bg-blue-500 text-white rounded-lg text-xs hover:bg-blue-600">+</button> </div> </div> <div> <label for="marca">Marca:</label> <div class="flex items-center space-x-2"> <select id="marca" class="w-full px-4 py-2 border rounded-lg" required></select> <button type="button" onclick="window.inventarioModule.showAddCategoryModal('marcas','Marca')" class="px-3 py-2 bg-blue-500 text-white rounded-lg text-xs hover:bg-blue-600">+</button> </div> </div> <div> <label for="presentacion">Presentación:</label> <input type="text" id="presentacion" class="w-full px-4 py-2 border rounded-lg" required> </div> <div> <label for="codigoPolar">Cod P. (Código Polar):</label> <input type="text" id="codigoPolar" value="${prod.codigoPolar || ''}" placeholder="Opcional" class="w-full px-4 py-2 border rounded-lg uppercase"> <p class="text-[10px] text-gray-500 mt-1">Se guarda en mayúsculas.</p> </div> </div> <div class="border-t pt-4 mt-4"> <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4"> <div> <label class="block mb-2 font-medium">Venta por:</label> <div id="ventaPorContainer" class="flex space-x-4"> <label class="flex items-center"><input type="checkbox" id="ventaPorUnd" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> <span class="ml-2">Und.</span></label> <label class="flex items-center"><input type="checkbox" id="ventaPorPaq" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> <span class="ml-2">Paq.</span></label> <label class="flex items-center"><input type="checkbox" id="ventaPorCj" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> <span class="ml-2">Cj.</span></label> </div> </div> <div class="mt-4 md:mt-0"> <label class="flex items-center cursor-pointer"> <input type="checkbox" id="manejaVaciosCheck" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> <span class="ml-2 font-medium">Maneja Vacío</span> </label> <div id="tipoVacioContainer" class="mt-2 hidden"> <label for="tipoVacioSelect" class="block text-sm font-medium">Tipo:</label> <select id="tipoVacioSelect" class="w-full mt-1 px-2 py-1 border rounded-lg text-sm bg-gray-50"> <option value="">Seleccione...</option> <option value="1/4 - 1/3">1/4 - 1/3</option> <option value="ret 350 ml">Ret 350 ml</option> <option value="ret 1.25 Lts">Ret 1.25 Lts</option> </select> </div> </div> </div> <div id="manejaModelosBlock" class="mt-4 border-t pt-4"> <label class="flex items-center cursor-pointer"> <input type="checkbox" id="manejaModelosCheck" class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"> <span class="ml-2 font-medium">Maneja modelos (ej: plumita, tornillo, vermicelli, dedal)</span> </label> <div id="modelosContainer" class="mt-2 hidden"> <div class="flex items-center gap-2"> <input type="text" id="modeloInput" placeholder="Nombre del modelo" class="flex-1 px-3 py-2 border rounded-lg text-sm"> <button type="button" id="modeloAddBtn" class="px-4 py-2 bg-indigo-500 text-white rounded-lg text-sm font-bold hover:bg-indigo-600">+</button> </div> <div id="modelosLista" class="flex flex-wrap gap-2 mt-2"></div> <p class="text-[10px] text-gray-500 mt-1">Agrega cada modelo y presiona +. El stock por modelo se asigna en la Recarga.</p> </div> </div> <div id="empaquesContainer" class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4"></div> <div id="preciosContainer" class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4"></div> </div> <div class="border-t pt-4 mt-4"> <div class="grid grid-cols-1 md:grid-cols-2 gap-4"> <div> <label for="cantidadActual" class="block font-medium">Stock Actual (Und. Base):</label> <input type="number" id="cantidadActual" value="${prod.cantidadUnidades||0}" class="w-full mt-1 px-4 py-2 border rounded-lg bg-gray-100 text-gray-500 cursor-not-allowed" readonly title="La cantidad se modifica en 'Ajuste Masivo'"> <p class="text-[10px] text-gray-500 mt-1">Modificar en "Recarga" o "Ajuste Masivo".</p> </div> <div> <label for="ivaTipo" class="block font-medium">IVA:</label> <select id="ivaTipo" class="w-full mt-1 px-4 py-2 border rounded-lg bg-white" required> <option value="16">16%</option> <option value="0">Exento 0%</option> </select> </div> </div> </div> <button type="submit" class="w-full px-6 py-3 bg-blue-500 text-white font-semibold rounded-lg shadow-md hover:bg-blue-600 transition duration-150">Guardar Cambios y Propagar</button> </form> <button id="backToModifyDeleteBtn" class="mt-4 w-full px-6 py-3 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500 transition duration-150">Volver</button> </div> </div> </div>`;
 
         await Promise.all([
@@ -1823,7 +1823,7 @@
     }
 
     async function handleUpdateProducto(e, productId) {
-        e.preventDefault(); if (_userRole !== 'admin') return; 
+        e.preventDefault(); if (!window.esAdmin()) return; 
         const updatedData = getProductoDataFromForm(true); 
         if (!updatedData.rubro||!updatedData.segmento||!updatedData.marca||!updatedData.presentacion){_showModal('Error','Completa Rubro, Segmento, Marca y Presentación.');return;} if (!updatedData.ventaPor.und&&!updatedData.ventaPor.paq&&!updatedData.ventaPor.cj){_showModal('Error','Selecciona al menos una forma de venta.');return;} if (updatedData.manejaVacios&&!updatedData.tipoVacio){_showModal('Error','Si maneja vacío, selecciona el tipo.');document.getElementById('tipoVacioSelect')?.focus();return;} if (updatedData.manejaModelos&&(!updatedData.modelos||!updatedData.modelos.length)){_showModal('Error','Si el producto maneja modelos, agrega al menos un modelo.');return;} let precioValido=(updatedData.ventaPor.und&&updatedData.precios.und>0)||(updatedData.ventaPor.paq&&updatedData.precios.paq>0)||(updatedData.ventaPor.cj&&updatedData.precios.cj>0); if(!precioValido){_showModal('Error','Ingresa al menos un precio válido (> 0) para la forma de venta seleccionada.');document.querySelector('#preciosContainer input[required]')?.focus();return;}
         
@@ -1844,12 +1844,12 @@
     }
 
     function deleteProducto(productId) {
-        if (_userRole !== 'admin') { _showModal('Acceso Denegado', 'Solo administradores.'); return; } const prod = _inventarioCache.find(p => p.id === productId); if (!prod) { _showModal('Error', 'Producto no encontrado.'); return; }
+        if (!window.esAdmin()) { _showModal('Acceso Denegado', 'Solo administradores.'); return; } const prod = _inventarioCache.find(p => p.id === productId); if (!prod) { _showModal('Error', 'Producto no encontrado.'); return; }
         _showModal('Confirmar Eliminación', `¿Estás seguro de eliminar el producto "${prod.presentacion}"? Esta acción se propagará a todos los usuarios y es IRREVERSIBLE.`, async () => { _showModal('Progreso', `Eliminando "${prod.presentacion}"...`, null, '', null, false); try { if (window.adminModule?.propagateProductChange) { await window.adminModule.propagateProductChange(productId, null); } else { await _deleteDoc(_doc(_db, `artifacts/${_appId}/users/${_userId}/inventario`, productId)); } _showModal('Éxito',`Producto "${prod.presentacion}" eliminado y propagado.`); } catch (e) { console.error("Error eliminando producto:", e); _showModal('Error', `No se pudo eliminar: ${e.message}`); } }, 'Sí, Eliminar', null, true);
     }
 
     async function handleDeleteAllProductos() {
-        if (_userRole !== 'admin') return; 
+        if (!window.esAdmin()) return; 
         _showModal('Confirmación Extrema', `¿Estás SEGURO de eliminar TODOS los productos del inventario? Esta acción es IRREVERSIBLE y se propagará.`, async () => { 
             _showModal('Progreso', 'Eliminando productos...', null, '', null, false); 
             try { 
@@ -1883,7 +1883,7 @@
     }
 
     async function handleDeleteAllDatosMaestros() {
-        if (_userRole !== 'admin') return;
+        if (!window.esAdmin()) return;
         _showModal('Confirmar Borrado Datos Maestros', `¿Eliminar TODOS los Rubros, Segmentos y Marcas que NO estén siendo usados actualmente en el inventario? Esta acción es IRREVERSIBLE y se propagará.`, async () => {
             _showModal('Progreso', 'Verificando uso de datos maestros...', null, '', null, false);
             try {
