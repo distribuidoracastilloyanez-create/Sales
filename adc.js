@@ -40,7 +40,7 @@
     const pathClientes = () => `artifacts/${PUB()}/public/data/clientes`;
     const pathArchivos = () => `artifacts/${PUB()}/public/data/archivos_clientes`;
 
-    const esAdmin = () => (window.userRole || _userRole) === 'admin';
+    const esAdmin = () => window.esAdmin();
 
     // Traduce los errores de Firebase a algo accionable (sobre todo permisos).
     function explicarError(e) {
