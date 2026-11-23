@@ -596,7 +596,11 @@
                     <div class="bg-white rounded-xl shadow-lg overflow-hidden">
                         <div class="px-4 py-3 text-center" style="background:#16305C">
                             <h1 class="text-base font-semibold text-white tracking-tight">Menú Principal</h1>
-                            <button id="menuTasaBcvDisplay" class="text-[11px] mt-0.5 hover:underline transition cursor-pointer" style="color:#BBD2EE">(BCV ----- --/--/--)</button>
+                            <button id="menuTasaBcvDisplay" class="mt-1 inline-flex items-baseline gap-1.5 hover:opacity-80 transition cursor-pointer" style="color:#BBD2EE" title="Toca para ver el calendario de tasas">
+                                <span class="text-[10px] font-bold tracking-wide">BCV</span>
+                                <span class="text-xl font-bold text-white leading-none">-----</span>
+                                <span class="text-[10px] font-semibold">--/--/--</span>
+                            </button>
                         </div>
                         <div class="${isAdmin ? 'p-3' : 'p-4'}">
                         <div class="grid grid-cols-2 ${isAdmin ? 'gap-2' : 'gap-2.5'}">
@@ -695,8 +699,11 @@
             // Mostrar la tasa BCV de hoy bajo "Menú Principal" + clic abre el calendario (solo lectura)
             (async () => {
                 const disp = document.getElementById('menuTasaBcvDisplay');
-                if (disp && window.textoTasaHoyBCV) {
-                    try { disp.textContent = await window.textoTasaHoyBCV(); } catch (e) {}
+                if (disp && window.htmlTasaHoyBCV) {
+                    try {
+                        disp.innerHTML = await window.htmlTasaHoyBCV(
+                            'text-xl font-bold text-white leading-none', 'text-[10px] font-semibold');
+                    } catch (e) {}
                     disp.addEventListener('click', () => {
                         if (window.abrirCalendarioTasas) {
                             window.abrirCalendarioTasas(() => (window.showMainMenu ? window.showMainMenu() : location.reload()));
