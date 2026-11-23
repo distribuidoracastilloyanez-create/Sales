@@ -453,7 +453,7 @@
         }
 
         if (puntos.length) {
-            try { _mapaADC.fitBounds(L.latLngBounds(puntos), { padding: [30, 30], maxZoom: 16 }); } catch (e) {}
+            try { _mapaADC.fitBounds(L.latLngBounds(puntos), { padding: [30, 30], maxZoom: 16 }); } catch (e) { /* fitBounds falla si no hay puntos válidos; el mapa se queda donde está */ }
         }
     }
 
