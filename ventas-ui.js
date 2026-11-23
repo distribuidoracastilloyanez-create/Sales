@@ -21,16 +21,15 @@
          * Vista Principal: Menú de Ventas
          */
         getMainViewTemplate: () => `
-            <div class="p-4 pt-8"> 
-                <div class="container mx-auto"> 
-                    <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl text-center">
-                        <h1 class="text-3xl font-bold text-gray-800 mb-6">Gestión de Ventas</h1>
-                        <div class="space-y-4">
-                            <button id="nuevaVentaBtn" class="w-full px-6 py-3 bg-green-500 text-white rounded-lg shadow-md hover:bg-green-600">Nueva Venta / Consignación</button>
-                            <button id="backToMenuBtn" class="w-full px-6 py-3 bg-gray-400 text-white rounded-lg shadow-md hover:bg-gray-500">Volver</button>
+            <div class="p-2 sm:p-4">
+                <div class="container mx-auto max-w-2xl">
+                    <div class="bg-white p-3 sm:p-4 rounded-xl shadow-lg overflow-hidden">
+                        ${window.Comun.cabeceraCard('Venta Directa', 'Registro de ventas y consignaciones en ruta', 'backToMenuBtn')}
+                        <div class="space-y-3">
+                            ${window.Comun.tarjetaMenu('nuevaVentaBtn', 'Nueva Venta / Consignación', 'Cargar una operación nueva para un cliente.')}
                         </div>
-                    </div> 
-                </div> 
+                    </div>
+                </div>
             </div>
         `,
 
@@ -40,12 +39,9 @@
          */
         getNewSaleTemplate: (tiposVacio) => `
             <div class="p-2 w-full"> 
-                <div class="bg-white/90 backdrop-blur-sm p-3 sm:p-4 rounded-lg shadow-xl flex flex-col h-full" style="min-height: calc(100vh - 1rem);">
+                <div class="bg-white p-3 sm:p-4 rounded-xl shadow-lg flex flex-col h-full overflow-hidden" style="min-height: calc(100vh - 1rem);">
                     <div id="venta-header-section" class="mb-2">
-                        <div class="flex justify-between items-center mb-2"> 
-                            <h2 class="text-lg font-bold">Nueva Operación</h2> 
-                            <button id="backToVentasBtn" class="px-3 py-1.5 bg-gray-400 text-white text-xs rounded-lg shadow-md hover:bg-gray-500">Volver</button> 
-                        </div>
+                        ${window.Comun.cabeceraCard('Nueva Operación', 'Venta o consignación', 'backToVentasBtn')}
                         <div id="client-search-container"> 
                             <label for="clienteSearch" class="block font-medium mb-2">Cliente:</label> 
                             <div class="relative">
@@ -495,17 +491,16 @@
          * Vista: Submenú Ventas Totales
          */
         getSalesMenuTemplate: () => `
-            <div class="p-4 pt-8"> 
-                <div class="container mx-auto"> 
-                    <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl text-center">
-                        <h2 class="text-2xl font-bold text-gray-800 mb-6">Ventas Totales</h2>
-                        <div class="space-y-4">
-                            <button id="ventasActualesBtn" class="w-full px-6 py-3 bg-teal-500 text-white font-bold rounded-lg shadow-md hover:bg-teal-600 transition">Listado de Ventas y Consignaciones</button>
-                            <button id="cierreVentasBtn" class="w-full px-6 py-3 bg-red-600 text-white font-bold rounded-lg shadow-md hover:bg-red-700 transition">Generar Cierre de Jornada</button>
+            <div class="p-2 sm:p-4">
+                <div class="container mx-auto max-w-2xl">
+                    <div class="bg-white p-3 sm:p-4 rounded-xl shadow-lg overflow-hidden">
+                        ${window.Comun.cabeceraCard('Ventas Totales', 'Consulta de operaciones y cierre de jornada', 'backToVentasBtn')}
+                        <div class="space-y-3">
+                            ${window.Comun.tarjetaMenu('ventasActualesBtn', 'Listado de Ventas y Consignaciones', 'Ver el detalle de las operaciones activas.')}
+                            ${window.Comun.tarjetaMenu('cierreVentasBtn', 'Generar Cierre de Jornada', 'Agrupar las operaciones activas en un reporte de cierre.')}
                         </div>
-                        <button id="backToVentasBtn" class="mt-6 w-full px-6 py-3 bg-gray-400 text-white font-bold rounded-lg shadow-md hover:bg-gray-500 transition">Volver</button>
-                    </div> 
-                </div> 
+                    </div>
+                </div>
             </div>
         `,
 
@@ -513,18 +508,20 @@
          * Vista: Submenú Cierre
          */
         getClosingMenuTemplate: () => `
-            <div class="p-4 pt-8"> 
-                <div class="container mx-auto"> 
-                    <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl text-center">
-                        <h2 class="text-2xl font-bold text-gray-800 mb-6">Cierre de Jornada</h2>
-                        <p class="text-gray-600 mb-6 text-sm">Este proceso agrupará todas las ventas y consignaciones activas en un solo reporte de cierre.</p>
-                        <div class="space-y-4">
-                            <button id="verCierreBtn" class="w-full px-6 py-3 bg-cyan-500 text-white font-bold rounded-lg shadow-md hover:bg-cyan-600 transition">Ver Vista Previa del Cierre</button>
-                            <button id="ejecutarCierreBtn" class="w-full px-6 py-3 bg-red-600 text-white font-bold rounded-lg shadow-md hover:bg-red-700 transition">Ejecutar Cierre Definitivo</button>
+            <div class="p-2 sm:p-4">
+                <div class="container mx-auto max-w-2xl">
+                    <div class="bg-white p-3 sm:p-4 rounded-xl shadow-lg overflow-hidden">
+                        ${window.Comun.cabeceraCard('Cierre de Jornada', 'Agrupa las ventas y consignaciones activas', 'backToVentasTotalesBtn')}
+                        <p class="text-xs text-gray-600 mb-3 leading-snug">Este proceso agrupará todas las ventas y consignaciones activas en un solo reporte de cierre.</p>
+                        <div class="space-y-3">
+                            ${window.Comun.tarjetaMenu('verCierreBtn', 'Ver Vista Previa del Cierre', 'Revisar el reporte antes de ejecutarlo.')}
                         </div>
-                        <button id="backToVentasTotalesBtn" class="mt-6 w-full px-6 py-3 bg-gray-400 text-white font-bold rounded-lg shadow-md hover:bg-gray-500 transition">Volver</button>
-                    </div> 
-                </div> 
+                        <div class="mt-4 pt-3 border-t border-gray-200">
+                            <p class="text-[10px] text-gray-500 mb-2 uppercase tracking-wide font-semibold">Acción definitiva</p>
+                            <button id="ejecutarCierreBtn" class="w-full px-4 py-3 text-white text-sm font-semibold rounded-lg shadow hover:opacity-90 transition" style="background:#9B2C2C">Ejecutar Cierre Definitivo</button>
+                        </div>
+                    </div>
+                </div>
             </div>
         `,
 
@@ -536,12 +533,9 @@
             
             return `
             <div class="p-2 sm:p-4 w-full"> 
-                <div class="bg-white/90 backdrop-blur-sm p-4 sm:p-6 rounded-lg shadow-xl flex flex-col h-full border-t-4 border-yellow-500" style="min-height: calc(100vh - 2rem);">
+                <div class="bg-white p-3 sm:p-4 rounded-xl shadow-lg flex flex-col h-full overflow-hidden" style="min-height: calc(100vh - 2rem);">
                     <div id="venta-header-section" class="mb-4">
-                        <div class="flex justify-between items-center mb-4"> 
-                            <h2 class="text-xl font-bold">Editando Registro</h2> 
-                            <button id="backToVentasBtn" class="px-4 py-2 bg-gray-400 text-white text-sm rounded-lg shadow-md hover:bg-gray-500 transition">Volver</button> 
-                        </div>
+                        ${window.Comun.cabeceraCard('Editando Registro', 'Modificación de una operación ya guardada', 'backToVentasBtn')}
                         <div class="p-4 bg-gray-100 rounded-lg border border-gray-200 shadow-sm"> 
                             <p><span class="font-medium">Cliente:</span> <span class="font-bold text-gray-800">${venta.clienteNombre || 'N/A'}</span></p> 
                             <p class="text-sm"><span class="font-medium">Fecha:</span> ${venta.fecha?.toDate ? venta.fecha.toDate().toLocaleString('es-ES', { timeZone: 'America/Caracas' }) : 'N/A'}</p> 
