@@ -123,11 +123,13 @@
         // muestra "Volver al Menú". Los demás llegan desde el botón Pre-Venta del menú único.
         _mainContent.innerHTML = `
             <div class="p-3 pt-5 container mx-auto max-w-lg">
-                <div class="bg-white/90 backdrop-blur-sm p-4 rounded-lg shadow-xl text-center">
-                    <div class="flex items-center justify-between mb-2">
-                        <h1 class="text-xl font-bold text-gray-800">${esDesp ? 'Despacho' : 'Pre-Venta'}</h1>
-                        ${!esDesp ? `<button id="pvNavTradiBtn" class="px-3 py-1.5 bg-gray-400 text-white text-xs rounded-lg shadow-md hover:bg-gray-500 font-bold transition">Volver al Menú</button>` : ''}
-                    </div>
+                <div class="bg-white p-4 rounded-xl shadow-lg overflow-hidden text-center">
+                    ${esDesp
+                        ? `<div class="-m-4 mb-4 px-4 py-3 text-left" style="background:#16305C">
+                               <h2 class="text-base font-semibold text-white tracking-tight">Despacho</h2>
+                               <p class="text-[10px] mt-0.5" style="color:#BBD2EE">Pedidos por entregar y carga de ruta</p>
+                           </div>`
+                        : window.Comun.cabeceraCard('Pre-Venta', 'Tomar pedidos y seguir su despacho', 'pvNavTradiBtn')}
                     <button id="pvTasaBcvDisplay" class="mb-3 text-sm font-bold text-gray-700 hover:text-gray-900 hover:underline transition cursor-pointer">(BCV ----- --/--/--)</button>
 
                     <div class="space-y-2">
@@ -180,12 +182,8 @@
 
         _mainContent.innerHTML = `
             <div class="p-3 pt-6 w-full max-w-lg mx-auto">
-                <div class="bg-white/95 backdrop-blur-sm p-4 rounded-lg shadow-xl">
-                    <div class="flex items-center justify-between mb-3">
-                        <h2 class="text-lg font-bold text-gray-800 flex items-center gap-2">👤 Vendedores / Zonas</h2>
-                        <button id="pvVendBack" class="px-3 py-1.5 bg-gray-400 text-white text-xs rounded hover:bg-gray-500 font-bold transition">Volver</button>
-                    </div>
-                    <p class="text-[11px] text-gray-500 mb-3">Asigna a cada vendedor su zona/ruta de referencia. Es solo informativo para organizar los pedidos; no afecta el sistema tradicional.</p>
+                <div class="bg-white p-3 sm:p-4 rounded-xl shadow-lg overflow-hidden">
+                    ${window.Comun.cabeceraCard('Vendedores y Zonas', 'Ruta de pre-venta asignada a cada vendedor', 'pvVendBack')}<p class="text-[11px] text-gray-500 mb-3">Asigna a cada vendedor su zona/ruta de referencia. Es solo informativo para organizar los pedidos; no afecta el sistema tradicional.</p>
                     <div id="pvVendLoading" class="text-center py-8 text-gray-400 text-sm">
                         <svg class="animate-spin h-6 w-6 mx-auto mb-2 text-indigo-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path></svg>
                         Cargando vendedores...
@@ -454,11 +452,14 @@
         // El vendedor es el usuario logueado (o el admin, que también puede tomar pedidos con su cuenta)
         _mainContent.innerHTML = `
             <div class="p-2 w-full">
-                <div class="bg-white/90 backdrop-blur-sm p-3 sm:p-4 rounded-lg shadow-xl flex flex-col" style="min-height: calc(100vh - 1rem);">
+                <div class="bg-white p-3 sm:p-4 rounded-xl shadow-lg overflow-hidden flex flex-col" style="min-height: calc(100vh - 1rem);">
                     <div class="mb-2">
-                        <div class="flex justify-between items-center mb-2">
-                            <h2 id="pvTomarPedidoTitulo" class="text-lg font-bold text-gray-800">Tomar Pedido</h2>
-                            <button id="pvPedBack" class="px-3 py-1.5 bg-gray-400 text-white text-xs rounded-lg shadow-md hover:bg-gray-500">Volver</button>
+                        <div class="-mx-3 sm:-mx-4 -mt-3 sm:-mt-4 mb-3 px-4 py-3 flex items-center justify-between" style="background:#16305C">
+                            <div class="min-w-0">
+                                <h2 id="pvTomarPedidoTitulo" class="text-base font-semibold text-white tracking-tight truncate">Tomar Pedido</h2>
+                                <p class="text-[10px] mt-0.5 truncate" style="color:#BBD2EE">Cliente, productos y total del pedido</p>
+                            </div>
+                            <button id="pvPedBack" class="px-3 py-1.5 bg-white/10 text-white text-xs rounded-md hover:bg-white/20 font-medium transition shrink-0">Volver</button>
                         </div>
                         <div id="pvVendedorInfo" class="text-[11px] text-indigo-700 bg-indigo-50 border border-indigo-200 rounded p-1.5 mb-2 font-semibold"></div>
 
@@ -1000,12 +1001,8 @@
 
         _mainContent.innerHTML = `
             <div class="p-2 sm:p-3 pt-5 w-full max-w-2xl mx-auto">
-                <div class="bg-white/95 backdrop-blur-sm p-3 sm:p-4 rounded-lg shadow-xl">
-                    <div class="flex items-center justify-between mb-3">
-                        <h2 class="text-lg font-bold text-gray-800">Pedidos</h2>
-                        <button id="pvLPBack" class="px-3 py-1.5 bg-gray-400 text-white text-xs rounded hover:bg-gray-500 font-bold transition">Volver</button>
-                    </div>
-                    <label class="flex items-center gap-1.5 text-[11px] text-gray-600 mb-2">
+                <div class="bg-white p-3 sm:p-4 rounded-xl shadow-lg overflow-hidden">
+                    ${window.Comun.cabeceraCard('Pedidos', 'Pedidos tomados y su estado de despacho', 'pvLPBack')}<label class="flex items-center gap-1.5 text-[11px] text-gray-600 mb-2">
                         <input type="checkbox" id="pvLPHoy" class="rounded"> Solo pedidos de hoy
                     </label>
                     <div id="pvLPLoading" class="text-center py-8 text-gray-400 text-sm">
@@ -1293,13 +1290,8 @@
 
         _mainContent.innerHTML = `
             <div class="p-2 sm:p-3 pt-5 w-full max-w-2xl mx-auto">
-                <div class="bg-white/95 backdrop-blur-sm p-3 sm:p-4 rounded-lg shadow-xl">
-                    <div class="flex items-center justify-between mb-3">
-                        <h2 class="text-lg font-bold text-gray-800">Estado del Pedido</h2>
-                        <button id="pvBandBack" class="px-3 py-1.5 bg-gray-400 text-white text-xs rounded hover:bg-gray-500 font-bold transition">Volver</button>
-                    </div>
-
-                    ${(rol === 'despachador' || rol === 'admin') ? `
+                <div class="bg-white p-3 sm:p-4 rounded-xl shadow-lg overflow-hidden">
+                    ${window.Comun.cabeceraCard('Estado del Pedido', 'Seguimiento del pedido hasta la entrega', 'pvBandBack')}${(rol === 'despachador' || rol === 'admin') ? `
                     <button id="pvCorteBtn" class="w-full mb-2 py-2.5 bg-purple-600 text-white rounded-lg font-bold text-sm hover:bg-purple-700 transition shadow-sm">Corte de Carga</button>
                     <div id="pvCorteBanner" class="hidden mb-3 p-2.5 bg-purple-50 border border-purple-200 rounded-lg text-[11px] text-purple-800 flex items-center justify-between gap-2">
                         <span>Elige <strong>hasta qué pedido</strong> cortar (toca "Cortar hasta aquí").</span>
@@ -2374,12 +2366,8 @@
 
         _mainContent.innerHTML = `
             <div class="p-2 sm:p-3 pt-5 w-full max-w-2xl mx-auto">
-                <div class="bg-white/95 backdrop-blur-sm p-3 sm:p-4 rounded-lg shadow-xl">
-                    <div class="flex items-center justify-between mb-3">
-                        <h2 class="text-lg font-bold text-gray-800">Inventario por Ruta</h2>
-                        <button id="pvInvBack" class="px-3 py-1.5 bg-gray-400 text-white text-xs rounded hover:bg-gray-500 font-bold transition">Volver</button>
-                    </div>
-                    <p class="text-[11px] text-gray-500 mb-3">Reparte el stock del galpón entre las rutas. Es un control lógico independiente; no afecta el inventario que usan los vendedores en la calle.</p>
+                <div class="bg-white p-3 sm:p-4 rounded-xl shadow-lg overflow-hidden">
+                    ${window.Comun.cabeceraCard('Inventario por Ruta', 'Stock comprometido y disponible por ruta', 'pvInvBack')}<p class="text-[11px] text-gray-500 mb-3">Reparte el stock del galpón entre las rutas. Es un control lógico independiente; no afecta el inventario que usan los vendedores en la calle.</p>
 
                     <div id="pvInvLoading" class="text-center py-8 text-gray-400 text-sm">
                         <svg class="animate-spin h-6 w-6 mx-auto mb-2 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path></svg>
