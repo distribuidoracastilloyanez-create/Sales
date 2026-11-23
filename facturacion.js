@@ -1385,12 +1385,17 @@
             const pid = (window.AppConfig && window.AppConfig.PUBLIC_DATA_ID) || _appId;
             const catSnap = (window.getCatalogoSnapshot ? await window.getCatalogoSnapshot() : await _getDocs(_collection(_db, `artifacts/${pid}/public/data/productos`)));
             _cfgFactProds = catSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-            try { if (window.getGlobalProductSortFunction) { const fn = await window.getGlobalProductSortFunction(); if (fn) _cfgFactProds.sort(fn); } } catch (e) {}
+            try { if (window.getGlobalProductSortFunction) { const fn = await window.getGlobalProductSortFunction(); if (fn) _cfgFactProds.sort(fn); } } catch (e) { console.error('Facturación: no se pudo aplicar el orden global de productos.', e); }
             _cfgFactSel = { alimentos: {}, cerveceria: {} };
             try {
                 const cs = await _getDoc(_doc(_db, `artifacts/${pid}/public/data/config/factura_filas`));
                 if (cs.exists()) { const d = cs.data(); _cfgFactSel = { alimentos: { ...(d.alimentos || {}) }, cerveceria: { ...(d.cerveceria || {}) } }; }
-            } catch (e) {}
+            } catch (e) {
+                // Sin esta configuración la factura sale con las filas vacías y parece
+                // que nunca se configuró. Conviene saber que fue un fallo de lectura.
+                console.error('Facturación: no se pudo leer la configuración de filas de la factura.', e);
+                _showModal?.('Aviso', 'No se pudo leer la configuración de la factura. Revise la conexión antes de guardar cambios, o sobrescribirá lo ya configurado.');
+            }
             _cfgFactRender();
         } catch (e) {
             console.error('config factura:', e);
@@ -2272,7 +2277,3 @@
 
 })();
 // redeploy trigger 1783027831
-
-
-
-
