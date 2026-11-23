@@ -249,7 +249,11 @@
 
                 // ── VENTAS dentro de CIERRES (histórico ya cerrado) ──
                 try {
-                    const cSnap = await _getDocs(_collection(_db, `artifacts/${_appId}/users/${uid}/cierres`));
+                    // Se piden solo los cierres del período en lugar del histórico completo.
+                    // El filtro de abajo (f < desde) se conserva como red de seguridad.
+                    const cSnap = await _getDocs(_query(
+                        _collection(_db, `artifacts/${_appId}/users/${uid}/cierres`),
+                        _where('fecha', '>=', desde)));
                     cSnap.docs.forEach(d => {
                         const cierre = d.data();
                         const f = _aFecha(cierre.fecha);
