@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v186'; // v186: nuevo comun.js con utilidades compartidas; esAdmin() unica en 16 modulos y cabeceras del estilo sin duplicar. Incluye preventa.js completo (el de v185 quedo cortado)
+const CACHE_NAME = 'ventas-app-cache-v187'; // v187: todas las fechas ancladas a GMT-4 (America/Caracas) desde comun.js; se acaban los dias corridos por zona horaria en cierres, reportes y nombres de archivo
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
