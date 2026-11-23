@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v188'; // v188: caches compartidas de clientes y usuarios (ademas del catalogo); 22 lecturas repetidas de colecciones completas pasan a leerse una sola vez
+const CACHE_NAME = 'ventas-app-cache-v189'; // v189: los cierres se piden filtrados por fecha en el cuadre y la supervision; se deja de descargar el historico completo en cada cierre
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
