@@ -102,37 +102,33 @@
         const esVend = rol === 'vendedor';
         const esDesp = rol === 'despachador';
 
-        const bpad = 'px-2 py-2.5 text-sm';
-        // Botones de Pre-Venta según el rol
-        const btn = (id, txt, clase) => `<button id="${id}" class="w-full ${bpad} ${clase} text-white rounded-lg shadow-md font-bold transition">${txt}</button>`;
+        // Tarjetas del menú, con una línea que explica cada opción
+        const T = window.Comun.tarjetaMenu;
         let botones = '';
-        // Orden principal: Tomar Pedido, Estado del Pedido, Reportes
-        if (esAdmin || esVend)  botones += btn('pvPedidosBtn', 'Tomar Pedido', 'bg-indigo-500 hover:bg-indigo-600');
-        botones += btn('pvListaPedidosBtn', 'Pedidos', 'bg-cyan-600 hover:bg-cyan-700');
-        botones += btn('pvBandejaBtn', 'Estado del Pedido', 'bg-teal-600 hover:bg-teal-700');
-        // Funciones adicionales de admin
-        if (esAdmin) botones += btn('pvInventarioRutaBtn', 'Inv. por Ruta', 'bg-blue-600 hover:bg-blue-700');
-        if (esAdmin) botones += btn('pvVendedoresBtn', 'Vendedores/Zonas', 'bg-slate-600 hover:bg-slate-700');
-        if (esAdmin) botones += btn('pvConfigBtn', 'Configuración', 'bg-gray-600 hover:bg-gray-700');
-        // Accesos tradicionales reutilizados (despachador)
-        if (esDesp) botones += btn('pvClientesBtn', 'Clientes', 'bg-teal-600 hover:bg-teal-700');
-        if (esDesp) botones += btn('pvCxcBtn', 'CXC', 'bg-amber-600 hover:bg-amber-700');
-        if (esDesp) botones += btn('pvPerfilBtn', 'Mi Perfil', 'bg-slate-700 hover:bg-slate-800');
+        if (esAdmin || esVend)  botones += T('pvPedidosBtn', 'Tomar Pedido', 'Registrar un pedido nuevo para un cliente.');
+        botones += T('pvListaPedidosBtn', 'Pedidos', 'Ver los pedidos tomados y su estado de despacho.');
+        botones += T('pvBandejaBtn', 'Estado del Pedido', 'Avanzar o devolver el estado de un pedido.');
+        if (esAdmin) botones += T('pvInventarioRutaBtn', 'Inventario por Ruta', 'Stock comprometido y disponible de cada ruta.');
+        if (esAdmin) botones += T('pvVendedoresBtn', 'Vendedores y Zonas', 'Ruta de pre-venta asignada a cada vendedor.');
+        if (esAdmin) botones += T('pvConfigBtn', 'Configuración', 'Ajustes del módulo de pre-venta.');
+        if (esDesp)  botones += T('pvClientesBtn', 'Clientes', 'Buscar un cliente y ver su expediente.');
+        if (esDesp)  botones += T('pvCxcBtn', 'CXC', 'Deudas y abonos de los clientes.');
+        if (esDesp)  botones += T('pvPerfilBtn', 'Mi Perfil', 'Sus datos y la unidad asignada.');
 
         // El despachador entra directo aquí (es su pantalla principal), así que no
         // muestra "Volver al Menú". Los demás llegan desde el botón Pre-Venta del menú único.
         _mainContent.innerHTML = `
             <div class="p-3 pt-5 container mx-auto max-w-lg">
-                <div class="bg-white p-4 rounded-xl shadow-lg overflow-hidden text-center">
+                <div class="bg-white p-3 sm:p-4 rounded-xl shadow-lg overflow-hidden">
                     ${esDesp
                         ? `<div class="-m-4 mb-4 px-4 py-3 text-left" style="background:#16305C">
                                <h2 class="text-base font-semibold text-white tracking-tight">Despacho</h2>
                                <p class="text-[10px] mt-0.5" style="color:#BBD2EE">Pedidos por entregar y carga de ruta</p>
                            </div>`
                         : window.Comun.cabeceraCard('Pre-Venta', 'Tomar pedidos y seguir su despacho', 'pvNavTradiBtn')}
-                    <button id="pvTasaBcvDisplay" class="mb-3 text-sm font-bold text-gray-700 hover:text-gray-900 hover:underline transition cursor-pointer">(BCV ----- --/--/--)</button>
+                    <button id="pvTasaBcvDisplay" class="mb-3 text-xs font-semibold text-gray-600 hover:underline transition cursor-pointer">(BCV ----- --/--/--)</button>
 
-                    <div class="space-y-2">
+                    <div class="space-y-3">
                         ${botones}
                     </div>
                 </div>
