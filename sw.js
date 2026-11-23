@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v192'; // v192: corrige los botones Tasas BCV y Cargar Excel del CXC, que quedaron invisibles en v191, y reordena esa cabecera para el telefono
+const CACHE_NAME = 'ventas-app-cache-v193'; // v193: Clientes, Pre-Venta, Facturacion, Obsequios y Ventas Totales al estilo corporativo; con esto los 15 modulos comparten el mismo formato
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
