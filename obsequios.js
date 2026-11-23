@@ -331,7 +331,7 @@
         
         document.getElementById('btnImg').onclick = async () => {
             const dateObj = reg.fecha?.toDate ? reg.fecha.toDate() : (new Date(reg.fecha));
-            const dateStr = isNaN(dateObj) ? '' : dateObj.toLocaleDateString('es-ES', {day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute:'2-digit'});
+            const dateStr = isNaN(dateObj) ? '' : dateObj.toLocaleDateString('es-ES', { timeZone: 'America/Caracas',day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute:'2-digit'});
 
             const ticketHTML = `
                 <div id="ticket-ob" class="p-6 bg-white text-black font-mono text-xl" style="width:500px;">
@@ -375,7 +375,7 @@
 
         document.getElementById('btnTxt').onclick = () => {
             const dateObj = reg.fecha?.toDate ? reg.fecha.toDate() : (new Date(reg.fecha));
-            const dStr = isNaN(dateObj) ? '' : dateObj.toLocaleDateString('es-ES', {day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute:'2-digit'});
+            const dStr = isNaN(dateObj) ? '' : dateObj.toLocaleDateString('es-ES', { timeZone: 'America/Caracas',day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute:'2-digit'});
             
             const txt = `*DIST. CASTILLO*\n*--- OBSEQUIO ---*\nFECHA: ${dStr}\nCLIENTE: ${reg.clienteNombre}\n\n*PRODUCTO:*\n${reg.productoNombre}\n*CANTIDAD:* ${reg.cantidadCajas} CAJAS\n\nVACIOS RECIBIDOS: ${reg.vaciosRecibidos} (${reg.tipoVacio || 'N/A'})`;
             
@@ -549,7 +549,7 @@
             }
 
             list.innerHTML = results.map(r => {
-                const fStr = r.fechaParaOrdenar.toLocaleDateString('es-ES', {day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute:'2-digit'});
+                const fStr = r.fechaParaOrdenar.toLocaleDateString('es-ES', { timeZone: 'America/Caracas',day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute:'2-digit'});
                 
                 let vendedorBadge = '';
                 if (window.esAdmin()) {
