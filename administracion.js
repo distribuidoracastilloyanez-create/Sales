@@ -20,30 +20,14 @@
 
     // ─── INIT ───────────────────────────────────────────────
     // Estilo profesional (azul corporativo), igual que Admin Panel, Data y Editar Inventario.
-    const AZUL = '#16305C';
-    const AZUL_CLARO = '#BBD2EE';
+    const AZUL = window.Comun.AZUL;
+    const AZUL_CLARO = window.Comun.AZUL_CLARO;
 
-    function cabecera(titulo, subtitulo, idVolver) {
-        return `<div class="px-4 py-3 flex items-center justify-between" style="background:${AZUL}">
-                    <div class="min-w-0">
-                        <h2 class="text-base font-semibold text-white tracking-tight truncate">${titulo}</h2>
-                        <p class="text-[10px] mt-0.5 truncate" style="color:${AZUL_CLARO}">${subtitulo}</p>
-                    </div>
-                    <button id="${idVolver}" class="px-3 py-1.5 bg-white/10 text-white text-xs rounded-md hover:bg-white/20 font-medium transition shrink-0">Volver</button>
-                </div>`;
-    }
+    const cabecera = window.Comun.cabecera;
 
-    // Cabecera a sangre dentro de una tarjeta con padding
-    function cabeceraCard(titulo, subtitulo, idVolver) {
-        return `<div class="-m-3 sm:-m-4 mb-3 sm:mb-4">${cabecera(titulo, subtitulo, idVolver)}</div>`;
-    }
+    const cabeceraCard = window.Comun.cabeceraCard;
 
-    function tarjetaMenu(id, titulo, descripcion) {
-        return `<button id="${id}" class="w-full text-left p-4 bg-white border border-gray-200 rounded-lg hover:border-[#16305C] hover:shadow-md transition group">
-                    <p class="font-semibold text-gray-900 group-hover:text-[#16305C] transition">${titulo}</p>
-                    <p class="text-xs text-gray-500 mt-0.5 leading-snug">${descripcion}</p>
-                </button>`;
-    }
+    const tarjetaMenu = window.Comun.tarjetaMenu;
 
     window.initAdministracion = function (deps) {
         _db               = deps.db;
