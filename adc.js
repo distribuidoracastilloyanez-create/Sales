@@ -94,7 +94,7 @@
     async function cargarClientes() {
         if (_clientes.length) return _clientes;
         try {
-            const snap = await _getDocs(_collection(_db, pathClientes()));
+            const snap = await (window.getClientesSnapshot ? window.getClientesSnapshot() : _getDocs(_collection(_db, pathClientes())));
             _clientes = snap.docs.map(d => ({ id: d.id, ...d.data() }));
         } catch (e) { _clientes = []; }
         return _clientes;
