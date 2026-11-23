@@ -734,7 +734,7 @@
                 const u = d.data();
                 _nombresUsuarios[d.id] = [u.nombre, u.apellido].filter(Boolean).join(' ') || u.email || d.id;
             });
-        } catch (e) { }
+        } catch (e) { console.error('Mercadeo: no se pudieron leer los nombres de los usuarios; se mostrarán sus identificadores.', e); }
         return _nombresUsuarios;
     }
     const nombreUsuario = uid => (_nombresUsuarios && _nombresUsuarios[uid]) || '';
