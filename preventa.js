@@ -199,7 +199,7 @@
         // Cargar usuarios y sectores en paralelo
         try {
             const [usersSnap, sectoresSnap] = await Promise.all([
-                _getDocs(_collection(_db, 'users')),
+                (window.getUsuariosSnapshot ? window.getUsuariosSnapshot() : _getDocs(_collection(_db, 'users'))),
                 _getDocs(_collection(_db, pathSectores()))
             ]);
             _pvUsuarios = usersSnap.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -277,6 +277,7 @@
                 sel.disabled = true;
                 try {
                     await _setDoc(_doc(_db, 'users', uid), { zonaPreventa: zona }, { merge: true });
+                    window.invalidarUsuarios?.();
                     // Actualizar cache local
                     const u = _pvUsuarios.find(x => x.id === uid);
                     if (u) u.zonaPreventa = zona;
@@ -350,7 +351,7 @@
             // Asegurar catálogo cargado (para el fallback de unidades cuando se llama desde ventas.js)
             if (!_pvProductos || !_pvProductos.length) {
                 try {
-                    const ps = await _getDocs(_collection(_db, pathProductos()));
+                    const ps = await (window.getCatalogoSnapshot ? window.getCatalogoSnapshot() : _getDocs(_collection(_db, pathProductos())));
                     _pvProductos = ps.docs.map(d => ({ id: d.id, ...d.data() }));
                 } catch (e) { /* seguimos sin fallback */ }
             }
@@ -427,9 +428,9 @@
         // Cargar clientes, productos, usuarios y orden global
         try {
             const [cliSnap, prodSnap, usersSnap] = await Promise.all([
-                _getDocs(_collection(_db, pathClientes())),
-                _getDocs(_collection(_db, pathProductos())),
-                _pvUsuarios.length ? Promise.resolve(null) : _getDocs(_collection(_db, 'users'))
+                (window.getClientesSnapshot ? window.getClientesSnapshot() : _getDocs(_collection(_db, pathClientes()))),
+                (window.getCatalogoSnapshot ? window.getCatalogoSnapshot() : _getDocs(_collection(_db, pathProductos()))),
+                _pvUsuarios.length ? Promise.resolve(null) : (window.getUsuariosSnapshot ? window.getUsuariosSnapshot() : _getDocs(_collection(_db, 'users')))
             ]);
             _pvClientes = cliSnap.docs.map(d => ({ id: d.id, ...d.data() }));
             _pvProductos = prodSnap.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -1642,7 +1643,7 @@
         // Asegurar catálogo cargado (para saber manejaVacios/tipoVacio)
         if (!_pvProductos || !_pvProductos.length) {
             try {
-                const ps = await _getDocs(_collection(_db, pathProductos()));
+                const ps = await (window.getCatalogoSnapshot ? window.getCatalogoSnapshot() : _getDocs(_collection(_db, pathProductos())));
                 _pvProductos = ps.docs.map(d => ({ id: d.id, ...d.data() }));
             } catch (e) { console.warn('No se pudo cargar el catálogo para vacíos:', e); }
         }
@@ -1812,7 +1813,7 @@
                 if (clienteDoc && clienteDoc.exists() && Object.keys(saldoVaciosAplicado).length) {
                     const sVac = { ...(clienteDoc.data().saldoVacios || {}) };
                     for (const t in saldoVaciosAplicado) sVac[t] = (sVac[t] || 0) + saldoVaciosAplicado[t];
-                    transaction.update(clienteRef, { saldoVacios: sVac });
+                    transaction.update(clienteRef, { saldoVacios: sVac }); window.invalidarClientes?.();
                 }
 
                 // Registrar la venta (marcada como originada en pre-venta)
@@ -1909,7 +1910,7 @@
                     if (clienteDoc && clienteDoc.exists() && Object.keys(saldoAplicado).length) {
                         const sVac = { ...(clienteDoc.data().saldoVacios || {}) };
                         for (const t in saldoAplicado) sVac[t] = (sVac[t] || 0) - saldoAplicado[t];
-                        transaction.update(clienteRef, { saldoVacios: sVac });
+                        transaction.update(clienteRef, { saldoVacios: sVac }); window.invalidarClientes?.();
                     }
                     // 4. Eliminar la venta generada por la entrega (si existe)
                     if (pedido.ventaGenerada) {
@@ -2410,8 +2411,8 @@
         // Cargar productos y vendedores
         try {
             const [prodSnap, usersSnap] = await Promise.all([
-                _pvProductos.length ? Promise.resolve(null) : _getDocs(_collection(_db, pathProductos())),
-                _pvUsuarios.length ? Promise.resolve(null) : _getDocs(_collection(_db, 'users'))
+                _pvProductos.length ? Promise.resolve(null) : (window.getCatalogoSnapshot ? window.getCatalogoSnapshot() : _getDocs(_collection(_db, pathProductos()))),
+                _pvUsuarios.length ? Promise.resolve(null) : (window.getUsuariosSnapshot ? window.getUsuariosSnapshot() : _getDocs(_collection(_db, 'users')))
             ]);
             if (prodSnap) _pvProductos = prodSnap.docs.map(d => ({ id: d.id, ...d.data() }));
             if (usersSnap) _pvUsuarios = usersSnap.docs.map(d => ({ id: d.id, ...d.data() }));
