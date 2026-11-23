@@ -509,7 +509,7 @@
                             });
                         }
                     });
-                } catch(folderErr) {}
+                } catch(folderErr) { console.error('Obsequios: no se pudo leer una carpeta de entregas; el reporte puede quedar incompleto.', folderErr); }
 
                 // 2. BUSCAR EN HISTORIAL (Cierres ya procesados)
                 try {
@@ -535,7 +535,7 @@
                             });
                         });
                     });
-                } catch(folderErr) {}
+                } catch(folderErr) { console.error('Obsequios: no se pudo leer una carpeta de entregas; el reporte puede quedar incompleto.', folderErr); }
             }
             
             // Ordenar de más reciente a más antiguo
@@ -661,4 +661,3 @@
     window.obsequiosModule = { deleteObsequio };
 
 })();
-
