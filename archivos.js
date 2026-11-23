@@ -64,7 +64,7 @@
     const MAX_DOCUMENTOS = 3;
 
     // El rol puede cambiar durante la sesión; se consulta el global si existe.
-    function esAdmin() { return (window.userRole || _userRole) === 'admin'; }
+    function esAdmin() { return window.esAdmin(); }
 
     let _clientesCache       = [];
     let _archivosCache       = [];
