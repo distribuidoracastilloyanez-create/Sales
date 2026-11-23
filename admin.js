@@ -2,20 +2,12 @@
     let _db, _userId, _userRole, _appId, _mainContent, _floatingControls, _showMainMenu, _showModal;
 
     // Paleta corporativa del estilo profesional
-    const AZUL = '#16305C';
-    const AZUL_CLARO = '#BBD2EE';
+    const AZUL = window.Comun.AZUL;
+    const AZUL_CLARO = window.Comun.AZUL_CLARO;
 
     // Cabecera común del estilo profesional (azul corporativo).
     // Solo presentación: el botón conserva el id que ya usaba cada pantalla.
-    function cabecera(titulo, subtitulo, idVolver) {
-        return `<div class="px-4 py-3 flex items-center justify-between" style="background:${AZUL}">
-                    <div class="min-w-0">
-                        <h2 class="text-base font-semibold text-white tracking-tight truncate">${titulo}</h2>
-                        <p class="text-[10px] mt-0.5 truncate" style="color:${AZUL_CLARO}">${subtitulo}</p>
-                    </div>
-                    <button id="${idVolver}" class="px-3 py-1.5 bg-white/10 text-white text-xs rounded-md hover:bg-white/20 font-medium transition shrink-0">Volver</button>
-                </div>`;
-    }
+    const cabecera = window.Comun.cabecera;
     let _collection, _getDocs, _doc, _setDoc, _getDoc, _writeBatch, _query, _where, _deleteDoc;
     let limit, startAfter;
     let _obsequioProductId = null;
@@ -844,5 +836,3 @@
     };
 
 })();
-
-
