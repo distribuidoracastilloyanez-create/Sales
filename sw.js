@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v191'; // v191: estilo corporativo completo: menu principal con colores armonizados (mismo sitio y etiquetas), Supervision, Inventario y CXC con la cabecera azul
+const CACHE_NAME = 'ventas-app-cache-v192'; // v192: corrige los botones Tasas BCV y Cargar Excel del CXC, que quedaron invisibles en v191, y reordena esa cabecera para el telefono
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
