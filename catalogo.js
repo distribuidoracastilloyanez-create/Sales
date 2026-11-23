@@ -51,29 +51,45 @@
         _listenersUnsubscribes.forEach(u => u());
         _listenersUnsubscribes = [];
 
+        // Tarjeta de rubro: mismo formato que el resto de la app, con una franja
+        // de color que conserva la identidad visual de cada catálogo.
+        // OJO: una etiqueta sólo admite UN atributo class, así que la clase extra
+        // se concatena dentro del mismo atributo, nunca se agrega aparte.
+        const tarjetaRubro = (rubros, bg, titulo, desc, color, claseExtra, id) => `
+            <button ${id ? `id="${id}"` : ''} data-rubros='${rubros}' data-bg="${bg}" data-title="${titulo}" class="${claseExtra ? claseExtra + ' ' : ''}w-full text-left p-4 bg-white border border-gray-200 rounded-lg hover:border-[#16305C] hover:shadow-md transition group flex items-center gap-3">
+                <span class="w-1.5 h-9 rounded-full shrink-0" style="background:${color}"></span>
+                <span class="min-w-0 block">
+                    <span class="block font-semibold text-gray-900 group-hover:text-[#16305C] transition">${titulo}</span>
+                    <span class="block text-xs text-gray-500 mt-0.5 leading-snug">${desc}</span>
+                </span>
+            </button>`;
+
         _mainContent.innerHTML = `
-            <div class="p-4 pt-8">
+            <div class="p-2 sm:p-4">
                 <div class="container mx-auto max-w-lg">
-                    <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl text-center">
-                        <h1 class="text-3xl font-bold text-gray-800 mb-6">Catálogo de Productos</h1>
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <button data-rubros='["CERVECERIA Y VINOS"]' data-bg="images/cervezayvinos.png" class="catalogo-btn w-full px-6 py-3 bg-yellow-500 text-white font-semibold rounded-lg shadow-md hover:bg-yellow-600 transition duration-200">Cerveza y Vinos</button>
-                            <button data-rubros='["MALTIN & PEPSI"]' data-bg="images/maltinypepsi.png" class="catalogo-btn w-full px-6 py-3 bg-blue-700 text-white font-semibold rounded-lg shadow-md hover:bg-blue-800 transition duration-200">Maltin y Pepsicola</button>
-                            <button data-rubros='["ALIMENTOS"]' data-bg="images/alimentospolar.png" class="catalogo-btn w-full px-6 py-3 bg-red-500 text-white font-semibold rounded-lg shadow-md hover:bg-red-600 transition duration-200">Alimentos Polar</button>
-                            <button data-rubros='["P&G"]' data-bg="images/p&g.png" class="catalogo-btn w-full px-6 py-3 bg-sky-500 text-white font-semibold rounded-lg shadow-md hover:bg-sky-600 transition duration-200">Procter & Gamble</button>
-                            <button data-rubros='[]' data-bg="" class="catalogo-btn md:col-span-2 w-full px-6 py-3 bg-gray-700 text-white font-semibold rounded-lg shadow-md hover:bg-gray-800 transition duration-200">Unificado (Todos)</button>
-                            <button id="catFisicoBtn" class="md:col-span-2 w-full px-6 py-3 text-white font-semibold rounded-lg shadow-md transition duration-200" style="background:#16305C">Físico / Presentación</button>
+                    <div class="bg-white p-3 sm:p-4 rounded-xl shadow-lg overflow-hidden">
+                        ${window.Comun.cabeceraCard('Catálogo de Productos', 'Listas de precios para compartir con el cliente', 'backToMenuBtn')}
+                        <div class="space-y-3">
+                            ${tarjetaRubro('["CERVECERIA Y VINOS"]', 'images/cervezayvinos.png', 'Cerveza y Vinos', 'Cervecería y vinos.', '#9A6414', 'catalogo-btn')}
+                            ${tarjetaRubro('["MALTIN &amp; PEPSI"]', 'images/maltinypepsi.png', 'Maltin y Pepsicola', 'Refrescos y maltas.', '#22508A', 'catalogo-btn')}
+                            ${tarjetaRubro('["ALIMENTOS"]', 'images/alimentospolar.png', 'Alimentos Polar', 'Harinas, pastas y alimentos.', '#A33131', 'catalogo-btn')}
+                            ${tarjetaRubro('["P&amp;G"]', 'images/p&g.png', 'Procter &amp; Gamble', 'Cuidado personal y del hogar.', '#2E7CA6', 'catalogo-btn')}
+                            ${tarjetaRubro('[]', '', 'Unificado (Todos)', 'Todos los rubros en una sola lista.', '#46566E', 'catalogo-btn')}
                         </div>
-                        <button id="backToMenuBtn" class="mt-6 w-full px-6 py-3 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500 transition duration-200">Volver al Menú</button>
+                        <div class="mt-4 pt-3 border-t border-gray-200 space-y-3">
+                            ${tarjetaRubro('[]', '', 'Físico / Presentación', 'Catálogo con fotos, para imprimir o presentar.', '#16305C', '', 'catFisicoBtn')}
+                        </div>
                     </div>
                 </div>
             </div>
         `;
         document.querySelectorAll('.catalogo-btn').forEach(button => {
             button.addEventListener('click', (e) => {
-                 try { _currentRubros = JSON.parse(e.target.dataset.rubros || '[]'); }
-                 catch (parseError) { console.error("Error parsing rubros:", parseError); _currentRubros = []; }
-                const title = e.target.textContent.trim(); const bgImage = e.target.dataset.bg || '';
+                // currentTarget = el <button>; e.target podría ser un <span> de adentro.
+                const btn = e.currentTarget;
+                try { _currentRubros = JSON.parse(btn.dataset.rubros || '[]'); }
+                catch (parseError) { console.error("Error parsing rubros:", parseError); _currentRubros = []; }
+                const title = btn.dataset.title || 'Catálogo'; const bgImage = btn.dataset.bg || '';
                 showCatalogoView(title, bgImage);
             });
         });
@@ -94,7 +110,28 @@
         _currentBgImage = bgImage; if (bgImage) { document.body.style.setProperty('--catalogo-bg-image', `url('${bgImage}')`); document.body.classList.add('catalogo-active'); } else { document.body.classList.remove('catalogo-active'); document.body.style.removeProperty('--catalogo-bg-image'); } _catalogoMonedaActual = 'USD';
         if (_floatingControls) _floatingControls.classList.add('hidden'); if (!_mainContent) { console.error("CRITICAL: mainContent no disponible"); alert("Error crítico."); return; }
         _mainContent.innerHTML = `
-            <div class="p-4 pt-6 md:pt-8"> <div class="container mx-auto"> <div id="catalogo-container-wrapper" class="bg-white/95 backdrop-blur-sm p-4 sm:p-6 md:p-8 rounded-lg shadow-xl max-h-[calc(100vh-6rem)] overflow-y-auto"> <div id="catalogo-para-imagen"> <h2 class="text-3xl md:text-4xl font-bold mb-2 text-center">${title}</h2> <p class="text-center text-gray-800 mb-1 text-sm md:text-base">DISTRIBUIDORA CASTILLO YAÑEZ C.A</p> <p class="text-center text-gray-700 mb-4 text-xs md:text-base italic">(Precios incluyen IVA)</p> <div class="flex flex-col sm:flex-row justify-between items-center gap-4 mb-4"> <div id="tasa-input-container" class="flex-grow w-full sm:w-auto"> <label for="catalogoTasaCopInput" class="block text-sm font-medium mb-1">Tasa (USD a COP):</label> <input type="number" id="catalogoTasaCopInput" placeholder="Ej: 4000" class="w-full px-3 py-1.5 border rounded-lg text-sm"> </div> </div> <div id="catalogo-content" class="space-y-6"><p class="text-center text-gray-500 p-4">Cargando...</p></div> </div> <div id="catalogo-buttons-container" class="mt-6 text-center space-y-3 sm:space-y-4"> <button id="generateCatalogoImageBtn" class="w-full px-6 py-2.5 bg-green-500 text-white rounded-lg shadow-md hover:bg-green-600">Generar Imagen</button> <button id="backToCatalogoMenuBtn" class="w-full px-6 py-2.5 bg-gray-400 text-white rounded-lg shadow-md hover:bg-gray-500">Volver</button> </div> </div> </div> </div>
+            <div class="p-2 sm:p-4">
+                <div class="container mx-auto max-w-3xl">
+                    <div class="bg-white p-3 sm:p-4 rounded-xl shadow-lg overflow-hidden">
+                        ${window.Comun.cabeceraCard('Catálogo', title, 'backToCatalogoMenuBtn')}
+                        <div id="catalogo-container-wrapper" class="max-h-[calc(100vh-11rem)] overflow-y-auto">
+                            <div id="catalogo-para-imagen">
+                                <h2 class="text-2xl md:text-3xl font-bold mb-1 text-center text-gray-900">${title}</h2>
+                                <p class="text-center text-gray-700 text-xs md:text-sm">DISTRIBUIDORA CASTILLO YAÑEZ C.A</p>
+                                <p class="text-center text-gray-500 mb-4 text-[11px] md:text-xs italic">(Precios incluyen IVA)</p>
+                                <div id="tasa-input-container" class="mb-4">
+                                    <label for="catalogoTasaCopInput" class="block text-xs font-semibold text-gray-600 mb-1">Tasa (USD a COP):</label>
+                                    <input type="number" id="catalogoTasaCopInput" placeholder="Ej: 4000" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm outline-none focus:ring-2 focus:ring-[#BBD2EE]">
+                                </div>
+                                <div id="catalogo-content" class="space-y-6"><p class="text-center text-gray-500 p-4">Cargando...</p></div>
+                            </div>
+                        </div>
+                        <div id="catalogo-buttons-container" class="mt-4 pt-3 border-t border-gray-200">
+                            <button id="generateCatalogoImageBtn" class="w-full px-4 py-3 text-white text-sm font-semibold rounded-lg shadow hover:opacity-90 transition" style="background:#16305C">Generar Imagen</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
         `;
         const tasaInput = document.getElementById('catalogoTasaCopInput'); if (tasaInput) { const savedTasa = localStorage.getItem('tasaCOP'); if (savedTasa) { _catalogoTasaCOP = parseFloat(savedTasa); tasaInput.value = _catalogoTasaCOP; } tasaInput.addEventListener('input', (e) => { _catalogoTasaCOP = parseFloat(e.target.value) || 0; localStorage.setItem('tasaCOP', _catalogoTasaCOP); if (_catalogoMonedaActual === 'COP') renderCatalogo(); }); }
         document.getElementById('backToCatalogoMenuBtn').addEventListener('click', showCatalogoSubMenu); document.getElementById('generateCatalogoImageBtn').addEventListener('click', handleGenerateCatalogoImage); 
