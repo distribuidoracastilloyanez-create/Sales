@@ -800,7 +800,7 @@
     async function cargarDatosIniciales() {
         try {
             const [snapClientes, snapTasas, snapProductos] = await Promise.all([
-                _getDocs(_collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/clientes`)),
+                (window.getClientesSnapshot ? window.getClientesSnapshot() : _getDocs(_collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/clientes`))),
                 _getDocs(_collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/tasas_bcv`)),
                 (window.getCatalogoSnapshot ? window.getCatalogoSnapshot() : _getDocs(_collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/productos`)))
             ]);
@@ -866,7 +866,7 @@
         es.classList.remove('hidden');
 
         try {
-            const usersSnap = await _getDocs(_collection(_db, 'users'));
+            const usersSnap = await (window.getUsuariosSnapshot ? window.getUsuariosSnapshot() : _getDocs(_collection(_db, 'users')));
             const uids = usersSnap.docs.map(d => d.id);
             _ventasEncontradas = [];
 
