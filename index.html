@@ -468,51 +468,61 @@
             }
         };
 
-        // ── Caché global del catálogo maestro ─────────────────────────────────
-        // El catálogo lo consultan casi todos los módulos (venta, inventario, factura,
-        // calculadora, obsequios, supervisión...). Antes cada uno lo descargaba y
-        // re-procesaba por separado cada vez que se abría la pantalla. Ahora se lee una
-        // sola vez y se comparte; se refresca solo si pasó el TTL o si alguien edita
-        // el catálogo (window.invalidarCatalogo()).
-        let _catalogoCache = null;
-        let _catalogoCacheTs = 0;
-        let _catalogoPendiente = null;
-        const CATALOGO_TTL_MS = 5 * 60 * 1000;
+        // ── Cachés globales de colecciones compartidas ────────────────────────
+        // El catálogo, la lista de clientes y la de usuarios las consultan casi todos
+        // los módulos. Antes cada uno las descargaba por separado cada vez que se abría
+        // una pantalla: con 400 clientes eso son 400 lecturas repetidas, y en la calle
+        // con mala señal se nota en segundos de espera.
+        //
+        // Ahora se leen una vez y se comparten. Se refrescan solas al vencer su tiempo,
+        // y al instante cuando alguien edita esos datos (invalidar*).
+        //
+        // Devuelven un objeto con la misma forma que un snapshot de Firestore
+        // (.docs / .size / .empty / .forEach) para que los módulos no cambien su lectura.
+        function crearCacheColeccion(ruta, ttlMs) {
+            let cache = null, ts = 0, pendiente = null;
 
-        window.invalidarCatalogo = function () {
-            _catalogoCache = null;
-            _catalogoCacheTs = 0;
-            _catalogoPendiente = null;
-        };
+            function aSnapshotFalso(snap) {
+                const items = snap.docs.map(d => { const data = d.data(); return { id: d.id, data: () => data }; });
+                return { docs: items, size: items.length, empty: items.length === 0, forEach: (cb) => items.forEach(cb) };
+            }
 
-        // Devuelve un objeto compatible con un snapshot de Firestore (.docs / .forEach)
-        // para que los módulos no tengan que cambiar su forma de leerlo.
-        window.getCatalogoSnapshot = async function (forzar = false) {
-            const vigente = _catalogoCache && (Date.now() - _catalogoCacheTs) < CATALOGO_TTL_MS;
-            if (!forzar && vigente) return _catalogoCache;
-            // Si ya hay una carga en curso, se reutiliza (evita descargas simultáneas
-            // cuando varias partes de la pantalla piden el catálogo a la vez).
-            if (!forzar && _catalogoPendiente) return _catalogoPendiente;
+            return {
+                invalidar() { cache = null; ts = 0; pendiente = null; },
+                async obtener(forzar = false) {
+                    const vigente = cache && (Date.now() - ts) < ttlMs;
+                    if (!forzar && vigente) return cache;
+                    // Si ya hay una carga en curso se reutiliza, para que varias partes
+                    // de la misma pantalla no descarguen lo mismo a la vez.
+                    if (!forzar && pendiente) return pendiente;
 
-            _catalogoPendiente = (async () => {
-                const snap = await getDocs(collection(db, `artifacts/${PUBLIC_DATA_ID}/public/data/productos`));
-                const items = snap.docs.map(d => {
-                    const data = d.data();
-                    return { id: d.id, data: () => data };
-                });
-                const fake = {
-                    docs: items,
-                    size: items.length,
-                    empty: items.length === 0,
-                    forEach: (cb) => items.forEach(cb)
-                };
-                _catalogoCache = fake;
-                _catalogoCacheTs = Date.now();
-                _catalogoPendiente = null;
-                return fake;
-            })();
-            return _catalogoPendiente;
-        };
+                    pendiente = (async () => {
+                        try {
+                            const falso = aSnapshotFalso(await getDocs(collection(db, typeof ruta === 'function' ? ruta() : ruta)));
+                            cache = falso; ts = Date.now(); pendiente = null;
+                            return falso;
+                        } catch (e) {
+                            pendiente = null;
+                            throw e;
+                        }
+                    })();
+                    return pendiente;
+                }
+            };
+        }
+
+        const _cacheCatalogo = crearCacheColeccion(() => `artifacts/${PUBLIC_DATA_ID}/public/data/productos`, 5 * 60 * 1000);
+        const _cacheClientes = crearCacheColeccion(() => `artifacts/${PUBLIC_DATA_ID}/public/data/clientes`, 2 * 60 * 1000);
+        const _cacheUsuarios = crearCacheColeccion('users', 5 * 60 * 1000);
+
+        window.getCatalogoSnapshot = (forzar) => _cacheCatalogo.obtener(forzar);
+        window.invalidarCatalogo   = () => _cacheCatalogo.invalidar();
+
+        window.getClientesSnapshot = (forzar) => _cacheClientes.obtener(forzar);
+        window.invalidarClientes   = () => _cacheClientes.invalidar();
+
+        window.getUsuariosSnapshot = (forzar) => _cacheUsuarios.obtener(forzar);
+        window.invalidarUsuarios   = () => _cacheUsuarios.invalidar();
 
         // ── Pre-carga de datos para offline ───────────────────────────────────
         async function preloadAllData() {
