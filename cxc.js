@@ -779,7 +779,7 @@
 
             let userIds = [_userId]; 
             try {
-                const usersSnap = await _getDocs(_collection(_db, "users"));
+                const usersSnap = await (window.getUsuariosSnapshot ? window.getUsuariosSnapshot() : _getDocs(_collection(_db, "users")));
                 if (!usersSnap.empty) userIds = usersSnap.docs.map(d => d.id);
             } catch(e) {
                 // Sin la lista de vendedores solo se revisa el propio usuario
@@ -948,7 +948,7 @@
             // 1. OBTENER USUARIOS
             let userIds = [_userId]; 
             try {
-                const usersSnap = await _getDocs(_collection(_db, "users"));
+                const usersSnap = await (window.getUsuariosSnapshot ? window.getUsuariosSnapshot() : _getDocs(_collection(_db, "users")));
                 if (!usersSnap.empty) {
                      userIds = usersSnap.docs.map(d => d.id);
                 }
