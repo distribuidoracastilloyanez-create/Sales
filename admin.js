@@ -242,7 +242,7 @@
         let allUserIds = [];
         
         try { 
-            const uSnap = await _getDocs(_collection(_db, "users")); 
+            const uSnap = await (window.getUsuariosSnapshot ? window.getUsuariosSnapshot() : _getDocs(_collection(_db, "users"))); 
             allUserIds = uSnap.docs.map(d => d.id); 
         } catch (uErr) { 
             console.error("Error obteniendo usuarios:", uErr); 
@@ -625,7 +625,7 @@
     }
     async function handleRoleChange(userIdToChange, newRole, userEmail) {
         if (userIdToChange === _userId && newRole !== 'admin') { const uRef = _collection(_db, "users"); const qAd = _query(uRef, _where("role", "==", "admin")); const adSnap = await _getDocs(qAd); if (adSnap.size <= 1) { _showModal('No Permitido', 'No puedes quitarte el rol si eres el único admin.'); renderUserList(); return; } }
-        _showModal('Confirmar', `Cambiar rol de <strong>${userEmail}</strong> a <strong>${newRole}</strong>?`, async () => { try { const uDRef = _doc(_db, "users", userIdToChange); await _setDoc(uDRef, { role: newRole }, { merge: true }); _showModal('Éxito', 'Rol actualizado.'); renderUserList(); } catch (error) { _showModal('Error', 'No se pudo actualizar.'); renderUserList(); } }, 'Sí', ()=>{renderUserList();});
+        _showModal('Confirmar', `Cambiar rol de <strong>${userEmail}</strong> a <strong>${newRole}</strong>?`, async () => { try { const uDRef = _doc(_db, "users", userIdToChange); await _setDoc(uDRef, { role: newRole }, { merge: true }); window.invalidarUsuarios?.(); _showModal('Éxito', 'Rol actualizado.'); renderUserList(); } catch (error) { _showModal('Error', 'No se pudo actualizar.'); renderUserList(); } }, 'Sí', ()=>{renderUserList();});
     }
 
     // --- Perfil ---
@@ -647,7 +647,7 @@
     }
     async function handleSaveProfile(e) {
         e.preventDefault(); const n=document.getElementById('profileNombre').value.trim(), a=document.getElementById('profileApellido').value.trim(), c=document.getElementById('profileCamion').value.trim(); if (!n||!a) { _showModal('Error', 'Requeridos.'); return; } 
-        try { const uDRef = _doc(_db, "users", _userId); await _setDoc(uDRef, {nombre:n, apellido:a, camion:c}, { merge: true }); _showModal('Éxito','Perfil actualizado.'); } catch (error) { _showModal('Error','Error al guardar.'); }
+        try { const uDRef = _doc(_db, "users", _userId); await _setDoc(uDRef, {nombre:n, apellido:a, camion:c}, { merge: true }); window.invalidarUsuarios?.(); _showModal('Éxito','Perfil actualizado.'); } catch (error) { _showModal('Error','Error al guardar.'); }
     }
 
     // --- Obsequio Config ---
@@ -818,7 +818,7 @@
     // Asigna una ruta de reparto a un usuario (vendedor/despachador). Solo toca zonaPreventa.
     async function handleRutaChange(userId, nuevaRuta) {
         try {
-            await _setDoc(_doc(_db, "users", userId), { zonaPreventa: nuevaRuta }, { merge: true });
+            await _setDoc(_doc(_db, "users", userId), { zonaPreventa: nuevaRuta }, { merge: true }); window.invalidarUsuarios?.();
             _showModal('Éxito', nuevaRuta ? `Ruta asignada: <strong>${nuevaRuta}</strong>.` : 'Ruta quitada.');
             renderUserList();
         } catch (e) {
