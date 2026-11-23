@@ -408,7 +408,7 @@
                     }
                 }
             }
-        } catch (e) {}
+        } catch (e) { /* limpiar la caché local es opcional: si el navegador no deja, se sigue */ }
     }
 
     function limpiarTodoElCache() {
@@ -417,7 +417,7 @@
                 const k = localStorage.key(i);
                 if (k && k.startsWith(CACHE_PREFIX)) localStorage.removeItem(k);
             }
-        } catch (e) {}
+        } catch (e) { /* limpiar la caché local es opcional: si el navegador no deja, se sigue */ }
     }
 
     // ─── FILTROS EN CASCADA (dependientes) ──────────────────
@@ -3441,7 +3441,7 @@
                 if (!blob) return;
                 const file = new File([blob], `${nombreArchivo}.png`, { type: 'image/png' });
                 if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
-                    try { await navigator.share({ files: [file], title: nombreArchivo }); return; } catch (e) {}
+                    try { await navigator.share({ files: [file], title: nombreArchivo }); return; } catch (e) { if (e && e.name !== 'AbortError') console.error('Administración: no se pudo compartir el archivo.', e); }
                 }
                 // Fallback: descargar
                 const url = URL.createObjectURL(blob);
