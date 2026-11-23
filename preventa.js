@@ -150,7 +150,7 @@
         (async () => {
             const disp = document.getElementById('pvTasaBcvDisplay');
             if (disp && window.textoTasaHoyBCV) {
-                try { disp.textContent = await window.textoTasaHoyBCV(); } catch (e) {}
+                try { disp.textContent = await window.textoTasaHoyBCV(); } catch (e) { console.error('Preventa: no se pudo mostrar la tasa del BCV.', e); }
                 disp.addEventListener('click', () => {
                     if (window.abrirCalendarioTasas) window.abrirCalendarioTasas(() => window.showPreventaMenu());
                 });
@@ -588,7 +588,7 @@
         _pvAcuerdo = null;
         if (window.acGetAcuerdoCliente) {
             window.acGetAcuerdoCliente(c.id)
-                .then(a => { _pvAcuerdo = a; if (typeof renderPedidoProductos === 'function') { try { renderPedidoProductos(); } catch (e) {} } })
+                .then(a => { _pvAcuerdo = a; if (typeof renderPedidoProductos === 'function') { try { renderPedidoProductos(); } catch (e) { console.error('Preventa: fallo al redibujar los productos tras cargar el acuerdo.', e); } } })
                 .catch(() => { _pvAcuerdo = null; });
         }
 
@@ -898,13 +898,19 @@
 
             // Acuerdo Comercial: descuento sobre el TOTAL del pedido (si hay regla vigente)
             let _totalFinal = total, _pctTotal = 0, _reglaTotalId = null;
+            let _avisoAcuerdo = '';
             try {
                 if (_pvAcuerdo && window.acReglaTotalVenta) {
                     const rT = window.acReglaTotalVenta(_pvAcuerdo);
                     const p = rT ? (Number(rT.pctTotal) || 0) : 0;
                     if (rT && p > 0) { _pctTotal = p; _reglaTotalId = rT.id; _totalFinal = total * (1 - p / 100); }
                 }
-            } catch (e) { }
+            } catch (e) {
+                // Si esto falla en silencio, el cliente paga el total sin su descuento
+                // y nadie se entera. El vendedor tiene que saberlo antes de despachar.
+                console.error('Preventa: no se pudo aplicar el descuento del acuerdo comercial.', e);
+                _avisoAcuerdo = '<br><br><strong>Atención:</strong> no se pudo aplicar el acuerdo comercial de este cliente. El pedido quedó <u>sin descuento</u>. Verifíquelo antes de despachar.';
+            }
 
             const pedido = {
                 clienteId: c.id, clienteNombre: c.nombreComercial || '',
@@ -938,11 +944,16 @@
                     if (_reglaTotalId) ids.push(_reglaTotalId);
                     if (ids.length) window.acRegistrarUsoReglas(c.id, ids);
                 }
-            } catch (e) { }
+            } catch (e) {
+                // Si no se descuenta el uso, un acuerdo de "X ventas" nunca se agota
+                // y el descuento se seguiría aplicando de más.
+                console.error('Preventa: no se pudo registrar el uso de las reglas del acuerdo comercial.', e);
+                _avisoAcuerdo += '<br><br><strong>Atención:</strong> no se pudo descontar el uso del acuerdo comercial. Revise su vigencia en Acuerdos Comerciales.';
+            }
             if (window.invalidarComprometidoCache) window.invalidarComprometidoCache();
             if (_showModal) _showModal('Pedido guardado',
                 `Pedido de <strong>${pedido.clienteNombre}</strong> por <strong>$${_totalFinal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong> registrado.${_pctTotal > 0 ? ` (incluye ${_pctTotal}% de descuento)` : ''} Queda pendiente para despacho.` +
-                (_sinRed ? `<br><br><strong>Guardado en este dispositivo.</strong> Se enviará al servidor cuando haya conexión. No lo registres de nuevo.` : ''));
+                (_sinRed ? `<br><br><strong>Guardado en este dispositivo.</strong> Se enviará al servidor cuando haya conexión. No lo registres de nuevo.` : '') + _avisoAcuerdo);
             showTomarPedido();
         } catch (e) {
             console.error('Error guardando pedido:', e);
@@ -1332,9 +1343,9 @@
         document.getElementById('pvCorteBtn')?.addEventListener('click', () => { if (_pvModoCorte) _pvSalirModoCorte(); else _pvEntrarModoCorte(); });
         document.getElementById('pvCorteCancelarModo')?.addEventListener('click', _pvSalirModoCorte);
         document.getElementById('pvBandEstado')?.addEventListener('change', (e) => { _pvFiltroEstado = e.target.value; renderBandeja(); });
-        document.getElementById('pvBandVendedor')?.addEventListener('change', (e) => { _pvFiltroVendedor = e.target.value; try { localStorage.setItem('pv_filtro_vendedor_' + _userId, _pvFiltroVendedor); } catch (_) {} renderBandeja(); });
+        document.getElementById('pvBandVendedor')?.addEventListener('change', (e) => { _pvFiltroVendedor = e.target.value; try { localStorage.setItem('pv_filtro_vendedor_' + _userId, _pvFiltroVendedor); } catch (_) { /* recordar el filtro es una comodidad: si el navegador no deja, se sigue */ } renderBandeja(); });
         document.getElementById('pvBandHoy')?.addEventListener('change', (e) => { _pvFiltroHoy = e.target.checked; renderBandeja(); });
-        document.getElementById('pvBandRuta')?.addEventListener('change', (e) => { _pvFiltroRuta = e.target.value; try { localStorage.setItem('pv_filtro_ruta_' + _userId, _pvFiltroRuta); } catch (_) {} renderBandeja(); });
+        document.getElementById('pvBandRuta')?.addEventListener('change', (e) => { _pvFiltroRuta = e.target.value; try { localStorage.setItem('pv_filtro_ruta_' + _userId, _pvFiltroRuta); } catch (_) { /* igual que arriba */ } renderBandeja(); });
 
         // Escuchar pedidos en tiempo real
         try {
@@ -2209,7 +2220,7 @@
                 if (!blob) return;
                 const file = new File([blob], `${nombreArchivo}.png`, { type: 'image/png' });
                 if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
-                    try { await navigator.share({ files: [file], title: nombreArchivo }); return; } catch (e) {}
+                    try { await navigator.share({ files: [file], title: nombreArchivo }); return; } catch (e) { if (e && e.name !== 'AbortError') console.error('Preventa: no se pudo compartir el archivo.', e); }
                 }
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
@@ -2787,37 +2798,7 @@
         }
         w.document.open(); w.document.write(html); w.document.close();
         w.onload = () => { try { w.focus(); w.print(); } catch (e) { console.warn('print:', e); } };
-        setTimeout(() => { try { w.focus(); w.print(); } catch (e) {} }, 700);
+        setTimeout(() => { try { w.focus(); w.print(); } catch (e) { /* segundo intento de imprimir; el primero ya avisó */ } }, 700);
     }
 
     // ── Historial de cortes (Reportes) ──────────────────────────
-
-
-
-
-
-
-
-})();
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
