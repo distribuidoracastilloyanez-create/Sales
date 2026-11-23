@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v189'; // v189: los cierres se piden filtrados por fecha en el cuadre y la supervision; se deja de descargar el historico completo en cada cierre
+const CACHE_NAME = 'ventas-app-cache-v190'; // v190: Administracion y Seguimiento tambien piden los cierres filtrados por periodo, con margen de dias para no perder ventas de frontera
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
