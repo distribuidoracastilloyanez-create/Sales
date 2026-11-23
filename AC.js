@@ -280,7 +280,7 @@
 
         try {
             const [cliSnap, prodSnap] = await Promise.all([
-                _getDocs(_collection(_db, pathClientes())),
+                (window.getClientesSnapshot ? window.getClientesSnapshot() : _getDocs(_collection(_db, pathClientes()))),
                 (window.getCatalogoSnapshot ? window.getCatalogoSnapshot() : _getDocs(_collection(_db, pathProductos())))
             ]);
             _acClientes  = cliSnap.docs.map(d => ({ id: d.id, ...d.data() }));
