@@ -176,7 +176,7 @@
     // Solo agrega el campo 'zonaPreventa' al usuario (merge, no afecta nada más)
     // ═══════════════════════════════════════════════════════════
     async function showPreventaVendedores() {
-        if (window.userRole !== 'admin') return;
+        if (!window.esAdmin()) return;
 
         _mainContent.innerHTML = `
             <div class="p-3 pt-6 w-full max-w-lg mx-auto">
@@ -2369,7 +2369,7 @@
     let _pvInvRutaVendedor = null;
 
     async function showInventarioRuta() {
-        if (window.userRole !== 'admin') return;
+        if (!window.esAdmin()) return;
 
         _mainContent.innerHTML = `
             <div class="p-2 sm:p-3 pt-5 w-full max-w-2xl mx-auto">
