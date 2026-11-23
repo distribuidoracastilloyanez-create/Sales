@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v190'; // v190: Administracion y Seguimiento tambien piden los cierres filtrados por periodo, con margen de dias para no perder ventas de frontera
+const CACHE_NAME = 'ventas-app-cache-v191'; // v191: estilo corporativo completo: menu principal con colores armonizados (mismo sitio y etiquetas), Supervision, Inventario y CXC con la cabecera azul
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
