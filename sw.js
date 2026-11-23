@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v184'; // v184: Modulo Administracion con estilo profesional azul corporativo en el menu y los cinco analistas
+const CACHE_NAME = 'ventas-app-cache-v185'; // v185: se eliminan los 52 catch vacios; los fallos ahora se registran y, donde el silencio enganiaba (CXC, Seguimiento, Preventa, Diagnostico), se avisa en pantalla
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
