@@ -67,7 +67,7 @@
                             <button id="agregarClienteBtn" class="w-full px-6 py-3 bg-indigo-500 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-600 transition">Agregar Cliente</button>
                             <button id="saldosVaciosBtn" class="w-full px-6 py-3 bg-cyan-500 text-white font-semibold rounded-lg shadow-md hover:bg-cyan-600 transition">Consultar Saldos de Vacíos</button>
                             <button id="asignarRutasBtn" class="w-full px-6 py-3 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 transition">Asignar Rutas</button>
-                            ${_userRole === 'admin' ? `
+                            ${window.esAdmin() ? `
                             <button id="editarSaldosVaciosBtn" class="w-full px-6 py-3 bg-teal-600 text-white font-semibold rounded-lg shadow-md hover:bg-teal-700 transition border-2 border-teal-500">Editar Saldo de Vacíos</button>
                             <button id="funcionesAvanzadasBtn" class="w-full px-6 py-3 bg-gray-700 text-white font-semibold rounded-lg shadow-md hover:bg-gray-800 mt-4 transition">Funciones Avanzadas</button>
                             ` : ''}
@@ -79,7 +79,7 @@
         `;
         document.getElementById('verClientesBtn').addEventListener('click', showVerClientesView);
         document.getElementById('agregarClienteBtn')?.addEventListener('click', showAgregarClienteView);
-        if (_userRole === 'admin') {
+        if (window.esAdmin()) {
             document.getElementById('editarSaldosVaciosBtn')?.addEventListener('click', showEditarSaldosVaciosView);
             document.getElementById('funcionesAvanzadasBtn')?.addEventListener('click', showFuncionesAvanzadasView);
         }
@@ -93,7 +93,7 @@
     // ==========================================
 
     function showEditarSaldosVaciosView() {
-        if (_userRole !== 'admin') return;
+        if (!window.esAdmin()) return;
         _floatingControls.classList.add('hidden');
         _mainContent.innerHTML = `
             <div class="p-4 pt-8">
@@ -1414,7 +1414,7 @@
                         </div>
                     </form>
                     
-                    ${_userRole === 'admin' ? `
+                    ${window.esAdmin() ? `
                         <div class="mt-8 pt-6 border-t border-red-200 bg-red-50 p-4 rounded text-left">
                             <p class="text-[10px] text-red-500 mb-1 font-black uppercase tracking-wider text-center">Precaución: Acción Destructiva</p>
                             <button type="button" onclick="window.clientesModule.deleteCliente('${cliente.id}')" class="w-full px-4 py-2 bg-white text-red-600 border border-red-400 hover:bg-red-600 hover:text-white font-bold rounded shadow-sm transition text-xs uppercase">
@@ -2152,6 +2152,3 @@
     }
 
 })();
-
-
-
