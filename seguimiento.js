@@ -40,34 +40,13 @@
     let _dias         = 15;
 
     // ── Fechas en hora de Venezuela (GMT-4) ──
-    // Toda la agrupación por día usa la fecha local del negocio, no UTC.
-    const OFFSET_VE = -4 * 60; // minutos
-    function _claveDia(fecha) {
-        const d = (fecha instanceof Date) ? fecha : _aFecha(fecha);
-        if (!d || isNaN(d.getTime())) return null;
-        // Desplazar a hora de Venezuela (GMT-4) y tomar la parte de fecha
-        const ve = new Date(d.getTime() + (OFFSET_VE * 60000) + (d.getTimezoneOffset() * 60000));
-        return `${ve.getFullYear()}-${String(ve.getMonth() + 1).padStart(2, '0')}-${String(ve.getDate()).padStart(2, '0')}`;
-    }
-    function _aFecha(v) {
-        if (!v) return null;
-        if (v instanceof Date) return v;
-        if (v && typeof v.toDate === 'function') return v.toDate();
-        if (typeof v === 'string') { const d = new Date(v); return isNaN(d.getTime()) ? null : d; }
-        if (typeof v === 'number') return new Date(v);
-        return null;
-    }
-    function _etiquetaDia(clave) {
-        const [a, m, d] = clave.split('-').map(Number);
-        const f = new Date(a, m - 1, d);
-        const dias = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
-        const meses = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
-        return `${dias[f.getDay()]} ${d} ${meses[m - 1]}`;
-    }
-    const _hora = (f) => {
-        const d = _aFecha(f);
-        return d ? d.toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' }) : '';
-    };
+    // Las definiciones viven en comun.js para que toda la aplicación use el
+    // mismo criterio de "qué día es". Aquí solo se les pone nombre corto.
+    const _aFecha      = window.Fechas.aFecha;
+    const _claveDia    = window.Fechas.clave;
+    const _etiquetaDia = window.Fechas.etiquetaDia;
+    const _hora        = window.Fechas.hora;
+
     const _nombreVend = (v) => [v.nombre, v.apellido].filter(Boolean).join(' ') || v.email || v.uid;
 
     // ═══════════════ PANTALLA ═══════════════
