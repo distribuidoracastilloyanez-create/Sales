@@ -583,9 +583,13 @@
             const ordenVend = {
                 calculadoraBtn:1, inventarioBtn:2, facturacionBtn:3, clientesBtn:4,
                 archivosBtn:5, ventasBtn:6, obsequiosBtn:7, preventaMenuBtn:8,
-                catalogoBtn:9, ventasTotalesMenuBtn:10, profileAdminBtn:11, cxcBtn:12
+                catalogoBtn:9, ventasTotalesMenuBtn:10, profileAdminBtn:11, cxcBtn:12,
+                mercadeoBtn:13
             };
-            const ord = (id) => isAdmin ? '' : `style="order:${ordenVend[id] || 99}"`;
+            // Devuelve SOLO la declaración CSS, nunca un atributo style completo:
+            // el botón ya tiene su propio style con el color y dos atributos
+            // style en una misma etiqueta hacen que el navegador ignore el segundo.
+            const ord = (id) => isAdmin ? '' : `order:${ordenVend[id] || 99};`;
 
             mainContent.innerHTML = `
                 <div class="p-3 pt-5 container mx-auto max-w-lg">
@@ -596,45 +600,45 @@
                         </div>
                         <div class="${isAdmin ? 'p-3' : 'p-4'}">
                         <div class="grid grid-cols-2 ${isAdmin ? 'gap-2' : 'gap-2.5'}">
-                            ${P('inventario') ? `<button id="inventarioBtn" ${ord('inventarioBtn')} class="w-full ${bpad} btn-menu text-white rounded-lg shadow-md font-bold transition" style="background:#1D4E89">Inventario</button>` : ''}
+                            ${P('inventario') ? `<button id="inventarioBtn" class="w-full ${bpad} btn-menu text-white rounded-lg shadow-md font-bold transition" style="${ord('inventarioBtn')}background:#1D4E89">Inventario</button>` : ''}
                             
                             ${isAdmin ? `<button id="editInventarioBtn" class="w-full ${bpad} btn-menu text-white rounded-lg shadow-md font-bold transition" style="background:#16305C">${isAdmin ? 'Editar Inv.' : 'Edición de Inventario'}</button>` : ''}
                             
-                            ${P('clientes') ? `<button id="clientesBtn" ${ord('clientesBtn')} class="w-full ${bpad} btn-menu text-white rounded-lg shadow-md font-bold transition" style="background:#1A6B63">Clientes</button>` : ''}
+                            ${P('clientes') ? `<button id="clientesBtn" class="w-full ${bpad} btn-menu text-white rounded-lg shadow-md font-bold transition" style="${ord('clientesBtn')}background:#1A6B63">Clientes</button>` : ''}
                             
-                            ${P('ventas') ? `<button id="ventasBtn" ${ord('ventasBtn')} class="w-full ${bpad} btn-menu text-white rounded-lg shadow-md font-bold transition" style="background:#1C6B4A">
+                            ${P('ventas') ? `<button id="ventasBtn" class="w-full ${bpad} btn-menu text-white rounded-lg shadow-md font-bold transition" style="${ord('ventasBtn')}background:#1C6B4A">
                                 Venta Directa <span id="ventasBadge" class="hidden bg-white text-green-700 text-xs font-black px-2 py-0.5 rounded-full"></span>
                             </button>` : ''}
                             
-                            ${P('cxc') ? `<button id="cxcBtn" ${ord('cxcBtn')} class="w-full ${bpad} btn-menu text-white rounded-lg shadow-md font-bold transition" style="background:#9A6414">CXC</button>` : ''}
+                            ${P('cxc') ? `<button id="cxcBtn" class="w-full ${bpad} btn-menu text-white rounded-lg shadow-md font-bold transition" style="${ord('cxcBtn')}background:#9A6414">CXC</button>` : ''}
 
-                            ${P('calculadora') ? `<button id="calculadoraBtn" ${ord('calculadoraBtn')} class="w-full ${bpad} btn-menu text-white rounded-lg shadow-md font-bold transition" style="background:#1A6480">
+                            ${P('calculadora') ? `<button id="calculadoraBtn" class="w-full ${bpad} btn-menu text-white rounded-lg shadow-md font-bold transition" style="${ord('calculadoraBtn')}background:#1A6480">
                                 ${isAdmin ? 'Calculadora' : 'Calculadora de Pedido'}
                             </button>` : ''}
 
-                            ${P('facturacion') ? `<button id="facturacionBtn" ${ord('facturacionBtn')} class="w-full ${bpad} btn-menu text-white font-bold rounded-lg shadow-md transition" style="background:#46566E">
+                            ${P('facturacion') ? `<button id="facturacionBtn" class="w-full ${bpad} btn-menu text-white font-bold rounded-lg shadow-md transition" style="${ord('facturacionBtn')}background:#46566E">
                                 ${isAdmin ? 'Facturación' : 'Facturación (Simulador)'}
                             </button>` : ''}
 
-                            ${P('archivos') ? `<button id="archivosBtn" ${ord('archivosBtn')} class="w-full ${bpad} btn-menu text-white font-bold rounded-lg shadow-md transition" style="background:#17524E">
+                            ${P('archivos') ? `<button id="archivosBtn" class="w-full ${bpad} btn-menu text-white font-bold rounded-lg shadow-md transition" style="${ord('archivosBtn')}background:#17524E">
                                 Archivos y ADC
                             </button>` : ''}
-                            ${P('archivos') ? `<button id="mercadeoBtn" class="w-full ${bpad} btn-menu text-white font-bold rounded-lg shadow-md transition" style="background:#6B3570">
+                            ${P('archivos') ? `<button id="mercadeoBtn" class="w-full ${bpad} btn-menu text-white font-bold rounded-lg shadow-md transition" style="${ord('mercadeoBtn')}background:#6B3570">
                                 Ejecución y Mercadeo
                             </button>` : ''}
                             ${isAdmin ? `<button id="clientesGestionBtn" class="w-full ${bpad} btn-menu text-white font-bold rounded-lg shadow-md transition" style="background:#16305C">
                                 Clientes por Gestionar
                             </button>` : ''}
                             
-                            ${P('obsequios') ? `<button id="obsequiosBtn" ${ord('obsequiosBtn')} class="w-full ${bpad} btn-menu text-white rounded-lg shadow-md font-bold transition" style="background:#2E7CA6">Obsequios</button>` : ''}
+                            ${P('obsequios') ? `<button id="obsequiosBtn" class="w-full ${bpad} btn-menu text-white rounded-lg shadow-md font-bold transition" style="${ord('obsequiosBtn')}background:#2E7CA6">Obsequios</button>` : ''}
                             
-                            ${P('catalogo') ? `<button id="catalogoBtn" ${ord('catalogoBtn')} class="w-full ${bpad} btn-menu text-white rounded-lg shadow-md font-bold transition" style="background:#2A6B3C">Catálogo</button>` : ''}
+                            ${P('catalogo') ? `<button id="catalogoBtn" class="w-full ${bpad} btn-menu text-white rounded-lg shadow-md font-bold transition" style="${ord('catalogoBtn')}background:#2A6B3C">Catálogo</button>` : ''}
 
-                            ${P('preventa') ? `<button id="preventaMenuBtn" ${ord('preventaMenuBtn')} class="w-full ${bpad} btn-menu text-white rounded-lg shadow-md font-bold transition" style="background:#40478C">Pre-Venta</button>` : ''}
+                            ${P('preventa') ? `<button id="preventaMenuBtn" class="w-full ${bpad} btn-menu text-white rounded-lg shadow-md font-bold transition" style="${ord('preventaMenuBtn')}background:#40478C">Pre-Venta</button>` : ''}
                             
-                            ${P('ventas') ? `<button id="ventasTotalesMenuBtn" ${ord('ventasTotalesMenuBtn')} class="w-full ${bpad} btn-menu text-white rounded-lg shadow-md font-bold transition" style="background:#3A6FA8">Ventas Totales</button>` : ''}
+                            ${P('ventas') ? `<button id="ventasTotalesMenuBtn" class="w-full ${bpad} btn-menu text-white rounded-lg shadow-md font-bold transition" style="${ord('ventasTotalesMenuBtn')}background:#3A6FA8">Ventas Totales</button>` : ''}
                             
-                            ${P('perfil') ? `<button id="profileAdminBtn" ${ord('profileAdminBtn')} class="w-full ${bpad} btn-menu text-white rounded-lg shadow-md font-bold transition" style="background:#3A4759">${isAdmin ? 'Admin Panel' : 'Mi Perfil'}</button>` : ''}
+                            ${P('perfil') ? `<button id="profileAdminBtn" class="w-full ${bpad} btn-menu text-white rounded-lg shadow-md font-bold transition" style="${ord('profileAdminBtn')}background:#3A4759">${isAdmin ? 'Admin Panel' : 'Mi Perfil'}</button>` : ''}
                             
                             ${isAdmin ? `<button id="dataBtn" class="w-full ${bpad} btn-menu text-white rounded-lg shadow-md font-bold transition" style="background:#263447">Data</button>` : ''}
                             ${isAdmin ? `<button id="supervisionBtn" class="w-full ${bpad} btn-menu text-white rounded-lg shadow-md font-bold transition" style="background:#1F5E85">${isAdmin ? 'Supervisión' : 'Supervisión y Auditoría'}</button>` : ''}
