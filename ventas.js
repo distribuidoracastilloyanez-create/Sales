@@ -1101,7 +1101,7 @@
             if(!vendedorInfo.nombre && vendedorInfo.userId && window._usersMapCache && window._usersMapCache.has(vendedorInfo.userId)){
                  vNameModal = window._usersMapCache.get(vendedorInfo.userId).nombre;
             }
-            const fechaCierreStr = new Date().toLocaleString('es-ES');
+            const fechaCierreStr = new Date().toLocaleString('es-ES', { timeZone: 'America/Caracas' });
 
             const overlayId = 'fullScreenPreviewOverlay';
             const existing = document.getElementById(overlayId);
