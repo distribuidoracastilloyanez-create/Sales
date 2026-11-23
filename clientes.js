@@ -60,18 +60,16 @@
         _mainContent.innerHTML = `
             <div class="p-4 pt-8">
                 <div class="container mx-auto">
-                    <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl text-center">
-                        <h1 class="text-3xl font-bold text-gray-800 mb-6">Gestión de Clientes</h1>
-                        <div class="space-y-4">
-                            <button id="verClientesBtn" class="w-full px-6 py-3 bg-indigo-500 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-600 transition">Buscar Cliente</button>
-                            <button id="agregarClienteBtn" class="w-full px-6 py-3 bg-indigo-500 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-600 transition">Agregar Cliente</button>
-                            <button id="saldosVaciosBtn" class="w-full px-6 py-3 bg-cyan-500 text-white font-semibold rounded-lg shadow-md hover:bg-cyan-600 transition">Consultar Saldos de Vacíos</button>
-                            <button id="asignarRutasBtn" class="w-full px-6 py-3 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 transition">Asignar Rutas</button>
+                    <div class="bg-white p-3 sm:p-4 rounded-xl shadow-lg overflow-hidden text-center">
+                        ${window.Comun.cabeceraCard('Clientes', 'Registro, búsqueda y expedientes', 'backToMenuBtn')}<div class="space-y-4">
+                            ${window.Comun.tarjetaMenu('verClientesBtn', 'Buscar Cliente', 'Encontrar un cliente y abrir su expediente.')}
+                            ${window.Comun.tarjetaMenu('agregarClienteBtn', 'Agregar Cliente', 'Registrar un cliente nuevo con sus datos y ubicación.')}
+                            ${window.Comun.tarjetaMenu('saldosVaciosBtn', 'Consultar Saldos de Vacíos', 'Ver los envases retornables que debe cada cliente.')}
+                            ${window.Comun.tarjetaMenu('asignarRutasBtn', 'Asignar Rutas', 'Definir la ruta de pre-venta de cada cliente.')}
                             ${window.esAdmin() ? `
-                            <button id="editarSaldosVaciosBtn" class="w-full px-6 py-3 bg-teal-600 text-white font-semibold rounded-lg shadow-md hover:bg-teal-700 transition border-2 border-teal-500">Editar Saldo de Vacíos</button>
-                            <button id="funcionesAvanzadasBtn" class="w-full px-6 py-3 bg-gray-700 text-white font-semibold rounded-lg shadow-md hover:bg-gray-800 mt-4 transition">Funciones Avanzadas</button>
+                            ${window.Comun.tarjetaMenu('editarSaldosVaciosBtn', 'Editar Saldo de Vacíos', 'Corregir manualmente los envases de un cliente.')}
+                            ${window.Comun.tarjetaMenu('funcionesAvanzadasBtn', 'Funciones Avanzadas', 'Importar clientes y herramientas de mantenimiento.')}
                             ` : ''}
-                            <button id="backToMenuBtn" class="w-full px-6 py-3 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500 transition">Volver al Menú Principal</button>
                         </div>
                     </div>
                 </div>
@@ -98,11 +96,8 @@
         _mainContent.innerHTML = `
             <div class="p-4 pt-8">
                 <div class="container mx-auto max-w-5xl">
-                    <div class="bg-white/90 backdrop-blur-sm p-6 rounded-lg shadow-xl">
-                        <h2 class="text-2xl font-bold text-teal-800 mb-2 text-center">Editar Saldos de Vacíos</h2>
-                        <p class="text-center text-gray-500 mb-6 text-sm">Busca un cliente para sobrescribir (imponer) un número exacto en su saldo.</p>
-                        
-                        <input type="text" id="edit-saldo-search-input" placeholder="Buscar cliente por nombre..." class="w-full px-4 py-2 border border-teal-300 rounded-lg mb-4 focus:ring-2 focus:ring-teal-500 outline-none">
+                    <div class="bg-white p-3 sm:p-4 rounded-xl shadow-lg overflow-hidden">
+                        ${window.Comun.cabeceraCard('Saldos de Vacíos', 'Envases retornables que debe el cliente', 'backToClientesFromEditSaldosBtn')}<input type="text" id="edit-saldo-search-input" placeholder="Buscar cliente por nombre..." class="w-full px-4 py-2 border border-teal-300 rounded-lg mb-4 focus:ring-2 focus:ring-teal-500 outline-none">
                         
                         <div id="editSaldosListContainer" class="overflow-x-auto max-h-[60vh] border rounded bg-gray-50">
                             <p class="text-gray-500 text-center py-8 animate-pulse">Cargando todos los clientes...</p>
@@ -260,9 +255,8 @@
         _mainContent.innerHTML = `
             <div class="p-4 pt-8">
                 <div class="container mx-auto">
-                    <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl text-center">
-                        <h1 class="text-3xl font-bold text-gray-800 mb-6">Funciones Avanzadas de Clientes</h1>
-                        <div class="space-y-4">
+                    <div class="bg-white p-3 sm:p-4 rounded-xl shadow-lg overflow-hidden text-center">
+                        ${window.Comun.cabeceraCard('Funciones Avanzadas', 'Importación y herramientas de mantenimiento', 'backToClientesMenuBtn')}<div class="space-y-4">
                             <button id="importarClientesBtn" class="w-full px-6 py-3 bg-teal-500 text-white font-semibold rounded-lg shadow-md hover:bg-teal-600">Importar Clientes desde Excel/CSV</button>
                             <button id="datosMaestrosSectoresBtn" class="w-full px-6 py-3 bg-yellow-500 text-gray-800 font-semibold rounded-lg shadow-md hover:bg-yellow-600">Gestionar Sectores</button>
                             <button id="deleteAllClientesBtn" class="w-full px-6 py-3 bg-red-600 text-white font-semibold rounded-lg shadow-md hover:bg-red-700">Eliminar Todos los Clientes</button>
@@ -282,10 +276,8 @@
         _mainContent.innerHTML = `
             <div class="p-4 pt-8">
                 <div class="container mx-auto max-w-4xl">
-                    <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl">
-                        <h2 class="text-2xl font-bold text-gray-800 mb-4 text-center">Importar Clientes desde CSV/Excel</h2>
-                        <p class="text-center text-gray-600 mb-6">Selecciona un archivo .csv o .xlsx. La primera fila debe contener los encabezados: Sector, Nombre Comercial, Nombre Personal, telefono, CEP, y opcionalmente: Retención IVA, Correo, Coordenadas (o X, Y / Latitud, Longitud).</p>
-                        <input type="file" id="excel-uploader" accept=".xlsx, .xls, .csv" class="w-full p-4 border-2 border-dashed rounded-lg">
+                    <div class="bg-white p-3 sm:p-4 rounded-xl shadow-lg overflow-hidden">
+                        ${window.Comun.cabeceraCard('Importar Clientes', 'Carga masiva desde un archivo CSV o Excel', 'backToAdvancedFunctionsBtn')}<input type="file" id="excel-uploader" accept=".xlsx, .xls, .csv" class="w-full p-4 border-2 border-dashed rounded-lg">
                         <div id="preview-container" class="mt-6 overflow-auto max-h-96"></div>
                         <div id="import-actions" class="mt-6 flex flex-col sm:flex-row gap-4 hidden">
                              <button id="confirmImportBtn" class="w-full px-6 py-3 bg-green-500 text-white font-semibold rounded-lg shadow-md hover:bg-green-600">Confirmar e Importar</button>
@@ -650,9 +642,8 @@
          _floatingControls.classList.add('hidden');
         _mainContent.innerHTML = `
             <div class="p-4 pt-8 w-full max-w-4xl mx-auto flex flex-col">
-                <div class="bg-white/90 backdrop-blur-sm p-6 sm:p-8 rounded-lg shadow-xl border-t-4 border-indigo-600">
-                    <h2 class="text-2xl font-bold text-gray-800 mb-6 text-center">Agregar Cliente</h2>
-                    <form id="clienteForm" class="space-y-4 text-left">
+                <div class="bg-white p-3 sm:p-4 rounded-xl shadow-lg overflow-hidden border-t-4 border-indigo-600">
+                    ${window.Comun.cabeceraCard('Agregar Cliente', 'Alta de un cliente nuevo', 'backToClientesBtn')}<form id="clienteForm" class="space-y-4 text-left">
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
                                 <label for="sector" class="block text-gray-700 font-medium mb-2">Sector / Zona <span class="text-red-500">*</span></label>
@@ -895,13 +886,8 @@
          _floatingControls.classList.add('hidden');
         _mainContent.innerHTML = `
             <div class="p-2 pt-3 w-full max-w-6xl mx-auto flex flex-col h-screen">
-                <div class="bg-white/95 backdrop-blur-sm p-3 rounded-lg shadow-xl flex flex-col flex-grow overflow-hidden">
-                    <div class="flex items-center justify-between mb-2">
-                        <h2 class="text-lg font-bold text-gray-800">Buscador de Clientes</h2>
-                        <button id="backToClientesBtn" class="px-3 py-1.5 bg-gray-200 text-gray-700 text-xs font-bold rounded-lg hover:bg-gray-300 transition">Volver al menú</button>
-                    </div>
-
-                    ${getFiltrosHTML()}
+                <div class="bg-white p-3 sm:p-4 rounded-xl shadow-lg overflow-hidden flex flex-col flex-grow overflow-hidden">
+                    ${window.Comun.cabeceraCard('Buscar Cliente', 'Encuentre un cliente por nombre o sector', 'backToClientesBtn')}${getFiltrosHTML()}
 
                     <div id="clientesListContainer" class="overflow-x-auto overflow-y-auto flex-grow border border-gray-200 rounded-lg shadow-inner bg-gray-50">
                         <p class="text-gray-500 text-center py-6 animate-pulse">Cargando datos del sistema...</p>
@@ -1244,14 +1230,9 @@
 
         _mainContent.innerHTML = `
             <div class="p-2 sm:p-4 pt-8 w-full max-w-5xl mx-auto flex flex-col h-screen overflow-y-auto">
-                <div class="bg-white/95 backdrop-blur-sm p-4 sm:p-8 rounded-lg shadow-xl flex flex-col border-t-4 border-blue-800">
+                <div class="bg-white p-3 sm:p-4 rounded-xl shadow-lg overflow-hidden flex flex-col border-t-4 border-blue-800">
                     
-                    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 border-b border-gray-200 pb-4 gap-4">
-                        <h2 class="text-xl sm:text-2xl font-black text-gray-800 tracking-tight uppercase">Expediente de Cliente</h2>
-                        <button id="btnVolverInfo" class="w-full sm:w-auto px-6 py-2 bg-gray-500 text-white font-bold rounded shadow hover:bg-gray-600 transition text-sm uppercase tracking-wide">Volver</button>
-                    </div>
-
-                    <div class="mb-6 bg-gray-50 p-4 rounded border border-gray-200">
+                    ${window.Comun.cabeceraCard('Expediente de Cliente', 'Datos, documentos y equipos del cliente', 'btnVolverInfo')}<div class="mb-6 bg-gray-50 p-4 rounded border border-gray-200">
                         <h3 class="text-2xl sm:text-3xl font-black text-blue-900 mb-1 leading-tight uppercase">${cliente.nombreComercial} ${retencionBadge}</h3>
                         <p class="text-gray-600 text-sm mt-1">Representante Legal: <span class="text-gray-800 font-bold">${cliente.nombrePersonal || 'N/A'}</span></p>
                     </div>
@@ -1326,9 +1307,8 @@
 
         _mainContent.innerHTML = `
             <div class="p-4 pt-8 w-full max-w-4xl mx-auto flex flex-col">
-                <div class="bg-white/90 backdrop-blur-sm p-6 sm:p-8 rounded-lg shadow-xl border-t-4 border-yellow-500">
-                    <h2 class="text-2xl font-black text-gray-800 mb-6 text-center uppercase tracking-tight">Editar Registro</h2>
-                    <form id="editClienteForm" class="space-y-4 text-left">
+                <div class="bg-white p-3 sm:p-4 rounded-xl shadow-lg overflow-hidden border-t-4 border-yellow-500">
+                    ${window.Comun.cabeceraCard('Editar Cliente', 'Cambios en los datos del cliente', 'backToVerClientesBtn')}<form id="editClienteForm" class="space-y-4 text-left">
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
                                 <label for="editSector" class="block text-gray-700 font-bold text-sm mb-1 uppercase">Sector / Zona</label>
@@ -1527,9 +1507,8 @@
         _mainContent.innerHTML = `
             <div class="p-4 pt-8">
                 <div class="container mx-auto max-w-2xl">
-                    <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl">
-                        <h2 class="text-2xl font-bold text-gray-800 mb-6 text-center">Gestionar Sectores</h2>
-                        <div id="sectores-list" class="space-y-2 max-h-96 overflow-y-auto border p-4 rounded-lg"></div>
+                    <div class="bg-white p-3 sm:p-4 rounded-xl shadow-lg overflow-hidden">
+                        ${window.Comun.cabeceraCard('Sectores', 'Zonas en las que se agrupan los clientes', 'backToClientesBtn')}<div id="sectores-list" class="space-y-2 max-h-96 overflow-y-auto border p-4 rounded-lg"></div>
                         <div class="mt-6 flex flex-col sm:flex-row gap-4">
                             <button id="addSectorMaestroBtn" class="w-full px-6 py-3 bg-blue-500 text-white font-semibold rounded-lg shadow-md hover:bg-blue-600">Agregar Nuevo Sector</button>
                             <button id="backToClientesBtn" class="w-full px-6 py-3 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500">Volver</button>
@@ -1695,9 +1674,8 @@
         _mainContent.innerHTML = `
             <div class="p-4 pt-8">
                 <div class="container mx-auto">
-                    <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl">
-                        <h2 class="text-2xl font-bold text-gray-800 mb-6 text-center">Saldos de Envases Retornables (Vacíos)</h2>
-                        <input type="text" id="saldo-search-input" placeholder="Buscar cliente..." class="w-full px-4 py-2 border rounded-lg mb-4">
+                    <div class="bg-white p-3 sm:p-4 rounded-xl shadow-lg overflow-hidden">
+                        ${window.Comun.cabeceraCard('Envases Retornables', 'Vacíos pendientes por cliente', 'backToClientesBtn')}<input type="text" id="saldo-search-input" placeholder="Buscar cliente..." class="w-full px-4 py-2 border rounded-lg mb-4">
                         <div id="saldosListContainer" class="overflow-x-auto max-h-96">
                             <p class="text-gray-500 text-center">Cargando saldos de clientes...</p>
                         </div>
@@ -1940,12 +1918,8 @@
         _floatingControls.classList.add('hidden');
         _mainContent.innerHTML = `
             <div class="p-3 pt-5 w-full max-w-3xl mx-auto">
-                <div class="bg-white/95 backdrop-blur-sm p-3 sm:p-4 rounded-lg shadow-xl">
-                    <div class="flex items-center justify-between mb-3">
-                        <h2 class="text-lg font-bold text-gray-800">Asignar Rutas</h2>
-                        <button id="arBack" class="px-3 py-1.5 bg-gray-400 text-white text-xs rounded-lg hover:bg-gray-500 font-bold">Volver</button>
-                    </div>
-                    <p class="text-[11px] text-gray-500 mb-3">Asigna a cada cliente su ruta de reparto. Puedes filtrar por sector y asignar en bloque.</p>
+                <div class="bg-white p-3 sm:p-4 rounded-xl shadow-lg overflow-hidden">
+                    ${window.Comun.cabeceraCard('Asignar Rutas', 'Ruta de pre-venta de cada cliente', 'arBack')}<p class="text-[11px] text-gray-500 mb-3">Asigna a cada cliente su ruta de reparto. Puedes filtrar por sector y asignar en bloque.</p>
 
                     <div id="arLoading" class="text-center text-gray-400 py-8 text-sm">Cargando clientes...</div>
 
