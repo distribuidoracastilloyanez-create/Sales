@@ -100,7 +100,7 @@
                     <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-5 gap-3">
                         <h2 class="text-xl sm:text-2xl font-black text-gray-800 tracking-tight">Simulador de Facturación</h2>
                         <div class="flex gap-2 w-full sm:w-auto">
-                            ${_userRole === 'admin' ? '<button id="btnConfigFactura" class="flex-1 sm:flex-none px-4 py-2 bg-indigo-600 text-white font-bold rounded shadow hover:bg-indigo-700 transition text-sm">Config Factura</button>' : ''}
+                            ${window.esAdmin() ? '<button id="btnConfigFactura" class="flex-1 sm:flex-none px-4 py-2 bg-indigo-600 text-white font-bold rounded shadow hover:bg-indigo-700 transition text-sm">Config Factura</button>' : ''}
                             <button id="btnVolverFacturacion" class="flex-1 sm:flex-none px-4 py-2 bg-gray-500 text-white font-bold rounded shadow hover:bg-gray-600 transition">Volver al Menú</button>
                         </div>
                     </div>
