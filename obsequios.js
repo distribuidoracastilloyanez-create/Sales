@@ -1,2805 +1,663 @@
-// ═══════════════════════════════════════════════════════════════
-// MÓDULO PRE-VENTA (nuevo sistema, en paralelo al tradicional)
-// Por ahora SOLO para administradores. No afecta el sistema actual.
-// ═══════════════════════════════════════════════════════════════
-(function () {
-    'use strict';
+// --- Lógica del módulo de Gestión de Obsequios ---
 
-    let _db, _userId, _userRole, _appId, _mainContent, _floatingControls;
+(function() {
+    // Variables locales del módulo
+    let _db, _userId, _userRole, _appId, _mainContent, _floatingControls, _activeListeners;
     let _showMainMenu, _showModal;
-    let _collection, _onSnapshot, _doc, _getDoc, _addDoc, _setDoc, _deleteDoc, _getDocs, _query, _where, _orderBy, _runTransaction, _increment;
+    let _collection, _onSnapshot, _doc, _getDoc, _addDoc, _setDoc, _getDocs, _writeBatch, _runTransaction, _query, _where, _orderBy, _limit, _deleteDoc;
 
-    // ── Configuración y rutas (aisladas del sistema tradicional) ──
-    const getPublicDataId = () => window.AppConfig.PUBLIC_DATA_ID;
-    // Colecciones EXISTENTES que solo LEEMOS (nunca modificamos):
-    const pathClientes  = () => `artifacts/${getPublicDataId()}/public/data/clientes`;
-    const pathProductos = () => `artifacts/${getPublicDataId()}/public/data/productos`;
-    const pathSectores  = () => `artifacts/${getPublicDataId()}/public/data/sectores`;
-    // Colección NUEVA y aislada para los pedidos de preventa:
-    const pathPedidos   = () => `artifacts/${getPublicDataId()}/public/data/preventa_pedidos`;
-    const pathInvRuta   = () => `artifacts/${getPublicDataId()}/public/data/preventa_inventario_ruta`;
+    // Estado específico del módulo
+    let _clientesCache = [];
+    let _inventarioCache = []; 
+    let _usersCache = []; // Caché de vendedores para el panel Admin
+    let _obsequioConfig = { productoIds: [], productos: [] }; 
+    let _obsequioActual = { cliente: null, producto: null, cantidadEntregada: 0, vaciosRecibidos: 0, observacion: '' };
+    let _lastObsequiosSearch = []; 
 
-    // Caches locales
-    let _pvUsuarios = [];
-    let _pvSectores = [];
-    let _pvClientes = [];         // cache de clientes (solo lectura)
-    let _pvAcuerdo = null;        // Acuerdo Comercial del cliente del pedido en curso
+    const TIPOS_VACIO = window.TIPOS_VACIO_GLOBAL || ["1/4 - 1/3", "ret 350 ml", "ret 1.25 Lts"];
+    
+    const PUBLIC_DATA_ID = window.AppConfig.PUBLIC_DATA_ID;
+    let OBSEQUIO_CONFIG_PATH;
+    let CLIENTES_PUBLIC_PATH;
 
-    // ¿Estamos sin conexión (real o modo manual)?
-    const _pvSinRed = () => !navigator.onLine || localStorage.getItem('manualOfflineMode') === 'true';
-    // Guarda esperando confirmación SOLO si hay red. Offline, Firestore ya escribió en el
-    // teléfono: esperar el servidor dejaría la pantalla congelada para siempre.
-    async function _pvGuardar(promesa, etiqueta) {
-        if (_pvSinRed()) {
-            promesa.catch(err => console.warn(`${etiqueta}: guardado local, pendiente de sincronizar.`, err));
-            return;
-        }
-        await promesa;
-    }
-
-    // Precios del producto con el descuento del Acuerdo Comercial aplicado.
-    // Sin acuerdo devuelve los precios tal cual (comportamiento de siempre).
-    function _pvPrecios(prod) {
-        const base = prod.precios || { und: prod.precioPorUnidad || 0 };
-        try {
-            if (!_pvAcuerdo || !window.acAplicarDescuento) return base;
-            const r = window.acAplicarDescuento(_pvAcuerdo, prod, base);
-            return (r && r.aplicado && r.aplicado.length) ? r.precios : base;
-        } catch (e) { return base; }
-    }
-    // Ids de reglas aplicadas a un producto (para consumir la temporalidad)
-    function _pvReglasDe(prod) {
-        try {
-            if (!_pvAcuerdo || !window.acAplicarDescuento) return [];
-            const r = window.acAplicarDescuento(_pvAcuerdo, prod, prod.precios || {});
-            return (r && r.aplicado || []).map(a => a.reglaId).filter(Boolean);
-        } catch (e) { return []; }
-    }
-    let _pvProductos = [];        // cache del catálogo maestro (solo lectura)
-    // Estado del pedido en construcción
-    let _pedidoActual = { vendedor: null, cliente: null, productos: {} };
-    let _pedidoEnEdicion = null;  // si no es null, showTomarPedido edita ese pedido
-    let _pvSortFn = null;  // función de orden global (misma que venta tradicional)
-    let _pvStockRuta = {};  // stock de la bolsa de la ruta del vendedor (informativo)
-
-    window.initPreventa = function (dependencies) {
-        _db          = dependencies.db;
-        _userId      = dependencies.userId;
-        _userRole    = dependencies.userRole;
-        _appId       = dependencies.appId;
+    window.initObsequios = function(dependencies) {
+        _db = dependencies.db;
+        _userId = dependencies.userId;
+        _userRole = dependencies.userRole;
+        _appId = dependencies.appId; 
         _mainContent = dependencies.mainContent;
         _floatingControls = dependencies.floatingControls;
         _showMainMenu = dependencies.showMainMenu;
-        _showModal   = dependencies.showModal;
-        _collection  = dependencies.collection;
-        _onSnapshot  = dependencies.onSnapshot;
-        _doc         = dependencies.doc;
-        _getDoc      = dependencies.getDoc;
-        _addDoc      = dependencies.addDoc;
-        _setDoc      = dependencies.setDoc;
-        _deleteDoc   = dependencies.deleteDoc;
-        _getDocs     = dependencies.getDocs;
-        _query       = dependencies.query;
-        _where       = dependencies.where;
-        _orderBy     = dependencies.orderBy;
+        _showModal = dependencies.showModal;
+        _activeListeners = dependencies.activeListeners;
+        _collection = dependencies.collection;
+        _onSnapshot = dependencies.onSnapshot;
+        _doc = dependencies.doc;
+        _getDoc = dependencies.getDoc;
+        _addDoc = dependencies.addDoc;
+        _setDoc = dependencies.setDoc;
+        _getDocs = dependencies.getDocs;
+        _writeBatch = dependencies.writeBatch; 
         _runTransaction = dependencies.runTransaction;
-        _increment   = dependencies.increment;
+        _query = dependencies.query;
+        _where = dependencies.where;
+        _orderBy = dependencies.orderBy;
+        _limit = dependencies.limit;
+        _deleteDoc = dependencies.deleteDoc;
+
+        OBSEQUIO_CONFIG_PATH = `artifacts/${PUBLIC_DATA_ID}/public/data/config/obsequio`;
+        CLIENTES_PUBLIC_PATH = `artifacts/${PUBLIC_DATA_ID}/public/data/clientes`;
+        
+        console.log("Módulo Obsequios inicializado. Public ID:", PUBLIC_DATA_ID);
     };
 
-    // ── MENÚ PRINCIPAL DE PRE-VENTA ──
-    window.showPreventaMenu = function () {
-        const rol = window.userRole === 'user' ? 'vendedor' : window.userRole;
-        // El despachador VIVE en Pre-Venta (entra aquí directo), así que debe conservar
-        // los controles flotantes (En línea / Cerrar Sesión). Vendedor/admin los ocultan
-        // aquí porque vuelven al menú principal para cerrar sesión.
-        if (_floatingControls) _floatingControls.classList.toggle('hidden', rol !== 'despachador');
-        // Admin, vendedor y despachador pueden entrar a Pre-Venta
-        if (!['admin', 'vendedor', 'despachador'].includes(rol)) {
-            if (_showModal) _showModal('No disponible', 'El sistema de Pre-Venta no está habilitado para tu usuario.');
-            return;
-        }
-        const esAdmin = rol === 'admin';
-        const esVend = rol === 'vendedor';
-        const esDesp = rol === 'despachador';
-
-        const bpad = 'px-2 py-2.5 text-sm';
-        // Botones de Pre-Venta según el rol
-        const btn = (id, txt, clase) => `<button id="${id}" class="w-full ${bpad} ${clase} text-white rounded-lg shadow-md font-bold transition">${txt}</button>`;
-        let botones = '';
-        // Orden principal: Tomar Pedido, Estado del Pedido, Reportes
-        if (esAdmin || esVend)  botones += btn('pvPedidosBtn', 'Tomar Pedido', 'bg-indigo-500 hover:bg-indigo-600');
-        botones += btn('pvListaPedidosBtn', 'Pedidos', 'bg-cyan-600 hover:bg-cyan-700');
-        botones += btn('pvBandejaBtn', 'Estado del Pedido', 'bg-teal-600 hover:bg-teal-700');
-        // Funciones adicionales de admin
-        if (esAdmin) botones += btn('pvInventarioRutaBtn', 'Inv. por Ruta', 'bg-blue-600 hover:bg-blue-700');
-        if (esAdmin) botones += btn('pvVendedoresBtn', 'Vendedores/Zonas', 'bg-slate-600 hover:bg-slate-700');
-        if (esAdmin) botones += btn('pvConfigBtn', 'Configuración', 'bg-gray-600 hover:bg-gray-700');
-        // Accesos tradicionales reutilizados (despachador)
-        if (esDesp) botones += btn('pvClientesBtn', 'Clientes', 'bg-teal-600 hover:bg-teal-700');
-        if (esDesp) botones += btn('pvCxcBtn', 'CXC', 'bg-amber-600 hover:bg-amber-700');
-        if (esDesp) botones += btn('pvPerfilBtn', 'Mi Perfil', 'bg-slate-700 hover:bg-slate-800');
-
-        // El despachador entra directo aquí (es su pantalla principal), así que no
-        // muestra "Volver al Menú". Los demás llegan desde el botón Pre-Venta del menú único.
+    window.showGestionObsequiosView = function() {
+        if (_floatingControls) _floatingControls.classList.add('hidden');
         _mainContent.innerHTML = `
-            <div class="p-3 pt-5 container mx-auto max-w-lg">
-                <div class="bg-white/90 backdrop-blur-sm p-4 rounded-lg shadow-xl text-center">
-                    <div class="flex items-center justify-between mb-2">
-                        <h1 class="text-xl font-bold text-gray-800">${esDesp ? 'Despacho' : 'Pre-Venta'}</h1>
-                        ${!esDesp ? `<button id="pvNavTradiBtn" class="px-3 py-1.5 bg-gray-400 text-white text-xs rounded-lg shadow-md hover:bg-gray-500 font-bold transition">Volver al Menú</button>` : ''}
-                    </div>
-                    <button id="pvTasaBcvDisplay" class="mb-3 text-sm font-bold text-gray-700 hover:text-gray-900 hover:underline transition cursor-pointer">(BCV ----- --/--/--)</button>
-
-                    <div class="space-y-2">
-                        ${botones}
+            <div class="p-4 pt-8">
+                <div class="container mx-auto max-w-lg">
+                    <div class="bg-white/90 backdrop-blur-sm p-8 rounded-lg shadow-xl text-center">
+                        <h1 class="text-3xl font-bold text-gray-800 mb-6">Gestión de Obsequios</h1>
+                        <div class="space-y-4">
+                            <button id="generarObsequioBtn" class="w-full px-6 py-3 bg-cyan-500 text-white font-semibold rounded-lg shadow-md hover:bg-cyan-600 transition">Generar Obsequio</button>
+                            <button id="registroObsequiosBtn" class="w-full px-6 py-3 bg-blue-500 text-white font-semibold rounded-lg shadow-md hover:bg-blue-600 transition">Registro de Obsequios</button>
+                            <button id="backToMenuBtn" class="w-full px-6 py-3 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500 transition">Volver al Menú</button>
+                        </div>
                     </div>
                 </div>
-            </div>`;
-
-        // Navegación: volver al menú principal único
-        document.getElementById('pvNavTradiBtn')?.addEventListener('click', () => {
-            if (_floatingControls) _floatingControls.classList.remove('hidden');
-            if (_showMainMenu) _showMainMenu();
-        });
-        // Accesos tradicionales reutilizados (despachador)
-        document.getElementById('pvClientesBtn')?.addEventListener('click', () => { if (window.showClientesSubMenu) window.showClientesSubMenu(); });
-        document.getElementById('pvCxcBtn')?.addEventListener('click', () => { if (window.showCXCView) window.showCXCView(); });
-        document.getElementById('pvPerfilBtn')?.addEventListener('click', () => { if (window.showAdminOrProfileView) window.showAdminOrProfileView(); });
-
-        // Tasa BCV (reutiliza la API global del módulo CXC)
-        (async () => {
-            const disp = document.getElementById('pvTasaBcvDisplay');
-            if (disp && window.textoTasaHoyBCV) {
-                try { disp.textContent = await window.textoTasaHoyBCV(); } catch (e) { console.error('Preventa: no se pudo mostrar la tasa del BCV.', e); }
-                disp.addEventListener('click', () => {
-                    if (window.abrirCalendarioTasas) window.abrirCalendarioTasas(() => window.showPreventaMenu());
-                });
-            }
-        })();
-
-        // Botones aún sin función (placeholder mientras se construyen)
-        const enConstruccion = (nombre) => {
-            if (_showModal) _showModal('En construcción', `La función "${nombre}" se construirá próximamente. Por ahora es solo la estructura del nuevo sistema.`);
-        };
-        // Cada botón puede o no existir según el rol; se usa ?. para no fallar.
-        document.getElementById('pvPedidosBtn')?.addEventListener('click', () => showTomarPedido());
-        document.getElementById('pvListaPedidosBtn')?.addEventListener('click', () => showListaPedidos());
-        document.getElementById('pvBandejaBtn')?.addEventListener('click', () => showBandejaDespacho());
-        document.getElementById('pvInventarioRutaBtn')?.addEventListener('click', () => showInventarioRuta());
-        document.getElementById('pvVendedoresBtn')?.addEventListener('click', () => showPreventaVendedores());
-        document.getElementById('pvConfigBtn')?.addEventListener('click', () => enConstruccion('Configuración'));
+            </div>
+        `;
+        document.getElementById('generarObsequioBtn').onclick = showGenerarObsequioView;
+        document.getElementById('registroObsequiosBtn').onclick = showRegistroObsequiosView;
+        document.getElementById('backToMenuBtn').onclick = _showMainMenu;
     };
 
-
-    // ═══════════════════════════════════════════════════════════
-    // VENDEDORES / ZONAS — asignar zona de referencia a cada vendedor
-    // Solo agrega el campo 'zonaPreventa' al usuario (merge, no afecta nada más)
-    // ═══════════════════════════════════════════════════════════
-    async function showPreventaVendedores() {
-        if (!window.esAdmin()) return;
-
+    async function showGenerarObsequioView() {
         _mainContent.innerHTML = `
-            <div class="p-3 pt-6 w-full max-w-lg mx-auto">
-                <div class="bg-white/95 backdrop-blur-sm p-4 rounded-lg shadow-xl">
-                    <div class="flex items-center justify-between mb-3">
-                        <h2 class="text-lg font-bold text-gray-800 flex items-center gap-2">👤 Vendedores / Zonas</h2>
-                        <button id="pvVendBack" class="px-3 py-1.5 bg-gray-400 text-white text-xs rounded hover:bg-gray-500 font-bold transition">Volver</button>
+            <div class="p-4 pt-8">
+                <div class="container mx-auto max-w-lg bg-white p-8 rounded-lg shadow-xl">
+                    <div class="flex justify-between items-center mb-6">
+                        <h2 class="text-2xl font-bold text-gray-800">Generar Obsequio</h2>
+                        <button onclick="window.showGestionObsequiosView()" class="text-gray-400 font-bold hover:text-gray-600 text-xl">✕</button>
                     </div>
-                    <p class="text-[11px] text-gray-500 mb-3">Asigna a cada vendedor su zona/ruta de referencia. Es solo informativo para organizar los pedidos; no afecta el sistema tradicional.</p>
-                    <div id="pvVendLoading" class="text-center py-8 text-gray-400 text-sm">
-                        <svg class="animate-spin h-6 w-6 mx-auto mb-2 text-indigo-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path></svg>
-                        Cargando vendedores...
+                    <div id="obs-form-loader" class="text-center p-8 font-medium text-gray-500 animate-pulse">Sincronizando Catálogo y Clientes...</div>
+                    <div id="obs-form-content" class="hidden space-y-4">
+                        <div>
+                            <label class="block text-sm font-bold text-gray-700 mb-1">Producto a obsequiar:</label>
+                            <select id="obsProdSelect" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 outline-none shadow-sm font-medium bg-white">
+                                <option value="">-- Seleccione el producto --</option>
+                            </select>
+                        </div>
+                        <div class="relative" id="cliSearchContainer">
+                            <label class="block text-sm font-bold text-gray-700 mb-1">Buscar Cliente:</label>
+                            <input type="text" id="cliSearch" placeholder="Escriba el nombre comercial..." class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 outline-none shadow-sm">
+                            <div id="cliDrop" class="absolute z-50 w-full bg-white border border-gray-200 rounded-lg shadow-2xl mt-1 hidden max-h-48 overflow-y-auto"></div>
+                        </div>
+                        <div id="cliSel" class="hidden p-4 bg-cyan-50 border border-cyan-200 rounded-lg flex justify-between items-center shadow-sm">
+                            <span id="cliName" class="font-black text-cyan-900 text-lg"></span>
+                            <button onclick="window.resetClientSelection()" class="text-xs font-bold text-cyan-600 hover:text-cyan-800 uppercase tracking-wider bg-white px-2 py-1 rounded border border-cyan-200">Cambiar</button>
+                        </div>
+                        <form id="formObs" class="hidden space-y-4 border-t pt-6 mt-2">
+                            <div class="bg-gray-50 p-4 rounded-lg text-center border border-gray-200 shadow-inner">
+                                <p class="text-xs text-gray-500 font-bold tracking-widest uppercase mb-1">PRODUCTO SELECCIONADO</p>
+                                <p id="prodName" class="font-black text-gray-800 text-lg leading-tight"></p>
+                                <p class="text-sm text-gray-600 mt-2 bg-blue-100 inline-block px-3 py-1 rounded-full font-medium">Stock Disponible: <span id="prodStock" class="font-bold text-blue-800"></span></p>
+                            </div>
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-sm font-bold text-gray-700 mb-1">Cajas a Entregar:</label>
+                                    <input type="number" id="cantEnt" min="1" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 outline-none font-bold text-center text-xl text-cyan-700 shadow-sm" placeholder="0" required>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-bold text-gray-700 mb-1">Vacíos Recibidos:</label>
+                                    <input type="number" id="vacRec" min="0" value="0" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 outline-none font-bold text-center text-xl shadow-sm">
+                                    <p id="vacTipo" class="text-[10px] text-gray-500 mt-1 text-center font-semibold uppercase"></p>
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-bold text-gray-700 mb-1">Observación (Opcional):</label>
+                                <textarea id="obsText" placeholder="Motivo del obsequio..." class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 outline-none text-sm shadow-sm"></textarea>
+                            </div>
+                            <button type="submit" class="w-full py-4 mt-4 bg-gradient-to-r from-cyan-500 to-blue-600 text-white rounded-lg font-black shadow-lg hover:from-cyan-600 hover:to-blue-700 transition-all text-lg transform hover:scale-[1.02]">Confirmar Entrega</button>
+                        </form>
                     </div>
-                    <div id="pvVendLista" class="hidden space-y-2"></div>
                 </div>
-            </div>`;
+            </div>
+        `;
 
-        document.getElementById('pvVendBack')?.addEventListener('click', () => window.showPreventaMenu());
+        await Promise.all([_loadClientes(), _loadInventarioHibrido(), _loadObsequioProduct()]);
 
-        // Cargar usuarios y sectores en paralelo
-        try {
-            const [usersSnap, sectoresSnap] = await Promise.all([
-                _getDocs(_collection(_db, 'users')),
-                _getDocs(_collection(_db, pathSectores()))
-            ]);
-            _pvUsuarios = usersSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-            _pvSectores = sectoresSnap.docs.map(d => (d.data().name || '')).filter(Boolean).sort();
-        } catch (e) {
-            console.error('Error cargando vendedores/sectores:', e);
-            { const _l = document.getElementById('pvVendLoading'); if (_l) _l.innerHTML = '<span class="text-red-500">Error al cargar los datos.</span>'; }
-            return;
+        const loader = document.getElementById('obs-form-loader');
+        const content = document.getElementById('obs-form-content');
+
+        if (_obsequioConfig.productos && _obsequioConfig.productos.length) {
+            loader.classList.add('hidden');
+            content.classList.remove('hidden');
+            setupObsequioUI();
+        } else {
+            loader.innerHTML = `
+                <div class="text-red-500 font-bold mb-2">Error: El Producto de Obsequio no ha sido configurado.</div>
+                <p class="text-sm text-gray-600">Por favor, pida a un Administrador que defina el producto de obsequio en las configuraciones.</p>
+            `;
+            loader.classList.remove('animate-pulse');
         }
-
-        renderPvVendedores();
     }
 
-    function renderPvVendedores() {
-        const loading = document.getElementById('pvVendLoading');
-        if (!loading) return; // la pantalla cambió durante la carga
-        const cont = document.getElementById('pvVendLista');
-        if (!cont) return;
-        loading.classList.add('hidden');
-        cont.classList.remove('hidden');
-
-        // Vendedores y despachadores reciben ruta ('user' antiguo = vendedor)
-        const esVend = (u) => u.role === 'user' || u.role === 'vendedor';
-        const vendedores = _pvUsuarios.filter(u => esVend(u) || u.role === 'despachador');
-        const admins = _pvUsuarios.filter(u => u.role === 'admin');
-
-        // Solo las dos rutas oficiales (no los sectores)
-        const opcionesZona = (sel) => `<option value="">— Sin ruta —</option>` +
-            (window.RUTAS_REPARTO || []).map(z => `<option value="${z}" ${sel === z ? 'selected' : ''}>${z}</option>`).join('');
-
-        const nombreDe = (u) => {
-            const n = [u.nombre, u.apellido].filter(Boolean).join(' ').trim();
-            return n || u.email || u.id;
-        };
-
-        if (!vendedores.length) {
-            cont.innerHTML = '<p class="text-center text-gray-400 py-6 text-sm">No hay vendedores ni despachadores registrados.</p>';
-            return;
+    async function _loadObsequioProduct() {
+        try {
+            const snap = await _getDoc(_doc(_db, OBSEQUIO_CONFIG_PATH));
+            if (snap.exists()) {
+                const data = snap.data();
+                // Compat: acepta el nuevo 'productoIds' (array) o el viejo 'productoId' (único)
+                const ids = Array.isArray(data.productoIds) ? data.productoIds : (data.productoId ? [data.productoId] : []);
+                _obsequioConfig.productoIds = ids;
+                _obsequioConfig.productos = ids.map(id => _inventarioCache.find(p => p.id === id)).filter(Boolean);
+            }
+        } catch (e) {
+            console.warn("Error cargando config obsequio:", e);
         }
+    }
 
-        const badgeRol = (u) => u.role === 'despachador'
-            ? '<span class="text-[9px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-bold shrink-0">Despachador</span>'
-            : '<span class="text-[9px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded font-bold shrink-0">Vendedor</span>';
+    async function _loadInventarioHibrido() {
+        try {
+            const masterSnap = (window.getCatalogoSnapshot ? await window.getCatalogoSnapshot() : await _getDocs(_collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/productos`)));
+            const masterMap = {};
+            masterSnap.docs.forEach(d => masterMap[d.id] = { id: d.id, ...d.data() });
 
-        cont.innerHTML = `
-            <p class="text-[10px] text-gray-400 uppercase font-bold">Personal de ruta · ${vendedores.length}</p>
-            ${vendedores.map(u => `
-                <div class="border border-gray-200 rounded-lg p-2.5">
-                    <div class="flex items-center justify-between gap-2 mb-1.5">
-                        <div class="min-w-0">
-                            <div class="font-bold text-gray-800 text-sm truncate">${nombreDe(u)}</div>
-                            <div class="text-[10px] text-gray-400 truncate">${u.email || ''}${u.camion ? ' · Camión: ' + u.camion : ''}</div>
-                        </div>
-                        ${badgeRol(u)}
-                    </div>
-                    <div class="flex items-center gap-2">
-                        <span class="text-[10px] text-gray-500 shrink-0">Zona/Ruta:</span>
-                        <select data-uid="${u.id}" class="pv-zona-sel flex-1 text-xs border border-indigo-300 rounded p-1.5 bg-white outline-none">
-                            ${opcionesZona(u.zonaPreventa || '')}
-                        </select>
-                    </div>
-                </div>`).join('')}
-            ${admins.length ? `<p class="text-[10px] text-gray-400 uppercase font-bold pt-2">Administradores · ${admins.length}</p>
-            ${admins.map(u => `<div class="border border-gray-100 rounded-lg p-2 bg-gray-50 flex items-center justify-between">
-                <span class="text-xs text-gray-600 truncate">${nombreDe(u)}</span>
-                <span class="text-[9px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-bold">Admin</span>
-            </div>`).join('')}` : ''}`;
+            const stockSnap = await _getDocs(_collection(_db, `artifacts/${_appId}/users/${_userId}/inventario`));
+            const stockMap = {};
+            stockSnap.docs.forEach(d => stockMap[d.id] = { id: d.id, ...d.data() });
 
-        // Guardar zona al cambiar (merge, solo agrega el campo zonaPreventa)
-        cont.querySelectorAll('.pv-zona-sel').forEach(sel => {
-            sel.addEventListener('change', async () => {
-                const uid = sel.dataset.uid;
-                const zona = sel.value;
-                const original = sel.value;
-                sel.disabled = true;
-                try {
-                    await _setDoc(_doc(_db, 'users', uid), { zonaPreventa: zona }, { merge: true });
-                    // Actualizar cache local
-                    const u = _pvUsuarios.find(x => x.id === uid);
-                    if (u) u.zonaPreventa = zona;
-                    // Feedback visual breve
-                    sel.classList.add('ring-2', 'ring-green-400');
-                    setTimeout(() => sel.classList.remove('ring-2', 'ring-green-400'), 800);
-                } catch (e) {
-                    console.error('Error guardando zona:', e);
-                    if (_showModal) _showModal('Error', 'No se pudo guardar la zona.');
-                } finally {
-                    sel.disabled = false;
+            _inventarioCache = [];
+            const allIds = new Set([...Object.keys(masterMap), ...Object.keys(stockMap)]);
+            
+            allIds.forEach(id => {
+                const master = masterMap[id];
+                const stock = stockMap[id];
+                
+                if (master) {
+                    _inventarioCache.push({
+                        ...master,
+                        cantidadUnidades: stock ? (stock.cantidadUnidades || 0) : 0,
+                        id: id
+                    });
+                } else if (stock) {
+                    _inventarioCache.push({ ...stock, id: id });
                 }
             });
-        });
-    }
-
-
-    // ═══════════════════════════════════════════════════════════
-    // TOMAR PEDIDO — el admin registra un pedido a nombre de un vendedor
-    // Guarda en la colección NUEVA preventa_pedidos. NO toca inventario
-    // ni ventas del sistema tradicional. Solo registra la intención de compra.
-    // ═══════════════════════════════════════════════════════════
-    function _pvFmtUSD(n) {
-        return '$' + (n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    }
-    function _pvNombreVendedor(u) {
-        if (!u) return '';
-        const n = [u.nombre, u.apellido].filter(Boolean).join(' ').trim();
-        return n || u.email || u.id;
-    }
-
-    // Carga el stock asignado a la bolsa de la ruta de un vendedor (solo informativo)
-    async function cargarStockRuta(vendedorId) {
-        _pvStockRuta = {};
-        if (!vendedorId) return;
-        // El stock que se muestra en Tomar Pedido es el MISMO inventario real del
-        // vendedor (el que ve en Inventario y Venta Directa). Así queda sincronizado
-        // automáticamente: ese inventario ya está al día con su ruta.
-        try {
-            const invSnap = await _getDocs(_collection(_db, `artifacts/${_appId}/users/${vendedorId}/inventario`));
-            invSnap.docs.forEach(d => {
-                const data = d.data();
-                const uCj = data.unidadesPorCaja || 1;
-                const unidades = data.cantidadUnidades || 0;
-                _pvStockRuta[d.id] = {
-                    cantidadUnidades: unidades,
-                    cantCajas: Math.floor(unidades / uCj),
-                    modelosStock: data.modelosStock || {}
-                };
-            });
-        } catch (e) { console.warn('No se pudo leer el inventario del vendedor:', e); }
-    }
-
-    // ─────────────────────────────────────────────────────────────
-    // Devuelve un mapa { productoId: unidadesComprometidas } con los
-    // pedidos ACTIVOS (no entregados ni anulados) de un vendedor.
-    // Son las unidades ya "apartadas" que deben restarse del stock.
-    // Cache de 30s para no releer en cada render.
-    // ─────────────────────────────────────────────────────────────
-    let _pvComprometidoCache = { ts: 0, vendedorId: null, mapa: {} };
-    window.getPedidosComprometidos = async function (vendedorId) {
-        if (!vendedorId || !_db) return {};
-        const ahora = Date.now();
-        if (_pvComprometidoCache.vendedorId === vendedorId &&
-            (ahora - _pvComprometidoCache.ts) < 30000) {
-            return _pvComprometidoCache.mapa;
-        }
-        const mapa = {};
-        const mapaMod = {};
-        try {
-            // Asegurar catálogo cargado (para el fallback de unidades cuando se llama desde ventas.js)
-            if (!_pvProductos || !_pvProductos.length) {
-                try {
-                    const ps = await _getDocs(_collection(_db, pathProductos()));
-                    _pvProductos = ps.docs.map(d => ({ id: d.id, ...d.data() }));
-                } catch (e) { /* seguimos sin fallback */ }
-            }
-            const snap = await _getDocs(_collection(_db, pathPedidos()));
-            snap.docs.forEach(d => {
-                const p = d.data();
-                if (p.vendedorId !== vendedorId) return;               // solo SUS pedidos
-                const est = p.estado || 'pendiente';
-                if (est === 'entregado' || est === 'anulado') return;  // ya no cuentan
-                (p.productos || []).forEach(pr => {
-                    // Fallback al catálogo para pedidos viejos que no guardaron las unidades
-                    const cat = (_pvProductos || []).find(x => x.id === pr.id) || {};
-                    const uCj = pr.unidadesPorCaja || cat.unidadesPorCaja || 1;
-                    const uPaq = pr.unidadesPorPaquete || cat.unidadesPorPaquete || 1;
-                    const unidades = (pr.cantCj || 0) * uCj + (pr.cantPaq || 0) * uPaq + (pr.cantUnd || 0);
-                    if (unidades > 0) mapa[pr.id] = (mapa[pr.id] || 0) + unidades;
-                    if (pr.manejaModelos && pr.modelosDistribucion) {
-                        if (!mapaMod[pr.id]) mapaMod[pr.id] = {};
-                        for (const _m in pr.modelosDistribucion) mapaMod[pr.id][_m] = (mapaMod[pr.id][_m] || 0) + (pr.modelosDistribucion[_m] || 0);
-                    }
-                });
-            });
-        } catch (e) { console.warn('No se pudieron leer los pedidos comprometidos:', e); }
-        _pvComprometidoCache = { ts: ahora, vendedorId, mapa, mapaMod };
-        return mapa;
-    };
-    // Devuelve el comprometido por modelo: { productId: { modelo: unidades } }
-    window.getComprometidoModelos = async function (vendedorId) {
-        await window.getPedidosComprometidos(vendedorId);
-        return _pvComprometidoCache.mapaMod || {};
-    };
-    // Permite invalidar el cache cuando se guarda o cambia un pedido.
-    window.invalidarComprometidoCache = function () { _pvComprometidoCache = { ts: 0, vendedorId: null, mapa: {} }; };
-
-    let _pvTasaCOP = 0, _pvTasaBs = 0, _pvMoneda = 'USD';
-    let _pvComprometidoTP = {};  // unidades ya apartadas por pedidos (para el disponible)
-    let _pvComprometidoModTP = {};  // { productId: { modelo: unidades apartadas } } (guía por modelo)
-    let _pvSortFnPedido = null;
-
-    // Formato de moneda igual al de Nueva Venta
-    function _pvFmtMoneda(valorUSD) {
-        const v = valorUSD || 0;
-        if (_pvMoneda === 'COP' && _pvTasaCOP > 0) return '$' + Math.round(v * _pvTasaCOP).toLocaleString('es-CO') + ' COP';
-        if (_pvMoneda === 'Bs' && _pvTasaBs > 0) return 'Bs ' + (v * _pvTasaBs).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-        return '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    }
-
-    window.preventaModule = window.preventaModule || {};
-    window.preventaModule.togglePedidoMoneda = function () {
-        const ciclo = ['USD', 'COP', 'Bs'], tasas = { USD: 1, COP: _pvTasaCOP, Bs: _pvTasaBs };
-        let i = ciclo.indexOf(_pvMoneda), n = (i + 1) % 3;
-        while (n !== i) { if (tasas[ciclo[n]] > 0) { _pvMoneda = ciclo[n]; renderPedidoProductos(); actualizarTotalPedido(); return; } n = (n + 1) % 3; }
-        if (_showModal) _showModal('Aviso', (_pvTasaCOP <= 0 && _pvTasaBs <= 0) ? 'Ingresa tasas para alternar.' : 'Ingresa una tasa válida (> 0).');
-    };
-    window.preventaModule.handlePedidoQty = function (event) { manejarCantidadPedido(event.target); };
-    window.preventaModule.abrirDistribucionPedido = function (pid) { abrirDistribucionPedido(pid); };
-
-    async function showTomarPedido(pedidoEditar = null) {
-        // No permitir editar un pedido que ya fue incluido en un CORTE de carga:
-        // su hoja de carga ya se imprimió y cambiar cantidades la dejaría desfasada.
-        _pedidoEnEdicion = pedidoEditar;
-        _pedidoActual = { vendedor: null, cliente: null, productos: {} };
-        _pvMoneda = 'USD';
-
-        // Cancelar los listeners en tiempo real de la lista/bandeja: si no, re-renderizan
-        // _mainContent encima de esta pantalla durante los await de más abajo.
-        if (_pvListaUnsub) { _pvListaUnsub(); _pvListaUnsub = null; }
-        if (_pvBandejaUnsub) { _pvBandejaUnsub(); _pvBandejaUnsub = null; }
-
-        // === Cargar TODOS los datos ANTES de pintar el template ===
-        // (Si se pinta y luego se hace await, un re-render intermedio puede dejar el DOM
-        //  a medias y provocar "Cannot set properties of null". Cargando antes, todo el
-        //  acceso al DOM de más abajo es síncrono.)
-        // Cargar clientes, productos, usuarios y orden global
-        try {
-            const [cliSnap, prodSnap, usersSnap] = await Promise.all([
-                _getDocs(_collection(_db, pathClientes())),
-                _getDocs(_collection(_db, pathProductos())),
-                _pvUsuarios.length ? Promise.resolve(null) : _getDocs(_collection(_db, 'users'))
-            ]);
-            _pvClientes = cliSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-            _pvProductos = prodSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-            if (usersSnap) _pvUsuarios = usersSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-            if (window.getGlobalProductSortFunction) {
-                try { _pvSortFnPedido = await window.getGlobalProductSortFunction(); } catch (e) { _pvSortFnPedido = null; }
-            }
         } catch (e) {
-            console.error('Error cargando datos de pedido:', e);
-            if (_showModal) _showModal('Error', 'No se pudieron cargar los datos.');
+            console.error("Error carga híbrida obsequios:", e);
+        }
+    }
+
+    async function _loadClientes() {
+        try {
+            const snap = await _getDocs(_collection(_db, CLIENTES_PUBLIC_PATH));
+            _clientesCache = snap.docs.map(d => ({id: d.id, ...d.data()}));
+        } catch (e) { console.error("Error cargando clientes:", e); }
+    }
+
+    function setupObsequioUI() {
+        const sel = document.getElementById('obsProdSelect');
+        const productos = _obsequioConfig.productos || [];
+        sel.innerHTML = '<option value="">-- Seleccione el producto --</option>' +
+            productos.map(p => `<option value="${p.id}">${p.marca ? p.marca + ' - ' : ''}${p.presentacion}</option>`).join('');
+
+        const actualizarInfoProducto = () => {
+            const p = _obsequioActual.producto;
+            const nEl = document.getElementById('prodName'), sEl = document.getElementById('prodStock'), tEl = document.getElementById('vacTipo');
+            if (!p) { if (nEl) nEl.textContent = '—'; if (sEl) sEl.textContent = '—'; if (tEl) tEl.textContent = ''; return; }
+            if (nEl) nEl.textContent = p.presentacion;
+            const uCaja = p.unidadesPorCaja || 1;
+            if (sEl) sEl.textContent = `${Math.floor((p.cantidadUnidades || 0) / uCaja)} Cajas`;
+            if (tEl) tEl.textContent = p.tipoVacio ? `Tipo: ${p.tipoVacio}` : '';
+        };
+        sel.onchange = () => {
+            _obsequioActual.producto = productos.find(p => p.id === sel.value) || null;
+            actualizarInfoProducto();
+        };
+        // Si hay un solo producto configurado, se preselecciona
+        if (productos.length === 1) { sel.value = productos[0].id; _obsequioActual.producto = productos[0]; }
+        actualizarInfoProducto();
+
+        const input = document.getElementById('cliSearch');
+        const drop = document.getElementById('cliDrop');
+
+        input.oninput = () => {
+            const term = input.value.toUpperCase();
+            const list = _clientesCache.filter(c => (c.nombreComercial||'').toUpperCase().includes(term) || (c.nombrePersonal||'').toUpperCase().includes(term)).slice(0, 5);
+            drop.innerHTML = list.map(c => `<div class="p-3 border-b hover:bg-cyan-50 cursor-pointer text-sm font-medium text-gray-800 transition" onclick="window.selectClientObs('${c.id}')">${c.nombreComercial}</div>`).join('');
+            drop.classList.toggle('hidden', list.length === 0);
+        };
+
+        window.selectClientObs = (id) => {
+            const c = _clientesCache.find(x => x.id === id);
+            _obsequioActual.cliente = c;
+            document.getElementById('cliSearchContainer').classList.add('hidden');
+            document.getElementById('cliSel').classList.remove('hidden');
+            document.getElementById('cliName').textContent = c.nombreComercial;
+            document.getElementById('formObs').classList.remove('hidden');
+            drop.classList.add('hidden');
+        };
+
+        window.resetClientSelection = () => {
+            document.getElementById('cliSearchContainer').classList.remove('hidden');
+            document.getElementById('cliSel').classList.add('hidden');
+            document.getElementById('formObs').classList.add('hidden');
+            document.getElementById('cliSearch').value = '';
+            _obsequioActual.cliente = null;
+        };
+
+        document.getElementById('formObs').onsubmit = handleRegistrarObsequio;
+    }
+
+    async function handleRegistrarObsequio(e) {
+        e.preventDefault();
+        const cjs = parseInt(document.getElementById('cantEnt').value);
+        const vRec = parseInt(document.getElementById('vacRec').value) || 0;
+        const p = _obsequioActual.producto;
+
+        if (!p) { _showModal('Error', 'Selecciona el producto a obsequiar.'); return; }
+        if (isNaN(cjs) || cjs <= 0) {
+            _showModal('Error', 'Debe ingresar una cantidad válida de cajas a entregar.');
             return;
         }
 
-        // Vendedor FIJO = usuario logueado
-        const yo = _pvUsuarios.find(u => u.id === _userId) || { id: _userId, nombre: 'Vendedor' };
-        _pedidoActual.vendedor = yo;
-        await cargarStockRuta(yo.id);
-        _pvComprometidoTP = window.getPedidosComprometidos ? await window.getPedidosComprometidos(yo.id) : {};
-        _pvComprometidoModTP = window.getComprometidoModelos ? await window.getComprometidoModelos(yo.id) : {};
-
-        // El vendedor es el usuario logueado (o el admin, que también puede tomar pedidos con su cuenta)
-        _mainContent.innerHTML = `
-            <div class="p-2 w-full">
-                <div class="bg-white/90 backdrop-blur-sm p-3 sm:p-4 rounded-lg shadow-xl flex flex-col" style="min-height: calc(100vh - 1rem);">
-                    <div class="mb-2">
-                        <div class="flex justify-between items-center mb-2">
-                            <h2 id="pvTomarPedidoTitulo" class="text-lg font-bold text-gray-800">Tomar Pedido</h2>
-                            <button id="pvPedBack" class="px-3 py-1.5 bg-gray-400 text-white text-xs rounded-lg shadow-md hover:bg-gray-500">Volver</button>
-                        </div>
-                        <div id="pvVendedorInfo" class="text-[11px] text-indigo-700 bg-indigo-50 border border-indigo-200 rounded p-1.5 mb-2 font-semibold"></div>
-
-                        <div id="pvClientSearchWrap">
-                            <label for="pvClienteSearch" class="block font-medium mb-1 text-sm">Cliente:</label>
-                            <div class="relative">
-                                <input type="text" id="pvClienteSearch" placeholder="Buscar..." autocomplete="off" class="w-full px-4 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-indigo-400">
-                                <div id="pvClienteDropdown" class="hidden bg-white border border-gray-200 rounded shadow-lg max-h-44 overflow-y-auto mt-1 relative z-20"></div>
-                            </div>
-                        </div>
-
-                        <div id="pvClientDisplay" class="hidden flex-wrap items-center justify-between gap-2">
-                            <p class="flex-grow text-sm"><span class="font-medium">Cliente:</span> <span id="pvSelClientName" class="font-bold"></span></p>
-                            <div id="pvTasasContainer" class="flex flex-row items-center gap-2 mt-2 w-full sm:w-auto sm:mt-0">
-                                <div class="flex items-center space-x-1">
-                                    <label for="pvTasaCop" class="text-xs font-bold text-gray-600">COP:</label>
-                                    <input type="number" id="pvTasaCop" placeholder="4000" class="w-16 px-1 py-1 text-sm border rounded-lg">
-                                </div>
-                                <div class="flex items-center space-x-1">
-                                    <label for="pvTasaBs" class="text-xs font-bold text-gray-600">Bs.:</label>
-                                    <input type="number" id="pvTasaBs" placeholder="36.5" class="w-16 px-1 py-1 text-sm border rounded-lg">
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div id="pvInvContainer" class="hidden animate-fade-in flex-grow flex flex-col overflow-hidden">
-                        <div class="mb-2">
-                            <label for="pvRubroFilter" class="text-xs font-medium">Filtrar Rubro:</label>
-                            <select id="pvRubroFilter" class="w-full px-2 py-1 border rounded-lg text-sm"><option value="">Todos</option></select>
-                        </div>
-                        <div class="overflow-auto flex-grow rounded-lg shadow">
-                            <table class="min-w-full bg-white text-sm">
-                                <thead class="bg-gray-200 sticky top-0">
-                                    <tr class="uppercase text-xs">
-                                        <th class="py-2 px-2 text-center w-24">Cant</th>
-                                        <th class="py-2 px-2 text-left">Producto</th>
-                                        <th class="py-2 px-2 text-left price-toggle cursor-pointer" onclick="window.preventaModule.togglePedidoMoneda()">Precio</th>
-                                        <th class="py-2 px-1 text-center">Stock</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="pvInvBody" class="text-gray-600"></tbody>
-                            </table>
-                        </div>
-                    </div>
-
-                    <div id="pvFooter" class="mt-2 flex items-center justify-between hidden">
-                        <span id="pvPedTotal" class="text-base font-bold text-indigo-700">$0.00</span>
-                        <button id="pvPedGuardar" class="px-5 py-2 bg-indigo-600 text-white rounded-lg shadow-md hover:bg-indigo-700 font-bold transition disabled:opacity-40" disabled>Guardar Pedido</button>
-                    </div>
-                </div>
-            </div>`;
-
-        document.getElementById('pvPedBack')?.addEventListener('click', () => window.showPreventaMenu());
-
-        const _viEl = document.getElementById('pvVendedorInfo');
-        if (_viEl) _viEl.textContent =
-            'Vendedor: ' + _pvNombreVendedor(yo) + (yo.zonaPreventa ? ' · Zona: ' + yo.zonaPreventa : '');
-
-        // Buscador de cliente
-        const cliInput = document.getElementById('pvClienteSearch');
-        let debCli = null;
-        cliInput.addEventListener('input', () => {
-            clearTimeout(debCli);
-            debCli = setTimeout(() => {
-                const term = cliInput.value.toLowerCase().trim();
-                const drop = document.getElementById('pvClienteDropdown');
-                if (!term) { drop.classList.add('hidden'); return; }
-                const res = _pvClientes.filter(c =>
-                    (c.nombreComercial || '').toLowerCase().includes(term) ||
-                    (c.nombrePersonal || '').toLowerCase().includes(term)).slice(0, 30);
-                drop.innerHTML = res.length
-                    ? res.map(c => `<div class="pv-cli-opt px-2 py-1.5 text-xs hover:bg-indigo-50 cursor-pointer border-b border-gray-100" data-id="${c.id}">
-                        <div class="font-semibold text-gray-800">${c.nombreComercial || '(sin nombre)'}</div>
-                        <div class="text-[10px] text-gray-400">${c.nombrePersonal || ''}${c.sector ? ' · ' + c.sector : ''}</div></div>`).join('')
-                    : '<div class="px-2 py-2 text-xs text-gray-400">Sin coincidencias</div>';
-                drop.classList.remove('hidden');
-                drop.querySelectorAll('.pv-cli-opt').forEach(el =>
-                    el.addEventListener('click', () => seleccionarClientePedido(el.dataset.id)));
-            }, 200);
-        });
-
-        document.getElementById('pvPedGuardar')?.addEventListener('click', guardarPedido);
-
-        // MODO EDICIÓN: precargar el cliente y los productos del pedido a editar
-        if (_pedidoEnEdicion) {
-            const ped = _pedidoEnEdicion;
-            // Cliente
-            const cli = _pvClientes.find(x => x.id === ped.clienteId);
-            if (cli) {
-                seleccionarClientePedido(cli.id);
-            } else if (ped.clienteNombre) {
-                // Cliente no encontrado en la lista: crear uno mínimo para mostrar
-                _pedidoActual.cliente = { id: ped.clienteId, nombreComercial: ped.clienteNombre, nombrePersonal: ped.clienteNombrePersonal || '', ruta: ped.ruta || '' };
-                seleccionarClientePedido(ped.clienteId);
-            }
-            // Productos del pedido → estado de edición
-            (ped.productos || []).forEach(pr => {
-                const cat = _pvProductos.find(x => x.id === pr.id) || {};
-                _pedidoActual.productos[pr.id] = {
-                    id: pr.id, presentacion: pr.presentacion, marca: pr.marca || null,
-                    rubro: cat.rubro || null, segmento: cat.segmento || null,
-                    precios: pr.precios || cat.precios || {},
-                    unidadesPorCaja: pr.unidadesPorCaja || cat.unidadesPorCaja || 1,
-                    unidadesPorPaquete: pr.unidadesPorPaquete || cat.unidadesPorPaquete || 1,
-                    manejaModelos: !!(cat.manejaModelos || pr.manejaModelos),
-                    modelos: cat.modelos || pr.modelos || [],
-                    modelosDistribucion: pr.modelosDistribucion || null,
-                    cantCj: pr.cantCj || 0, cantPaq: pr.cantPaq || 0, cantUnd: pr.cantUnd || 0
-                };
-            });
-            // Refrescar la tabla y totales, y cambiar el título/botón a modo edición
-            renderPedidoProductos();
-            actualizarTotalPedido();
-            actualizarBotonGuardar();
-            const titulo = document.querySelector('#pvTomarPedidoTitulo');
-            if (titulo) titulo.textContent = 'Editar Pedido';
-            const btnG = document.getElementById('pvPedGuardar');
-            if (btnG) btnG.textContent = 'Guardar Cambios';
-        }
-    }
-
-    function seleccionarClientePedido(id) {
-        const c = _pvClientes.find(x => x.id === id);
-        if (!c) return;
-        _pedidoActual.cliente = c;
-        // Acuerdo Comercial del cliente (si falla, el pedido sigue con precios normales)
-        _pvAcuerdo = null;
-        if (window.acGetAcuerdoCliente) {
-            window.acGetAcuerdoCliente(c.id)
-                .then(a => { _pvAcuerdo = a; if (typeof renderPedidoProductos === 'function') { try { renderPedidoProductos(); } catch (e) { console.error('Preventa: fallo al redibujar los productos tras cargar el acuerdo.', e); } } })
-                .catch(() => { _pvAcuerdo = null; });
+        const currentStockEnCajas = Math.floor((p.cantidadUnidades || 0) / (p.unidadesPorCaja || 1));
+        if (cjs > currentStockEnCajas) {
+            _showModal('Error', `Stock Insuficiente. Solo dispone de ${currentStockEnCajas} cajas de este producto en el inventario.`);
+            return;
         }
 
-        document.getElementById('pvClientSearchWrap').classList.add('hidden');
-        const disp = document.getElementById('pvClientDisplay');
-        disp.classList.remove('hidden');
-        disp.classList.add('flex');
-        const rutaCli = c.ruta || '';
-        document.getElementById('pvSelClientName').innerHTML =
-            (c.nombreComercial || '(sin nombre)') + (c.nombrePersonal ? ' · ' + c.nombrePersonal : '') +
-            (rutaCli ? ` <span class="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-bold">${rutaCli}</span>` : ' <span class="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded">sin ruta</span>');
-
-        // Aviso suave si el cliente es de otra ruta que la del vendedor (no bloquea)
-        const rutaVend = (_pedidoActual.vendedor && _pedidoActual.vendedor.zonaPreventa) || '';
-        const hayAvisoRuta = !!(rutaVend && rutaCli && rutaVend !== rutaCli && _showModal);
-        if (hayAvisoRuta) {
-            _showModal('Aviso de ruta', `Este cliente es de la ruta <strong>${rutaCli}</strong>, pero tu ruta es <strong>${rutaVend}</strong>. Puedes continuar, pero verifica que sea correcto.`);
-        }
-
-        // Aviso (no bloqueante) si el cliente tiene datos incompletos.
-        // Se retrasa un poco para no pisar el aviso de ruta si ambos aplican.
-        try {
-            const rolPVC = window.userRole === 'user' ? 'vendedor' : window.userRole;
-            if ((rolPVC === 'vendedor' || rolPVC === 'admin') && window.chequearClienteIncompleto) {
-                setTimeout(() => window.chequearClienteIncompleto(c, 'Tomar Pedido'), hayAvisoRuta ? 2500 : 600);
-            }
-        } catch (e) { console.warn('Chequeo cliente (preventa):', e); }
-
-        // Tasas COP/Bs (se recuerdan como en Nueva Venta)
-        const inCop = document.getElementById('pvTasaCop');
-        const inBs = document.getElementById('pvTasaBs');
-        const savedCop = localStorage.getItem('tasaCOP'); if (savedCop) { _pvTasaCOP = parseFloat(savedCop) || 0; inCop.value = _pvTasaCOP; }
-        // Tasa Bs. predeterminada = tasa BCV del día (la que se ingresa en CXC).
-        // Se puede actualizar; si el usuario ya la cambió hoy, se respeta su valor.
-        (async () => {
+        _showModal('Confirmar Entrega', `¿Está seguro de entregar <b>${cjs} Cajas</b> como obsequio a <br><br><span class="text-blue-600 font-bold">${_obsequioActual.cliente.nombreComercial}</span>?`, async () => {
+            _showModal('Progreso', 'Registrando transacción de obsequio...', null, '', null, false);
             try {
-                const tHoy = window.getTasaHoyBCV ? await window.getTasaHoyBCV() : null;
-                const savedBs = localStorage.getItem('tasaBs');
-                const savedBsFecha = localStorage.getItem('tasaBsFecha');
-                const hoyISO = tHoy ? tHoy.iso : '';
-                if (savedBs && savedBsFecha === hoyISO) {
-                    _pvTasaBs = parseFloat(savedBs) || 0;
-                } else if (tHoy && tHoy.rate) {
-                    _pvTasaBs = Number(tHoy.rate);
-                    localStorage.setItem('tasaBs', _pvTasaBs);
-                    localStorage.setItem('tasaBsFecha', hoyISO);
-                } else if (savedBs) {
-                    _pvTasaBs = parseFloat(savedBs) || 0;
-                }
-                if (_pvTasaBs > 0) {
-                    inBs.value = _pvTasaBs;
-                    if (_pvMoneda === 'Bs') { renderPedidoProductos(); actualizarTotalPedido(); }
-                }
-            } catch (e) { console.warn('No se pudo cargar la tasa BCV del día:', e); }
-        })();
-        inCop.addEventListener('input', (e) => { _pvTasaCOP = parseFloat(e.target.value) || 0; localStorage.setItem('tasaCOP', _pvTasaCOP); if (_pvMoneda === 'COP') { renderPedidoProductos(); actualizarTotalPedido(); } });
-        inBs.addEventListener('input', (e) => { _pvTasaBs = parseFloat(e.target.value) || 0; localStorage.setItem('tasaBs', _pvTasaBs); const h = new Date(); localStorage.setItem('tasaBsFecha', `${h.getFullYear()}-${String(h.getMonth()+1).padStart(2,'0')}-${String(h.getDate()).padStart(2,'0')}`); if (_pvMoneda === 'Bs') { renderPedidoProductos(); actualizarTotalPedido(); } });
+                const regRef = _doc(_collection(_db, `artifacts/${_appId}/users/${_userId}/obsequios_entregados`));
+                const invRef = _doc(_db, `artifacts/${_appId}/users/${_userId}/inventario`, p.id);
+                const cliRef = _doc(_db, CLIENTES_PUBLIC_PATH, _obsequioActual.cliente.id);
 
-        // Mostrar tabla y footer
-        document.getElementById('pvInvContainer').classList.remove('hidden');
-        document.getElementById('pvFooter').classList.remove('hidden');
+                const regData = {
+                    fecha: new Date(),
+                    clienteId: _obsequioActual.cliente.id,
+                    clienteNombre: _obsequioActual.cliente.nombreComercial,
+                    productoId: p.id,
+                    productoNombre: p.presentacion,
+                    cantidadCajas: cjs,
+                    vaciosRecibidos: vRec,
+                    tipoVacio: p.tipoVacio || null,
+                    unidadesPorCaja: p.unidadesPorCaja || 1, 
+                    observacion: document.getElementById('obsText').value,
+                    userId: _userId
+                };
 
-        // Poblar filtro de rubro
-        const rubros = [...new Set(_pvProductos.map(p => p.rubro).filter(Boolean))].sort();
-        const selR = document.getElementById('pvRubroFilter');
-        selR.innerHTML = '<option value="">Todos</option>' + rubros.map(r => `<option value="${r}">${r}</option>`).join('');
-        selR.addEventListener('change', renderPedidoProductos);
+                await _runTransaction(_db, async (t) => {
+                    const cDoc = await t.get(cliRef);
+                    const iDoc = await t.get(invRef);
+                    
+                    const currentStock = iDoc.exists() ? (iDoc.data().cantidadUnidades || 0) : 0;
+                    const unidadesARestar = cjs * (p.unidadesPorCaja || 1);
+                    const newStock = currentStock - unidadesARestar;
 
-        renderPedidoProductos();
-        actualizarBotonGuardar();
-    }
+                    if (newStock < 0) {
+                        throw new Error("Transacción fallida: Stock insuficiente al momento de escribir en la base de datos.");
+                    }
+                    
+                    const sv = cDoc.exists() ? (cDoc.data().saldoVacios || {}) : {};
+                    if(p.tipoVacio) {
+                        sv[p.tipoVacio] = (sv[p.tipoVacio] || 0) + cjs - vRec;
+                        t.update(cliRef, { saldoVacios: sv });
+                    }
+                    
+                    t.set(invRef, { cantidadUnidades: newStock }, { merge: true });
+                    t.set(regRef, regData);
+                });
 
-    // Renderiza TODOS los productos (con o sin stock), igual que Nueva Venta pero sin límite de stock
-    function renderPedidoProductos() {
-        const body = document.getElementById('pvInvBody');
-        if (!body) return;
-        const rubro = document.getElementById('pvRubroFilter')?.value || '';
-        let lista = _pvProductos.slice();
-        if (rubro) lista = lista.filter(p => p.rubro === rubro);
-        if (_pvSortFnPedido) lista.sort(_pvSortFnPedido);
-        else lista.sort((a, b) => (a.segmento || '').localeCompare(b.segmento || '') || (a.presentacion || '').localeCompare(b.presentacion || ''));
-
-        if (!lista.length) { body.innerHTML = '<tr><td colspan="4" class="text-center text-gray-500 py-4">No hay productos.</td></tr>'; return; }
-
-        let html = '';
-        let lastSeg = null;
-        lista.forEach(prod => {
-            const seg = prod.segmento || 'Sin segmento';
-            if (seg !== lastSeg) {
-                lastSeg = seg;
-                html += `<tr class="bg-gray-100"><td colspan="4" class="py-1 px-2 font-bold sticky top-[calc(theme(height.10))] z-[9]">${seg}</td></tr>`;
+                _showSharingOptionsObsequio(regData, p, window.showGestionObsequiosView);
+            } catch (err) { 
+                _showModal('Error', err.message); 
             }
-            const vPor = prod.ventaPor || { und: true };
-            const pa = _pedidoActual.productos[prod.id] || {};
-            const precios = _pvPrecios(prod); // incluye descuento del Acuerdo Comercial
+        }, 'Sí, Entregar Obsequio', null, true);
+    }
+    
+    function _showSharingOptionsObsequio(reg, prod, callback) {
+        const html = `
+            <div class="text-center space-y-4">
+                <p class="font-medium text-gray-700">Entrega de obsequio registrada exitosamente.<br>¿Cómo desea enviar el comprobante?</p>
+                <button id="btnImg" class="w-full py-3 bg-green-600 text-white font-bold rounded-lg shadow hover:bg-green-700 transition">Compartir Imagen (WhatsApp)</button>
+                <button id="btnTxt" class="w-full py-3 bg-blue-600 text-white font-bold rounded-lg shadow hover:bg-blue-700 transition">Copiar Texto</button>
+            </div>
+        `;
+        _showModal('Comprobante Generado', html, null, '');
+        
+        document.getElementById('btnImg').onclick = async () => {
+            const dateObj = reg.fecha?.toDate ? reg.fecha.toDate() : (new Date(reg.fecha));
+            const dateStr = isNaN(dateObj) ? '' : dateObj.toLocaleDateString('es-ES', { timeZone: 'America/Caracas',day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute:'2-digit'});
 
-            // DISPONIBLE = stock del vendedor − unidades ya apartadas por sus pedidos.
-            // Es lo que realmente queda para pedir (Tomar Pedido muestra solo el disponible).
-            const invVend = _pvStockRuta[prod.id];
-            const stockReal = invVend ? (invVend.cantidadUnidades || 0) : 0;
-            const comprometido = _pvComprometidoTP[prod.id] || 0;
-            const stockU = stockReal - comprometido;  // disponible (puede ser negativo, se muestra pero no bloquea el pedido)
-            const uCjTmp = prod.unidadesPorCaja || 1;
-            const dispCj = Math.floor(stockU / uCjTmp);
-
-            const fila = (tipo, label, cant, precio, stockTxt) => `
-                <tr class="border-b hover:bg-gray-50">
-                    <td class="py-2 px-2 text-center align-middle">
-                        <input type="number" min="0" value="${cant || 0}" data-pid="${prod.id}" data-tipo="${tipo}"
-                               class="w-16 p-1 text-center border rounded-md font-bold text-gray-800 focus:ring-2 focus:ring-indigo-500 pv-qty"
-                               oninput="window.preventaModule.handlePedidoQty(event)">
-                    </td>
-                    <td class="py-2 px-2 text-left align-middle font-medium text-gray-700">${label} <span class="text-xs text-gray-500">${prod.marca || 'S/M'}</span></td>
-                    <td class="py-2 px-2 text-left align-middle font-bold text-gray-900 price-toggle cursor-pointer" onclick="window.preventaModule.togglePedidoMoneda()">${_pvFmtMoneda(precio)}</td>
-                    <td class="py-2 px-1 text-center align-middle text-xs font-semibold ${stockU > 0 ? 'text-gray-500' : 'text-red-400'}">${stockTxt}</td>
-                </tr>`;
-
-            if (vPor.cj) { const uCj = prod.unidadesPorCaja || 1; const maxCj = Math.floor(stockU / uCj); html += fila('cj', `${prod.presentacion} (Cj/${uCj} und)`, pa.cantCj, precios.cj || 0, `${maxCj} Cj`); }
-            if (vPor.paq) { const uPaq = prod.unidadesPorPaquete || 1; const maxPaq = Math.floor(stockU / uPaq); html += fila('paq', `${prod.presentacion} (Paq/${uPaq})`, pa.cantPaq, precios.paq || 0, `${maxPaq} Pq`); }
-            if (vPor.und) { html += fila('und', `${prod.presentacion} (Und)`, pa.cantUnd, precios.und || 0, `${stockU} Un`); }
-            if (prod.manejaModelos) {
-                const totUM = (pa.cantCj || 0) * (prod.unidadesPorCaja || 1) + (pa.cantPaq || 0) * (prod.unidadesPorPaquete || 1) + (pa.cantUnd || 0);
-                const distM = pa.modelosDistribucion;
-                const distSumM = distM ? Object.values(distM).reduce((a, b) => a + (b || 0), 0) : 0;
-                const okM = totUM > 0 && distM && distSumM === totUM;
-                html += `<tr class="border-b bg-indigo-50/30"><td colspan="4" class="py-1.5 px-3 text-right">
-                    <button type="button" onclick="window.preventaModule.abrirDistribucionPedido('${prod.id}')" data-pid="${prod.id}" class="pv-modelos-btn text-[11px] font-bold ${okM ? 'text-green-600' : 'text-indigo-600'} hover:underline">${okM ? 'Modelos distribuidos (' + totUM + ' u)' : 'Distribuir modelos' + (totUM > 0 ? ' (' + totUM + ' u)' : '')}</button>
-                </td></tr>`;
+            const ticketHTML = `
+                <div id="ticket-ob" class="p-6 bg-white text-black font-mono text-xl" style="width:500px;">
+                    <h2 class="text-center font-bold border-b pb-2 text-2xl">DIST. CASTILLO</h2>
+                    <p class="mt-4 font-bold text-center uppercase tracking-widest text-lg">--- OBSEQUIO ---</p>
+                    <p class="mt-4">FECHA: ${dateStr}</p>
+                    <p>CLIENTE: ${reg.clienteNombre}</p>
+                    <hr class="my-4 border-dashed border-gray-400">
+                    <p class="font-bold">PRODUCTO:</p>
+                    <p>${reg.productoNombre}</p>
+                    <p class="mt-2">CANTIDAD ENTREGADA: <span class="font-bold">${reg.cantidadCajas} CAJAS</span></p>
+                    <hr class="my-4 border-dashed border-gray-400">
+                    <p>VACIOS RECIBIDOS: ${reg.vaciosRecibidos} (${reg.tipoVacio || 'N/A'})</p>
+                    ${reg.observacion ? `<p class="mt-4 text-sm italic">Obs: ${reg.observacion}</p>` : ''}
+                    <div class="mt-16 border-t pt-2 text-center text-sm font-bold">Firma de Conformidad del Cliente</div>
+                </div>
+            `;
+            const temp = document.createElement('div');
+            temp.style.position = 'absolute'; temp.style.left = '-9999px';
+            temp.innerHTML = ticketHTML; document.body.appendChild(temp);
+            
+            try {
+                const canvas = await html2canvas(document.getElementById('ticket-ob'), { scale: 2 });
+                canvas.toBlob(blob => {
+                    if (navigator.share && blob) {
+                        navigator.share({ files: [new File([blob], "ticket_obsequio.png", {type:"image/png"})] });
+                    } else {
+                        const url = URL.createObjectURL(blob);
+                        const link = document.createElement('a'); link.href=url; link.download="ticket_obsequio.png"; link.click();
+                    }
+                    document.body.removeChild(temp);
+                    const pModal = document.getElementById('modalContainer'); if(pModal) pModal.classList.add('hidden');
+                    if (callback) callback();
+                });
+            } catch (err) {
+                console.error("Error generando ticket imagen:", err);
+                document.body.removeChild(temp);
+                _showModal('Error', 'No se pudo generar la imagen del ticket.');
             }
-        });
-        body.innerHTML = html;
-    }
-
-    function manejarCantidadPedido(inp) {
-        const pid = inp.dataset.pid;
-        const tipo = inp.dataset.tipo;
-        const qty = parseInt(inp.value, 10) || 0;
-        const prod = _pvProductos.find(p => p.id === pid);
-        if (!prod) return;
-        if (!_pedidoActual.productos[pid]) {
-            _pedidoActual.productos[pid] = {
-                id: prod.id, presentacion: prod.presentacion, marca: prod.marca || null,
-                rubro: prod.rubro || null, segmento: prod.segmento || null,
-                precios: _pvPrecios(prod), // precios con el descuento del Acuerdo aplicado
-                preciosOriginales: prod.precios || { und: prod.precioPorUnidad || 0 },
-                acReglas: _pvReglasDe(prod),
-                unidadesPorCaja: prod.unidadesPorCaja || 1, unidadesPorPaquete: prod.unidadesPorPaquete || 1,
-                manejaModelos: !!prod.manejaModelos, modelos: prod.modelos || [],
-                cantCj: 0, cantPaq: 0, cantUnd: 0
-            };
-        }
-        _pedidoActual.productos[pid][`cant${tipo[0].toUpperCase() + tipo.slice(1)}`] = qty;
-        const pa = _pedidoActual.productos[pid];
-        // Al cambiar la cantidad, la distribución de modelos previa deja de ser válida
-        if (pa.modelosDistribucion) delete pa.modelosDistribucion;
-        if ((pa.cantCj || 0) === 0 && (pa.cantPaq || 0) === 0 && (pa.cantUnd || 0) === 0) delete _pedidoActual.productos[pid];
-        actualizarTotalPedido();
-        actualizarBotonGuardar();
-        if (prod.manejaModelos) _pvActualizarBtnModelos(pid);
-    }
-
-    // Actualiza (sin re-render) la etiqueta del botón "Distribuir modelos" de un producto
-    function _pvActualizarBtnModelos(pid) {
-        const btn = document.querySelector(`.pv-modelos-btn[data-pid="${pid}"]`);
-        if (!btn) return;
-        const prod = _pvProductos.find(p => p.id === pid);
-        if (!prod) return;
-        const pa = _pedidoActual.productos[pid] || {};
-        const totU = (pa.cantCj || 0) * (prod.unidadesPorCaja || 1) + (pa.cantPaq || 0) * (prod.unidadesPorPaquete || 1) + (pa.cantUnd || 0);
-        const dist = pa.modelosDistribucion;
-        const distSum = dist ? Object.values(dist).reduce((a, b) => a + (b || 0), 0) : 0;
-        const ok = totU > 0 && dist && distSum === totU;
-        btn.textContent = ok ? `Modelos distribuidos (${totU} u)` : `Distribuir modelos${totU > 0 ? ' (' + totU + ' u)' : ''}`;
-        btn.className = `pv-modelos-btn text-[11px] font-bold ${ok ? 'text-green-600' : 'text-indigo-600'} hover:underline`;
-    }
-
-    // Modal para distribuir en modelos la cantidad pedida de un producto.
-    function abrirDistribucionPedido(pid) {
-        const prod = _pvProductos.find(p => p.id === pid);
-        if (!prod || !prod.manejaModelos) return;
-        const pa = _pedidoActual.productos[pid] || {};
-        const totU = (pa.cantCj || 0) * (prod.unidadesPorCaja || 1) + (pa.cantPaq || 0) * (prod.unidadesPorPaquete || 1) + (pa.cantUnd || 0);
-        if (totU <= 0) { if (_showModal) _showModal('Sin cantidad', 'Primero ingresa la cantidad a pedir de este producto.'); return; }
-        const modelos = prod.modelos || [];
-        const modelosStock = (_pvStockRuta[pid] && _pvStockRuta[pid].modelosStock) || {};
-        const _compMod = (_pvComprometidoModTP && _pvComprometidoModTP[pid]) || {};
-        const prev = pa.modelosDistribucion || {};
-        document.getElementById('pvModPedOverlay')?.remove();
-        const ov = document.createElement('div');
-        ov.id = 'pvModPedOverlay';
-        ov.className = 'fixed inset-0 z-[9999] bg-slate-900/50 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4';
-        const filas = modelos.map(m => `
-            <div class="flex items-center justify-between gap-3 py-2 px-3 border-b border-slate-100 last:border-0">
-                <div class="min-w-0"><div class="text-sm font-medium text-slate-800">${m}</div><div class="text-[11px] text-slate-400">Disponible: ${Math.max(0, (modelosStock[m] || 0) - (_compMod[m] || 0))} u</div></div>
-                <input type="number" min="0" value="${prev[m] || 0}" data-modelo="${m}" class="pv-modped-inp w-24 px-2 py-1.5 text-center border border-slate-300 rounded-lg text-sm font-bold text-slate-800 focus:ring-2 focus:ring-indigo-500 outline-none">
-            </div>`).join('');
-        ov.innerHTML = `
-            <div class="bg-white w-full max-w-md rounded-t-xl sm:rounded-xl shadow-2xl overflow-hidden max-h-[92vh] flex flex-col border border-slate-200">
-                <div class="bg-indigo-700 text-white px-5 py-4 shrink-0">
-                    <div class="text-[10px] uppercase tracking-wider text-indigo-200 font-semibold">Pedido &middot; Modelos</div>
-                    <div class="font-semibold text-base truncate">${prod.presentacion} &middot; ${prod.marca || ''}</div>
-                    <div class="text-xs text-indigo-100 mt-0.5">Distribuye <strong>${totU}</strong> unidad(es) entre los modelos.</div>
-                </div>
-                <div class="overflow-y-auto p-4 flex-1">
-                    <div class="border border-slate-200 rounded-lg overflow-hidden">${filas}</div>
-                    <div id="pvModPedEstado" class="mt-3 text-center text-sm font-bold"></div>
-                </div>
-                <div class="p-4 border-t border-slate-100 shrink-0 space-y-2">
-                    <button id="pvModPedGuardar" class="w-full py-3 bg-indigo-700 text-white rounded-lg font-medium text-sm hover:bg-indigo-800 transition disabled:opacity-40">Guardar distribución</button>
-                    <button id="pvModPedCancelar" class="w-full py-2.5 text-slate-400 hover:text-slate-600 font-medium text-sm">Cancelar</button>
-                </div>
-            </div>`;
-        document.body.appendChild(ov);
-        const getInputs = () => Array.from(ov.querySelectorAll('.pv-modped-inp'));
-        const guardar = document.getElementById('pvModPedGuardar');
-        const estado = document.getElementById('pvModPedEstado');
-        const recompute = () => {
-            const suma = getInputs().reduce((a, i) => a + (parseInt(i.value, 10) || 0), 0);
-            const dif = totU - suma;
-            if (dif === 0) { estado.textContent = 'Distribución completa'; estado.className = 'mt-3 text-center text-sm font-bold text-green-600'; guardar.disabled = false; }
-            else if (dif > 0) { estado.textContent = `Faltan ${dif} u por asignar`; estado.className = 'mt-3 text-center text-sm font-bold text-amber-600'; guardar.disabled = true; }
-            else { estado.textContent = `Sobran ${-dif} u (reduce)`; estado.className = 'mt-3 text-center text-sm font-bold text-rose-600'; guardar.disabled = true; }
         };
-        getInputs().forEach(i => i.addEventListener('input', recompute));
-        recompute();
-        ov.addEventListener('click', e => { if (e.target === ov) ov.remove(); });
-        document.getElementById('pvModPedCancelar').addEventListener('click', () => ov.remove());
-        guardar.addEventListener('click', () => {
-            const dist = {};
-            getInputs().forEach(i => { const v = parseInt(i.value, 10) || 0; if (v > 0) dist[i.dataset.modelo] = v; });
-            if (_pedidoActual.productos[pid]) _pedidoActual.productos[pid].modelosDistribucion = dist;
-            ov.remove();
-            _pvActualizarBtnModelos(pid);
-        });
+
+        document.getElementById('btnTxt').onclick = () => {
+            const dateObj = reg.fecha?.toDate ? reg.fecha.toDate() : (new Date(reg.fecha));
+            const dStr = isNaN(dateObj) ? '' : dateObj.toLocaleDateString('es-ES', { timeZone: 'America/Caracas',day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute:'2-digit'});
+            
+            const txt = `*DIST. CASTILLO*\n*--- OBSEQUIO ---*\nFECHA: ${dStr}\nCLIENTE: ${reg.clienteNombre}\n\n*PRODUCTO:*\n${reg.productoNombre}\n*CANTIDAD:* ${reg.cantidadCajas} CAJAS\n\nVACIOS RECIBIDOS: ${reg.vaciosRecibidos} (${reg.tipoVacio || 'N/A'})`;
+            
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(txt).then(() => {
+                    _showModal('Copiado', 'Texto copiado al portapapeles. Puede pegarlo en WhatsApp.', callback);
+                });
+            } else {
+                const el = document.createElement('textarea'); el.value = txt; document.body.appendChild(el); el.select();
+                document.execCommand('copy'); document.body.removeChild(el);
+                _showModal('Copiado', 'Texto copiado al portapapeles. Puede pegarlo en WhatsApp.', callback);
+            }
+        };
     }
 
-    function calcularTotalPedido() {
-        return Object.values(_pedidoActual.productos).reduce((s, p) => {
-            const pr = p.precios || {};
-            return s + (pr.cj || 0) * (p.cantCj || 0) + (pr.paq || 0) * (p.cantPaq || 0) + (pr.und || 0) * (p.cantUnd || 0);
-        }, 0);
+    async function showRegistroObsequiosView() {
+        if (window.esAdmin() && _usersCache.length === 0) {
+            try {
+                const usersSnap = await _getDocs(_collection(_db, "users"));
+                _usersCache = usersSnap.docs.map(d => ({id: d.id, ...d.data()}));
+            } catch (e) {
+                console.warn("No se pudo cargar la lista de usuarios.", e);
+            }
+        }
+
+        // Fecha de "hoy" en hora LOCAL (no UTC), para que filtros nocturnos
+        // no salten al día siguiente. toISOString() siempre da UTC.
+        const today = (() => {
+            const d = new Date();
+            const y = d.getFullYear();
+            const m = String(d.getMonth() + 1).padStart(2, '0');
+            const dd = String(d.getDate()).padStart(2, '0');
+            return `${y}-${m}-${dd}`;
+        })();
+
+        let adminFiltersHTML = '';
+        if (window.esAdmin()) {
+            adminFiltersHTML = `
+                <div>
+                    <label class="block text-xs font-bold text-gray-700 mb-1 uppercase tracking-wider">Vendedor:</label>
+                    <select id="obsUserSelect" class="w-full p-2.5 border border-gray-300 rounded-lg bg-white text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+                        <option value="all">Todos los Vendedores</option>
+                        ${_usersCache.map(u => {
+                            const nameDisplay = (u.nombre && u.apellido) ? `${u.nombre} ${u.apellido}` : (u.nombre || u.email);
+                            return `<option value="${u.id}">${nameDisplay}</option>`;
+                        }).join('')}
+                    </select>
+                </div>
+            `;
+        }
+
+        _mainContent.innerHTML = `
+            <div class="p-2 sm:p-4 pt-8">
+                <div class="container mx-auto max-w-4xl bg-white p-4 sm:p-6 md:p-8 rounded-lg shadow-xl">
+                    <h2 class="text-2xl font-black mb-6 text-gray-800 text-center tracking-tight">Registro de Obsequios</h2>
+                    
+                    <div class="grid grid-cols-1 md:grid-cols-${window.esAdmin() ? '4' : '3'} gap-4 mb-6 bg-blue-50 p-4 rounded-lg border border-blue-100 shadow-inner">
+                        ${adminFiltersHTML}
+                        <div>
+                            <label class="block text-xs font-bold text-gray-700 mb-1 uppercase tracking-wider">Desde Fecha:</label>
+                            <input type="date" id="obsDateStart" value="${today}" class="w-full p-2.5 border border-gray-300 rounded-lg bg-white text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-gray-700 mb-1 uppercase tracking-wider">Hasta Fecha:</label>
+                            <input type="date" id="obsDateEnd" value="${today}" class="w-full p-2.5 border border-gray-300 rounded-lg bg-white text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+                        </div>
+                        <div class="flex items-end">
+                            <button id="btnSearch" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-2.5 rounded-lg shadow-md transition-colors">Buscar</button>
+                        </div>
+                    </div>
+                    
+                    <div id="rList" class="space-y-3 max-h-[60vh] overflow-y-auto pr-2 pb-4">
+                        <p class="text-center text-gray-500 italic mt-10">Presione buscar para cargar los registros.</p>
+                    </div>
+                    <button onclick="window.showGestionObsequiosView()" class="w-full mt-6 py-3 bg-gray-400 hover:bg-gray-500 text-white font-bold rounded-lg shadow transition">Volver al Menú</button>
+                </div>
+            </div>
+        `;
+        document.getElementById('btnSearch').onclick = handleSearchObsequios;
+        handleSearchObsequios();
     }
 
-    function actualizarTotalPedido() {
-        const el = document.getElementById('pvPedTotal');
-        if (el) el.textContent = _pvFmtMoneda(calcularTotalPedido());
-    }
+    async function handleSearchObsequios() {
+        const dStartStr = document.getElementById('obsDateStart').value;
+        const dEndStr = document.getElementById('obsDateEnd').value;
+        let selectedUserId = _userId;
 
-    function actualizarBotonGuardar() {
-        const btn = document.getElementById('pvPedGuardar');
-        if (!btn) return;
-        btn.disabled = !(_pedidoActual.vendedor && _pedidoActual.cliente && Object.keys(_pedidoActual.productos).length);
-    }
+        if (window.esAdmin()) {
+            const selectEl = document.getElementById('obsUserSelect');
+            if (selectEl) selectedUserId = selectEl.value;
+        }
 
-    async function guardarPedido() {
-        if (!_pedidoActual.vendedor || !_pedidoActual.cliente) return;
-        const productos = Object.values(_pedidoActual.productos);
-        if (!productos.length) return;
-
-        // Validar que los productos con modelos tengan su distribución completa
-        const _faltanMod = productos.filter(p => {
-            if (!p.manejaModelos) return false;
-            const totU = (p.cantCj || 0) * (p.unidadesPorCaja || 1) + (p.cantPaq || 0) * (p.unidadesPorPaquete || 1) + (p.cantUnd || 0);
-            const d = p.modelosDistribucion;
-            const sum = d ? Object.values(d).reduce((a, b) => a + (b || 0), 0) : 0;
-            return totU > 0 && (!d || sum !== totU);
-        });
-        if (_faltanMod.length) {
-            if (_showModal) _showModal('Falta distribuir modelos', `Antes de guardar, distribuye los modelos de:<br><br>• ${_faltanMod.map(p => p.presentacion).join('<br>• ')}`);
+        if (!dStartStr || !dEndStr) {
+            _showModal('Aviso', 'Seleccione un rango de fechas válido.');
             return;
         }
 
-        const btn = document.getElementById('pvPedGuardar');
-        btn.disabled = true; btn.textContent = 'Guardando...';
+        const [sY, sM, sD] = dStartStr.split('-');
+        const dStart = new Date(sY, sM - 1, sD, 0, 0, 0, 0);
 
-        const total = calcularTotalPedido();
-        const v = _pedidoActual.vendedor;
-        const c = _pedidoActual.cliente;
-        const productosDoc = productos.map(p => ({
-            id: p.id, presentacion: p.presentacion, marca: p.marca || null,
-            cantCj: p.cantCj || 0, cantPaq: p.cantPaq || 0, cantUnd: p.cantUnd || 0,
-            unidadesPorCaja: p.unidadesPorCaja || 1, unidadesPorPaquete: p.unidadesPorPaquete || 1,
-            manejaModelos: !!p.manejaModelos, modelos: p.modelos || [], modelosDistribucion: p.modelosDistribucion || null,
-            precios: p.precios,
-            subtotal: (p.precios?.cj || 0) * (p.cantCj || 0) + (p.precios?.paq || 0) * (p.cantPaq || 0) + (p.precios?.und || 0) * (p.cantUnd || 0)
-        }));
+        const [eY, eM, eD] = dEndStr.split('-');
+        const dEnd = new Date(eY, eM - 1, eD, 23, 59, 59, 999);
+
+        const list = document.getElementById('rList');
+        list.innerHTML = '<p class="text-center text-blue-500 font-bold animate-pulse py-10">Buscando en activos e historial...</p>';
 
         try {
-            if (_pedidoEnEdicion) {
-                // MODO EDICIÓN: actualizar el pedido, preservando estado, historial y fecha.
-                const cambios = {
-                    clienteId: c.id, clienteNombre: c.nombreComercial || '',
-                    clienteNombrePersonal: c.nombrePersonal || '', clienteSector: c.sector || '',
-                    ruta: _pedidoEnEdicion.ruta || (_pedidoActual.vendedor && _pedidoActual.vendedor.zonaPreventa) || c.ruta || '', zona: _pedidoEnEdicion.zona || (_pedidoActual.vendedor && _pedidoActual.vendedor.zonaPreventa) || c.ruta || '',
-                    productos: productosDoc, total: total,
-                    editadoPor: _userId, editadoFecha: new Date().toISOString()
-                };
-                await _pvGuardar(_setDoc(_doc(_db, pathPedidos(), _pedidoEnEdicion.id), cambios, { merge: true }), 'Edición de pedido');
-                if (window.invalidarComprometidoCache) window.invalidarComprometidoCache();
-                const nombreG = cambios.clienteNombre;
-                const _offEdit = _pvSinRed();
-                _pedidoEnEdicion = null;
-                if (_showModal) _showModal('Cambios guardados', `El pedido de <strong>${nombreG}</strong> se actualizó a <strong>$${total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>.` + (_offEdit ? '<br><br><strong>Guardado en este dispositivo.</strong> Se enviará al servidor cuando haya conexión.' : ''));
-                showListaPedidos();
+            let uidsToSearch = [selectedUserId];
+            if (selectedUserId === 'all') {
+                uidsToSearch = _usersCache.map(u => u.id);
+            }
+
+            let results = [];
+
+            for (const uid of uidsToSearch) {
+                // 1. BUSCAR EN ACTIVOS (No cerrados aún)
+                try {
+                    const qActivos = _query(_collection(_db, `artifacts/${_appId}/users/${uid}/obsequios_entregados`));
+                    const snapActivos = await _getDocs(qActivos);
+                    
+                    snapActivos.docs.forEach(d => {
+                        const data = d.data();
+                        const dObj = data.fecha?.toDate ? data.fecha.toDate() : new Date(data.fecha);
+                        if (dObj >= dStart && dObj <= dEnd) {
+                            results.push({
+                                id: d.id, 
+                                vendedorId: uid, 
+                                isCerrado: false, 
+                                ...data, 
+                                fechaParaOrdenar: dObj
+                            });
+                        }
+                    });
+                } catch(folderErr) { console.error('Obsequios: no se pudo leer una carpeta de entregas; el reporte puede quedar incompleto.', folderErr); }
+
+                // 2. BUSCAR EN HISTORIAL (Cierres ya procesados)
+                try {
+                    const qCierres = _query(_collection(_db, `artifacts/${_appId}/users/${uid}/cierres`),
+                              _where("fecha", ">=", dStart),
+                              _where("fecha", "<=", dEnd));
+                    
+                    const snapCierres = await _getDocs(qCierres);
+                    
+                    snapCierres.docs.forEach(dCierre => {
+                        const cierreData = dCierre.data();
+                        const obsArray = cierreData.obsequios || [];
+                        
+                        obsArray.forEach((obs, index) => {
+                            const dObj = obs.fecha?.toDate ? obs.fecha.toDate() : (obs.fecha ? new Date(obs.fecha) : cierreData.fecha.toDate());
+                            results.push({ 
+                                id: `${dCierre.id}_${index}`, 
+                                vendedorId: uid, 
+                                isCerrado: true, 
+                                ...obs, 
+                                fecha: dObj, 
+                                fechaParaOrdenar: dObj 
+                            });
+                        });
+                    });
+                } catch(folderErr) { console.error('Obsequios: no se pudo leer una carpeta de entregas; el reporte puede quedar incompleto.', folderErr); }
+            }
+            
+            // Ordenar de más reciente a más antiguo
+            results.sort((a, b) => b.fechaParaOrdenar - a.fechaParaOrdenar);
+
+            _lastObsequiosSearch = results;
+
+            if (results.length === 0) {
+                list.innerHTML = `<div class="text-center p-8 bg-gray-50 border border-dashed border-gray-300 rounded-lg text-gray-500 font-medium">No se encontraron obsequios en este rango de fechas.</div>`;
                 return;
             }
 
-            // Acuerdo Comercial: descuento sobre el TOTAL del pedido (si hay regla vigente)
-            let _totalFinal = total, _pctTotal = 0, _reglaTotalId = null;
-            let _avisoAcuerdo = '';
-            try {
-                if (_pvAcuerdo && window.acReglaTotalVenta) {
-                    const rT = window.acReglaTotalVenta(_pvAcuerdo);
-                    const p = rT ? (Number(rT.pctTotal) || 0) : 0;
-                    if (rT && p > 0) { _pctTotal = p; _reglaTotalId = rT.id; _totalFinal = total * (1 - p / 100); }
+            list.innerHTML = results.map(r => {
+                const fStr = r.fechaParaOrdenar.toLocaleDateString('es-ES', { timeZone: 'America/Caracas',day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute:'2-digit'});
+                
+                let vendedorBadge = '';
+                if (window.esAdmin()) {
+                    // Extraer nombre y apellido de la caché de usuarios
+                    const userObj = _usersCache.find(u => u.id === r.vendedorId) || {};
+                    let vName = 'Desconocido';
+                    
+                    if (userObj.nombre && userObj.apellido) {
+                        vName = `${userObj.nombre} ${userObj.apellido}`;
+                    } else if (userObj.nombre) {
+                        vName = userObj.nombre;
+                    } else if (userObj.email) {
+                        vName = userObj.email.split('@')[0];
+                    }
+                    
+                    vendedorBadge = `<span class="bg-purple-100 text-purple-800 text-[10px] px-2 py-0.5 rounded font-bold uppercase ml-2 border border-purple-200" title="${userObj.email || ''}">Vend: ${vName}</span>`;
                 }
-            } catch (e) {
-                // Si esto falla en silencio, el cliente paga el total sin su descuento
-                // y nadie se entera. El vendedor tiene que saberlo antes de despachar.
-                console.error('Preventa: no se pudo aplicar el descuento del acuerdo comercial.', e);
-                _avisoAcuerdo = '<br><br><strong>Atención:</strong> no se pudo aplicar el acuerdo comercial de este cliente. El pedido quedó <u>sin descuento</u>. Verifíquelo antes de despachar.';
-            }
 
-            const pedido = {
-                clienteId: c.id, clienteNombre: c.nombreComercial || '',
-                clienteNombrePersonal: c.nombrePersonal || '', clienteSector: c.sector || '',
-                vendedorId: v.id, vendedorNombre: _pvNombreVendedor(v), ruta: v.zonaPreventa || c.ruta || '', zona: v.zonaPreventa || c.ruta || c.sector || '',
-                productos: productosDoc,
-                total: _totalFinal,
-                totalSinDescuento: _pctTotal > 0 ? total : null,
-                descuentoTotalAC: _pctTotal > 0 ? { porcentaje: _pctTotal, reglaId: _reglaTotalId } : null,
-                estado: 'pendiente', fechaCreacion: new Date().toISOString(),
-                creadoPor: _userId,
-                historialEstados: [{ estado: 'pendiente', fecha: new Date().toISOString(), por: _userId }]
-            };
-            // Sin conexión, Firestore guarda el pedido en el teléfono al instante, pero la
-            // promesa de addDoc NO se resuelve hasta que el servidor confirme. Si se
-            // esperara con "await", la pantalla quedaría congelada en "Guardando..." y el
-            // vendedor registraría el pedido dos veces. Por eso offline no se espera.
-            const _sinRed = !navigator.onLine || localStorage.getItem('manualOfflineMode') === 'true';
-            const _guardar = _addDoc(_collection(_db, pathPedidos()), pedido);
-            if (_sinRed) {
-                _guardar.catch(err => console.warn('Pedido guardado localmente; se sincronizará luego.', err));
-            } else {
-                await _guardar;
-            }
+                let statusBadge = r.isCerrado 
+                    ? `<span class="bg-gray-200 text-gray-700 text-[10px] px-2 py-0.5 rounded font-bold uppercase ml-2 border border-gray-300">🔒 Cerrado</span>` 
+                    : `<span class="bg-green-100 text-green-800 text-[10px] px-2 py-0.5 rounded font-bold uppercase ml-2 border border-green-200">🟢 Activo</span>`;
 
-            // Consumir la temporalidad de las reglas aplicadas (próxima venta / X ventas)
-            try {
-                if (window.acRegistrarUsoReglas) {
-                    const ids = [];
-                    (productosDoc || []).forEach(p => (p.acReglas || []).forEach(r => ids.push(r)));
-                    if (_reglaTotalId) ids.push(_reglaTotalId);
-                    if (ids.length) window.acRegistrarUsoReglas(c.id, ids);
-                }
-            } catch (e) {
-                // Si no se descuenta el uso, un acuerdo de "X ventas" nunca se agota
-                // y el descuento se seguiría aplicando de más.
-                console.error('Preventa: no se pudo registrar el uso de las reglas del acuerdo comercial.', e);
-                _avisoAcuerdo += '<br><br><strong>Atención:</strong> no se pudo descontar el uso del acuerdo comercial. Revise su vigencia en Acuerdos Comerciales.';
-            }
-            if (window.invalidarComprometidoCache) window.invalidarComprometidoCache();
-            if (_showModal) _showModal('Pedido guardado',
-                `Pedido de <strong>${pedido.clienteNombre}</strong> por <strong>$${_totalFinal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong> registrado.${_pctTotal > 0 ? ` (incluye ${_pctTotal}% de descuento)` : ''} Queda pendiente para despacho.` +
-                (_sinRed ? `<br><br><strong>Guardado en este dispositivo.</strong> Se enviará al servidor cuando haya conexión. No lo registres de nuevo.` : '') + _avisoAcuerdo);
-            showTomarPedido();
-        } catch (e) {
-            console.error('Error guardando pedido:', e);
-            if (_showModal) _showModal('Error', 'No se pudo guardar el pedido. Intenta de nuevo.');
-            btn.disabled = false; btn.textContent = _pedidoEnEdicion ? 'Guardar Cambios' : 'Guardar Pedido';
-        }
-    }
+                let actionButton = r.isCerrado 
+                    ? `<button onclick="window.showModal('Acción Protegida', 'Este obsequio pertenece a un <b>Cierre de Ventas auditado del pasado</b>.<br><br>Ya no puede eliminarse desde aquí para no afectar las estadísticas cerradas. Si necesita corregir el stock, use la herramienta de <b>Edición de Inventario</b>.', null, 'Entendido')" class="text-gray-400 p-3 hover:bg-gray-100 rounded-lg transition-colors border border-transparent" title="Protegido por Cierre">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+                       </button>`
+                    : `<button onclick="window.obsequiosModule.deleteObsequio('${r.id}')" class="text-red-500 p-3 hover:bg-red-50 rounded-lg transition-colors border border-transparent hover:border-red-200" title="Eliminar y Revertir Stock">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                       </button>`;
 
-    // ═══════════════════════════════════════════════════════════
-    // BANDEJA DE DESPACHO — ver pedidos y moverlos por estados
-    // Lee de preventa_pedidos en tiempo real. Cambia estado con merge.
-    // Por ahora NO descuenta inventario (eso será una fase posterior).
-    // ═══════════════════════════════════════════════════════════
-    const PV_ESTADOS = [
-        { key: 'pendiente',    label: 'Pendiente',      color: 'gray',   icon: '' },
-        { key: 'preparacion',  label: 'En preparación', color: 'amber',  icon: '' },
-        { key: 'cargado',      label: 'Cargado',        color: 'blue',   icon: '' },
-        { key: 'entregado',    label: 'Entregado',      color: 'green',  icon: '' }
-    ];
-    function pvEstadoInfo(key) { return PV_ESTADOS.find(e => e.key === key) || PV_ESTADOS[0]; }
-
-    let _pvPedidos = [];          // pedidos en tiempo real
-    let _pvModoCorte = false;     // modo "corte hasta aquí" en Estado del Pedido
-    let _pvBandejaUnsub = null;   // listener a cancelar
-    let _pvFiltroEstado = '';     // '' = todos
-    let _pvFiltroVendedor = '';
-    let _pvFiltroHoy = false;
-    let _pvFiltroRuta = '';       // '' = todas (solo admin)
-
-// ═══════════════════════════════════════════════════════════
-    // PEDIDOS — listado de pedidos tomados (estilo "ventas totales").
-    // El despachador/admin ve cada pedido, con sus productos separados
-    // en DISPONIBLES y NO DISPONIBLES según el stock actual del vendedor.
-    // Desde aquí se imprime el ticket (solo disponibles) y se edita/elimina.
-    // ═══════════════════════════════════════════════════════════
-    let _pvLista = [];
-    let _pvListaUnsub = null;
-    let _pvListaFiltroHoy = false;
-
-    function showListaPedidos() {
-        const rol = window.userRole === 'user' ? 'vendedor' : window.userRole;
-        if (!['admin', 'vendedor', 'despachador'].includes(rol)) return;
-
-        _mainContent.innerHTML = `
-            <div class="p-2 sm:p-3 pt-5 w-full max-w-2xl mx-auto">
-                <div class="bg-white/95 backdrop-blur-sm p-3 sm:p-4 rounded-lg shadow-xl">
-                    <div class="flex items-center justify-between mb-3">
-                        <h2 class="text-lg font-bold text-gray-800">Pedidos</h2>
-                        <button id="pvLPBack" class="px-3 py-1.5 bg-gray-400 text-white text-xs rounded hover:bg-gray-500 font-bold transition">Volver</button>
-                    </div>
-                    <label class="flex items-center gap-1.5 text-[11px] text-gray-600 mb-2">
-                        <input type="checkbox" id="pvLPHoy" class="rounded"> Solo pedidos de hoy
-                    </label>
-                    <div id="pvLPLoading" class="text-center py-8 text-gray-400 text-sm">
-                        <svg class="animate-spin h-6 w-6 mx-auto mb-2 text-cyan-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path></svg>
-                        Cargando pedidos...
-                    </div>
-                    <div id="pvLPLista" class="hidden space-y-2 max-h-[62vh] overflow-y-auto"></div>
-                </div>
-            </div>`;
-
-        document.getElementById('pvLPBack')?.addEventListener('click', () => {
-            if (_pvListaUnsub) { _pvListaUnsub(); _pvListaUnsub = null; }
-            window.showPreventaMenu();
-        });
-        document.getElementById('pvLPHoy')?.addEventListener('change', (e) => { _pvListaFiltroHoy = e.target.checked; renderListaPedidos(); });
-
-        // Pedidos en tiempo real
-        try {
-            const ref = _collection(_db, pathPedidos());
-            _pvListaUnsub = _onSnapshot(ref, snap => {
-                _pvLista = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-                renderListaPedidos();
-            }, err => {
-                console.error('Error escuchando pedidos:', err);
-                const l = document.getElementById('pvLPLoading');
-                if (l) l.innerHTML = '<span class="text-red-500">Error al cargar pedidos.</span>';
-            });
-        } catch (e) {
-            console.error('Error iniciando listado de pedidos:', e);
-        }
-    }
-
-    function _pvListaFiltradaPorRol() {
-        const rol = window.userRole === 'user' ? 'vendedor' : window.userRole;
-        let lista = _pvLista.slice();
-        if (rol === 'despachador') {
-            const rf = _pvFiltroRuta || window.userZona || '';
-            if (rf) lista = lista.filter(p => (p.ruta || p.zona || '') === rf);
-        } else if (rol === 'vendedor') {
-            lista = lista.filter(p => p.vendedorId === _userId);
-        }
-        // No mostrar entregados/anulados en la lista de trabajo (ya cerraron su ciclo)
-        lista = lista.filter(p => (p.estado || 'pendiente') !== 'entregado' && (p.estado || 'pendiente') !== 'anulado');
-        if (_pvListaFiltroHoy) lista = lista.filter(p => _pvEsHoy(p.fechaCreacion));
-        lista.sort((a, b) => (b.fechaCreacion || '').localeCompare(a.fechaCreacion || ''));
-        return lista;
-    }
-
-    function _pvDotColor(color) {
-        return ({ gray: 'bg-slate-400', amber: 'bg-amber-500', blue: 'bg-blue-500', green: 'bg-emerald-500', red: 'bg-rose-400' })[color] || 'bg-slate-400';
-    }
-
-    function renderListaPedidos() {
-        const loading = document.getElementById('pvLPLoading');
-        const cont = document.getElementById('pvLPLista');
-        if (!cont) return;
-        if (loading) loading.classList.add('hidden');
-        cont.classList.remove('hidden');
-
-        const lista = _pvListaFiltradaPorRol();
-        if (!lista.length) {
-            cont.innerHTML = '<p class="text-center text-gray-400 py-8 text-sm">No hay pedidos activos.</p>';
-            return;
-        }
-
-        cont.innerHTML = lista.map(p => {
-            const est = pvEstadoInfo(p.estado === 'despachado' ? 'cargado' : (p.estado || 'pendiente'));
-            const fecha = p.fechaCreacion ? new Date(p.fechaCreacion).toLocaleDateString('es-VE', { timeZone: 'America/Caracas', day: '2-digit', month: '2-digit' }) : '';
-            const nItems = (p.productos || []).length;
-            const tieneTicket = !!p.ticketGenerado;
-            return `
-                <div class="pv-lp-card bg-white border border-slate-200 rounded-lg p-3.5 hover:border-slate-300 hover:shadow-sm cursor-pointer transition" data-id="${p.id}">
-                    <div class="flex items-start justify-between gap-2">
-                        <div class="min-w-0">
-                            <div class="font-semibold text-slate-800 text-sm truncate">${p.clienteNombre || '(sin nombre)'}</div>
-                            <div class="text-[11px] text-slate-400 truncate mt-0.5">${p.vendedorNombre || ''}${p.ruta ? ' &middot; ' + p.ruta : ''} &middot; ${fecha}</div>
+                return `
+                <div class="p-4 border border-gray-200 rounded-xl flex justify-between items-center text-sm bg-white shadow-sm hover:shadow transition-shadow">
+                    <div class="w-full pr-4">
+                        <div class="flex items-center mb-1 flex-wrap gap-1">
+                            <span class="text-[10px] text-gray-400 font-bold tracking-wider uppercase">${fStr}</span>
+                            ${statusBadge}
+                            ${vendedorBadge}
                         </div>
-                        <div class="text-right shrink-0">
-                            <div class="text-sm font-semibold text-slate-800">$${(p.total || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</div>
-                            <span class="inline-flex items-center gap-1 text-[10px] text-slate-500 font-medium mt-1">
-                                <span class="w-1.5 h-1.5 rounded-full ${_pvDotColor(est.color)}"></span>${est.label}
-                            </span>
+                        <div class="text-blue-900 font-black text-base mb-0.5 leading-tight">${r.clienteNombre}</div>
+                        <div class="text-gray-700 font-medium">${r.productoNombre}</div> 
+                        <div class="mt-1.5 flex items-center flex-wrap gap-2">
+                            <span class="font-black text-gray-800 bg-gray-100 px-2 py-1 rounded border border-gray-200 text-xs">${r.cantidadCajas} CAJAS</span>
+                            ${r.vaciosRecibidos > 0 ? `<span class="text-[11px] font-bold text-green-700 bg-green-50 px-2 py-1 rounded border border-green-200">✓ Recibió ${r.vaciosRecibidos} vacíos</span>` : ''}
                         </div>
+                        ${r.observacion ? `<div class="mt-2 text-xs text-gray-700 bg-yellow-50 p-2 rounded border border-yellow-200 italic w-full"><b>Nota:</b> ${r.observacion}</div>` : ''}
                     </div>
-                    <div class="flex items-center justify-between mt-2 pt-2 border-t border-slate-100">
-                        <span class="text-[11px] text-slate-400">${nItems} producto(s)</span>
-                        ${tieneTicket ? '<span class="text-[10px] text-emerald-600 font-medium">Ticket generado</span>' : ''}
-                    </div>
-                </div>`;
-        }).join('');
-
-        cont.querySelectorAll('.pv-lp-card').forEach(el =>
-            el.addEventListener('click', () => abrirDetalleListaPedido(el.dataset.id)));
-    }
-
-    // Separa los productos del pedido en disponibles y no disponibles
-    // según el stock actual del VENDEDOR que tomó el pedido.
-    async function _pvClasificarProductos(pedido) {
-        const stockVend = {};
-        try {
-            const invSnap = await _getDocs(_collection(_db, `artifacts/${_appId}/users/${pedido.vendedorId}/inventario`));
-            invSnap.docs.forEach(d => { stockVend[d.id] = d.data().cantidadUnidades || 0; });
-        } catch (e) { console.warn('No se pudo leer inventario del vendedor:', e); }
-
-        // Restar lo comprometido por OTROS pedidos del mismo vendedor (no este),
-        // para no contar dos veces el stock ya apartado.
-        const comprometidoOtros = {};
-        const _fuentePedidos = (_pvLista && _pvLista.length) ? _pvLista : (_pvPedidos || []);
-        _fuentePedidos.forEach(o => {
-            if (o.id === pedido.id) return;
-            if (o.vendedorId !== pedido.vendedorId) return;
-            const est = o.estado || 'pendiente';
-            if (est === 'entregado' || est === 'anulado') return;
-            (o.productos || []).forEach(pr => {
-                const u = _pvUnidadesProducto(pr);
-                comprometidoOtros[pr.id] = (comprometidoOtros[pr.id] || 0) + u;
-            });
-        });
-
-        const disponibles = [], noDisponibles = [];
-        (pedido.productos || []).forEach(pr => {
-            const pedidas = _pvUnidadesProducto(pr);
-            const stockLibre = (stockVend[pr.id] || 0) - (comprometidoOtros[pr.id] || 0);
-            if (stockLibre >= pedidas && pedidas > 0) {
-                disponibles.push({ ...pr, unidadesPedidas: pedidas, unidadesDespacho: pedidas });
-            } else if (stockLibre > 0) {
-                // Parcial: hay algo, pero no alcanza para todo lo pedido
-                noDisponibles.push({ ...pr, unidadesPedidas: pedidas, unidadesFaltantes: pedidas - stockLibre, stockLibre, parcial: true });
-                disponibles.push({ ...pr, unidadesPedidas: pedidas, unidadesDespacho: stockLibre, parcial: true });
-            } else {
-                noDisponibles.push({ ...pr, unidadesPedidas: pedidas, unidadesFaltantes: pedidas, stockLibre: 0, parcial: false });
-            }
-        });
-        return { disponibles, noDisponibles };
-    }
-
-    function _pvUnidadesProducto(pr) {
-        const cat = (_pvProductos || []).find(x => x.id === pr.id) || {};
-        const uCj = pr.unidadesPorCaja || cat.unidadesPorCaja || 1;
-        const uPaq = pr.unidadesPorPaquete || cat.unidadesPorPaquete || 1;
-        return (pr.cantCj || 0) * uCj + (pr.cantPaq || 0) * uPaq + (pr.cantUnd || 0);
-    }
-
-    async function abrirDetalleListaPedido(id) {
-        const p = _pvLista.find(x => x.id === id);
-        if (!p) return;
-
-        document.getElementById('pvLPDetOverlay')?.remove();
-        const ov = document.createElement('div');
-        ov.id = 'pvLPDetOverlay';
-        ov.className = 'fixed inset-0 z-[9999] bg-slate-900/50 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4';
-        ov.innerHTML = `
-            <div class="bg-white w-full max-w-md rounded-t-xl sm:rounded-xl shadow-2xl max-h-[92vh] overflow-y-auto border border-slate-200">
-                <div class="sticky top-0 bg-slate-800 text-white px-5 py-4 flex items-start justify-between">
-                    <div class="min-w-0">
-                        <div class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold mb-0.5">Pedido</div>
-                        <div class="font-semibold text-base truncate leading-tight">${p.clienteNombre || '(sin nombre)'}</div>
-                        <div class="text-xs text-slate-300 truncate mt-0.5">${p.vendedorNombre || ''}${p.ruta ? ' &middot; ' + p.ruta : ''}</div>
-                    </div>
-                    <button id="pvLPDetClose" class="text-slate-400 hover:text-white text-xl leading-none px-1 -mt-1 transition">&times;</button>
+                    ${actionButton}
                 </div>
-                <div id="pvLPDetBody" class="p-5">
-                    <div class="text-center text-slate-400 py-8 text-sm">
-                        <svg class="animate-spin h-5 w-5 mx-auto mb-2 text-slate-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path></svg>
-                        Verificando disponibilidad...
-                    </div>
-                </div>
-            </div>`;
-        document.body.appendChild(ov);
-        ov.addEventListener('click', (e) => { if (e.target === ov) ov.remove(); });
-        document.getElementById('pvLPDetClose')?.addEventListener('click', () => ov.remove());
-
-        const { disponibles, noDisponibles } = await _pvClasificarProductos(p);
-
-        const fmtCant = (pr) => {
-            const partes = [];
-            if (pr.cantCj) partes.push(`${pr.cantCj} Cj`);
-            if (pr.cantPaq) partes.push(`${pr.cantPaq} Pq`);
-            if (pr.cantUnd) partes.push(`${pr.cantUnd} Un`);
-            return partes.join(' + ') || '0';
-        };
-
-        const dispHtml = disponibles.length ? disponibles.map(pr => `
-            <div class="flex items-center justify-between py-2.5 px-3 border-b border-slate-100 last:border-0">
-                <div class="min-w-0 flex items-center gap-2.5">
-                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0"></span>
-                    <div class="min-w-0">
-                        <div class="text-sm font-medium text-slate-800 truncate">${pr.presentacion || ''} <span class="text-xs text-slate-400 font-normal">${pr.marca || ''}</span></div>
-                        <div class="text-[11px] text-slate-400 mt-0.5">${fmtCant(pr)}${pr.parcial ? ` &middot; <span class="text-amber-600 font-medium">parcial (${pr.unidadesDespacho} de ${pr.unidadesPedidas} und)</span>` : ''}</div>
-                    </div>
-                </div>
-            </div>`).join('') : '<p class="text-xs text-slate-400 py-3 px-3">Ningún producto disponible.</p>';
-
-        const noDispHtml = noDisponibles.length ? noDisponibles.map(pr => `
-            <div class="flex items-center justify-between py-2.5 px-3 border-b border-slate-100 last:border-0">
-                <div class="min-w-0 flex items-center gap-2.5">
-                    <span class="w-1.5 h-1.5 rounded-full bg-rose-400 shrink-0"></span>
-                    <div class="min-w-0">
-                        <div class="text-sm font-medium text-slate-500 truncate">${pr.presentacion || ''} <span class="text-xs text-slate-400 font-normal">${pr.marca || ''}</span></div>
-                        <div class="text-[11px] text-rose-500 mt-0.5">${fmtCant(pr)} pedido &middot; faltan ${pr.unidadesFaltantes} und</div>
-                    </div>
-                </div>
-            </div>`).join('') : '';
-
-        const est = pvEstadoInfo(p.estado === 'despachado' ? 'cargado' : (p.estado || 'pendiente'));
-        const body = document.getElementById('pvLPDetBody');
-        if (!body) return;
-        // Mapa de color de punto por estado (sobrio)
-        const dotColor = _pvDotColor(est.color);
-        body.innerHTML = `
-            <div class="flex items-center justify-between mb-5 pb-4 border-b border-slate-100">
-                <span class="inline-flex items-center gap-1.5 text-xs font-medium text-slate-600">
-                    <span class="w-2 h-2 rounded-full ${dotColor}"></span>${est.label}
-                </span>
-                <div class="text-right">
-                    <div class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Total</div>
-                    <div class="text-lg font-semibold text-slate-800">$${(p.total || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</div>
-                </div>
-            </div>
-
-            <div class="mb-4">
-                <h4 class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2">Disponibles para despacho</h4>
-                <div class="border border-slate-200 rounded-lg overflow-hidden">${dispHtml}</div>
-            </div>
-
-            ${noDisponibles.length ? `<div class="mb-4">
-                <h4 class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2">Sin stock disponible</h4>
-                <div class="border border-slate-200 rounded-lg overflow-hidden bg-slate-50/50">${noDispHtml}</div>
-            </div>` : ''}
-
-            <div class="space-y-2 mt-6">
-                <button id="pvLPTicket" class="w-full py-3 bg-slate-800 text-white rounded-lg font-medium text-sm hover:bg-slate-900 transition ${disponibles.length ? '' : 'opacity-40 pointer-events-none'}">${p.ticketGenerado ? 'Regenerar ticket' : 'Imprimir ticket de carga'}</button>
-                <div class="grid grid-cols-2 gap-2">
-                    <button id="pvLPEditar" class="py-2.5 bg-white border border-slate-300 text-slate-700 rounded-lg font-medium text-sm hover:bg-slate-50 transition">Editar</button>
-                    <button id="pvLPEliminar" class="py-2.5 bg-white border border-rose-200 text-rose-600 rounded-lg font-medium text-sm hover:bg-rose-50 transition">Eliminar</button>
-                </div>
-            </div>`;
-
-        // Editar → abre la misma pantalla de Tomar Pedido, en modo edición
-        document.getElementById('pvLPEditar')?.addEventListener('click', () => {
-            ov.remove();
-            showTomarPedido(p);
-        });
-        // Eliminar
-        document.getElementById('pvLPEliminar')?.addEventListener('click', () => eliminarPedidoLista(p.id, p.clienteNombre));
-        // Ticket: genera el ticket con solo disponibles y pasa a preparación
-        document.getElementById('pvLPTicket')?.addEventListener('click', () => {
-            if (!disponibles.length) { if (_showModal) _showModal('Sin disponibles', 'Este pedido no tiene productos disponibles para despachar.'); return; }
-            generarTicketPedido(p, disponibles, noDisponibles);
-        });
-    }
-
-    async function eliminarPedidoLista(id, nombre) {
-        const _pEl = _pvLista.find(x => x.id === id) || _pvPedidos.find(x => x.id === id);
-        if (_pEl && _pEl.estado === 'entregado') {
-            _showModal('No permitido', 'Este pedido ya fue <strong>entregado</strong> y generó una venta, por eso no puede eliminarse. Si necesitas revertirlo, usa <strong>\u201cAnular entrega\u201d</strong> desde Estado del Pedido.');
-            return;
-        }
-        _showModal('Eliminar pedido', `¿Seguro que deseas eliminar el pedido de <strong>${nombre || 'este cliente'}</strong>? Esta acción no se puede deshacer.`, async () => {
-            try {
-                await _deleteDoc(_doc(_db, pathPedidos(), id));
-                if (window.invalidarComprometidoCache) window.invalidarComprometidoCache();
-                document.getElementById('pvLPDetOverlay')?.remove();
-                // El onSnapshot refresca la lista sola
-            } catch (e) {
-                console.error('Error eliminando pedido:', e);
-                _showModal('Error', 'No se pudo eliminar el pedido.');
-            }
-        }, 'Sí, eliminar', () => {});
-    }
-
-        function showBandejaDespacho() {
-        const rol = window.userRole === 'user' ? 'vendedor' : window.userRole;
-        if (!['admin', 'vendedor', 'despachador'].includes(rol)) return;
-        const esAdmin = rol === 'admin';
-        _pvModoCorte = false;
-        // Memoria: restaurar los filtros guardados del usuario (ruta y vendedor)
-        try {
-            const _rG = localStorage.getItem('pv_filtro_ruta_' + _userId);
-            const _vG = localStorage.getItem('pv_filtro_vendedor_' + _userId);
-            if (_rG !== null) _pvFiltroRuta = _rG;
-            else if (rol === 'despachador' && !_pvFiltroRuta) _pvFiltroRuta = window.userZona || '';
-            if (_vG !== null) _pvFiltroVendedor = _vG;
-        } catch (e) { if (rol === 'despachador' && !_pvFiltroRuta) _pvFiltroRuta = window.userZona || ''; }
-
-        _mainContent.innerHTML = `
-            <div class="p-2 sm:p-3 pt-5 w-full max-w-2xl mx-auto">
-                <div class="bg-white/95 backdrop-blur-sm p-3 sm:p-4 rounded-lg shadow-xl">
-                    <div class="flex items-center justify-between mb-3">
-                        <h2 class="text-lg font-bold text-gray-800">Estado del Pedido</h2>
-                        <button id="pvBandBack" class="px-3 py-1.5 bg-gray-400 text-white text-xs rounded hover:bg-gray-500 font-bold transition">Volver</button>
-                    </div>
-
-                    ${(rol === 'despachador' || rol === 'admin') ? `
-                    <button id="pvCorteBtn" class="w-full mb-2 py-2.5 bg-purple-600 text-white rounded-lg font-bold text-sm hover:bg-purple-700 transition shadow-sm">Corte de Carga</button>
-                    <div id="pvCorteBanner" class="hidden mb-3 p-2.5 bg-purple-50 border border-purple-200 rounded-lg text-[11px] text-purple-800 flex items-center justify-between gap-2">
-                        <span>Elige <strong>hasta qué pedido</strong> cortar (toca "Cortar hasta aquí").</span>
-                        <button id="pvCorteCancelarModo" class="px-2 py-1 bg-white border border-purple-300 rounded text-purple-700 font-bold whitespace-nowrap">Cancelar</button>
-                    </div>` : ''}
-
-                    <!-- Contadores por estado -->
-                    <div id="pvBandContadores" class="flex flex-wrap gap-1 mb-2"></div>
-
-                    <!-- Filtros -->
-                    <div class="grid grid-cols-2 gap-1.5 mb-2">
-                        <select id="pvBandEstado" class="text-xs border border-teal-300 rounded p-1.5 bg-white outline-none">
-                            <option value="">Todos los estados</option>
-                            ${PV_ESTADOS.map(e => `<option value="${e.key}">${e.label}</option>`).join('')}
-                        </select>
-                        <select id="pvBandVendedor" class="text-xs border border-teal-300 rounded p-1.5 bg-white outline-none">
-                            <option value="">Todos los vendedores</option>
-                        </select>
-                    </div>
-                    ${(esAdmin || rol === 'despachador') ? `<div class="mb-2">
-                        <select id="pvBandRuta" class="w-full text-xs border border-blue-300 rounded p-1.5 bg-white outline-none">
-                            <option value="">Todas las rutas</option>
-                            ${(window.RUTAS_REPARTO || []).map(r => `<option value="${r}" ${_pvFiltroRuta === r ? 'selected' : ''}>${r}</option>`).join('')}
-                        </select>
-                    </div>` : ''}
-                    <label class="flex items-center gap-1.5 text-[11px] text-gray-600 mb-2">
-                        <input type="checkbox" id="pvBandHoy" class="rounded"> Solo pedidos de hoy
-                    </label>
-
-                    <div id="pvBandLoading" class="text-center py-8 text-gray-400 text-sm">
-                        <svg class="animate-spin h-6 w-6 mx-auto mb-2 text-teal-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path></svg>
-                        Cargando pedidos...
-                    </div>
-                    <div id="pvBandLista" class="hidden space-y-2 max-h-[58vh] overflow-y-auto"></div>
-                </div>
-            </div>`;
-
-        document.getElementById('pvBandBack')?.addEventListener('click', () => {
-            if (_pvBandejaUnsub) { _pvBandejaUnsub(); _pvBandejaUnsub = null; }
-            window.showPreventaMenu();
-        });
-        document.getElementById('pvCorteBtn')?.addEventListener('click', () => { if (_pvModoCorte) _pvSalirModoCorte(); else _pvEntrarModoCorte(); });
-        document.getElementById('pvCorteCancelarModo')?.addEventListener('click', _pvSalirModoCorte);
-        document.getElementById('pvBandEstado')?.addEventListener('change', (e) => { _pvFiltroEstado = e.target.value; renderBandeja(); });
-        document.getElementById('pvBandVendedor')?.addEventListener('change', (e) => { _pvFiltroVendedor = e.target.value; try { localStorage.setItem('pv_filtro_vendedor_' + _userId, _pvFiltroVendedor); } catch (_) { /* recordar el filtro es una comodidad: si el navegador no deja, se sigue */ } renderBandeja(); });
-        document.getElementById('pvBandHoy')?.addEventListener('change', (e) => { _pvFiltroHoy = e.target.checked; renderBandeja(); });
-        document.getElementById('pvBandRuta')?.addEventListener('change', (e) => { _pvFiltroRuta = e.target.value; try { localStorage.setItem('pv_filtro_ruta_' + _userId, _pvFiltroRuta); } catch (_) { /* igual que arriba */ } renderBandeja(); });
-
-        // Escuchar pedidos en tiempo real
-        try {
-            const ref = _collection(_db, pathPedidos());
-            _pvBandejaUnsub = _onSnapshot(ref, snap => {
-                _pvPedidos = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-                // Poblar vendedores únicos
-                const sel = document.getElementById('pvBandVendedor');
-                if (sel) {
-                    const actual = sel.value || _pvFiltroVendedor || '';
-                    const vends = [...new Set(_pvPedidos.map(p => p.vendedorNombre).filter(Boolean))].sort();
-                    sel.innerHTML = '<option value="">Todos los vendedores</option>' +
-                        vends.map(v => `<option value="${v}" ${v === actual ? 'selected' : ''}>${v}</option>`).join('');
-                }
-                renderBandeja();
-            }, err => {
-                console.error('Error escuchando pedidos:', err);
-                const l = document.getElementById('pvBandLoading');
-                if (l) l.innerHTML = '<span class="text-red-500">Error al cargar los pedidos.</span>';
-            });
-        } catch (e) {
-            console.error('Error bandeja:', e);
-        }
-    }
-
-    function _pvEsHoy(iso) {
-        if (!iso) return false;
-        const d = new Date(iso);
-        const h = new Date();
-        return d.getFullYear() === h.getFullYear() && d.getMonth() === h.getMonth() && d.getDate() === h.getDate();
-    }
-
-    // Bitácora de despacho: registra cambios de estado, cortes y eliminaciones.
-
-    // Al eliminar un pedido que estaba en un corte: lo quita del corte y reconsolida.
-    // Si el corte queda sin pedidos, se elimina.
-
-    function _pvEntrarModoCorte() {
-        _pvModoCorte = true;
-        const b = document.getElementById('pvCorteBanner'); if (b) b.classList.remove('hidden');
-        const btn = document.getElementById('pvCorteBtn'); if (btn) { btn.textContent = 'Salir de modo corte'; btn.classList.remove('bg-purple-600', 'hover:bg-purple-700'); btn.classList.add('bg-slate-500', 'hover:bg-slate-600'); }
-        renderBandeja();
-    }
-    function _pvSalirModoCorte() {
-        _pvModoCorte = false;
-        const b = document.getElementById('pvCorteBanner'); if (b) b.classList.add('hidden');
-        const btn = document.getElementById('pvCorteBtn'); if (btn) { btn.textContent = 'Corte de Carga'; btn.classList.add('bg-purple-600', 'hover:bg-purple-700'); btn.classList.remove('bg-slate-500', 'hover:bg-slate-600'); }
-        renderBandeja();
-    }
-
-    function renderBandeja() {
-        const loading = document.getElementById('pvBandLoading');
-        const cont = document.getElementById('pvBandLista');
-        const cont2 = document.getElementById('pvBandContadores');
-        if (!cont) return;
-        if (loading) loading.classList.add('hidden');
-        cont.classList.remove('hidden');
-
-        // Contadores por estado (sobre todos los pedidos, antes de filtrar)
-        if (cont2) {
-            cont2.innerHTML = PV_ESTADOS.filter(e => e.key !== 'anulado').map(e => {
-                const n = _pvPedidos.filter(p => (p.estado || 'pendiente') === e.key).length;
-                if (!n) return '';
-                return `<span class="text-[10px] px-1.5 py-0.5 rounded bg-${e.color}-100 text-${e.color}-700 font-bold">${n} ${e.label}</span>`;
+                `;
             }).join('');
+        } catch(e) {
+            console.error("Error buscando obsequios:", e);
+            list.innerHTML = `<p class="text-red-500 text-center font-bold bg-red-50 p-4 rounded-lg">Error de conexión: ${e.message}</p>`;
         }
+    }
 
-        // Aplicar filtros
-        let lista = _pvPedidos.slice();
+    async function deleteObsequio(id) {
+        const r = _lastObsequiosSearch.find(x => x.id === id);
+        if(!r) return;
 
-        // ── FILTRO POR ROL ──
-        // Despachador: solo los pedidos de SU ruta (zonaPreventa de su usuario).
-        // Vendedor: solo SUS pedidos (los que él tomó).
-        // Admin: todos, con filtro de ruta opcional.
-        const rol = window.userRole === 'user' ? 'vendedor' : window.userRole;
-        if (rol === 'despachador') {
-            if (_pvFiltroRuta) lista = lista.filter(p => (p.ruta || p.zona || '') === _pvFiltroRuta);
-        } else if (rol === 'vendedor') {
-            lista = lista.filter(p => p.vendedorId === _userId);
-        } else if (rol === 'admin' && _pvFiltroRuta) {
-            lista = lista.filter(p => (p.ruta || p.zona || '') === _pvFiltroRuta);
-        }
-
-        if (_pvFiltroEstado) lista = lista.filter(p => (p.estado || 'pendiente') === _pvFiltroEstado);
-        if (_pvFiltroVendedor) lista = lista.filter(p => p.vendedorNombre === _pvFiltroVendedor);
-        if (_pvFiltroHoy) lista = lista.filter(p => _pvEsHoy(p.fechaCreacion));
-
-        // Ordenar: MÁS ANTIGUOS primero (orden de llegada, para el corte "hasta aquí")
-        lista.sort((a, b) => (a.fechaCreacion || '').localeCompare(b.fechaCreacion || ''));
-
-        if (!lista.length) {
-            cont.innerHTML = '<p class="text-center text-gray-400 py-8 text-sm">No hay pedidos con estos filtros.</p>';
+        if (r.isCerrado) {
+            _showModal('Error', 'No puede borrar un obsequio que ya fue cerrado.');
             return;
         }
 
-        // Candidatos a corte: activos y aún no cortados, en el orden mostrado
-        // Candidatos a corte: activos (no entregado/anulado). El corte es una ayuda imprimible,
-        // no bloquea: un pedido ya cortado se puede volver a incluir en un corte nuevo.
-        const candidatos = lista.filter(p => (p.estado || 'pendiente') !== 'entregado' && (p.estado || 'pendiente') !== 'anulado');
-        const idxCand = {}; candidatos.forEach((p, i) => idxCand[p.id] = i);
+        const targetUserId = r.vendedorId || r.userId || _userId;
 
-        cont.innerHTML = lista.map((p, pos) => {
-            const est = pvEstadoInfo(p.estado || 'pendiente');
-            const numProd = (p.productos || []).length;
-            const fecha = p.fechaCreacion ? new Date(p.fechaCreacion).toLocaleDateString('es-VE', { timeZone: 'America/Caracas', day: '2-digit', month: '2-digit' }) + ' ' + new Date(p.fechaCreacion).toLocaleTimeString('es-VE', { timeZone: 'America/Caracas', hour: '2-digit', minute: '2-digit' }) : '';
-            const esCand = idxCand[p.id] !== undefined;
-            const accionDer = _pvModoCorte
-                ? (esCand
-                    ? `<button data-cortar="${p.id}" class="pv-cortar-hasta text-[10px] px-2 py-1.5 rounded bg-purple-600 text-white font-bold whitespace-nowrap hover:bg-purple-700 transition">Cortar hasta aquí</button>`
-                    : `<span class="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-400 font-bold whitespace-nowrap">${est.label}</span>`)
-                : `<button data-estado="${p.id}" class="pv-estado-btn text-[10px] px-2 py-1 rounded bg-${est.color}-100 text-${est.color}-700 font-bold shrink-0 whitespace-nowrap hover:ring-2 hover:ring-${est.color}-300 transition">${est.label}</button>`;
-            return `<div class="border border-gray-200 rounded-lg p-2.5 ${_pvModoCorte && esCand ? 'bg-purple-50/50 border-purple-200' : ''}">
-                <div class="flex items-center justify-between gap-2 mb-1">
-                    <div class="min-w-0">
-                        <button data-detalle="${p.id}" class="pv-ped-nombre text-left font-bold text-gray-800 text-sm truncate hover:text-teal-700 hover:underline">${pos + 1}. ${p.clienteNombre || '(sin cliente)'}</button>
-                        <div class="text-[10px] text-gray-400 truncate">${p.zona || '—'} · ${p.vendedorNombre || '—'}</div>
-                    </div>
-                    ${accionDer}
-                </div>
-                <div class="flex items-center justify-between text-[11px]">
-                    <span class="text-gray-500">${numProd} producto(s) · ${fecha}</span>
-                    <span class="font-black text-indigo-700">${_pvFmtUSD(p.total)}</span>
-                </div>
-            </div>`;
-        }).join('');
-
-        cont.querySelectorAll('.pv-ped-nombre').forEach(el => el.addEventListener('click', () => mostrarDetallePedido(el.dataset.detalle)));
-        cont.querySelectorAll('.pv-estado-btn').forEach(el => el.addEventListener('click', () => _pvAbrirMenuEstado(el.dataset.estado)));
-        cont.querySelectorAll('.pv-cortar-hasta').forEach(el => el.addEventListener('click', () => {
-            const idx = idxCand[el.dataset.cortar];
-            const pedidosCorte = candidatos.slice(0, idx + 1);
-            const rutaLabel = _pvFiltroRuta || window.userZona || 'General';
-            _pvSalirModoCorte();
-            previsualizarCorte(pedidosCorte, rutaLabel);
-        }));
-    }
-
-    // Menú compacto para cambiar el estado del pedido desde la columna Estado
-    function _pvAbrirMenuEstado(id) {
-        const p = _pvPedidos.find(x => x.id === id);
-        if (!p) return;
-        const cur = p.estado || 'pendiente';
-        if (cur === 'anulado') { if (_showModal) _showModal('Anulado', 'Este pedido está anulado.'); return; }
-        const orden = ['pendiente', 'preparacion', 'cargado', 'entregado'];
-        const i = orden.indexOf(cur);
-        const trans = [];
-        if (i > 0) trans.push({ estado: orden[i - 1], tipo: 'atras' });
-        if (i >= 0 && i < orden.length - 1) trans.push({ estado: orden[i + 1], tipo: 'avanzar' });
-        const curInfo = pvEstadoInfo(cur);
-        document.getElementById('pvEstadoMenuOverlay')?.remove();
-        const ov = document.createElement('div');
-        ov.id = 'pvEstadoMenuOverlay';
-        ov.className = 'fixed inset-0 z-[9999] bg-slate-900/50 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4';
-        const botones = trans.map(t => {
-            const ei = pvEstadoInfo(t.estado);
-            const cls = t.tipo === 'avanzar' ? 'bg-slate-800 hover:bg-slate-900 text-white' : 'bg-white border border-slate-300 text-slate-600 hover:bg-slate-50';
-            const etq = t.tipo === 'avanzar' ? `Avanzar a ${ei.label}` : `Regresar a ${ei.label}`;
-            return `<button data-estado="${t.estado}" data-tipo="${t.tipo}" class="pv-est-op w-full py-3 rounded-lg font-medium text-sm transition ${cls}">${etq}</button>`;
-        }).join('');
-        ov.innerHTML = `
-            <div class="bg-white w-full max-w-xs rounded-t-xl sm:rounded-xl shadow-2xl overflow-hidden border border-slate-200">
-                <div class="px-5 py-4 border-b border-slate-100">
-                    <div class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Cambiar estado</div>
-                    <div class="font-semibold text-slate-800 text-sm truncate">${p.clienteNombre || '(sin cliente)'}</div>
-                    <div class="text-xs text-slate-500 mt-0.5">Estado actual: <span class="font-semibold text-${curInfo.color}-700">${curInfo.label}</span></div>
-                </div>
-                <div class="p-4 space-y-2">
-                    ${botones || '<p class="text-sm text-slate-400 text-center py-2">Sin cambios disponibles.</p>'}
-                    <button id="pvEstMenuCancelar" class="w-full py-2.5 text-slate-400 hover:text-slate-600 font-medium text-sm">Cancelar</button>
-                </div>
-            </div>`;
-        document.body.appendChild(ov);
-        ov.addEventListener('click', e => { if (e.target === ov) ov.remove(); });
-        document.getElementById('pvEstMenuCancelar').addEventListener('click', () => ov.remove());
-        ov.querySelectorAll('.pv-est-op').forEach(b => b.addEventListener('click', () => {
-            const nuevo = b.dataset.estado, tipo = b.dataset.tipo;
-            ov.remove();
-            if (tipo === 'atras') {
-                _showModal('Regresar estado', `¿Seguro que quieres regresar el pedido a <strong>${pvEstadoInfo(nuevo).label}</strong>? (cambia el estado del pedido)`, () => cambiarEstadoPedido(id, nuevo), 'Sí, regresar', () => {});
-            } else {
-                cambiarEstadoPedido(id, nuevo);
-            }
-        }));
-    }
-
-
-    // Detalle del pedido con avance de estados
-    function mostrarDetallePedido(id) {
-        const p = _pvPedidos.find(x => x.id === id);
-        if (!p) return;
-        const est = pvEstadoInfo(p.estado || 'pendiente');
-        const _rolPV = window.userRole === 'user' ? 'vendedor' : window.userRole;
-        const puedeAnular = (p.estado === 'entregado') && (_rolPV === 'vendedor' && p.vendedorId === _userId);
-
-        // Secuencia de avance (sin contar anulado). Se eliminó 'despachado'.
-        const flujo = ['pendiente', 'preparacion', 'cargado', 'entregado'];
-        // Compatibilidad: un pedido que quedó en el estado viejo 'despachado'
-        // se trata como 'cargado' para efectos de avanzar/retroceder.
-        const estadoNorm = (p.estado === 'despachado') ? 'cargado' : (p.estado || 'pendiente');
-        const idxActual = flujo.indexOf(estadoNorm);
-        const siguiente = (idxActual >= 0 && idxActual < flujo.length - 1) ? flujo[idxActual + 1] : null;
-        const anterior = (idxActual > 0) ? flujo[idxActual - 1] : null;
-
-        document.getElementById('pvPedDetOverlay')?.remove();
-        const ov = document.createElement('div');
-        ov.id = 'pvPedDetOverlay';
-        ov.className = 'fixed inset-0 z-[9998] bg-slate-900/50 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4';
-
-        const prodRows = (p.productos || []).map(pr => {
-            const partes = [];
-            if (pr.cantCj) partes.push(`${pr.cantCj} Cj`);
-            if (pr.cantPaq) partes.push(`${pr.cantPaq} Paq`);
-            if (pr.cantUnd) partes.push(`${pr.cantUnd} Und`);
-            return `<div class="flex items-center justify-between py-2.5 px-3 border-b border-slate-100 last:border-0">
-                <div class="min-w-0"><div class="text-sm font-medium text-slate-800 truncate">${pr.presentacion}</div>
-                <div class="text-[11px] text-slate-400 mt-0.5">${partes.join(' · ') || '—'}</div></div>
-                <span class="text-sm font-semibold text-slate-700 shrink-0">${_pvFmtUSD(pr.subtotal)}</span>
-            </div>`;
-        }).join('');
-
-        // Historial de estados (puntos sobrios)
-        const histRows = (p.historialEstados || []).map(h => {
-            const ei = pvEstadoInfo(h.estado);
-            const f = h.fecha ? new Date(h.fecha).toLocaleString('es-VE', { timeZone: 'America/Caracas', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
-            return `<div class="flex items-center gap-2 text-[11px] text-slate-500 py-0.5"><span class="w-1.5 h-1.5 rounded-full ${_pvDotColor(ei.color)}"></span>${ei.label} · ${f}</div>`;
-        }).join('');
-
-        const btnSiguiente = siguiente ? (() => {
-            const s = pvEstadoInfo(siguiente);
-            return `<button id="pvAvanzar" class="flex-1 py-3 bg-slate-800 text-white rounded-lg font-medium text-sm hover:bg-slate-900 transition">Marcar como ${s.label}</button>`;
-        })() : '<div class="flex-1 text-center py-3 text-emerald-600 font-medium text-sm">Pedido entregado</div>';
-
-        const dotColorHdr = _pvDotColor(est.color);
-        ov.innerHTML = `
-            <div class="bg-white w-full max-w-md rounded-t-xl sm:rounded-xl shadow-2xl overflow-hidden max-h-[92vh] flex flex-col border border-slate-200">
-                <div class="bg-slate-800 text-white px-5 py-4 shrink-0">
-                    <div class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold mb-0.5">Pedido</div>
-                    <div class="font-semibold text-base leading-tight truncate">${p.clienteNombre || '(sin cliente)'}</div>
-                    <div class="text-xs text-slate-300 truncate mt-0.5">${p.clienteNombrePersonal || ''}${p.zona ? ' &middot; ' + p.zona : ''}</div>
-                    <div class="mt-2 inline-flex items-center gap-1.5 text-[11px] text-slate-200">
-                        <span class="w-2 h-2 rounded-full ${dotColorHdr}"></span>${est.label}${p.vendedorNombre ? ' &middot; Ruta: ' + p.vendedorNombre : ''}
-                    </div>
-                </div>
-                <div class="overflow-y-auto p-5 flex-1">
-                    <div class="mb-4">
-                        <h4 class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2">Productos (${(p.productos || []).length})</h4>
-                        <div class="border border-slate-200 rounded-lg overflow-hidden">${prodRows || '<p class="text-xs text-slate-400 py-3 px-3">Sin productos</p>'}</div>
-                        <div class="flex justify-between items-center mt-3 pt-3 border-t border-slate-100">
-                            <span class="text-sm font-medium text-slate-600">Total</span>
-                            <span class="text-lg font-semibold text-slate-800">${_pvFmtUSD(p.total)}</span>
-                        </div>
-                    </div>
-                    ${histRows ? `<div class="bg-slate-50 rounded-lg p-3 border border-slate-100"><h4 class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2">Historial</h4>${histRows}</div>` : ''}
-                </div>
-                <div class="p-4 border-t border-slate-100 shrink-0 space-y-2">
-                    <div class="flex gap-2">
-                        ${(anterior && p.estado !== 'entregado') ? `<button id="pvRetroceder" class="px-4 py-3 bg-white border border-slate-300 text-slate-600 rounded-lg font-medium text-sm hover:bg-slate-50 transition">Atrás</button>` : ''}
-                        ${btnSiguiente}
-                    </div>
-                    ${puedeAnular ? `<button id="pvAnularEntrega" class="w-full py-2.5 bg-white border border-rose-300 text-rose-600 rounded-lg font-medium text-sm hover:bg-rose-50 transition">Anular entrega</button>` : ''}
-                    ${(p.estado !== 'anulado' && p.estado !== 'entregado') ? `<button id="pvEditarPedido" class="w-full py-2.5 bg-white border border-slate-300 text-slate-700 rounded-lg font-medium text-sm hover:bg-slate-50 transition">Editar / Aumentar pedido</button>` : ''}
-                    <button id="pvTicketGalpon" class="w-full py-2.5 bg-white border border-slate-300 text-slate-700 rounded-lg font-medium text-sm hover:bg-slate-50 transition">Ticket de Carga</button>
-                    <button id="pvPedDetCerrar" class="w-full py-2.5 text-slate-400 hover:text-slate-600 font-medium text-sm transition">Cerrar</button>
-                </div>
-            </div>`;
-        document.body.appendChild(ov);
-        ov.addEventListener('click', e => { if (e.target === ov) ov.remove(); });
-        document.getElementById('pvPedDetCerrar').addEventListener('click', () => ov.remove());
-        document.getElementById('pvTicketGalpon')?.addEventListener('click', () => generarTicketGalpon(p));
-        document.getElementById('pvEditarPedido')?.addEventListener('click', () => { document.getElementById('pvPedDetOverlay')?.remove(); showTomarPedido(p); });
-
-        if (siguiente) document.getElementById('pvAvanzar')?.addEventListener('click', () => cambiarEstadoPedido(p.id, siguiente));
-        if (anterior && p.estado !== 'entregado') document.getElementById('pvRetroceder')?.addEventListener('click', () => {
-            _showModal('Regresar estado', `¿Seguro que quieres regresar el pedido a <strong>${pvEstadoInfo(anterior).label}</strong>? (esto NO es cerrar; cambia el estado del pedido)`, () => cambiarEstadoPedido(p.id, anterior), 'Sí, regresar', () => {});
-        });
-        if (puedeAnular) document.getElementById('pvAnularEntrega')?.addEventListener('click', () => anularEntrega(p));
-
-    }
-
-// ═══════════════════════════════════════════════════════════
-    // ENTREGAR PEDIDO (cierra el ciclo de pre-venta) — PARTE 3.
-    // Al entregar:
-    //   1. Descuenta del inventario del VENDEDOR que tomó el pedido,
-    //      SOLO lo del ticket congelado (ticketDespacho).
-    //   2. Genera una VENTA real en el historial del vendedor
-    //      (entra a cierre / CXC / reportes como una venta normal).
-    //   3. Marca el pedido como entregado.
-    // Todo dentro de una transacción para que sea atómico.
-    // ═══════════════════════════════════════════════════════════
-    // Antes de entregar: si algún producto del despacho maneja vacíos, pedir
-    // cuántos devolvió el cliente (solo los tipos presentes). Si no, entrega directa.
-    async function iniciarEntregaConVacios(pedido) {
-        if (!pedido) return;
-        // Asegurar catálogo cargado (para saber manejaVacios/tipoVacio)
-        if (!_pvProductos || !_pvProductos.length) {
+        _showModal('Eliminar Registro', `¿Borrar el obsequio de <br><b class="text-blue-600">${r.cantidadCajas} Cajas</b> a <br><b class="text-gray-800">${r.clienteNombre}</b>?<br><br><span class="text-red-600 text-xs font-bold">⚠️ Esta acción devolverá automáticamente el producto al stock del vendedor y revertirá los vacíos.</span>`, async () => {
+            _showModal('Progreso', 'Revirtiendo transacción...', null, '', null, false);
             try {
-                const ps = await _getDocs(_collection(_db, pathProductos()));
-                _pvProductos = ps.docs.map(d => ({ id: d.id, ...d.data() }));
-            } catch (e) { console.warn('No se pudo cargar el catálogo para vacíos:', e); }
-        }
-        // Despacho (mismo criterio que entregarPedido): ticket congelado o,
-        // si no hay, clasificando disponibilidad ahora. Así las cajas de vacío
-        // se calculan sobre lo REALMENTE entregado.
-        let despacho = pedido.ticketDespacho;
-        if (!despacho || !despacho.length) {
-            const clasif = await _pvClasificarProductos(pedido);
-            despacho = _pvCongelarDespacho(clasif.disponibles);
-        }
-        despacho = despacho.filter(d => (d.unidadesDespacho || 0) > 0);
-        // Cajas por tipo de vacío
-        const cajasPorTipo = {};
-        despacho.forEach(d => {
-            const cat = (_pvProductos || []).find(x => x.id === d.id) || {};
-            if (cat.manejaVacios && cat.tipoVacio && (d.cantCj || 0) > 0) {
-                cajasPorTipo[cat.tipoVacio] = (cajasPorTipo[cat.tipoVacio] || 0) + (d.cantCj || 0);
-            }
-        });
-        const tipos = Object.keys(cajasPorTipo);
-        // Sin vacíos → entrega directa
-        if (!tipos.length) { entregarPedido(pedido, {}); return; }
+                const iRef = _doc(_db, `artifacts/${_appId}/users/${targetUserId}/inventario`, r.productoId);
+                const cRef = _doc(_db, CLIENTES_PUBLIC_PATH, r.clienteId);
+                
+                const prodDef = _inventarioCache.find(p => p.id === r.productoId) || { unidadesPorCaja: 1 }; 
 
-        // Modal de vacíos
-        document.getElementById('pvVaciosOverlay')?.remove();
-        const ov = document.createElement('div');
-        ov.id = 'pvVaciosOverlay';
-        ov.className = 'fixed inset-0 z-[9999] bg-slate-900/50 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4';
-        const filas = tipos.map(t => `
-            <div class="flex items-center justify-between gap-3 py-2.5 px-3 border-b border-slate-100 last:border-0">
-                <div class="min-w-0">
-                    <div class="text-sm font-medium text-slate-800">${t}</div>
-                    <div class="text-[11px] text-slate-400 mt-0.5">Entregadas: ${cajasPorTipo[t]} Cj</div>
-                </div>
-                <input type="number" min="0" value="0" inputmode="numeric" data-tipo="${t}"
-                    class="pv-vac-input w-20 px-2 py-1.5 text-center border border-slate-300 rounded-lg text-sm font-bold text-slate-800 focus:ring-2 focus:ring-cyan-500 outline-none">
-            </div>`).join('');
-        ov.innerHTML = `
-            <div class="bg-white w-full max-w-md rounded-t-xl sm:rounded-xl shadow-2xl overflow-hidden max-h-[92vh] flex flex-col border border-slate-200">
-                <div class="bg-slate-800 text-white px-5 py-4 shrink-0">
-                    <div class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold mb-0.5">Entrega · Vacíos</div>
-                    <div class="font-semibold text-base leading-tight truncate">${pedido.clienteNombre || '(sin cliente)'}</div>
-                    <div class="text-xs text-slate-300 mt-0.5">Ingresa cuántos vacíos devolvió el cliente.</div>
-                </div>
-                <div class="overflow-y-auto p-5 flex-1">
-                    <div class="border border-slate-200 rounded-lg overflow-hidden">${filas}</div>
-                </div>
-                <div class="p-4 border-t border-slate-100 shrink-0 space-y-2">
-                    <button id="pvVaciosConfirmar" class="w-full py-3 bg-slate-800 text-white rounded-lg font-medium text-sm hover:bg-slate-900 transition">Confirmar entrega</button>
-                    <button id="pvVaciosCancelar" class="w-full py-2.5 text-slate-400 hover:text-slate-600 font-medium text-sm transition">Cancelar</button>
-                </div>
-            </div>`;
-        document.body.appendChild(ov);
-        ov.addEventListener('click', e => { if (e.target === ov) ov.remove(); });
-        document.getElementById('pvVaciosCancelar').addEventListener('click', () => ov.remove());
-        document.getElementById('pvVaciosConfirmar').addEventListener('click', () => {
-            const devueltos = {};
-            ov.querySelectorAll('.pv-vac-input').forEach(inp => {
-                const t = inp.dataset.tipo;
-                const v = parseInt(inp.value, 10) || 0;
-                if (v > 0) devueltos[t] = v;
-            });
-            ov.remove();
-            entregarPedido(pedido, devueltos);
-        });
-    }
-
-    async function entregarPedido(pedido, devueltosPorTipo = {}) {
-        if (!pedido) return;
-        // Guard anti doble-entrega: un pedido ya entregado no se vuelve a procesar
-        // (evitaría duplicar la venta y descontar inventario dos veces).
-        if ((pedido.estado || '') === 'entregado') {
-            if (_showModal) _showModal('Ya entregado', 'Este pedido ya fue entregado.');
-            return;
-        }
-
-        // Determinar qué se despacha: el ticket congelado si existe; si no,
-        // se CLASIFICA la disponibilidad ahora (igual que el ticket) para que
-        // la venta refleje solo lo entregado y no descuadre el inventario.
-        let despacho = pedido.ticketDespacho;
-        if (!despacho || !despacho.length) {
-            const clasif = await _pvClasificarProductos(pedido);
-            despacho = _pvCongelarDespacho(clasif.disponibles);
-        }
-        // Solo items con algo que despachar
-        despacho = despacho.filter(d => (d.unidadesDespacho || 0) > 0);
-        if (!despacho.length) {
-            if (_showModal) _showModal('Sin productos', 'Este pedido no tiene productos para entregar.');
-            return;
-        }
-
-        if (!_runTransaction) {
-            if (_showModal) _showModal('Error', 'No se puede completar la entrega sin conexión estable. Intenta de nuevo.');
-            return;
-        }
-
-        const vendedorId = pedido.vendedorId;
-        const invBase = `artifacts/${_appId}/users/${vendedorId}/inventario`;
-        const ventaRef = _doc(_collection(_db, `artifacts/${_appId}/users/${vendedorId}/ventas`));
-        const clienteRef = pedido.clienteId ? _doc(_db, pathClientes(), pedido.clienteId) : null;
-        const _devueltos = devueltosPorTipo || {};
-
-        try {
-            await _runTransaction(_db, async (transaction) => {
-                // Leer inventario de cada producto del despacho + el cliente (todas las lecturas primero)
-                const refs = despacho.map(d => ({ d, ref: _doc(_db, invBase, d.id) }));
-                const [docs, clienteDoc] = await Promise.all([
-                    Promise.all(refs.map(r => transaction.get(r.ref))),
-                    clienteRef ? transaction.get(clienteRef) : Promise.resolve(null)
-                ]);
-
-                let totalVenta = 0;
-                const itemsVenta = [];
-                const cajasVaciosPorTipo = {};  // deuda de vacíos que genera esta entrega
-
-                refs.forEach((r, i) => {
-                    const invDoc = docs[i];
-                    const stockActual = invDoc.exists() ? (invDoc.data().cantidadUnidades || 0) : 0;
-                    const qty = r.d.unidadesDespacho || 0;
-                    // Modelos: si el producto maneja modelos, se descuenta por modelo y
-                    // cantidadUnidades se DERIVA de la suma (invariante garantizada).
-                    const _plE = (pedido.productos || []).find(x => x.id === r.d.id) || {};
-                    const _distE = r.d.modelosDistribucion || _plE.modelosDistribucion || null;
-                    const _manejaModE = (r.d.manejaModelos || _plE.manejaModelos) && _distE;
-                    if (invDoc.exists()) {
-                        if (_manejaModE) {
-                            const curMod = { ...(invDoc.data().modelosStock || {}) };
-                            for (const _m in _distE) curMod[_m] = Math.max(0, (curMod[_m] || 0) - (_distE[_m] || 0));
-                            // El TOTAL se descuenta del real (no se deriva de los modelos): así
-                            // cantidadUnidades sigue correcta aunque modelosStock haya derivado por
-                            // ventas directas u otros ajustes. modelosStock es orientativo.
-                            transaction.update(r.ref, { modelosStock: curMod, cantidadUnidades: Math.max(0, stockActual - qty) });
-                        } else {
-                            transaction.update(r.ref, { cantidadUnidades: Math.max(0, stockActual - qty) });
+                await _runTransaction(_db, async (t) => {
+                    const i = await t.get(iRef);
+                    const c = await t.get(cRef);
+                    
+                    const currentStock = i.exists() ? (i.data().cantidadUnidades || 0) : 0;
+                    
+                    const factorHistorico = r.unidadesPorCaja || prodDef.unidadesPorCaja || 1;
+                    const unidadesARestaurar = r.cantidadCajas * factorHistorico;
+                    
+                    t.set(iRef, { cantidadUnidades: currentStock + unidadesARestaurar }, { merge: true });
+                    
+                    if (c.exists()) {
+                        const sv = c.data().saldoVacios || {};
+                        if (r.tipoVacio) {
+                            sv[r.tipoVacio] = (sv[r.tipoVacio] || 0) - r.cantidadCajas + r.vaciosRecibidos;
+                            t.update(cRef, { saldoVacios: sv });
                         }
                     }
-                    // Subtotal según los precios guardados en el pedido
-                    const pr = r.d.precios || {};
-                    const sub = (pr.cj || 0) * (r.d.cantCj || 0) + (pr.paq || 0) * (r.d.cantPaq || 0) + (pr.und || 0) * (r.d.cantUnd || 0);
-                    totalVenta += sub;
-                    // Vacíos: buscar en el catálogo si el producto maneja vacío
-                    const _cat = (_pvProductos || []).find(x => x.id === r.d.id) || {};
-                    const _maneja = !!_cat.manejaVacios;
-                    const _tipoV = _cat.tipoVacio || null;
-                    if (_maneja && _tipoV && (r.d.cantCj || 0) > 0) {
-                        cajasVaciosPorTipo[_tipoV] = (cajasVaciosPorTipo[_tipoV] || 0) + (r.d.cantCj || 0);
-                    }
-                    itemsVenta.push({
-                        id: r.d.id, presentacion: r.d.presentacion, marca: r.d.marca || null,
-                        precios: r.d.precios || null,
-                        cantidadVendida: { cj: r.d.cantCj || 0, paq: r.d.cantPaq || 0, und: r.d.cantUnd || 0 },
-                        totalUnidadesVendidas: qty,
-                        unidadesPorCaja: r.d.unidadesPorCaja || 1, unidadesPorPaquete: r.d.unidadesPorPaquete || 1,
-                        manejaVacios: _maneja, tipoVacio: _tipoV,
-                        manejaModelos: !!_manejaModE, modelosDistribucion: _distE || null
-                    });
+                    
+                    t.delete(_doc(_db, `artifacts/${_appId}/users/${targetUserId}/obsequios_entregados`, id));
                 });
-
-                // Vacíos: neto por tipo = cajas entregadas − devueltos; actualizar saldo del cliente
-                const saldoVaciosAplicado = {};
-                const _tipos = new Set([...Object.keys(cajasVaciosPorTipo), ...Object.keys(_devueltos)]);
-                _tipos.forEach(t => {
-                    const neto = (cajasVaciosPorTipo[t] || 0) - (_devueltos[t] || 0);
-                    if (neto !== 0) saldoVaciosAplicado[t] = neto;
-                });
-                if (clienteDoc && clienteDoc.exists() && Object.keys(saldoVaciosAplicado).length) {
-                    const sVac = { ...(clienteDoc.data().saldoVacios || {}) };
-                    for (const t in saldoVaciosAplicado) sVac[t] = (sVac[t] || 0) + saldoVaciosAplicado[t];
-                    transaction.update(clienteRef, { saldoVacios: sVac });
-                }
-
-                // Registrar la venta (marcada como originada en pre-venta)
-                const ventaData = {
-                    clienteId: pedido.clienteId || null,
-                    clienteNombre: pedido.clienteNombre || '',
-                    clienteNombrePersonal: pedido.clienteNombrePersonal || '',
-                    fecha: new Date(),
-                    total: totalVenta,
-                    productos: itemsVenta,
-                    vaciosDevueltosPorTipo: _devueltos,
-                    origen: 'preventa',
-                    pedidoId: pedido.id,
-                    tipoOperacion: 'contado'
-                };
-                transaction.set(ventaRef, ventaData);
-
-                // Marcar el pedido como entregado. Congelamos 'ticketDespacho' con lo
-                // REALMENTE entregado, para que una eventual anulación restaure exactamente
-                // eso (ni más ni menos) al inventario.
-                const pedRef = _doc(_db, pathPedidos(), pedido.id);
-                transaction.update(pedRef, {
-                    estado: 'entregado',
-                    ventaGenerada: ventaRef.id,
-                    saldoVaciosAplicado: saldoVaciosAplicado,
-                    ticketDespacho: despacho,
-                    historialEstados: (pedido.historialEstados || []).concat([{ estado: 'entregado', fecha: new Date().toISOString(), por: _userId }])
-                });
-            });
-
-            if (window.invalidarComprometidoCache) window.invalidarComprometidoCache();
-            document.getElementById('pvLPDetOverlay')?.remove();
-            document.getElementById('pvPedDetOverlay')?.remove();
-            if (_showModal) _showModal('Pedido entregado', `Se entregó el pedido de <strong>${pedido.clienteNombre || 'el cliente'}</strong>. El inventario se ajustó y la venta quedó registrada.`);
-        } catch (e) {
-            console.error('Error entregando pedido:', e);
-            if (_showModal) _showModal('Error', 'No se pudo completar la entrega. Verifica la conexión e intenta de nuevo.');
-        }
-    }
-
-    // ═══════════════════════════════════════════════════════════
-    // ANULAR ENTREGA — deshace una entrega ya realizada:
-    //   1. Devuelve al inventario del vendedor las unidades del ticket despachado.
-    //   2. Elimina la venta generada (sale de Ventas Totales).
-    //   3. Regresa el pedido a 'cargado' (conserva su ticket para re-entregar).
-    // Permitido: admin, o el vendedor dueño del pedido. Todo atómico.
-    // ═══════════════════════════════════════════════════════════
-    async function anularEntrega(pedido) {
-        if (!pedido) return;
-        const rol = window.userRole === 'user' ? 'vendedor' : window.userRole;
-        const permitido = (rol === 'vendedor' && pedido.vendedorId === _userId);
-        if (!permitido) { if (_showModal) _showModal('No permitido', 'Solo el vendedor dueño del pedido puede anular la entrega.'); return; }
-        if (pedido.estado !== 'entregado') { if (_showModal) _showModal('No aplica', 'Solo se puede anular la entrega de un pedido que ya fue entregado.'); return; }
-        if (!_runTransaction) { if (_showModal) _showModal('Error', 'No se puede anular sin conexión estable. Intenta de nuevo.'); return; }
-
-        // Qué se devuelve: lo despachado (ticket congelado) o, en su defecto, el pedido completo.
-        let despacho = pedido.ticketDespacho;
-        if (!despacho || !despacho.length) {
-            despacho = (pedido.productos || []).map(pr => ({ id: pr.id, unidadesDespacho: _pvUnidadesProducto(pr) }));
-        }
-        despacho = despacho.filter(d => (d.unidadesDespacho || 0) > 0);
-
-        _showModal('Anular entrega', `¿Seguro que deseas anular la entrega del pedido de <strong>${pedido.clienteNombre || 'este cliente'}</strong>?<br><br>Se devolverá el inventario, se eliminará la venta generada y el pedido volverá a <strong>\u201ccargado\u201d</strong>.`, async () => {
-            try {
-                const vendedorId = pedido.vendedorId;
-                const invBase = `artifacts/${_appId}/users/${vendedorId}/inventario`;
-                const saldoAplicado = pedido.saldoVaciosAplicado || {};
-                const clienteRef = pedido.clienteId ? _doc(_db, pathClientes(), pedido.clienteId) : null;
-                await _runTransaction(_db, async (transaction) => {
-                    // 1. Leer inventario de cada producto despachado + cliente (todas las lecturas primero)
-                    const refs = despacho.map(d => ({ d, ref: _doc(_db, invBase, d.id) }));
-                    const [docs, clienteDoc] = await Promise.all([
-                        Promise.all(refs.map(r => transaction.get(r.ref))),
-                        clienteRef ? transaction.get(clienteRef) : Promise.resolve(null)
-                    ]);
-                    // 2. Devolver las unidades (solo si el doc existe)
-                    refs.forEach((r, i) => {
-                        const invDoc = docs[i];
-                        if (!invDoc.exists()) return;
-                        const _plA = (pedido.productos || []).find(x => x.id === r.d.id) || {};
-                        const _distA = r.d.modelosDistribucion || _plA.modelosDistribucion || null;
-                        const _manejaModA = (r.d.manejaModelos || _plA.manejaModelos) && _distA;
-                        if (_manejaModA) {
-                            const curMod = { ...(invDoc.data().modelosStock || {}) };
-                            for (const _m in _distA) curMod[_m] = (curMod[_m] || 0) + (_distA[_m] || 0);
-                            const stockActual = invDoc.data().cantidadUnidades || 0;
-                            transaction.update(r.ref, { modelosStock: curMod, cantidadUnidades: stockActual + (r.d.unidadesDespacho || 0) });
-                        } else {
-                            const stockActual = invDoc.data().cantidadUnidades || 0;
-                            transaction.update(r.ref, { cantidadUnidades: stockActual + (r.d.unidadesDespacho || 0) });
-                        }
-                    });
-                    // 3. Revertir los vacíos aplicados al cliente en la entrega
-                    if (clienteDoc && clienteDoc.exists() && Object.keys(saldoAplicado).length) {
-                        const sVac = { ...(clienteDoc.data().saldoVacios || {}) };
-                        for (const t in saldoAplicado) sVac[t] = (sVac[t] || 0) - saldoAplicado[t];
-                        transaction.update(clienteRef, { saldoVacios: sVac });
-                    }
-                    // 4. Eliminar la venta generada por la entrega (si existe)
-                    if (pedido.ventaGenerada) {
-                        const ventaRef = _doc(_db, `artifacts/${_appId}/users/${vendedorId}/ventas`, pedido.ventaGenerada);
-                        transaction.delete(ventaRef);
-                    }
-                    // 5. Regresar el pedido a 'cargado'
-                    const pedRef = _doc(_db, pathPedidos(), pedido.id);
-                    transaction.update(pedRef, {
-                        estado: 'cargado',
-                        ventaGenerada: null,
-                        saldoVaciosAplicado: null,
-                        historialEstados: (pedido.historialEstados || []).concat([{ estado: 'cargado', fecha: new Date().toISOString(), por: _userId, nota: 'Entrega anulada' }])
-                    });
-                });
-
-                if (window.invalidarComprometidoCache) window.invalidarComprometidoCache();
-                document.getElementById('pvPedDetOverlay')?.remove();
-                document.getElementById('pvLPDetOverlay')?.remove();
-                if (_showModal) _showModal('Entrega anulada', `Se anuló la entrega del pedido de <strong>${pedido.clienteNombre || 'el cliente'}</strong>. El inventario se devolvió y la venta se eliminó.`);
-            } catch (e) {
-                console.error('Error anulando entrega:', e);
-                if (_showModal) _showModal('Error', 'No se pudo anular la entrega. Verifica la conexión e intenta de nuevo.');
+                
+                const pModal = document.getElementById('modalContainer'); if(pModal) pModal.classList.add('hidden');
+                setTimeout(() => _showModal('Éxito', 'El obsequio fue eliminado y el stock restaurado correctamente.'), 300);
+                
+                handleSearchObsequios();
+            } catch(e) {
+                console.error(e);
+                _showModal('Error', `Fallo al revertir el obsequio: ${e.message}`);
             }
-        }, 'Sí, anular entrega', () => {});
+        }, 'Sí, Eliminar y Restaurar', null, true);
     }
 
-        async function cambiarEstadoPedido(id, nuevoEstado) {
-        const p = _pvPedidos.find(x => x.id === id) || _pvLista.find(x => x.id === id);
-        if (!p) return;
-        // La ENTREGA cierra el ciclo: descuenta inventario y genera la venta.
-        if (nuevoEstado === 'entregado') { iniciarEntregaConVacios(p); return; }
-        const nuevoHist = (p.historialEstados || []).concat([{ estado: nuevoEstado, fecha: new Date().toISOString(), por: _userId }]);
-        try {
-            if (window.invalidarComprometidoCache) window.invalidarComprometidoCache();
-            await _pvGuardar(_setDoc(_doc(_db, pathPedidos(), id), {
-                estado: nuevoEstado,
-                historialEstados: nuevoHist
-            }, { merge: true }), 'Cambio de estado');
-            document.getElementById('pvPedDetOverlay')?.remove();
-            // El onSnapshot refresca la lista automáticamente
-        } catch (e) {
-            console.error('Error cambiando estado:', e);
-            if (_showModal) _showModal('Error', 'No se pudo actualizar el estado del pedido.');
-        }
-    }
+    window.obsequiosModule = { deleteObsequio };
 
-
-    // ═══════════════════════════════════════════════════════════
-    // TICKET DE GALPÓN — orden de carga para almacenistas
-    // Documento interno (NO es factura). Lista productos con casillas
-    // para marcar lo cargado. Se puede compartir como imagen o imprimir texto.
-    // ═══════════════════════════════════════════════════════════
-// ═══════════════════════════════════════════════════════════
-    // TICKET DE PEDIDO (Pre-Venta) — solo productos DISPONIBLES.
-    // Al generarlo: congela lo que se va a despachar en el pedido
-    // (ticketDespacho) y guarda lo NO despachado (noDespachado), y
-    // pasa el pedido a "preparación" automáticamente (Opción A).
-    // Este ticket es la orden de carga Y el respaldo de la entrega.
-    // ═══════════════════════════════════════════════════════════
-    // Congela el despacho (lo que realmente se entrega) recalculando Cj/Paq/Und
-    // para los parciales. Se usa tanto en el ticket como en la entrega, para que
-    // la venta y el descuento de inventario SIEMPRE coincidan.
-    function _pvCongelarDespacho(disponibles) {
-        return (disponibles || []).map(pr => {
-            const cat = (_pvProductos || []).find(x => x.id === pr.id) || {};
-            const uCj = pr.unidadesPorCaja || cat.unidadesPorCaja || 1;
-            const uPaq = pr.unidadesPorPaquete || cat.unidadesPorPaquete || 1;
-            let restante = (pr.unidadesDespacho != null) ? pr.unidadesDespacho : _pvUnidadesProducto(pr);
-            let cj, paq, und;
-            if (pr.parcial) {
-                cj = Math.floor(restante / uCj); restante -= cj * uCj;
-                paq = uPaq > 1 ? Math.floor(restante / uPaq) : 0; restante -= paq * uPaq;
-                und = restante;
-            } else {
-                cj = pr.cantCj || 0; paq = pr.cantPaq || 0; und = pr.cantUnd || 0;
-            }
-            return {
-                id: pr.id, presentacion: pr.presentacion, marca: pr.marca || null,
-                cantCj: cj, cantPaq: paq, cantUnd: und,
-                unidadesPorCaja: uCj, unidadesPorPaquete: uPaq,
-                unidadesDespacho: (pr.unidadesDespacho != null) ? pr.unidadesDespacho : _pvUnidadesProducto(pr),
-                precios: pr.precios || null, parcial: !!pr.parcial,
-                manejaModelos: !!pr.manejaModelos, modelosDistribucion: pr.modelosDistribucion || null
-            };
-        });
-    }
-
-    async function generarTicketPedido(pedido, disponibles, noDisponibles) {
-        // 1) Construir el "ticket congelado": lo que realmente se despacha.
-        const ticketItems = _pvCongelarDespacho(disponibles);
-
-        // Lo NO despachado (para el reporte de faltantes de la Parte 4)
-        const noDespachado = noDisponibles.map(pr => ({
-            id: pr.id, presentacion: pr.presentacion, marca: pr.marca || null,
-            unidadesFaltantes: pr.unidadesFaltantes || 0
-        }));
-
-        // 2) Guardar en el pedido y pasar a preparación (si aún no estaba más avanzado)
-        try {
-            const estActual = pedido.estado || 'pendiente';
-            const nuevoEstado = (estActual === 'pendiente') ? 'preparacion' : estActual;
-            const cambios = {
-                ticketGenerado: true,
-                ticketDespacho: ticketItems,
-                noDespachado: noDespachado,
-                ticketFecha: new Date().toISOString()
-            };
-            if (nuevoEstado !== estActual) {
-                cambios.estado = nuevoEstado;
-                cambios.historialEstados = (pedido.historialEstados || []).concat([{ estado: nuevoEstado, fecha: new Date().toISOString(), por: _userId }]);
-            }
-            if (window.invalidarComprometidoCache) window.invalidarComprometidoCache();
-            await _pvGuardar(_setDoc(_doc(_db, pathPedidos(), pedido.id), cambios, { merge: true }), 'Entrega de pedido');
-            // Actualizar copia local para el render
-            Object.assign(pedido, cambios);
-        } catch (e) {
-            console.error('Error guardando ticket:', e);
-            if (_showModal) _showModal('Error', 'No se pudo preparar el ticket.');
-            return;
-        }
-
-        // 3) Mostrar el ticket visual (solo disponibles)
-        _renderTicketVisual(pedido, ticketItems);
-    }
-
-    function _renderTicketVisual(p, items) {
-        document.getElementById('pvTicketOverlay')?.remove();
-        let quienCarga = 'Vendedor';
-        const _yoT = (_pvUsuarios || []).find(u => u.id === _userId);
-        if (_yoT) quienCarga = _pvNombreVendedor(_yoT);
-        else if (window.userNombre) quienCarga = window.userNombre;
-        const ov = document.createElement('div');
-        ov.id = 'pvTicketOverlay';
-        ov.className = 'fixed inset-0 z-[9999] bg-black/60 flex items-center justify-center p-4';
-
-        const fecha = new Date().toLocaleDateString('es-VE', { timeZone: 'America/Caracas' });
-        const hora = new Date().toLocaleTimeString('es-VE', { timeZone: 'America/Caracas', hour: '2-digit', minute: '2-digit' });
-
-        const filas = items.map(pr => {
-            const partes = [];
-            if (pr.cantCj) partes.push(`${pr.cantCj} Caja(s)`);
-            if (pr.cantPaq) partes.push(`${pr.cantPaq} Paq`);
-            if (pr.cantUnd) partes.push(`${pr.cantUnd} Und`);
-            return `<tr>
-                <td style="padding:6px 4px;text-align:center;font-size:34px;border-bottom:1px solid #000;">[ ]</td>
-                <td style="padding:6px 4px;font-size:28px;border-bottom:1px solid #000;">${(pr.presentacion || '').toUpperCase()}${pr.parcial ? ' (PARCIAL)' : ''} <span style="font-size:22px;">${(pr.marca || '')}</span>${(pr.modelosDistribucion && Object.keys(pr.modelosDistribucion).length) ? `<div style="font-size:22px;padding-left:18px;">&#8627; ${Object.entries(pr.modelosDistribucion).filter(([, v]) => v > 0).map(([m, v]) => `${m}: ${v}`).join('    ')}</div>` : ''}</td>
-                <td style="padding:6px 4px;text-align:right;font-size:28px;border-bottom:1px solid #000;">${partes.join(' + ') || '-'}</td>
-            </tr>`;
-        }).join('');
-
-        ov.innerHTML = `
-            <div class="bg-white w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden max-h-[92vh] flex flex-col">
-                <div class="overflow-y-auto flex-1 bg-gray-200 p-2">
-                    <div id="pvTicketCapturable" class="bg-white text-black p-4 font-bold mx-auto" style="width:768px;font-family:'Courier New',Courier,monospace;transform-origin:top left;">
-                        <div style="text-align:center;">
-                            <div style="font-size:40px;font-weight:800;">TICKET DE CARGA</div>
-                            <div style="font-size:30px;">DISTRIBUIDORA CASTILLO YAÑEZ</div>
-                            <div style="font-size:22px;">(documento interno - no es factura)</div>
-                        </div>
-                        <div style="font-size:28px;margin-top:24px;line-height:1.4;">
-                            <div>CLIENTE: ${(p.clienteNombre || '-').toUpperCase()}</div>
-                            <div>RUTA: ${(p.ruta || p.zona || '-')}</div>
-                            <div>VENDEDOR: ${(p.vendedorNombre || '-')}</div>
-                            <div>FECHA: ${fecha} ${hora}</div>
-                        </div>
-                        <table style="width:100%;border-collapse:collapse;font-size:28px;margin-top:20px;">
-                            <thead>
-                                <tr>
-                                    <th style="padding:4px;text-align:center;border-bottom:3px solid #000;width:70px;">OK</th>
-                                    <th style="padding:4px;text-align:left;border-bottom:3px solid #000;">PRODUCTO</th>
-                                    <th style="padding:4px;text-align:right;border-bottom:3px solid #000;">CANTIDAD</th>
-                                </tr>
-                            </thead>
-                            <tbody>${filas || '<tr><td colspan="3" style="padding:16px;text-align:center;font-size:26px;">Sin productos disponibles</td></tr>'}</tbody>
-                        </table>
-                        <div style="margin-top:40px;padding-top:16px;border-top:2px dashed #000;font-size:26px;line-height:1.8;">
-                            <div>CARGADO POR: ${(quienCarga || '').toUpperCase()}</div>
-                            <div style="margin-top:12px;">RECIBIDO (CLIENTE): _______________</div>
-                            <div style="margin-top:12px;">FIRMA: __________________________</div>
-                        </div>
-                        <div style="margin-top:20px;font-size:22px;text-align:center;">
-                            Solo incluye productos disponibles.
-                        </div>
-                        <hr style="border:none;border-top:2px dashed #000;margin-top:16px;">
-                    </div>
-                </div>
-                <div class="p-3 border-t shrink-0 flex gap-2">
-                    <button id="pvTicketImg" class="flex-1 py-2.5 bg-slate-700 text-white rounded-lg font-bold text-sm hover:bg-slate-800 transition">Compartir / Imprimir</button>
-                    <button id="pvTicketCerrar" class="px-4 py-2.5 bg-gray-100 text-gray-600 rounded-lg font-bold text-sm">Cerrar</button>
-                </div>
-            </div>`;
-        document.body.appendChild(ov);
-        ov.addEventListener('click', e => { if (e.target === ov) ov.remove(); });
-        document.getElementById('pvTicketCerrar').addEventListener('click', () => {
-            ov.remove();
-            // Refrescar el detalle para reflejar el nuevo estado y "ticket generado"
-            document.getElementById('pvLPDetOverlay')?.remove();
-        });
-        document.getElementById('pvTicketImg').addEventListener('click', () =>
-            _pvCapturarCompartir(document.getElementById('pvTicketCapturable'), `Ticket_${(p.clienteNombre || 'pedido').replace(/[\s/]/g, '_')}`));
-    }
-
-        async function generarTicketGalpon(p) {
-        document.getElementById('pvTicketOverlay')?.remove();
-
-        // Determinar QUÉ productos van en el ticket: solo los DISPONIBLES.
-        // Si ya hay ticket congelado (ticketDespacho), se usa ese; si no, se clasifica en vivo.
-        let itemsTicket = p.ticketDespacho;
-        if (!itemsTicket || !itemsTicket.length) {
-            const clasif = await _pvClasificarProductos(p);
-            itemsTicket = clasif.disponibles.map(pr => {
-                const cat = (_pvProductos || []).find(x => x.id === pr.id) || {};
-                const uCj = pr.unidadesPorCaja || cat.unidadesPorCaja || 1;
-                const uPaq = pr.unidadesPorPaquete || cat.unidadesPorPaquete || 1;
-                let restante = (pr.unidadesDespacho != null) ? pr.unidadesDespacho : _pvUnidadesProducto(pr);
-                let cj, paq, und;
-                if (pr.parcial) { cj = Math.floor(restante / uCj); restante -= cj * uCj; paq = uPaq > 1 ? Math.floor(restante / uPaq) : 0; restante -= paq * uPaq; und = restante; }
-                else { cj = pr.cantCj || 0; paq = pr.cantPaq || 0; und = pr.cantUnd || 0; }
-                return { presentacion: pr.presentacion, marca: pr.marca, cantCj: cj, cantPaq: paq, cantUnd: und, parcial: !!pr.parcial };
-            });
-        }
-
-        // Nombre de quien realiza la carga (usuario logueado: despachador o vendedor)
-        let quienCarga = 'Vendedor';
-        const yo = (_pvUsuarios || []).find(u => u.id === _userId);
-        if (yo) quienCarga = _pvNombreVendedor(yo);
-        else if (window.userNombre) quienCarga = window.userNombre;
-
-        const ov = document.createElement('div');
-        ov.id = 'pvTicketOverlay';
-        ov.className = 'fixed inset-0 z-[9999] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4';
-
-        const fecha = new Date().toLocaleDateString('es-VE', { timeZone: 'America/Caracas' });
-        const hora = new Date().toLocaleTimeString('es-VE', { timeZone: 'America/Caracas', hour: '2-digit', minute: '2-digit' });
-
-        // Filas de productos con casilla de "cargado" (SOLO disponibles).
-        // Formato de 80mm igual al de Venta Directa: ancho 768px, Courier New, texto grande, negro.
-        const filas = itemsTicket.map((pr) => {
-            const partes = [];
-            if (pr.cantCj) partes.push(`${pr.cantCj} Caja(s)`);
-            if (pr.cantPaq) partes.push(`${pr.cantPaq} Paq`);
-            if (pr.cantUnd) partes.push(`${pr.cantUnd} Und`);
-            return `<tr>
-                <td style="padding:6px 4px;text-align:center;font-size:34px;border-bottom:1px solid #000;">[ ]</td>
-                <td style="padding:6px 4px;font-size:28px;border-bottom:1px solid #000;">${(pr.presentacion || '').toUpperCase()}${pr.parcial ? ' (PARCIAL)' : ''} <span style="font-size:22px;">${(pr.marca || '')}</span>${(pr.modelosDistribucion && Object.keys(pr.modelosDistribucion).length) ? `<div style="font-size:22px;padding-left:18px;">&#8627; ${Object.entries(pr.modelosDistribucion).filter(([, v]) => v > 0).map(([m, v]) => `${m}: ${v}`).join('    ')}</div>` : ''}</td>
-                <td style="padding:6px 4px;text-align:right;font-size:28px;border-bottom:1px solid #000;">${partes.join(' + ') || '-'}</td>
-            </tr>`;
-        }).join('');
-
-        ov.innerHTML = `
-            <div class="bg-white w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden max-h-[92vh] flex flex-col">
-                <div class="overflow-y-auto flex-1 bg-gray-200 p-2">
-                    <div id="pvTicketCapturable" class="bg-white text-black p-4 font-bold mx-auto" style="width:768px;font-family:'Courier New',Courier,monospace;transform-origin:top left;">
-                        <div style="text-align:center;">
-                            <div style="font-size:40px;font-weight:800;">TICKET DE CARGA</div>
-                            <div style="font-size:30px;">DISTRIBUIDORA CASTILLO YAÑEZ</div>
-                            <div style="font-size:22px;">(documento interno - no es factura)</div>
-                        </div>
-                        <div style="font-size:28px;margin-top:24px;line-height:1.4;">
-                            <div>CLIENTE: ${(p.clienteNombre || '-').toUpperCase()}</div>
-                            <div>RUTA: ${(p.ruta || p.zona || '-')}</div>
-                            <div>VENDEDOR: ${(p.vendedorNombre || '-')}</div>
-                            <div>FECHA: ${fecha} ${hora}</div>
-                        </div>
-                        <table style="width:100%;border-collapse:collapse;font-size:28px;margin-top:20px;">
-                            <thead>
-                                <tr>
-                                    <th style="padding:4px;text-align:center;border-bottom:3px solid #000;width:70px;">OK</th>
-                                    <th style="padding:4px;text-align:left;border-bottom:3px solid #000;">PRODUCTO</th>
-                                    <th style="padding:4px;text-align:right;border-bottom:3px solid #000;">CANTIDAD</th>
-                                </tr>
-                            </thead>
-                            <tbody>${filas || '<tr><td colspan="3" style="padding:16px;text-align:center;font-size:26px;">Sin productos</td></tr>'}</tbody>
-                        </table>
-                        <div style="margin-top:40px;padding-top:16px;border-top:2px dashed #000;font-size:26px;line-height:1.8;">
-                            <div>CARGADO POR: ${(quienCarga || '').toUpperCase()}</div>
-                            <div style="margin-top:12px;">FIRMA: __________________________</div>
-                            <div style="margin-top:12px;">RECIBIDO (CLIENTE): _______________</div>
-                        </div>
-                        <div style="margin-top:20px;font-size:22px;text-align:center;">
-                            Marque cada casilla al cargar el producto.
-                        </div>
-                        <hr style="border:none;border-top:2px dashed #000;margin-top:16px;">
-                    </div>
-                </div>
-                <div class="p-3 border-t shrink-0 flex gap-2">
-                    <button id="pvTicketImg" class="flex-1 py-2.5 bg-slate-700 text-white rounded-lg font-bold text-sm hover:bg-slate-800 transition">Compartir / Imprimir</button>
-                    <button id="pvTicketCerrar" class="px-4 py-2.5 bg-gray-100 text-gray-600 rounded-lg font-bold text-sm">Cerrar</button>
-                </div>
-            </div>`;
-        document.body.appendChild(ov);
-        ov.addEventListener('click', e => { if (e.target === ov) ov.remove(); });
-        document.getElementById('pvTicketCerrar').addEventListener('click', () => ov.remove());
-        document.getElementById('pvTicketImg').addEventListener('click', () =>
-            _pvCapturarCompartir(document.getElementById('pvTicketCapturable'), `Carga_${(p.clienteNombre || 'pedido').replace(/[\s/]/g, '_')}`));
-    }
-
-    // Captura un elemento como PNG y lo comparte (o descarga como fallback)
-    async function _pvCapturarCompartir(elemento, nombreArchivo) {
-        if (typeof html2canvas === 'undefined') {
-            if (_showModal) _showModal('Aviso', 'No se pudo generar la imagen en este dispositivo.');
-            return;
-        }
-        try {
-            const canvas = await html2canvas(elemento, { scale: 2, backgroundColor: '#ffffff' });
-            canvas.toBlob(async (blob) => {
-                if (!blob) return;
-                const file = new File([blob], `${nombreArchivo}.png`, { type: 'image/png' });
-                if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
-                    try { await navigator.share({ files: [file], title: nombreArchivo }); return; } catch (e) { if (e && e.name !== 'AbortError') console.error('Preventa: no se pudo compartir el archivo.', e); }
-                }
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url; a.download = `${nombreArchivo}.png`;
-                a.click();
-                URL.revokeObjectURL(url);
-            }, 'image/png');
-        } catch (e) {
-            console.error('Error al capturar:', e);
-            if (_showModal) _showModal('Error', 'No se pudo generar la imagen.');
-        }
-    }
-
-
-    // ═══════════════════════════════════════════════════════════
-    // EDITAR / AUMENTAR PEDIDO EN DESPACHO
-    // Permite a despacho ajustar cantidades y agregar productos (excedente).
-    // Guarda el pedido ORIGINAL la primera vez (para comparar pedido vs entregado).
-    // Escribe solo en preventa_pedidos.
-    // ═══════════════════════════════════════════════════════════
-    let _pvEditProductos = {}; // estado temporal de edición
-
-
-    function agregarProdEdit(pid) {
-        if (_pvEditProductos[pid]) return; // ya está
-        const prod = _pvProductos.find(x => x.id === pid);
-        if (!prod) return;
-        _pvEditProductos[pid] = {
-            id: prod.id, presentacion: prod.presentacion, marca: prod.marca || null,
-            precios: prod.precios || { und: prod.precioPorUnidad || 0 },
-            unidadesPorCaja: prod.unidadesPorCaja || 1, unidadesPorPaquete: prod.unidadesPorPaquete || 1,
-            cantCj: 0, cantPaq: 0, cantUnd: 0
-        };
-        renderEditLista();
-    }
-
-    function renderEditLista() {
-        const cont = document.getElementById('pvEditLista');
-        if (!cont) return;
-        const items = Object.values(_pvEditProductos);
-        if (!items.length) {
-            cont.innerHTML = '<p class="text-center text-gray-400 text-xs py-6">Busca productos arriba para agregarlos.</p>';
-            actualizarTotalEdit();
-            return;
-        }
-        cont.innerHTML = items.map(pr => {
-            const prod = _pvProductos.find(x => x.id === pr.id) || {};
-            const vPor = prod.ventaPor || { cj: pr.cantCj > 0, paq: pr.cantPaq > 0, und: true };
-            const campo = (tipo, label, val) => `
-                <div class="flex items-center gap-1">
-                    <input type="number" min="0" value="${val || 0}" data-pid="${pr.id}" data-tipo="${tipo}"
-                           class="pv-edit-inp w-12 p-1 text-center border rounded text-xs font-bold">
-                    <span class="text-[9px] text-gray-400">${label}</span>
-                </div>`;
-            return `<div class="border border-gray-200 rounded-lg p-2 mb-1.5">
-                <div class="flex items-center justify-between mb-1">
-                    <div class="text-xs font-bold text-gray-700 truncate">${pr.presentacion}</div>
-                    <button class="pv-edit-del text-[10px] text-red-400 hover:underline shrink-0" data-id="${pr.id}">quitar</button>
-                </div>
-                <div class="flex gap-2">
-                    ${vPor.cj ? campo('cantCj', 'Cj', pr.cantCj) : ''}
-                    ${vPor.paq ? campo('cantPaq', 'Paq', pr.cantPaq) : ''}
-                    ${campo('cantUnd', 'Und', pr.cantUnd)}
-                </div>
-            </div>`;
-        }).join('');
-
-        cont.querySelectorAll('.pv-edit-inp').forEach(inp => inp.addEventListener('input', () => {
-            const pid = inp.dataset.pid, tipo = inp.dataset.tipo;
-            if (_pvEditProductos[pid]) _pvEditProductos[pid][tipo] = parseInt(inp.value, 10) || 0;
-            actualizarTotalEdit();
-        }));
-        cont.querySelectorAll('.pv-edit-del').forEach(btn => btn.addEventListener('click', () => {
-            delete _pvEditProductos[btn.dataset.id];
-            renderEditLista();
-        }));
-        actualizarTotalEdit();
-    }
-
-    function calcularTotalEdit() {
-        return Object.values(_pvEditProductos).reduce((s, p) => {
-            const pr = p.precios || {};
-            return s + (pr.cj || 0) * (p.cantCj || 0) + (pr.paq || 0) * (p.cantPaq || 0) + (pr.und || 0) * (p.cantUnd || 0);
-        }, 0);
-    }
-    function actualizarTotalEdit() {
-        const el = document.getElementById('pvEditTotal');
-        if (el) el.textContent = _pvFmtUSD(calcularTotalEdit());
-    }
-
-    async function guardarEdicionPedido(pedidoOriginal) {
-        // Filtrar productos con cantidad 0
-        const productos = Object.values(_pvEditProductos)
-            .filter(p => (p.cantCj || 0) > 0 || (p.cantPaq || 0) > 0 || (p.cantUnd || 0) > 0)
-            .map(p => ({
-                id: p.id, presentacion: p.presentacion, marca: p.marca || null,
-                cantCj: p.cantCj || 0, cantPaq: p.cantPaq || 0, cantUnd: p.cantUnd || 0,
-                precios: p.precios,
-                subtotal: (p.precios?.cj || 0) * (p.cantCj || 0) + (p.precios?.paq || 0) * (p.cantPaq || 0) + (p.precios?.und || 0) * (p.cantUnd || 0)
-            }));
-
-        if (!productos.length) {
-            if (_showModal) _showModal('Aviso', 'El pedido debe tener al menos un producto.');
-            return;
-        }
-        const total = productos.reduce((s, p) => s + p.subtotal, 0);
-
-        const btn = document.getElementById('pvEditGuardar');
-        btn.disabled = true; btn.textContent = 'Guardando...';
-
-        // Guardar el pedido ORIGINAL la primera vez que se edita
-        const cambios = {
-            productos: productos,
-            total: total,
-            editadoEnDespacho: true,
-            fechaEdicion: new Date().toISOString(),
-            editadoPor: _userId
-        };
-        if (!pedidoOriginal.pedidoOriginal) {
-            cambios.pedidoOriginal = {
-                productos: pedidoOriginal.productos || [],
-                total: pedidoOriginal.total || 0
-            };
-        }
-
-        try {
-            await _pvGuardar(_setDoc(_doc(_db, pathPedidos(), pedidoOriginal.id), cambios, { merge: true }), 'Cambio de estado');
-            if (window.invalidarComprometidoCache) window.invalidarComprometidoCache();
-            document.getElementById('pvEditOverlay')?.remove();
-            document.getElementById('pvPedDetOverlay')?.remove();
-            // onSnapshot refresca la bandeja
-        } catch (e) {
-            console.error('Error guardando edición:', e);
-            if (_showModal) _showModal('Error', 'No se pudo guardar la edición.');
-            btn.disabled = false; btn.textContent = 'Guardar cambios';
-        }
-    }
-
-
-    // ═══════════════════════════════════════════════════════════
-    // INVENTARIO POR RUTA — control lógico del stock partido por ruta
-    // Colección aislada preventa_inventario_ruta. NO toca el inventario
-    // real del sistema tradicional (users/{userId}/inventario).
-    // ═══════════════════════════════════════════════════════════
-    let _pvInvRutaActual = {};  // {productoId: cantCajas} de la ruta elegida
-    let _pvInvRutaVendedor = null;
-
-    async function showInventarioRuta() {
-        if (!window.esAdmin()) return;
-
-        _mainContent.innerHTML = `
-            <div class="p-2 sm:p-3 pt-5 w-full max-w-2xl mx-auto">
-                <div class="bg-white/95 backdrop-blur-sm p-3 sm:p-4 rounded-lg shadow-xl">
-                    <div class="flex items-center justify-between mb-3">
-                        <h2 class="text-lg font-bold text-gray-800">Inventario por Ruta</h2>
-                        <button id="pvInvBack" class="px-3 py-1.5 bg-gray-400 text-white text-xs rounded hover:bg-gray-500 font-bold transition">Volver</button>
-                    </div>
-                    <p class="text-[11px] text-gray-500 mb-3">Reparte el stock del galpón entre las rutas. Es un control lógico independiente; no afecta el inventario que usan los vendedores en la calle.</p>
-
-                    <div id="pvInvLoading" class="text-center py-8 text-gray-400 text-sm">
-                        <svg class="animate-spin h-6 w-6 mx-auto mb-2 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path></svg>
-                        Cargando...
-                    </div>
-
-                    <div id="pvInvForm" class="hidden">
-                        <div class="mb-2">
-                            <label class="text-[10px] font-bold text-blue-700 uppercase">Ruta / Vendedor</label>
-                            <select id="pvInvVendedor" class="w-full text-sm border border-blue-300 rounded p-2 bg-white outline-none">
-                                <option value="">— Elige la ruta —</option>
-                            </select>
-                        </div>
-                        <div class="mb-2">
-                            <input type="text" id="pvInvBuscar" placeholder="Buscar producto..." class="w-full text-xs border border-blue-300 rounded p-1.5 outline-none">
-                        </div>
-                        <div id="pvInvProductos" class="border border-gray-200 rounded max-h-[46vh] overflow-y-auto">
-                            <p class="text-center text-gray-400 text-xs py-6">Elige una ruta para ver/asignar su stock.</p>
-                        </div>
-                        <div class="sticky bottom-0 bg-white border-t pt-2 mt-2">
-                            <button id="pvInvGuardar" class="w-full py-2.5 bg-blue-600 text-white rounded-lg font-bold text-sm hover:bg-blue-700 transition disabled:opacity-40" disabled>Guardar inventario de la ruta</button>
-                        </div>
-                    </div>
-                </div>
-            </div>`;
-
-        document.getElementById('pvInvBack').addEventListener('click', () => window.showPreventaMenu());
-
-        // Cargar productos y vendedores
-        try {
-            const [prodSnap, usersSnap] = await Promise.all([
-                _pvProductos.length ? Promise.resolve(null) : _getDocs(_collection(_db, pathProductos())),
-                _pvUsuarios.length ? Promise.resolve(null) : _getDocs(_collection(_db, 'users'))
-            ]);
-            if (prodSnap) _pvProductos = prodSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-            if (usersSnap) _pvUsuarios = usersSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-        } catch (e) {
-            console.error('Error cargando inv ruta:', e);
-            { const _l = document.getElementById('pvInvLoading'); if (_l) _l.innerHTML = '<span class="text-red-500">Error al cargar.</span>'; }
-            return;
-        }
-
-        { const _l = document.getElementById('pvInvLoading'); if (!_l) return; _l.classList.add('hidden'); }
-        document.getElementById('pvInvForm').classList.remove('hidden');
-
-        const vendedores = _pvUsuarios.filter(u => u.role === 'user' || u.role === 'vendedor');
-        const selV = document.getElementById('pvInvVendedor');
-        selV.innerHTML = '<option value="">— Elige la ruta —</option>' +
-            vendedores.map(u => `<option value="${u.id}">${_pvNombreVendedor(u)}${u.zonaPreventa ? ' · ' + u.zonaPreventa : ''}</option>`).join('');
-        selV.addEventListener('change', () => cargarInvDeRuta(selV.value));
-
-        document.getElementById('pvInvBuscar').addEventListener('input', renderInvProductos);
-        document.getElementById('pvInvGuardar').addEventListener('click', guardarInvRuta);
-    }
-
-    async function cargarInvDeRuta(vendedorId) {
-        _pvInvRutaActual = {};
-        _pvInvRutaVendedor = _pvUsuarios.find(u => u.id === vendedorId) || null;
-        const guardar = document.getElementById('pvInvGuardar');
-        if (!vendedorId) {
-            document.getElementById('pvInvProductos').innerHTML = '<p class="text-center text-gray-400 text-xs py-6">Elige una ruta para ver/asignar su stock.</p>';
-            guardar.disabled = true;
-            return;
-        }
-        // Leer el doc de esa ruta si existe
-        try {
-            const ref = _doc(_db, pathInvRuta(), vendedorId);
-            const snap = await _getDoc(ref);
-            if (snap.exists()) {
-                const data = snap.data();
-                _pvInvRutaActual = data.productos || {};
-            }
-        } catch (e) { console.warn('Sin inventario previo para esta ruta:', e); }
-        guardar.disabled = false;
-        renderInvProductos();
-    }
-
-    function renderInvProductos() {
-        const cont = document.getElementById('pvInvProductos');
-        if (!cont || !_pvInvRutaVendedor) return;
-        const term = (document.getElementById('pvInvBuscar')?.value || '').toLowerCase().trim();
-        let lista = _pvProductos.slice();
-        if (term) lista = lista.filter(p => (p.presentacion || '').toLowerCase().includes(term) || (p.marca || '').toLowerCase().includes(term));
-        lista.sort((a, b) => (a.segmento || '').localeCompare(b.segmento || '') || (a.presentacion || '').localeCompare(b.presentacion || ''));
-
-        if (!lista.length) { cont.innerHTML = '<p class="text-center text-gray-400 text-xs py-6">Sin productos.</p>'; return; }
-
-        let html = '';
-        let lastSeg = null;
-        lista.forEach(prod => {
-            const seg = prod.segmento || 'Sin segmento';
-            if (seg !== lastSeg) { lastSeg = seg; html += `<div class="bg-gray-100 px-2 py-1 font-bold text-[11px] text-gray-600 sticky top-0">${seg}</div>`; }
-            const asignado = _pvInvRutaActual[prod.id]?.cantCajas || 0;
-            html += `<div class="flex items-center gap-2 py-1 px-2 border-b border-gray-50">
-                <input type="number" min="0" value="${asignado}" data-pid="${prod.id}"
-                       class="pv-inv-inp w-16 p-1 text-center border rounded text-sm font-bold focus:ring-2 focus:ring-blue-400">
-                <div class="flex-1 min-w-0">
-                    <div class="text-xs font-medium text-gray-700 truncate">${prod.presentacion}</div>
-                    <div class="text-[10px] text-gray-400">${prod.marca || 'S/M'} · cajas asignadas</div>
-                </div>
-            </div>`;
-        });
-        cont.innerHTML = html;
-        cont.querySelectorAll('.pv-inv-inp').forEach(inp => inp.addEventListener('input', () => {
-            const pid = inp.dataset.pid;
-            const val = parseInt(inp.value, 10) || 0;
-            if (val > 0) _pvInvRutaActual[pid] = { cantCajas: val };
-            else delete _pvInvRutaActual[pid];
-        }));
-    }
-
-    async function guardarInvRuta() {
-        if (!_pvInvRutaVendedor) return;
-        const btn = document.getElementById('pvInvGuardar');
-        btn.disabled = true; btn.textContent = 'Guardando...';
-        const v = _pvInvRutaVendedor;
-        try {
-            await _setDoc(_doc(_db, pathInvRuta(), v.id), {
-                vendedorId: v.id,
-                vendedorNombre: _pvNombreVendedor(v),
-                zona: v.zonaPreventa || '',
-                productos: _pvInvRutaActual,
-                actualizado: new Date().toISOString(),
-                actualizadoPor: _userId
-            }, { merge: true });
-            if (_showModal) _showModal('Inventario guardado', `El inventario de la ruta de <strong>${_pvNombreVendedor(v)}</strong> se guardó correctamente.`);
-            btn.textContent = 'Guardar inventario de la ruta';
-            btn.disabled = false;
-        } catch (e) {
-            console.error('Error guardando inv ruta:', e);
-            if (_showModal) _showModal('Error', 'No se pudo guardar el inventario.');
-            btn.textContent = 'Guardar inventario de la ruta';
-            btn.disabled = false;
-        }
-    }
-
-
-    // ═══════════════════════════════════════════════════════════
-    // REPORTES DE PREVENTA — analítica sobre preventa_pedidos
-    // Solo lectura. No toca el sistema tradicional.
-    // ═══════════════════════════════════════════════════════════
-
-    // ═══════════════════════════════════════════════════════════
-    // CORTE DE CARGA — ayuda EFÍMERA e imprimible: consolida los pedidos
-    // elegidos ("hasta aquí") y muestra el total a cargar. No se guarda en la
-    // base de datos ni marca los pedidos; solo avanza Pendiente→Preparación.
-    // ═══════════════════════════════════════════════════════════
-
-    function _pvConsolidarProductos(pedidos) {
-        const map = {};
-        pedidos.forEach(p => (p.productos || []).forEach(pr => {
-            if (!map[pr.id]) {
-                const cat = (_pvProductos || []).find(x => x.id === pr.id) || {};
-                map[pr.id] = {
-                    productoId: pr.id,
-                    presentacion: pr.presentacion || cat.presentacion || '',
-                    marca: pr.marca || cat.marca || '',
-                    rubro: cat.rubro || 'SIN RUBRO',
-                    segmento: cat.segmento || '',
-                    ordenSegmento: cat.ordenSegmento ?? null, ordenMarca: cat.ordenMarca ?? null, ordenProducto: cat.ordenProducto ?? null,
-                    totalCj: 0, totalPaq: 0, totalUnd: 0, totalUnidades: 0, modelosTotales: {}
-                };
-            }
-            map[pr.id].totalCj  += pr.cantCj  || 0;
-            map[pr.id].totalPaq += pr.cantPaq || 0;
-            map[pr.id].totalUnd += pr.cantUnd || 0;
-            map[pr.id].totalUnidades += _pvUnidadesProducto(pr);
-            if (pr.manejaModelos && pr.modelosDistribucion) {
-                for (const _m in pr.modelosDistribucion) map[pr.id].modelosTotales[_m] = (map[pr.id].modelosTotales[_m] || 0) + (pr.modelosDistribucion[_m] || 0);
-            }
-        }));
-        const arr = Object.values(map);
-        if (_pvSortFnPedido) arr.sort(_pvSortFnPedido);
-        else arr.sort((a, b) => (a.rubro || '').localeCompare(b.rubro || '') || (a.presentacion || '').localeCompare(b.presentacion || ''));
-        return arr;
-    }
-
-    // Agrupa el consolidado por rubro (respetando el orden ya aplicado)
-    function _pvAgruparPorRubro(consolidado) {
-        const grupos = []; const idx = {};
-        (consolidado || []).forEach(c => {
-            const r = c.rubro || 'SIN RUBRO';
-            if (idx[r] === undefined) { idx[r] = grupos.length; grupos.push({ rubro: r, items: [] }); }
-            grupos[idx[r]].items.push(c);
-        });
-        return grupos;
-    }
-
-
-    function previsualizarCorte(pedidos, rutaLabel) {
-        rutaLabel = rutaLabel || 'General';
-        if (!pedidos || !pedidos.length) { if (_showModal) _showModal('Sin pedidos', 'No hay pedidos para incluir en el corte.'); return; }
-        const consolidado = _pvConsolidarProductos(pedidos);
-        const clientes = [...new Set(pedidos.map(p => p.clienteNombre).filter(Boolean))];
-        document.getElementById('pvCorteOverlay')?.remove();
-        const ov = document.createElement('div');
-        ov.id = 'pvCorteOverlay';
-        ov.className = 'fixed inset-0 z-[9999] bg-slate-900/50 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4';
-        const filas = _pvAgruparPorRubro(consolidado).map(g => {
-            const filasG = g.items.map(c => {
-                const partes = [];
-                if (c.totalCj)  partes.push(`${c.totalCj} Cj`);
-                if (c.totalPaq) partes.push(`${c.totalPaq} Paq`);
-                if (c.totalUnd) partes.push(`${c.totalUnd} Und`);
-                const _md = (c.modelosTotales && Object.keys(c.modelosTotales).length) ? Object.entries(c.modelosTotales).filter(([, v]) => v > 0).map(([m, v]) => `${m}: ${v}`).join('  ·  ') : '';
-                return `<tr class="border-b border-slate-100">
-                    <td class="py-1.5 px-2 text-xs text-slate-700">${(c.presentacion || '').toUpperCase()} <span class="text-slate-400">${c.marca || ''}</span>${_md ? `<div class="text-[10px] text-indigo-600 mt-0.5">${_md}</div>` : ''}</td>
-                    <td class="py-1.5 px-2 text-xs text-right font-semibold text-slate-800 whitespace-nowrap">${partes.join(' + ') || '-'}</td>
-                </tr>`;
-            }).join('');
-            return `<tr><td colspan="2" class="pt-3 pb-1 px-2 text-[11px] font-bold text-purple-700 uppercase tracking-wide">${g.rubro}</td></tr>${filasG}`;
-        }).join('');
-        ov.innerHTML = `
-            <div class="bg-white w-full max-w-md rounded-t-xl sm:rounded-xl shadow-2xl overflow-hidden max-h-[92vh] flex flex-col border border-slate-200">
-                <div class="bg-purple-700 text-white px-5 py-4 shrink-0">
-                    <div class="text-[10px] uppercase tracking-wider text-purple-200 font-semibold">Corte de Carga · ${new Date().toLocaleDateString('es-VE', { timeZone: 'America/Caracas' })} ${new Date().toLocaleTimeString('es-VE', { timeZone: 'America/Caracas', hour: '2-digit', minute: '2-digit' })}</div>
-                    <div class="font-semibold text-base">${pedidos.length} pedido(s) · ${clientes.length} cliente(s)</div>
-                    <div class="text-[11px] text-purple-100 mt-1 leading-snug"><span class="text-purple-300">Clientes:</span> ${clientes.join(' · ') || '-'}</div>
-                </div>
-                <div class="overflow-y-auto p-4 flex-1"><table class="w-full"><tbody>${filas}</tbody></table></div>
-                <div class="p-4 border-t border-slate-100 shrink-0 space-y-2">
-                    <button id="pvCorteConfirmar" class="w-full py-3 bg-purple-700 text-white rounded-lg font-bold text-sm hover:bg-purple-800 transition">Generar corte e imprimir</button>
-                    <button id="pvCorteCancelar2" class="w-full py-2.5 text-slate-400 hover:text-slate-600 font-medium text-sm">Cancelar</button>
-                </div>
-            </div>`;
-        document.body.appendChild(ov);
-        ov.addEventListener('click', e => { if (e.target === ov) ov.remove(); });
-        document.getElementById('pvCorteCancelar2').addEventListener('click', () => ov.remove());
-        document.getElementById('pvCorteConfirmar').addEventListener('click', () => { ov.remove(); generarCorte(rutaLabel, pedidos, consolidado); });
-    }
-
-    async function generarCorte(ruta, pedidos, consolidado) {
-        if (_showModal) _showModal('Progreso', 'Generando corte...');
-        try {
-            const yo = (_pvUsuarios || []).find(u => u.id === _userId);
-            const despNombre = yo ? _pvNombreVendedor(yo) : (window.userNombre || 'Despachador');
-            const fechaISO = new Date().toISOString();
-            // El corte es EFÍMERO: solo una ayuda imprimible. No se guarda en la base de
-            // datos ni marca los pedidos. Único efecto: los pedidos Pendientes avanzan a
-            // Preparación (se están preparando para cargar); el resto de estados es manual.
-            await Promise.all(pedidos.map(p => {
-                if ((p.estado || 'pendiente') !== 'pendiente') return Promise.resolve();
-                return _setDoc(_doc(_db, pathPedidos(), p.id), {
-                    estado: 'preparacion',
-                    historialEstados: (p.historialEstados || []).concat([{ estado: 'preparacion', fecha: fechaISO, por: _userId, nota: 'Incluido en corte de carga' }])
-                }, { merge: true });
-            }));
-            const corteData = {
-                fecha: fechaISO, despachadorNombre: despNombre,
-                totalPedidos: pedidos.length,
-                clientes: [...new Set(pedidos.map(p => p.clienteNombre).filter(Boolean))],
-                consolidado
-            };
-            const modalC = document.getElementById('modalContainer'); if (modalC) modalC.classList.add('hidden');
-            generarTicketCorte(corteData);
-        } catch (e) {
-            console.error('Error generando corte:', e);
-            if (_showModal) _showModal('Error', 'No se pudo generar el corte. Verifica la conexión e intenta de nuevo.');
-        }
-    }
-
-    function generarTicketCorte(corte) {
-        document.getElementById('pvTicketOverlay')?.remove();
-        const fechaD = corte.fecha ? new Date(corte.fecha) : new Date();
-        const fecha = fechaD.toLocaleDateString('es-VE', { timeZone: 'America/Caracas' });
-        const hora = fechaD.toLocaleTimeString('es-VE', { timeZone: 'America/Caracas', hour: '2-digit', minute: '2-digit' });
-        const filas = _pvAgruparPorRubro(corte.consolidado || []).map(g => {
-            const filasG = g.items.map(c => {
-                const partes = [];
-                if (c.totalCj)  partes.push(`${c.totalCj} Caja(s)`);
-                if (c.totalPaq) partes.push(`${c.totalPaq} Paq`);
-                if (c.totalUnd) partes.push(`${c.totalUnd} Und`);
-                const _md = (c.modelosTotales && Object.keys(c.modelosTotales).length) ? Object.entries(c.modelosTotales).filter(([, v]) => v > 0).map(([m, v]) => `${m}: ${v}`).join('    ') : '';
-                return `<tr>
-                    <td style="padding:6px 4px;text-align:center;font-size:34px;border-bottom:1px solid #000;">[ ]</td>
-                    <td style="padding:6px 4px;font-size:28px;border-bottom:1px solid #000;">${(c.presentacion || '').toUpperCase()} <span style="font-size:22px;">${c.marca || ''}</span>${_md ? `<div style="font-size:22px;padding-left:18px;">${_md}</div>` : ''}</td>
-                    <td style="padding:6px 4px;text-align:right;font-size:28px;border-bottom:1px solid #000;">${partes.join(' + ') || '-'}</td>
-                </tr>`;
-            }).join('');
-            return `<tr><td colspan="3" style="padding:16px 4px 4px;font-size:26px;font-weight:800;text-transform:uppercase;border-bottom:3px solid #000;">${g.rubro}</td></tr>${filasG}`;
-        }).join('');
-        const clientesTxt = (corte.clientes || []).join(' · ') || '-';
-        const prevRubros = _pvAgruparPorRubro(corte.consolidado || []).map(g => {
-            const items = g.items.map(c => {
-                const partes = [];
-                if (c.totalCj)  partes.push(`${c.totalCj} Cj`);
-                if (c.totalPaq) partes.push(`${c.totalPaq} Paq`);
-                if (c.totalUnd) partes.push(`${c.totalUnd} Und`);
-                const md = (c.modelosTotales && Object.keys(c.modelosTotales).length) ? `<div class="text-[10px] text-indigo-600">${Object.entries(c.modelosTotales).filter(([, v]) => v > 0).map(([m, v]) => `${m}: ${v}`).join(' · ')}</div>` : '';
-                return `<div class="flex justify-between gap-2 py-1 border-b border-slate-50"><div class="min-w-0 text-xs text-slate-700">${(c.presentacion || '').toUpperCase()} <span class="text-slate-400">${c.marca || ''}</span>${md}</div><div class="text-xs font-semibold text-slate-800 whitespace-nowrap text-right">${partes.join(' + ') || '-'}<div class="text-[10px] text-slate-400 font-normal">${c.totalUnidades || 0} u</div></div></div>`;
-            }).join('');
-            return `<div class="mb-2"><div class="text-[11px] font-bold text-purple-700 uppercase tracking-wide mb-0.5">${g.rubro}</div>${items}</div>`;
-        }).join('');
-        const ov = document.createElement('div');
-        ov.id = 'pvTicketOverlay';
-        ov.className = 'fixed inset-0 z-[9999] bg-slate-900/50 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4';
-        ov.innerHTML = `
-            <div class="bg-white w-full max-w-md rounded-t-xl sm:rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] flex flex-col border border-slate-200">
-                <div class="bg-slate-800 text-white px-5 py-4 shrink-0">
-                    <div class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Corte de Carga · ${fecha} ${hora}</div>
-                    <div class="font-semibold text-base">${corte.totalPedidos || 0} pedido(s)</div>
-                    <div class="text-[11px] text-slate-300 mt-1 leading-snug"><span class="text-slate-400">Clientes:</span> ${clientesTxt}</div>
-                    <div class="text-[10px] text-slate-400 mt-0.5">Despachador: ${corte.despachadorNombre || '-'}</div>
-                </div>
-                <div class="overflow-y-auto p-4 flex-1">${prevRubros || '<p class="text-sm text-slate-400 text-center py-4">Sin productos</p>'}</div>
-                <div class="p-3 border-t border-slate-100 shrink-0 grid grid-cols-2 gap-2">
-                    <button id="pvCorteTicketImg" class="py-2.5 bg-slate-700 text-white rounded-lg font-bold text-sm hover:bg-slate-800 transition">80mm (térmica)</button>
-                    <button id="pvCorteTicketEpson" class="py-2.5 bg-blue-700 text-white rounded-lg font-bold text-sm hover:bg-blue-800 transition">Carta (tinta/Epson)</button>
-                    <button id="pvCorteTicketCerrar" class="col-span-2 py-2.5 bg-gray-100 text-gray-600 rounded-lg font-bold text-sm">Cerrar</button>
-                </div>
-            </div>`;
-        document.body.appendChild(ov);
-        ov.addEventListener('click', e => { if (e.target === ov) ov.remove(); });
-        document.getElementById('pvCorteTicketCerrar').addEventListener('click', () => ov.remove());
-        document.getElementById('pvCorteTicketEpson').addEventListener('click', () => generarTicketCorteEpson(corte));
-        document.getElementById('pvCorteTicketImg').addEventListener('click', () => {
-            // Ticket 80mm OCULTO (768px) solo para capturarlo como imagen (no llena la pantalla)
-            document.getElementById('pvCorte80Holder')?.remove();
-            const holder = document.createElement('div');
-            holder.id = 'pvCorte80Holder';
-            holder.style.cssText = 'position:fixed;left:-10000px;top:0;z-index:-1;';
-            holder.innerHTML = `
-                <div id="pvCorte80Cap" class="bg-white text-black p-4 font-bold" style="width:768px;font-family:'Courier New',Courier,monospace;">
-                    <div style="text-align:center;">
-                        <div style="font-size:40px;font-weight:800;">CORTE DE CARGA</div>
-                        <div style="font-size:30px;">DISTRIBUIDORA CASTILLO YAÑEZ</div>
-                        <div style="font-size:22px;">(documento interno - no es factura)</div>
-                    </div>
-                    <div style="font-size:28px;margin-top:24px;line-height:1.4;">
-                        <div>PEDIDOS: ${corte.totalPedidos} &middot; CLIENTES: ${(corte.clientes || []).length}</div>
-                        <div>DESPACHADOR: ${corte.despachadorNombre || '-'}</div>
-                        <div>FECHA: ${fecha} ${hora}</div>
-                        <div style="margin-top:8px;">CLIENTES: ${(corte.clientes || []).join(', ') || '-'}</div>
-                    </div>
-                    <table style="width:100%;border-collapse:collapse;font-size:28px;margin-top:20px;">
-                        <thead><tr>
-                            <th style="padding:4px;text-align:center;border-bottom:3px solid #000;width:70px;">OK</th>
-                            <th style="padding:4px;text-align:left;border-bottom:3px solid #000;">PRODUCTO</th>
-                            <th style="padding:4px;text-align:right;border-bottom:3px solid #000;">TOTAL</th>
-                        </tr></thead>
-                        <tbody>${filas || '<tr><td colspan="3" style="padding:16px;text-align:center;font-size:26px;">Sin productos</td></tr>'}</tbody>
-                    </table>
-                    <div style="margin-top:20px;font-size:22px;text-align:center;">Total de productos a cargar en el camion.</div>
-                    <hr style="border:none;border-top:2px dashed #000;margin-top:16px;">
-                </div>`;
-            document.body.appendChild(holder);
-            _pvCapturarCompartir(document.getElementById('pvCorte80Cap'), 'Corte_de_Carga');
-            setTimeout(() => { document.getElementById('pvCorte80Holder')?.remove(); }, 6000);
-        });
-    }
-
-    // Impresión CARTA (Epson L1250 tinta/WiFi): documento estructurado, tabla por rubro
-    // con columna de total de unidades. Imprime vía diálogo del navegador (iframe oculto).
-    function generarTicketCorteEpson(corte) {
-        const fechaD = corte.fecha ? new Date(corte.fecha) : new Date();
-        const fecha = fechaD.toLocaleDateString('es-VE', { timeZone: 'America/Caracas' });
-        const hora = fechaD.toLocaleTimeString('es-VE', { timeZone: 'America/Caracas', hour: '2-digit', minute: '2-digit' });
-        const grupos = _pvAgruparPorRubro(corte.consolidado || []);
-        const cuerpo = grupos.map(g => `
-            <div class="rubro">${g.rubro}</div>
-            <table>
-                <thead><tr>
-                    <th class="ok">OK</th><th>Producto</th><th>Marca</th>
-                    <th class="c">Cajas</th><th class="c">Paq</th><th class="c">Und</th><th class="c">Total Und</th>
-                </tr></thead>
-                <tbody>${g.items.map(c => {
-                    const md = (c.modelosTotales && Object.keys(c.modelosTotales).length) ? `<div class="mod">${Object.entries(c.modelosTotales).filter(([, v]) => v > 0).map(([m, v]) => `${m}: ${v}`).join(' · ')}</div>` : '';
-                    return `<tr>
-                        <td class="c">[ ]</td>
-                        <td>${(c.presentacion || '').toUpperCase()}${md}</td>
-                        <td>${c.marca || ''}</td>
-                        <td class="c">${c.totalCj || 0}</td>
-                        <td class="c">${c.totalPaq || 0}</td>
-                        <td class="c">${c.totalUnd || 0}</td>
-                        <td class="c"><b>${c.totalUnidades || 0}</b></td>
-                    </tr>`;
-                }).join('')}</tbody>
-            </table>`).join('');
-        const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Corte de Carga</title>
-            <style>
-                @page { size: letter; margin: 12mm; }
-                * { box-sizing: border-box; }
-                body { font-family: Arial, Helvetica, sans-serif; color:#000; font-size:12px; margin:0; }
-                .hdr { text-align:center; margin-bottom:8px; }
-                .hdr h1 { font-size:20px; margin:0; letter-spacing:1px; }
-                .hdr .sub { font-size:13px; }
-                .hdr .fine { font-size:10px; color:#333; }
-                .meta { font-size:12px; margin:10px 0 14px; line-height:1.6; border:1px solid #000; padding:8px 10px; }
-                .meta b { display:inline-block; min-width:110px; }
-                .rubro { background:#e8e8e8; font-weight:bold; text-transform:uppercase; padding:5px 8px; margin-top:12px; border:1px solid #000; border-bottom:none; font-size:13px; }
-                table { width:100%; border-collapse:collapse; margin-bottom:2px; }
-                th, td { border:1px solid #444; padding:5px 6px; font-size:12px; vertical-align:top; }
-                th { background:#f2f2f2; text-align:left; }
-                .c { text-align:center; } .ok { width:34px; } .mod { font-size:10px; color:#333; margin-top:2px; }
-                .foot { margin-top:14px; font-size:11px; text-align:center; color:#333; }
-            </style></head><body>
-            <div class="hdr">
-                <h1>CORTE DE CARGA</h1>
-                <div class="sub">DISTRIBUIDORA CASTILLO YAÑEZ</div>
-                <div class="fine">(documento interno - no es factura)</div>
-            </div>
-            <div class="meta">
-                <div><b>Pedidos:</b> ${corte.totalPedidos} &nbsp;·&nbsp; <b style="min-width:0">Clientes:</b> ${(corte.clientes || []).length}</div>
-                <div><b>Despachador:</b> ${corte.despachadorNombre || '-'}</div>
-                <div><b>Fecha:</b> ${fecha} ${hora}</div>
-                <div><b>Clientes:</b> ${(corte.clientes || []).join(', ') || '-'}</div>
-            </div>
-            ${cuerpo || '<p style="text-align:center;">Sin productos</p>'}
-            <div class="foot">Total de productos a cargar en el camión.</div>
-            </body></html>`;
-        // Abrir en una pestaña/ventana nueva (página limpia) para imprimir correctamente
-        // en la Epson vía el diálogo del navegador / Epson Smart Panel.
-        const w = window.open('', '_blank');
-        if (!w) {
-            if (_showModal) _showModal('Permite ventanas', 'Tu navegador bloqueó la ventana de impresión. Habilita las <strong>ventanas emergentes</strong> para este sitio y vuelve a intentar.');
-            return;
-        }
-        w.document.open(); w.document.write(html); w.document.close();
-        w.onload = () => { try { w.focus(); w.print(); } catch (e) { console.warn('print:', e); } };
-        setTimeout(() => { try { w.focus(); w.print(); } catch (e) { /* segundo intento de imprimir; el primero ya avisó */ } }, 700);
-    }
-
-    // ── Historial de cortes (Reportes) ──────────────────────────
 })();
