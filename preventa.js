@@ -2802,3 +2802,4 @@
     }
 
     // ── Historial de cortes (Reportes) ──────────────────────────
+})();
