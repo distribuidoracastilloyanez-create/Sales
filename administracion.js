@@ -91,7 +91,7 @@
 
     async function loadUsers() {
         if (_usersCache.length) return _usersCache;
-        const snap = await _getDocs(_collection(_db, 'users'));
+        const snap = await (window.getUsuariosSnapshot ? window.getUsuariosSnapshot() : _getDocs(_collection(_db, 'users')));
         _usersCache = snap.docs.map(d => ({ id: d.id, ...d.data() }))
             .filter(u => (u.role || u.rol) !== 'admin' || true); // incluir todos; admin decide
         return _usersCache;
