@@ -383,7 +383,7 @@
                 _marcadores.push(m);
                 pts.push([i.lat, i.lon]);
             });
-            if (pts.length) { try { _mapa.fitBounds(L.latLngBounds(pts), { padding: [30, 30], maxZoom: 16 }); } catch (e) {} }
+            if (pts.length) { try { _mapa.fitBounds(L.latLngBounds(pts), { padding: [30, 30], maxZoom: 16 }); } catch (e) { /* fitBounds falla si no hay puntos válidos; el mapa se queda donde está */ } }
         }, 60);
     }
 
