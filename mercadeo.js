@@ -812,12 +812,12 @@
         cont.innerHTML = clientes.slice(0, 80).map(c => {
             const abierto = _clienteAbierto === c.nombre;
             const f = c.ultima;
-            const ultimaStr = isNaN(f.getTime()) ? '' : f.toLocaleDateString('es-VE', { day: '2-digit', month: 'short', year: 'numeric' });
+            const ultimaStr = isNaN(f.getTime()) ? '' : f.toLocaleDateString('es-VE', { timeZone: 'America/Caracas', day: '2-digit', month: 'short', year: 'numeric' });
             const detalle = abierto ? `
                 <div class="grid grid-cols-3 gap-1.5 px-2 pb-2">
                     ${c.items.map(h => {
                         const fh = new Date(h.fecha);
-                        const fs = isNaN(fh.getTime()) ? '' : fh.toLocaleDateString('es-VE', { day: '2-digit', month: '2-digit' });
+                        const fs = isNaN(fh.getTime()) ? '' : fh.toLocaleDateString('es-VE', { timeZone: 'America/Caracas', day: '2-digit', month: '2-digit' });
                         return `<button type="button" data-id="${h.id}" class="mk-hist-item text-left border border-slate-200 rounded-lg overflow-hidden hover:border-slate-400 transition">
                             <img src="${miniDe(h)}" loading="lazy" class="w-full h-16 object-cover bg-slate-100">
                             <div class="p-1">
@@ -953,7 +953,7 @@
         modalAlFrente();
         document.getElementById('mkVerOverlay')?.remove();
         const f = new Date(h.fecha);
-        const fechaStr = isNaN(f.getTime()) ? '' : f.toLocaleString('es-VE', { dateStyle: 'full', timeStyle: 'short' });
+        const fechaStr = isNaN(f.getTime()) ? '' : f.toLocaleString('es-VE', { timeZone: 'America/Caracas', dateStyle: 'full', timeStyle: 'short' });
         const ov = document.createElement('div');
         ov.id = 'mkVerOverlay';
         ov.className = 'fixed inset-0 z-[10000] bg-black/70 flex items-end sm:items-center justify-center p-0 sm:p-4';
