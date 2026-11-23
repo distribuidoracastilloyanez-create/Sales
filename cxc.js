@@ -191,7 +191,7 @@
 
         // Asegurar que las tasas estén cargadas (si se abre sin pasar por CXC)
         if (!_tasasCache || Object.keys(_tasasCache).length === 0) {
-            try { await loadTasasBCV(); } catch (e) {}
+            try { await loadTasasBCV(); } catch (e) { console.error('CXC: no se pudieron cargar las tasas del BCV.', e); }
         }
 
         const btnVolver = _calSoloLectura && _calVolverFn
@@ -781,7 +781,10 @@
             try {
                 const usersSnap = await _getDocs(_collection(_db, "users"));
                 if (!usersSnap.empty) userIds = usersSnap.docs.map(d => d.id);
-            } catch(e) {}
+            } catch(e) {
+                // Sin la lista de vendedores solo se revisa el propio usuario
+                console.error('CXC: no se pudo leer la lista de vendedores; la búsqueda queda limitada a este usuario.', e);
+            }
 
             let allProducts = {};
             let aggregatedTotal = 0;
@@ -821,7 +824,7 @@
                                 candidatosC.push({ venta: v, puntaje, difMonto });
                             });
                         }
-                    } catch(e){}
+                    } catch(e){ console.error('CXC: fallo al revisar un cierre al consolidar consignaciones.', e); }
                 }
 
                 if (!candidatosC.length) {
@@ -836,7 +839,7 @@
                                 if (puntaje < PUNTAJE_MINIMO_NOMBRE) continue;
                                 candidatosC.push({ venta: vData, puntaje, difMonto });
                             }
-                        } catch(e){}
+                        } catch(e){ console.error('CXC: fallo al revisar ventas activas al consolidar consignaciones.', e); }
                     }
                 }
 
@@ -911,7 +914,7 @@
                                 canvas.toBlob(async (blob) => {
                                     if (!blob) return;
                                     if (navigator.share) {
-                                        try { await navigator.share({ files: [new File([blob], `Consignacion_${clientName.replace(/[\s/]/g,'_')}.png`, {type:"image/png"})], title: 'Consignación' }); } catch(e) {}
+                                        try { await navigator.share({ files: [new File([blob], `Consignacion_${clientName.replace(/[\s/]/g,'_')}.png`, {type:"image/png"})], title: 'Consignación' }); } catch(e) { if (e && e.name !== 'AbortError') console.error('CXC: no se pudo compartir la imagen.', e); }
                                     } else {
                                         const url = URL.createObjectURL(blob);
                                         const a = document.createElement('a'); a.href = url; a.download = "Consignacion.png"; a.click();
@@ -989,6 +992,10 @@
             // UTC puro. El margen es tan holgado que ningún desfase de horario (GMT-4) ni un
             // cierre guardado con retraso puede quedar fuera, pero evita descargar el histórico
             // completo de cierres en cada búsqueda.
+            // Si una fuente no se puede leer, la venta buscada puede existir y no
+            // aparecer. Se cuentan los fallos para no decirle al usuario que el
+            // recibo "no existe" cuando en realidad la búsqueda quedó incompleta.
+            let fuentesFallidas = 0;
             const MARGEN_DIAS = 10;
             const startRange = new Date(Date.UTC(searchDate.getFullYear(), searchDate.getMonth(), searchDate.getDate() - MARGEN_DIAS, 0, 0, 0, 0));
             const endRange   = new Date(Date.UTC(searchDate.getFullYear(), searchDate.getMonth(), searchDate.getDate() + MARGEN_DIAS, 23, 59, 59, 999));
@@ -1048,7 +1055,10 @@
                             const cierre = doc.data();
                             procesarGrupo(cierre.ventas || [], { vendedorId: uid, cierreFecha: cierre.fecha });
                         }
-                    } catch (err) { }
+                    } catch (err) {
+                        fuentesFallidas++;
+                        console.error('CXC: no se pudieron leer los cierres del vendedor', uid, err);
+                    }
                 }
             };
 
@@ -1069,7 +1079,10 @@
                     try {
                         const ventasActivasSnap = await _getDocs(_collection(_db, `artifacts/${_appId}/users/${uid}/ventas`));
                         ventasActivasSnap.docs.forEach(d => activas.push({ ...d.data(), id: d.id, isActiva: true }));
-                    } catch (err) { }
+                    } catch (err) {
+                        fuentesFallidas++;
+                        console.error('CXC: no se pudieron leer las ventas activas del vendedor', uid, err);
+                    }
                 }
                 const antes = candidatos.length;
                 procesarGrupo(activas, { isActiva: true });
@@ -1149,7 +1162,7 @@
                                                         files: [new File([blob], `Ticket_${ventaFicticia.cliente.nombreComercial.replace(/[\s/]/g,'_')}.png`, {type:"image/png"})],
                                                         title: 'Ticket'
                                                     });
-                                                } catch(e) {}
+                                                } catch(e) { if (e && e.name !== 'AbortError') console.error('CXC: no se pudo compartir la imagen.', e); }
                                             } else {
                                                 const url = URL.createObjectURL(blob);
                                                 const link = document.createElement('a'); link.href=url; link.download="Ticket.png"; link.click();
@@ -1199,8 +1212,11 @@
                 const nombresBuscados = personName && personName !== clientName
                     ? `<b>${(clientName || '').toUpperCase()}</b> (${personName.toUpperCase()})`
                     : `<b>${(clientName || '').toUpperCase()}</b>`;
-                _showModal('Sin resultados',
-                    `No se encontró el recibo de ${nombresBuscados} por <b>$${Number(amount).toFixed(2)}</b>.<br><br>Verifique que la venta esté registrada en el sistema.`);
+                _showModal(fuentesFallidas ? 'Búsqueda incompleta' : 'Sin resultados',
+                    `No se encontró el recibo de ${nombresBuscados} por <b>$${Number(amount).toFixed(2)}</b>.<br><br>`
+                    + (fuentesFallidas
+                        ? `<strong>Atención:</strong> no se pudieron revisar ${fuentesFallidas} fuente(s) de datos, así que el recibo podría existir y no haber aparecido. Revise la conexión e inténtelo otra vez antes de darlo por inexistente.`
+                        : 'Verifique que la venta esté registrada en el sistema.'));
             }
         } catch (error) {
             console.error("Search error:", error);
@@ -1809,7 +1825,7 @@
     // Devuelve { rate, fecha, iso } de la tasa de HOY, o null si no está cargada.
     window.getTasaHoyBCV = async function() {
         if (!_tasasCache || Object.keys(_tasasCache).length === 0) {
-            try { await loadTasasBCV(); } catch (e) {}
+            try { await loadTasasBCV(); } catch (e) { console.error('CXC: no se pudieron cargar las tasas del BCV.', e); }
         }
         const h = new Date();
         const iso = `${h.getFullYear()}-${String(h.getMonth()+1).padStart(2,'0')}-${String(h.getDate()).padStart(2,'0')}`;
@@ -1860,19 +1876,3 @@
         }, 100);
     };
 })();
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
