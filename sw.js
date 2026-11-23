@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v196'; // v196: menu y vista de Catalogo al formato corporativo; con esto termina la actualizacion visual de la app
+const CACHE_NAME = 'ventas-app-cache-v197'; // v197: la tasa del BCV se ve en grande en el menu principal y en la cabecera de CXC
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
