@@ -95,19 +95,18 @@
 
         _mainContent.innerHTML = `
             <div class="p-2 sm:p-4 pt-8 w-full max-w-5xl mx-auto flex flex-col min-h-screen">
-                <div class="bg-white p-3 sm:p-4 rounded-xl shadow-lg overflow-hidden flex flex-col flex-grow border-t-4 border-blue-800">
+                <div class="bg-white p-3 sm:p-4 rounded-xl shadow-lg overflow-hidden flex flex-col flex-grow">
 
-                    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-5 gap-3">
-                        ${window.Comun.cabeceraCard('Facturación', 'Simulador de factura a partir de una venta', 'btnVolverFacturacion')}<div class="flex gap-2 w-full sm:w-auto">
-                            ${window.esAdmin() ? '<button id="btnConfigFactura" class="flex-1 sm:flex-none px-4 py-2 bg-indigo-600 text-white font-bold rounded shadow hover:bg-indigo-700 transition text-sm">Config Factura</button>' : ''}
-                            <button id="btnVolverFacturacion" class="flex-1 sm:flex-none px-4 py-2 bg-gray-500 text-white font-bold rounded shadow hover:bg-gray-600 transition">Volver al Menú</button>
-                        </div>
-                    </div>
+                    ${window.Comun.cabeceraCard('Facturación', 'Simulador de factura a partir de una venta', 'btnVolverFacturacion')}
+
+                    ${window.esAdmin() ? `<div class="mb-3">
+                        <button id="btnConfigFactura" class="w-full px-4 py-2 text-white text-sm font-semibold rounded-md shadow hover:opacity-90 transition" style="background:#16305C">Config Factura</button>
+                    </div>` : ''}
 
                     <!-- Simular Venta (armar venta desde cero) -->
                     <div class="mb-4">
                         <button id="btnSimularVenta"
-                            class="w-full px-4 py-3 bg-purple-600 text-white font-bold rounded-lg shadow hover:bg-purple-700 transition flex items-center justify-center gap-2 text-sm">
+                            class="w-full px-4 py-3 text-white font-bold rounded-lg shadow hover:opacity-90 transition flex items-center justify-center gap-2 text-sm" style="background:#16305C">
                             Simular Venta <span class="text-xs font-normal opacity-80">(armar una venta de prueba)</span>
                         </button>
                     </div>
@@ -2271,4 +2270,3 @@
     }
 
 })();
-// redeploy trigger 1783027831
