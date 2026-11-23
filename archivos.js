@@ -695,7 +695,7 @@
             let html = '';
             _archivosCache.forEach(arc => {
                 const d           = new Date(arc.fechaCreacion);
-                const fechaFormat = d.toLocaleDateString('es-ES') + ' ' + d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+                const fechaFormat = d.toLocaleDateString('es-ES', { timeZone: 'America/Caracas' }) + ' ' + d.toLocaleTimeString('es-ES', { timeZone: 'America/Caracas', hour: '2-digit', minute: '2-digit' });
 
                 if (_categoriaActual === 'imagenes') {
                     const arrayFotos    = arc.archivos || [{ url: arc.url, fileName: arc.fileName, storagePath: arc.storagePath }];
