@@ -192,7 +192,7 @@
 
     async function _loadClientes() {
         try {
-            const snap = await _getDocs(_collection(_db, CLIENTES_PUBLIC_PATH));
+            const snap = await (window.getClientesSnapshot ? window.getClientesSnapshot() : _getDocs(_collection(_db, CLIENTES_PUBLIC_PATH)));
             _clientesCache = snap.docs.map(d => ({id: d.id, ...d.data()}));
         } catch (e) { console.error("Error cargando clientes:", e); }
     }
