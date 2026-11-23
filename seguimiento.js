@@ -222,6 +222,13 @@
             return dias[dia][pid];
         };
 
+        const fallos = [];
+        const anotarFallo = (fuente, uid, e) => {
+            const v = _sgVendedores.find(x => x.uid === uid);
+            fallos.push(`${fuente} de ${v ? _nombreVend(v) : uid}`);
+            console.error('Seguimiento: no se pudo leer', fuente, 'del vendedor', uid, e);
+        };
+
         try {
             for (const uid of _selVend) {
                 const v = _sgVendedores.find(x => x.uid === uid) || { uid };
@@ -234,7 +241,7 @@
                     invSnap.docs.forEach(d => {
                         if (_selProd.has(d.id)) stockActual[uid][d.id] = (d.data().cantidadUnidades || 0);
                     });
-                } catch (e) { }
+                } catch (e) { anotarFallo('el inventario', uid, e); }
 
                 // ── VENTAS ──
                 try {
@@ -259,7 +266,7 @@
                             });
                         });
                     });
-                } catch (e) { }
+                } catch (e) { anotarFallo('las ventas', uid, e); }
 
                 // ── VENTAS dentro de CIERRES (histórico ya cerrado) ──
                 try {
@@ -289,7 +296,7 @@
                             });
                         });
                     });
-                } catch (e) { }
+                } catch (e) { anotarFallo('los cierres', uid, e); }
 
                 // ── RECARGAS ──
                 try {
@@ -313,7 +320,7 @@
                             });
                         });
                     });
-                } catch (e) { }
+                } catch (e) { anotarFallo('las recargas', uid, e); }
 
                 // ── CORRECCIONES DE INVENTARIO ──
                 try {
@@ -341,7 +348,7 @@
                             });
                         });
                     });
-                } catch (e) { }
+                } catch (e) { anotarFallo('las correcciones', uid, e); }
             }
 
             // ── PEDIDOS DE PREVENTA ENTREGADOS ──
@@ -367,9 +374,9 @@
                         });
                     });
                 });
-            } catch (e) { }
+            } catch (e) { anotarFallo('los pedidos', uid, e); }
 
-            renderResultado(dias, stockActual, desde);
+            renderResultado(dias, stockActual, desde, fallos);
         } catch (e) {
             console.error('Seguimiento:', e);
             res.innerHTML = '<p class="text-sm text-red-500 text-center py-10">Error al construir el historial.</p>';
@@ -377,7 +384,7 @@
     }
 
     // ═══════════════ RESULTADO ═══════════════
-    function renderResultado(dias, stockActual, desde) {
+    function renderResultado(dias, stockActual, desde, fallos) {
         const res = document.getElementById('sgResultado');
         const claves = Object.keys(dias).sort().reverse(); // del día actual hacia atrás
         const prods = _sgProductos.filter(p => _selProd.has(p.id));
@@ -432,8 +439,17 @@
                 </div>
             </div>`;
 
+        // Si alguna fuente no se pudo leer, el informe está incompleto y hay que decirlo:
+        // un historial al que le faltan movimientos en silencio lleva a conclusiones falsas.
+        const avisoFallos = (fallos && fallos.length)
+            ? `<div class="mb-3 p-3 rounded-lg border border-amber-300 bg-amber-50 text-[12px] text-amber-900 leading-snug">
+                   <strong>Informe incompleto.</strong> No se pudieron leer ${fallos.length} fuente(s) de datos:
+                   ${fallos.join(', ')}. Faltan movimientos. Revise la conexión y vuelva a generarlo.
+               </div>`
+            : '';
+
         if (!claves.length) {
-            res.innerHTML = cabecera + '<p class="text-sm text-slate-400 text-center py-8">No hubo movimientos en el período seleccionado.</p>';
+            res.innerHTML = cabecera + avisoFallos + '<p class="text-sm text-slate-400 text-center py-8">No hubo movimientos en el período seleccionado.</p>';
             document.getElementById('sgVolverSetup').addEventListener('click', renderSetup);
             return;
         }
@@ -504,7 +520,7 @@
             </div>`;
         };
 
-        res.innerHTML = cabecera +
+        res.innerHTML = cabecera + avisoFallos +
             `<p class="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Historial por día</p>` +
             `<div class="max-h-[60vh] overflow-y-auto pr-1">${claves.map(bloqueDia).join('')}</div>`;
         document.getElementById('sgVolverSetup').addEventListener('click', renderSetup);
