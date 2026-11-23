@@ -52,7 +52,7 @@
     };
 
     function startMainInventarioListener(callback) {
-        _listenersUnsubscribes.forEach(unsub => { try { unsub(); } catch(e) {} });
+        _listenersUnsubscribes.forEach(unsub => { try { unsub(); } catch(e) { /* un listener ya cerrado no es un problema */ } });
         _listenersUnsubscribes = [];
 
         const combineAndNotify = () => {
@@ -300,7 +300,7 @@
                 ? await window.getCatalogoSnapshot(true)
                 : await _getDocs(_collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/productos`));
             _codProds = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-            try { const fn = window.getGlobalProductSortFunction ? await window.getGlobalProductSortFunction() : null; if (fn) _codProds.sort(fn); } catch (e) {}
+            try { const fn = window.getGlobalProductSortFunction ? await window.getGlobalProductSortFunction() : null; if (fn) _codProds.sort(fn); } catch (e) { console.error('Inventario: no se pudo aplicar el orden global; la lista queda sin ordenar.', e); }
         } catch (e) {
             document.getElementById('codLista').innerHTML = '<p class="text-xs text-red-500 text-center py-6">Error al cargar el catálogo.</p>';
             return;
@@ -444,6 +444,7 @@
     // Se cruzan contra 'productos_eliminados' para poder decir QUÉ producto era.
     // ═══════════════════════════════════════════════════════════════════════
     let _diagHuerfanos = []; // [{uid, vendedor, productoId, cantidad, nombre, fechaEliminado, eliminadoPor}]
+    let _diagFallos = [];    // vendedores cuyo inventario no se pudo leer en el diagnóstico
 
     async function showDiagnosticoInventariosView() {
         if (_userRole !== 'admin') { _showModal('Acceso denegado', 'Solo los administradores pueden usar esta herramienta.'); return; }
@@ -472,7 +473,10 @@
             try {
                 const tSnap = await _getDocs(_collection(_db, `artifacts/${PUBLIC_DATA_ID}/public/data/productos_eliminados`));
                 tSnap.docs.forEach(d => { tumbas[d.id] = d.data(); });
-            } catch (e) { }
+            } catch (e) {
+                // Sin el archivo de eliminados los huérfanos salen "sin registro"
+                console.error('Inventario: no se pudo leer el archivo de productos eliminados.', e);
+            }
 
             // 3. Vendedores (rol legado: 'user' o 'vendedor')
             const usersSnap = await _getDocs(_query(_collection(_db, 'users'), _where('role', 'in', ['user', 'vendedor'])));
@@ -480,6 +484,7 @@
 
             // 4. Revisar el inventario de cada vendedor
             _diagHuerfanos = [];
+            _diagFallos = [];
             for (const v of vendedores) {
                 const nombreVend = [v.nombre, v.apellido].filter(Boolean).join(' ') || v.email || v.uid;
                 try {
@@ -499,7 +504,11 @@
                             eliminadoPor: t.eliminadoPor || ''
                         });
                     });
-                } catch (e) { }
+                } catch (e) {
+                    // Si falta el inventario de un vendedor el diagnóstico queda incompleto
+                    console.error('Inventario: no se pudo leer el inventario del vendedor', v.uid, e);
+                    _diagFallos.push(nombreVend);
+                }
             }
             _diagRender(vendedores.length);
         } catch (e) {
@@ -512,10 +521,20 @@
     function _diagRender(totalVendedores) {
         const cont = document.getElementById('diagCont');
         if (!cont) return;
+
+        // Un diagnóstico al que le faltan vendedores no sirve para decidir nada:
+        // más vale decir que quedó incompleto que dar un "todo en orden" falso.
+        const avisoFallos = _diagFallos.length
+            ? `<div class="mb-3 p-3 rounded-lg border border-amber-300 bg-amber-50 text-[12px] text-amber-900 leading-snug">
+                   <strong>Diagnóstico incompleto.</strong> No se pudo leer el inventario de:
+                   ${_diagFallos.join(', ')}. Revise la conexión y vuelva a ejecutarlo.
+               </div>`
+            : '';
+
         if (!_diagHuerfanos.length) {
-            cont.innerHTML = `<div class="text-center py-8">
-                <p class="text-emerald-700 font-bold">Todo en orden</p>
-                <p class="text-xs text-gray-500 mt-1">No se encontraron productos huérfanos en los ${totalVendedores} vendedores revisados.</p>
+            cont.innerHTML = avisoFallos + `<div class="text-center py-8">
+                <p class="${_diagFallos.length ? 'text-gray-700' : 'text-emerald-700'} font-bold">${_diagFallos.length ? 'Sin huérfanos en lo revisado' : 'Todo en orden'}</p>
+                <p class="text-xs text-gray-500 mt-1">No se encontraron productos huérfanos en los ${totalVendedores - _diagFallos.length} vendedores revisados.</p>
             </div>`;
             return;
         }
@@ -532,7 +551,7 @@
                     <div class="text-xs font-black ${h.cantidad ? 'text-amber-600' : 'text-gray-400'}">${h.cantidad} und</div>
                 </div>
             </div>`;
-        cont.innerHTML = `
+        cont.innerHTML = avisoFallos + `
             <div class="bg-rose-50 border border-rose-200 rounded-lg p-3 mb-3">
                 <div class="text-sm font-bold text-rose-800">${_diagHuerfanos.length} producto(s) huérfano(s)</div>
                 <div class="text-[11px] text-rose-700 mt-0.5">${vacios.length} sin existencias (se pueden limpiar) · ${conStock.length} con existencias (requieren decisión)</div>
@@ -963,7 +982,7 @@
 
     function _wirePrecioInputs(container) {
         container.querySelectorAll('.precio-inp').forEach(inp => {
-            inp.addEventListener('focus', () => { try { inp.select(); } catch (e) {} });
+            inp.addEventListener('focus', () => { try { inp.select(); } catch (e) { /* algunos navegadores no permiten select() en number */ } });
             // Evita que la rueda del mouse cambie el precio sin querer al desplazar la lista
             inp.addEventListener('wheel', () => { inp.blur(); }, { passive: true });
             inp.addEventListener('input', () => {
@@ -1373,7 +1392,7 @@
 
         try {
             // 1. APAGAR LISTENERS PARA EVITAR COLAPSO QUIC (Self-DDoS)
-            _listenersUnsubscribes.forEach(unsub => { try { unsub(); } catch(e) {} });
+            _listenersUnsubscribes.forEach(unsub => { try { unsub(); } catch(e) { /* un listener ya cerrado no es un problema */ } });
             _listenersUnsubscribes = [];
 
             let totalOps = 0;
@@ -1437,7 +1456,7 @@
             _showModal('Progreso', 'Borrando coordenadas y restableciendo...', null, '', null, false);
             
             // 1. APAGAR LISTENERS PARA EVITAR COLAPSO QUIC
-            _listenersUnsubscribes.forEach(unsub => { try { unsub(); } catch(e) {} });
+            _listenersUnsubscribes.forEach(unsub => { try { unsub(); } catch(e) { /* un listener ya cerrado no es un problema */ } });
             _listenersUnsubscribes = [];
 
             const prods = _inventarioCache.filter(p => p.rubro === rubroValue);
@@ -1834,7 +1853,7 @@
         _showModal('Confirmación Extrema', `¿Estás SEGURO de eliminar TODOS los productos del inventario? Esta acción es IRREVERSIBLE y se propagará.`, async () => { 
             _showModal('Progreso', 'Eliminando productos...', null, '', null, false); 
             try { 
-                _listenersUnsubscribes.forEach(unsub => { try { unsub(); } catch(e) {} });
+                _listenersUnsubscribes.forEach(unsub => { try { unsub(); } catch(e) { /* un listener ya cerrado no es un problema */ } });
                 _listenersUnsubscribes = [];
 
                 const collectionRef = _collection(_db, `artifacts/${_appId}/users/${_userId}/inventario`); 
@@ -1899,7 +1918,7 @@
                 _showModal('Confirmación Final', `Se eliminarán ${totalToDelete} datos maestros no utilizados (${itemsToDelete.rubros.length} Rubros, ${itemsToDelete.segmentos.length} Segmentos, ${itemsToDelete.marcas.length} Marcas). Esta acción se propagará. ¿Continuar?`, async () => {
                     _showModal('Progreso', `Eliminando ${totalToDelete} datos maestros localmente...`, null, '', null, false);
                     try { 
-                        _listenersUnsubscribes.forEach(unsub => { try { unsub(); } catch(e) {} });
+                        _listenersUnsubscribes.forEach(unsub => { try { unsub(); } catch(e) { /* un listener ya cerrado no es un problema */ } });
                         _listenersUnsubscribes = [];
 
                         let propagationErrors = 0;
