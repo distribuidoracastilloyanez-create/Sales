@@ -70,11 +70,85 @@
                 </button>`;
     }
 
+    // ───────────────────────────── FECHAS ─────────────────────────────
+    // La empresa trabaja en hora de Venezuela (GMT-4). El teléfono o la
+    // computadora pueden estar en otra zona, y toISOString() siempre devuelve
+    // UTC: una venta del 30/07 a las 8 de la noche es "31/07" en UTC. De ahí
+    // salió el error de los cierres que no aparecían con el filtro de fechas.
+    //
+    // Todo lo que sea fecha pasa por aquí y se calcula en América/Caracas,
+    // sin importar cómo esté configurado el aparato.
+    const ZONA = 'America/Caracas';
+
+    // Acepta lo que guarda Firestore (Timestamp), una fecha ISO, milisegundos
+    // o un Date, y devuelve siempre un Date, o null si no se puede interpretar.
+    function aFecha(v) {
+        if (!v && v !== 0) return null;
+        if (v instanceof Date) return isNaN(v.getTime()) ? null : v;
+        if (typeof v.toDate === 'function') { try { return v.toDate(); } catch (e) { return null; } }
+        if (typeof v === 'number') { const d = new Date(v); return isNaN(d.getTime()) ? null : d; }
+        if (typeof v === 'string') { const d = new Date(v); return isNaN(d.getTime()) ? null : d; }
+        return null;
+    }
+
+    // 'AAAA-MM-DD' del día en Venezuela. Es la clave para agrupar, filtrar y
+    // nombrar archivos: ordena sola y no depende de la zona del aparato.
+    function clave(v) {
+        const d = v === undefined ? new Date() : aFecha(v);
+        if (!d) return '';
+        return d.toLocaleDateString('en-CA', { timeZone: ZONA });
+    }
+
+    // '30/7/2026'
+    function fecha(v, opciones) {
+        const d = v === undefined ? new Date() : aFecha(v);
+        if (!d) return '';
+        return d.toLocaleDateString('es-VE', Object.assign({ timeZone: ZONA }, opciones || {}));
+    }
+
+    // '30/7/2026, 09:30 p. m.'
+    function fechaHora(v, opciones) {
+        const d = v === undefined ? new Date() : aFecha(v);
+        if (!d) return '';
+        return d.toLocaleString('es-VE', Object.assign({ timeZone: ZONA }, opciones || {}));
+    }
+
+    // '09:30 p. m.'
+    function hora(v) {
+        const d = v === undefined ? new Date() : aFecha(v);
+        if (!d) return '';
+        return d.toLocaleTimeString('es-VE', { timeZone: ZONA, hour: '2-digit', minute: '2-digit' });
+    }
+
+    // 'lunes 23 nov', a partir de una clave 'AAAA-MM-DD'
+    function etiquetaDia(claveDia) {
+        if (!claveDia) return '';
+        const [a, m, dd] = claveDia.split('-').map(Number);
+        const f = new Date(a, m - 1, dd); // fecha "suelta", sin hora ni zona
+        const dias = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+        const meses = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+        return `${dias[f.getDay()]} ${dd} ${meses[m - 1]}`;
+    }
+
+    // Límites del día en Venezuela, para filtrar rangos en Firestore.
+    // Una clave '2026-07-30' va de las 00:00 a las 23:59:59 de ESE día aquí,
+    // que en UTC es desde las 04:00 del 30 hasta las 03:59 del 31.
+    function inicioDia(claveDia) {
+        return new Date(`${claveDia}T00:00:00-04:00`);
+    }
+    function finDia(claveDia) {
+        return new Date(`${claveDia}T23:59:59.999-04:00`);
+    }
+
+    const Fechas = { ZONA, aFecha, clave, fecha, fechaHora, hora, etiquetaDia, inicioDia, finDia };
+
     // ───────────────────────────── EXPOSICIÓN ─────────────────────────────
     window.Comun = {
         rolActual, esAdmin, esVendedor, esDespachador,
-        AZUL, AZUL_CLARO, cabecera, cabeceraCard, tarjetaMenu
+        AZUL, AZUL_CLARO, cabecera, cabeceraCard, tarjetaMenu,
+        Fechas
     };
+    window.Fechas = Fechas;
 
     // Atajos globales: son los que más se usan y se leen mejor sueltos.
     window.esAdmin = esAdmin;
