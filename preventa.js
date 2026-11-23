@@ -1072,7 +1072,7 @@
 
         cont.innerHTML = lista.map(p => {
             const est = pvEstadoInfo(p.estado === 'despachado' ? 'cargado' : (p.estado || 'pendiente'));
-            const fecha = p.fechaCreacion ? new Date(p.fechaCreacion).toLocaleDateString('es-VE', { day: '2-digit', month: '2-digit' }) : '';
+            const fecha = p.fechaCreacion ? new Date(p.fechaCreacion).toLocaleDateString('es-VE', { timeZone: 'America/Caracas', day: '2-digit', month: '2-digit' }) : '';
             const nItems = (p.productos || []).length;
             const tieneTicket = !!p.ticketGenerado;
             return `
@@ -1450,7 +1450,7 @@
         cont.innerHTML = lista.map((p, pos) => {
             const est = pvEstadoInfo(p.estado || 'pendiente');
             const numProd = (p.productos || []).length;
-            const fecha = p.fechaCreacion ? new Date(p.fechaCreacion).toLocaleDateString('es-VE', { day: '2-digit', month: '2-digit' }) + ' ' + new Date(p.fechaCreacion).toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' }) : '';
+            const fecha = p.fechaCreacion ? new Date(p.fechaCreacion).toLocaleDateString('es-VE', { timeZone: 'America/Caracas', day: '2-digit', month: '2-digit' }) + ' ' + new Date(p.fechaCreacion).toLocaleTimeString('es-VE', { timeZone: 'America/Caracas', hour: '2-digit', minute: '2-digit' }) : '';
             const esCand = idxCand[p.id] !== undefined;
             const accionDer = _pvModoCorte
                 ? (esCand
@@ -1569,7 +1569,7 @@
         // Historial de estados (puntos sobrios)
         const histRows = (p.historialEstados || []).map(h => {
             const ei = pvEstadoInfo(h.estado);
-            const f = h.fecha ? new Date(h.fecha).toLocaleString('es-VE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
+            const f = h.fecha ? new Date(h.fecha).toLocaleString('es-VE', { timeZone: 'America/Caracas', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
             return `<div class="flex items-center gap-2 text-[11px] text-slate-500 py-0.5"><span class="w-1.5 h-1.5 rounded-full ${_pvDotColor(ei.color)}"></span>${ei.label} · ${f}</div>`;
         }).join('');
 
@@ -2046,8 +2046,8 @@
         ov.id = 'pvTicketOverlay';
         ov.className = 'fixed inset-0 z-[9999] bg-black/60 flex items-center justify-center p-4';
 
-        const fecha = new Date().toLocaleDateString('es-VE');
-        const hora = new Date().toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' });
+        const fecha = new Date().toLocaleDateString('es-VE', { timeZone: 'America/Caracas' });
+        const hora = new Date().toLocaleTimeString('es-VE', { timeZone: 'America/Caracas', hour: '2-digit', minute: '2-digit' });
 
         const filas = items.map(pr => {
             const partes = [];
@@ -2143,8 +2143,8 @@
         ov.id = 'pvTicketOverlay';
         ov.className = 'fixed inset-0 z-[9999] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4';
 
-        const fecha = new Date().toLocaleDateString('es-VE');
-        const hora = new Date().toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' });
+        const fecha = new Date().toLocaleDateString('es-VE', { timeZone: 'America/Caracas' });
+        const hora = new Date().toLocaleTimeString('es-VE', { timeZone: 'America/Caracas', hour: '2-digit', minute: '2-digit' });
 
         // Filas de productos con casilla de "cargado" (SOLO disponibles).
         // Formato de 80mm igual al de Venta Directa: ancho 768px, Courier New, texto grande, negro.
@@ -2594,7 +2594,7 @@
         ov.innerHTML = `
             <div class="bg-white w-full max-w-md rounded-t-xl sm:rounded-xl shadow-2xl overflow-hidden max-h-[92vh] flex flex-col border border-slate-200">
                 <div class="bg-purple-700 text-white px-5 py-4 shrink-0">
-                    <div class="text-[10px] uppercase tracking-wider text-purple-200 font-semibold">Corte de Carga · ${new Date().toLocaleDateString('es-VE')} ${new Date().toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' })}</div>
+                    <div class="text-[10px] uppercase tracking-wider text-purple-200 font-semibold">Corte de Carga · ${new Date().toLocaleDateString('es-VE', { timeZone: 'America/Caracas' })} ${new Date().toLocaleTimeString('es-VE', { timeZone: 'America/Caracas', hour: '2-digit', minute: '2-digit' })}</div>
                     <div class="font-semibold text-base">${pedidos.length} pedido(s) · ${clientes.length} cliente(s)</div>
                     <div class="text-[11px] text-purple-100 mt-1 leading-snug"><span class="text-purple-300">Clientes:</span> ${clientes.join(' · ') || '-'}</div>
                 </div>
@@ -2643,8 +2643,8 @@
     function generarTicketCorte(corte) {
         document.getElementById('pvTicketOverlay')?.remove();
         const fechaD = corte.fecha ? new Date(corte.fecha) : new Date();
-        const fecha = fechaD.toLocaleDateString('es-VE');
-        const hora = fechaD.toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' });
+        const fecha = fechaD.toLocaleDateString('es-VE', { timeZone: 'America/Caracas' });
+        const hora = fechaD.toLocaleTimeString('es-VE', { timeZone: 'America/Caracas', hour: '2-digit', minute: '2-digit' });
         const filas = _pvAgruparPorRubro(corte.consolidado || []).map(g => {
             const filasG = g.items.map(c => {
                 const partes = [];
@@ -2734,8 +2734,8 @@
     // con columna de total de unidades. Imprime vía diálogo del navegador (iframe oculto).
     function generarTicketCorteEpson(corte) {
         const fechaD = corte.fecha ? new Date(corte.fecha) : new Date();
-        const fecha = fechaD.toLocaleDateString('es-VE');
-        const hora = fechaD.toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' });
+        const fecha = fechaD.toLocaleDateString('es-VE', { timeZone: 'America/Caracas' });
+        const hora = fechaD.toLocaleTimeString('es-VE', { timeZone: 'America/Caracas', hour: '2-digit', minute: '2-digit' });
         const grupos = _pvAgruparPorRubro(corte.consolidado || []);
         const cuerpo = grupos.map(g => `
             <div class="rubro">${g.rubro}</div>
