@@ -235,6 +235,7 @@
             try {
                 const clienteRef = _doc(_db, CLIENTES_COLLECTION_PATH, clienteId);
                 await _setDoc(clienteRef, { saldoVacios: newSaldos }, { merge: true });
+                window.invalidarClientes?.();
                 
                 const pModal = document.getElementById('modalContainer');
                 if(pModal && pModal.querySelector('h3')?.textContent.startsWith('Progreso')) pModal.classList.add('hidden');
@@ -859,6 +860,7 @@
             };
             try {
                 await _addDoc(_collection(_db, CLIENTES_COLLECTION_PATH), clienteData);
+                window.invalidarClientes?.();
                 _showModal('Éxito', 'Cliente agregado correctamente.');
                 form.reset();
                  _populateDropdown(SECTORES_COLLECTION_PATH, 'sector', 'Sector'); 
@@ -1494,6 +1496,7 @@
 
             try {
                 await _setDoc(_doc(_db, CLIENTES_COLLECTION_PATH, clienteId), updatedData, { merge: true });
+                window.invalidarClientes?.();
                 _showModal('Éxito', 'Cliente modificado exitosamente.', showVerClientesView, 'Continuar');
             } catch (error) {
                 console.error("Error al modificar el cliente:", error);
@@ -1508,6 +1511,7 @@
             _showModal('Progreso', 'Eliminando cliente...'); 
             try {
                 await _deleteDoc(_doc(_db, CLIENTES_COLLECTION_PATH, clienteId));
+                window.invalidarClientes?.();
                 // Volver a la lista PRIMERO y luego confirmar: así el usuario no queda
                 // atrapado en la ficha del cliente (el botón "Cerrar" del modal ya no estanca).
                 showVerClientesView();
@@ -1598,6 +1602,7 @@
                         batch.update(doc.ref, { sector: nuevoNombreMayus });
                     });
                     await batch.commit();
+                    window.invalidarClientes?.();
                 }
 
                 _showModal('Éxito', `Sector renombrado a "${nuevoNombreMayus}" y actualizado en ${updatedClientsCount} cliente(s).`);
@@ -1889,7 +1894,7 @@
                 }
                  if (saldoVacios[tipoVacio] !== nuevoSaldo) {
                     saldoVacios[tipoVacio] = nuevoSaldo;
-                    transaction.update(clienteRef, { saldoVacios: saldoVacios });
+                    transaction.update(clienteRef, { saldoVacios: saldoVacios }); window.invalidarClientes?.();
                  } else {
                       console.log(`Saldo for ${tipoVacio} already ${nuevoSaldo}, no update needed.`);
                  }
