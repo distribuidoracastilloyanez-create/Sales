@@ -646,18 +646,18 @@
         try {
             const el = document.documentElement;
             const req = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen;
-            const lock = () => { try { if (screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(() => {}); } catch (e) {} };
+            const lock = () => { try { if (screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(() => {}); } catch (e) { /* pantalla completa, orientación y capas: no todos los navegadores lo permiten */ } };
             if (req) { const p = req.call(el); if (p && p.then) p.then(lock).catch(() => {}); else lock(); }
             else lock();
-        } catch (e) {}
+        } catch (e) { /* pantalla completa, orientación y capas: no todos los navegadores lo permiten */ }
     }
     function _salirHorizontal() {
-        try { if (screen.orientation && screen.orientation.unlock) screen.orientation.unlock(); } catch (e) {}
+        try { if (screen.orientation && screen.orientation.unlock) screen.orientation.unlock(); } catch (e) { /* pantalla completa, orientación y capas: no todos los navegadores lo permiten */ }
         try {
             if (document.fullscreenElement || document.webkitFullscreenElement) {
                 (document.exitFullscreen || document.webkitExitFullscreen).call(document);
             }
-        } catch (e) {}
+        } catch (e) { /* pantalla completa, orientación y capas: no todos los navegadores lo permiten */ }
     }
 
     // Detalle del cierre a PANTALLA COMPLETA: forma tabular de siempre, letra un poco
@@ -1828,7 +1828,7 @@
                 const lon = pos.coords.longitude;
                 const precision = Math.round(pos.coords.accuracy || 0);
 
-                _miUbicacionCapas.forEach(capa => { try { mapInstance.removeLayer(capa); } catch (e) {} });
+                _miUbicacionCapas.forEach(capa => { try { mapInstance.removeLayer(capa); } catch (e) { /* pantalla completa, orientación y capas: no todos los navegadores lo permiten */ } });
                 _miUbicacionCapas = [];
 
                 const halo = L.circle([lat, lon], {
