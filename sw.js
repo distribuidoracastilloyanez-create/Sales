@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v195'; // v195: Facturacion con cabecera corporativa; menus de Pre-Venta, Venta Directa, Ventas Totales y Cierre de Jornada convertidos a tarjetas
+const CACHE_NAME = 'ventas-app-cache-v196'; // v196: menu y vista de Catalogo al formato corporativo; con esto termina la actualizacion visual de la app
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
