@@ -468,7 +468,7 @@
             const wb = new ExcelJS.Workbook(); const ws = wb.addWorksheet('Inventario');
             ws.columns = Object.keys(dExport[0]||{}).map(k=>({header:k, key:k, width:15})); ws.getRow(1).font = { bold: true }; ws.addRows(dExport);
             const buffer = await wb.xlsx.writeBuffer(); const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-            const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = `Inventario_${new Date().toISOString().slice(0,10)}.xlsx`;
+            const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = `Inventario_${window.Fechas.clave()}.xlsx`;
             document.body.appendChild(link); link.click(); document.body.removeChild(link);
             const m=document.getElementById('modalContainer'); if(m) m.classList.add('hidden');
         } catch (error) { _showModal('Error', `Error: ${error.message}`); }
