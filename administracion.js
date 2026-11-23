@@ -1101,8 +1101,14 @@
 
                     // Leer de Firebase
                     const [year, month] = mes.split('-').map(Number);
+                    // Solo los cierres del mes consultado, con 3 días de margen a cada
+                    // lado por si un cierre contiene ventas de la jornada anterior.
+                    const iniMes = new Date(year, month - 1, 1 - 3);
+                    const finMes = new Date(year, month, 1 + 3);
                     const ventasSnap = await _getDocs(_collection(_db, `artifacts/${_appId}/users/${uid}/ventas`));
-                    const cierresSnap = await _getDocs(_collection(_db, `artifacts/${_appId}/users/${uid}/cierres`));
+                    const cierresSnap = await _getDocs(_query(
+                        _collection(_db, `artifacts/${_appId}/users/${uid}/cierres`),
+                        _where('fecha', '>=', iniMes), _where('fecha', '<=', finMes)));
                     lecturasFirebase += ventasSnap.size + cierresSnap.size;
 
                     const cacheProd = {};
@@ -1517,9 +1523,14 @@
             const limite = new Date(hoy.getFullYear(), hoy.getMonth() - 6, 1);
             const vendidos = {}; // id -> unidades vendidas en el periodo
 
+            // Margen de días por si un cierre guarda ventas de la jornada anterior
+            const limiteCierres = new Date(limite.getTime() - 3 * 24 * 60 * 60 * 1000);
+
             for (const uid of vendedores) {
                 const ventasSnap = await _getDocs(_collection(_db, `artifacts/${_appId}/users/${uid}/ventas`));
-                const cierresSnap = await _getDocs(_collection(_db, `artifacts/${_appId}/users/${uid}/cierres`));
+                const cierresSnap = await _getDocs(_query(
+                    _collection(_db, `artifacts/${_appId}/users/${uid}/cierres`),
+                    _where('fecha', '>=', limiteCierres)));
 
                 const procesar = (v) => {
                     const f = v.fecha?.toDate ? v.fecha.toDate() : new Date(v.fecha);
