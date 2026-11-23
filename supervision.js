@@ -66,7 +66,7 @@
     // MENÚ PRINCIPAL DE SUPERVISIÓN
     // ─────────────────────────────────────────────────────────────────────────
     window.showSupervisionMenu = function() {
-        if (_userRole !== 'admin') {
+        if (!window.esAdmin()) {
             _showModal('Acceso Denegado', 'Solo administradores pueden acceder a este módulo.');
             return;
         }
