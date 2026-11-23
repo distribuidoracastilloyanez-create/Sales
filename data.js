@@ -1758,6 +1758,7 @@
         try {
             await _setDoc(_doc(_db, CLIENTES_COLLECTION_PATH, clienteId),
                           { cepEnGestion: nuevoEstado, cepGestionFecha: fecha }, { merge: true });
+            window.invalidarClientes?.();
             cli.cepEnGestion    = nuevoEstado;
             cli.cepGestionFecha = fecha;
 
