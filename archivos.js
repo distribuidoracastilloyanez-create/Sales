@@ -639,7 +639,7 @@
             document.getElementById('modalContainer')?.classList.add('hidden');
 
             // Liberar memory objectURLs de las previews
-            _sharedFiles.forEach(f => { try { URL.revokeObjectURL(f._previewUrl); } catch(_){} });
+            _sharedFiles.forEach(f => { try { URL.revokeObjectURL(f._previewUrl); } catch(_) { /* liberar una previsualización ya liberada no es un problema */ } });
 
             // Si era share mode, limpiar y volver al modo normal
             if (_isShareMode) {
