@@ -113,7 +113,7 @@
 
         const productosConConfig = _sortProductos(_productosCache.filter(p => _bultosConfigCache[p.id]?.kgPorBulto > 0));
         const rubros = [...new Set(productosConConfig.map(p => p.rubro).filter(Boolean))].sort();
-        const isAdmin = _userRole === 'admin';
+        const isAdmin = window.esAdmin();
 
         content.innerHTML = `
             <!-- Meta Kg/Lts -->
@@ -558,6 +558,3 @@
     }
 
 })();
-
-
-
