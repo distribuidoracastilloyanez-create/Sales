@@ -261,7 +261,7 @@
 
             let html = '';
             operaciones.forEach(op => {
-                const horaStr    = op.fecha.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+                const horaStr    = op.fecha.toLocaleTimeString('es-ES', { timeZone: 'America/Caracas', hour: '2-digit', minute: '2-digit' });
                 const badgeClass = (TIPO_CONFIG[op.tipo] || TIPO_CONFIG['Venta']).badge;
                 const esPagado   = op.tipo === 'Venta';
                 const esConsig   = op.tipo === 'Consignación';
@@ -310,7 +310,7 @@
         const d = op.datos || {};
         const productos = d.productos || [];
         const vacios = d.vaciosDevueltosPorTipo || {};
-        const fechaStr = op.fecha.toLocaleString('es-VE', { dateStyle: 'medium', timeStyle: 'short' });
+        const fechaStr = op.fecha.toLocaleString('es-VE', { timeZone: 'America/Caracas', dateStyle: 'medium', timeStyle: 'short' });
 
         // Desglose de lo vendido por presentación (cj / paq / und)
         const filaProducto = (p) => {
@@ -552,7 +552,7 @@
             }
 
             const data     = snap.data();
-            const fechaStr = data.fecha?.toDate ? data.fecha.toDate().toLocaleString('es-ES') : new Date(data.fecha).toLocaleString('es-ES');
+            const fechaStr = data.fecha?.toDate ? data.fecha.toDate().toLocaleString('es-ES', { timeZone: 'America/Caracas' }) : new Date(data.fecha).toLocaleString('es-ES', { timeZone: 'America/Caracas' });
             await loadMasterCatalog();
 
             let itemsGlobales = (data.inventario || []).map(item => {
