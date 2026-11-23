@@ -43,7 +43,7 @@
     const pathHistorial = () => `artifacts/${PUB()}/public/data/mercadeo_historial`;
     // Se consulta el rol en vivo y también el capturado al iniciar el módulo:
     // así la comprobación no depende de cuál de los dos esté disponible.
-    const esAdmin = () => (window.userRole || _userRole) === 'admin';
+    const esAdmin = () => window.esAdmin();
 
     // Gestiones por defecto (el admin puede cambiarlas desde la app)
     const CONFIG_DEFAULT = {
