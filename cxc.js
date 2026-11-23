@@ -96,7 +96,11 @@
                     <!-- Tasa del día y acciones de administrador. En el teléfono la
                          tasa va arriba y los dos botones comparten la línea de abajo. -->
                     <div class="mb-3 flex flex-wrap items-center gap-2">
-                        <button id="cxcTasaBcvDisplay" class="text-xs font-semibold text-gray-600 hover:underline transition cursor-pointer">(BCV ----- --/--/--)</button>
+                        <button id="cxcTasaBcvDisplay" class="flex items-baseline gap-1.5 hover:opacity-80 transition cursor-pointer" title="Toca para ver el calendario de tasas">
+                            <span class="text-[10px] font-bold tracking-wide text-gray-500">BCV</span>
+                            <span class="text-xl font-bold leading-none" style="color:#16305C">-----</span>
+                            <span class="text-[10px] font-semibold text-gray-500">--/--/--</span>
+                        </button>
                         <span id="dataStatusLabel" class="text-[10px] font-semibold ml-auto" style="color:#16305C"></span>
                     </div>
 
@@ -131,8 +135,9 @@
         // Mostrar la tasa BCV de hoy bajo el título + clic abre el calendario (solo lectura)
         (async () => {
             const disp = document.getElementById('cxcTasaBcvDisplay');
-            if (disp && window.textoTasaHoyBCV) {
-                disp.textContent = await window.textoTasaHoyBCV();
+            if (disp && window.htmlTasaHoyBCV) {
+                disp.innerHTML = await window.htmlTasaHoyBCV(
+                    'text-xl font-bold leading-none text-[#16305C]', 'text-[10px] font-semibold text-gray-500');
                 disp.addEventListener('click', () => {
                     if (window.abrirCalendarioTasas) window.abrirCalendarioTasas(() => window.showCXCView());
                 });
@@ -1845,6 +1850,20 @@
         const yy = String(h.getFullYear()).slice(-2);
         const valor = (t.rate !== null && t.rate !== undefined) ? t.rate.toFixed(4) : '-----';
         return `(BCV ${valor} ${dd}/${mm}/${yy})`;
+    };
+
+    // La misma tasa pero con el valor grande, para las cabeceras donde se consulta
+    // de un vistazo. Las clases se pasan desde afuera porque el fondo cambia:
+    // azul en el menú principal, blanco en CXC.
+    window.htmlTasaHoyBCV = async function(claseValor, claseResto) {
+        const t = await window.getTasaHoyBCV();
+        const h = t.fecha;
+        const dd = String(h.getDate()).padStart(2,'0');
+        const mm = String(h.getMonth()+1).padStart(2,'0');
+        const yy = String(h.getFullYear()).slice(-2);
+        const valor = (t.rate !== null && t.rate !== undefined) ? t.rate.toFixed(4) : '-----';
+        const r = claseResto || '', v = claseValor || '';
+        return `<span class="${r}">BCV</span> <span class="${v}">${valor}</span> <span class="${r}">${dd}/${mm}/${yy}</span>`;
     };
 
     window.abrirCXCCliente = async function(nombre) {
