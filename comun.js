@@ -47,7 +47,7 @@
 
     // Barra superior de una pantalla: título, subtítulo y botón Volver.
     function cabecera(titulo, subtitulo, idVolver) {
-        return `<div class="px-4 py-3 flex items-center justify-between" style="background:${AZUL}">
+        return `<div class="px-4 py-3 flex items-center justify-between text-left" style="background:${AZUL}">
                     <div class="min-w-0">
                         <h2 class="text-base font-semibold text-white tracking-tight truncate">${titulo}</h2>
                         <p class="text-[10px] mt-0.5 truncate" style="color:${AZUL_CLARO}">${subtitulo}</p>
