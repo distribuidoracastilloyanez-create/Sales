@@ -86,7 +86,7 @@
                         <div class="relative" id="cliSearchContainer">
                             <label class="block text-sm font-bold text-gray-700 mb-1">Buscar Cliente:</label>
                             <input type="text" id="cliSearch" placeholder="Escriba el nombre comercial..." class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 outline-none shadow-sm">
-                            <div id="cliDrop" class="absolute z-50 w-full bg-white border border-gray-200 rounded-lg shadow-2xl mt-1 hidden max-h-48 overflow-y-auto"></div>
+                            <div id="cliDrop" class="w-full bg-white border border-gray-200 rounded-lg shadow-lg mt-1 hidden max-h-64 overflow-y-auto"></div>
                         </div>
                         <div id="cliSel" class="hidden p-4 bg-cyan-50 border border-cyan-200 rounded-lg flex justify-between items-center shadow-sm">
                             <span id="cliName" class="font-black text-cyan-900 text-lg"></span>
