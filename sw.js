@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ventas-app-cache-v197'; // v197: la tasa del BCV se ve en grande en el menu principal y en la cabecera de CXC
+const CACHE_NAME = 'ventas-app-cache-v198'; // v198: en Obsequios la lista de clientes filtrados ya no se recorta
 
 // Archivos críticos que componen la aplicación ("App Shell")
 const urlsToCache = [
